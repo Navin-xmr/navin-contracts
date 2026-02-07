@@ -110,9 +110,9 @@ cargo fmt
 make fmt-check
 
 ```
-OR 
 
 ```
+# OR 
 cargo check --all
 ```
 
@@ -184,7 +184,7 @@ Security is paramount for Navin. If you discover a security vulnerability, pleas
 ## Community
 
 - [Twitter](https://twitter.com/navinxmr)
-- Telegram (Coming soon)
+- [Telegram Group Chat](https://t.me/+3svwFsQME6k1YjI0)
 
 ---
 

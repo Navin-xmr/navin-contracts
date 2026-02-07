@@ -361,7 +361,7 @@ assert!(true, "Always passes");
 
 - **Bugs**: Open an [Issue](https://github.com/Navin-xmr/navin-contracts/issues)
 - **Security**: Email navinxmr@gmail.com
-- **General**: Join our Telegram
+- **General**: Join our Telegram - [Telegram Group Chat](https://t.me/+3svwFsQME6k1YjI0)
 
 ## Review Process
 

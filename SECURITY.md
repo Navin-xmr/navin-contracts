@@ -17,7 +17,7 @@ OR
 
 **Reach out to: dinahmaccodes** on Telegram
 
-Telegram GC link: 
+Telegram GC link: [Telegram Group Chat](https://t.me/+3svwFsQME6k1YjI0)
 
 When reporting a vulnerability, please include:
 
