@@ -7,7 +7,7 @@ pub fn is_admin(env: &Env, address: &Address) -> bool {
         .storage()
         .instance()
         .get(&DataKey::Admins)
-        .unwrap_or_else(|| Vec::new(&env));
+        .unwrap_or_else(|| Vec::new(env));
 
     admins.contains(address)
 }
@@ -23,7 +23,7 @@ pub fn add_admin(env: &Env, admin: &Address, new_admin: &Address) {
         .storage()
         .instance()
         .get(&DataKey::Admins)
-        .unwrap_or_else(|| Vec::new(&env));
+        .unwrap_or_else(|| Vec::new(env));
 
     if !admins.contains(new_admin) {
         admins.push_back(new_admin.clone());

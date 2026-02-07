@@ -21,7 +21,7 @@ pub fn log_transaction(
         .storage()
         .instance()
         .get(&DataKey::TotalVaultBalance)
-        .unwrap_or_else(|| Vec::new(&env));
+        .unwrap_or_else(|| Vec::new(env));
 
     transactions.push_back(transaction);
 
@@ -35,5 +35,5 @@ pub fn get_transaction_history(env: &Env) -> Vec<TransactionLog> {
     env.storage()
         .instance()
         .get(&DataKey::TotalVaultBalance)
-        .unwrap_or_else(|| Vec::new(&env))
+        .unwrap_or_else(|| Vec::new(env))
 }

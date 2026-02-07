@@ -17,8 +17,9 @@ fn test_initialization() {
     // Initialize the contract
     contract_client.initialize(&admin);
 
-    // Verify admin was set
-    assert!(true, "Contract initialized successfully");
+    // Verify initialization by checking balance is 0
+    let test_user = Address::generate(&env);
+    assert_eq!(contract_client.get_balance(&test_user), 0);
 }
 
 #[test]
@@ -71,8 +72,8 @@ fn test_transaction_logging() {
         &String::from_str(&env, "Temporary lock"),
     );
 
-    // Additional assertions could be added to verify transaction logs if implemented
-    assert!(true, "Transactions logged successfully");
+    // Verify balance after locking (locked assets don't reduce balance)
+    assert_eq!(contract_client.get_balance(&user), 500);
 }
 
 #[test]
