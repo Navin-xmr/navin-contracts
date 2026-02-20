@@ -15,6 +15,7 @@ pub enum NavinError {
     AlreadyInitialized,
     NotInitialized,
     Unauthorized,
+    CarrierNotWhitelisted,
 }
 
 impl From<NavinError> for Error {
@@ -23,6 +24,7 @@ impl From<NavinError> for Error {
             NavinError::AlreadyInitialized => Error::from_contract_error(1),
             NavinError::NotInitialized => Error::from_contract_error(2),
             NavinError::Unauthorized => Error::from_contract_error(3),
+            NavinError::CarrierNotWhitelisted => Error::from_contract_error(4),
         }
     }
 }
@@ -62,5 +64,66 @@ impl ShipmentContract {
             return Err(NavinError::NotInitialized.into());
         }
         Ok(storage::get_shipment_counter(&env))
+    }
+
+    /// Add a carrier to a company's whitelist
+    /// Only the company can add carriers to their own whitelist
+    pub fn add_carrier_to_whitelist(
+        env: Env,
+        company: Address,
+        carrier: Address,
+    ) -> Result<(), Error> {
+        if !storage::is_initialized(&env) {
+            return Err(NavinError::NotInitialized.into());
+        }
+
+        // Verify that the caller is the company
+        company.require_auth();
+
+        storage::add_carrier_to_whitelist(&env, &company, &carrier);
+
+        env.events().publish(
+            (symbol_short!("add_wl"),),
+            (company.clone(), carrier.clone()),
+        );
+
+        Ok(())
+    }
+
+    /// Remove a carrier from a company's whitelist
+    /// Only the company can remove carriers from their own whitelist
+    pub fn remove_carrier_from_whitelist(
+        env: Env,
+        company: Address,
+        carrier: Address,
+    ) -> Result<(), Error> {
+        if !storage::is_initialized(&env) {
+            return Err(NavinError::NotInitialized.into());
+        }
+
+        // Verify that the caller is the company
+        company.require_auth();
+
+        storage::remove_carrier_from_whitelist(&env, &company, &carrier);
+
+        env.events().publish(
+            (symbol_short!("rm_wl"),),
+            (company.clone(), carrier.clone()),
+        );
+
+        Ok(())
+    }
+
+    /// Check if a carrier is whitelisted for a company
+    pub fn is_carrier_whitelisted(
+        env: Env,
+        company: Address,
+        carrier: Address,
+    ) -> Result<bool, Error> {
+        if !storage::is_initialized(&env) {
+            return Err(NavinError::NotInitialized.into());
+        }
+
+        Ok(storage::is_carrier_whitelisted(&env, &company, &carrier))
     }
 }

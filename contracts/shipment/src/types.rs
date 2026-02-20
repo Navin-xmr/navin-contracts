@@ -9,6 +9,8 @@ pub enum DataKey {
     ShipmentCounter,
     /// Individual shipment data keyed by ID
     Shipment(u64),
+    /// Carrier whitelist for a company - (company, carrier) -> bool
+    CarrierWhitelist(Address, Address),
 }
 
 /// Shipment status lifecycle
