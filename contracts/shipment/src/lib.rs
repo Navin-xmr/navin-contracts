@@ -1,7 +1,7 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, BytesN, Env, Symbol};
 use soroban_sdk::Error as SdkError;
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, BytesN, Env, Symbol};
 
 mod errors;
 mod events;
