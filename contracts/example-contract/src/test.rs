@@ -2,6 +2,7 @@
 
 extern crate std;
 
+use crate::types::ShipmentInput;
 use crate::{DeliveryStatus, SecureAssetVault, SecureAssetVaultClient};
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
