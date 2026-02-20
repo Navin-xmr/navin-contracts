@@ -20,7 +20,7 @@ pub fn set_admin(env: &Env, admin: &Address) {
 pub fn get_shipment_counter(env: &Env) -> u64 {
     env.storage()
         .instance()
-        .get(&DataKey::ShipmentCounter)
+        .get(&DataKey::ShipmentCount)
         .unwrap_or(0)
 }
 
@@ -28,7 +28,7 @@ pub fn get_shipment_counter(env: &Env) -> u64 {
 pub fn set_shipment_counter(env: &Env, counter: u64) {
     env.storage()
         .instance()
-        .set(&DataKey::ShipmentCounter, &counter);
+        .set(&DataKey::ShipmentCount, &counter);
 }
 /// Add a carrier to a company's whitelist
 pub fn add_carrier_to_whitelist(env: &Env, company: &Address, carrier: &Address) {
