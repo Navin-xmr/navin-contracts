@@ -48,7 +48,6 @@ pub fn is_carrier_whitelisted(env: &Env, company: &Address, carrier: &Address) -
     env.storage().instance().get(&key).unwrap_or(false)
 }
 
-
 /// Grant Company role to an address
 pub fn set_company_role(env: &Env, company: &Address) {
     env.storage()
