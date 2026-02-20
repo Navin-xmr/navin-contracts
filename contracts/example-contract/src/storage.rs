@@ -56,3 +56,23 @@ pub fn is_carrier(env: &Env, address: &Address) -> bool {
 
     carriers.contains(address)
 }
+
+/// Get next shipment ID and increment
+pub fn get_next_shipment_id(env: &Env) -> u64 {
+    let id = env
+        .storage()
+        .instance()
+        .get(&DataKey::NextShipmentId)
+        .unwrap_or(1u64);
+    
+    env.storage().instance().set(&DataKey::NextShipmentId, &(id + 1));
+    id
+}
+
+/// Save batch shipment data
+pub fn save_batch_shipment(env: &Env, shipment: &BatchShipment) {
+    env.storage()
+        .instance()
+        .set(&DataKey::BatchShipment(shipment.id), shipment);
+}
+
