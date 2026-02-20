@@ -320,6 +320,14 @@
                             },
                             {
                               "key": {
+                                "symbol": "data_hash"
+                              },
+                              "val": {
+                                "string": ""
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "escrow_amount"
                               },
                               "val": {
@@ -366,6 +374,14 @@
                                     "symbol": "Disputed"
                                   }
                                 ]
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "updated_at"
+                              },
+                              "val": {
+                                "u64": 0
                               }
                             }
                           ]

@@ -45,3 +45,14 @@ pub fn update_balance(env: &Env, address: &Address, amount: i128) {
         .instance()
         .set(&DataKey::AssetBalance(address.clone()), &amount);
 }
+
+/// Checks if an address is a carrier
+pub fn is_carrier(env: &Env, address: &Address) -> bool {
+    let carriers: Vec<Address> = env
+        .storage()
+        .instance()
+        .get(&DataKey::Carriers)
+        .unwrap_or_else(|| Vec::new(env));
+
+    carriers.contains(address)
+}

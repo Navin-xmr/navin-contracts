@@ -23,6 +23,8 @@ pub enum DataKey {
     Insurance(u64),
     /// Tracks next shipment ID
     NextShipmentId,
+    /// Tracks carriers
+    Carriers,
 }
 
 /// Delivery escrow status used by timeout release flow
@@ -99,12 +101,17 @@ pub struct Shipment {
     pub escrow_amount: i128,
     pub insurance_amount: i128,
     pub status: ShipmentStatus,
+    pub data_hash: String,
+    pub updated_at: u64,
 }
 
 /// Shipment status
 #[contracttype]
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum ShipmentStatus {
+    Created,
+    InTransit,
+    Delivered,
     Active,
     Completed,
     Disputed,
