@@ -112,7 +112,7 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "ShipmentCounter"
+                              "symbol": "ShipmentCount"
                             }
                           ]
                         },

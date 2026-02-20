@@ -206,6 +206,17 @@
                             },
                             {
                               "key": {
+                                "symbol": "escrow_amount"
+                              },
+                              "val": {
+                                "i128": {
+                                  "hi": 0,
+                                  "lo": 0
+                                }
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "id"
                               },
                               "val": {
@@ -255,7 +266,7 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "ShipmentCounter"
+                              "symbol": "ShipmentCount"
                             }
                           ]
                         },

@@ -162,6 +162,7 @@ impl NavinShipment {
             status: ShipmentStatus::Created,
             created_at: now,
             updated_at: now,
+            escrow_amount: 0,
         };
 
         storage::set_shipment(&env, &shipment);

@@ -1,46 +1,88 @@
-use soroban_sdk::{contracttype, Address, BytesN};
+use soroban_sdk::{contracttype, Address, BytesN, Symbol};
 
+/// Storage keys for contract data.
 #[contracttype]
 pub enum DataKey {
-    /// The contract admin address
+    /// The contract admin address.
     Admin,
-    /// Counter tracking total shipments created
-    ShipmentCounter,
-    /// Addresses with Company role
+    /// Counter tracking total shipments created.
+    ShipmentCount,
+    /// Addresses with Company role.
     Company(Address),
-    /// Individual shipment data keyed by ID
+    /// Individual shipment data keyed by ID.
     Shipment(u64),
-    /// Carrier whitelist for a company - (company, carrier) -> bool
+    /// Carrier whitelist for a company — (company, carrier) -> bool.
     CarrierWhitelist(Address, Address),
+    /// Escrow balance for a shipment.
+    Escrow(u64),
+    /// Role assigned to an address.
+    Role(Address),
 }
 
-/// Supported user roles
+/// Supported user roles.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Role {
+    /// A registered company that can create shipments.
     Company,
 }
 
-/// Shipment status lifecycle
+/// Shipment status lifecycle.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ShipmentStatus {
+    /// Shipment has been created but not yet picked up.
     Created,
+    /// Shipment is in transit between checkpoints.
     InTransit,
+    /// Shipment has arrived at an intermediate checkpoint.
+    AtCheckpoint,
+    /// Shipment has been delivered to the receiver.
     Delivered,
+    /// Shipment is under dispute.
+    Disputed,
+    /// Shipment has been cancelled.
     Cancelled,
 }
 
-/// Core shipment data
+/// Core shipment data stored on-chain.
+/// Raw payload is off-chain; only the hash is stored.
 #[contracttype]
 #[derive(Clone)]
 pub struct Shipment {
+    /// Unique shipment identifier.
     pub id: u64,
+    /// Address that created the shipment.
     pub sender: Address,
+    /// Intended recipient of the shipment.
     pub receiver: Address,
+    /// Carrier responsible for transport.
     pub carrier: Address,
-    pub data_hash: BytesN<32>,
+    /// Current status in the shipment lifecycle.
     pub status: ShipmentStatus,
+    /// SHA-256 hash of the off-chain shipment data.
+    pub data_hash: BytesN<32>,
+    /// Ledger timestamp when the shipment was created.
     pub created_at: u64,
+    /// Ledger timestamp of the last status update.
     pub updated_at: u64,
+    /// Amount held in escrow for this shipment.
+    pub escrow_amount: i128,
+}
+
+/// A checkpoint milestone recorded during shipment transit.
+/// Only the data hash is stored; full details live off-chain.
+#[contracttype]
+#[derive(Clone)]
+pub struct Milestone {
+    /// ID of the shipment this milestone belongs to.
+    pub shipment_id: u64,
+    /// Symbolic name of the checkpoint (e.g. "warehouse", "port").
+    pub checkpoint: Symbol,
+    /// SHA-256 hash of the off-chain milestone data.
+    pub data_hash: BytesN<32>,
+    /// Ledger timestamp when the milestone was recorded.
+    pub timestamp: u64,
+    /// Address that reported this milestone.
+    pub reporter: Address,
 }
