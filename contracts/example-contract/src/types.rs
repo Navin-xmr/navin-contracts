@@ -1,6 +1,6 @@
 // Defines core types and enums for the Secure Asset Vault contract
 
-use soroban_sdk::{contracttype, Address, String};
+use soroban_sdk::{contracttype, Address, BytesN, String};
 
 /// Enumeration of possible storage keys
 #[contracttype]
@@ -15,12 +15,35 @@ pub enum DataKey {
     LockedAssets(Address),
     /// Tracks withdrawal limits
     WithdrawalLimits(Address),
+    /// Escrowed delivery state by shipment id
+    Escrow(BytesN<32>),
     /// Tracks shipments by ID
     Shipment(u64),
     /// Tracks insurance deposits by shipment ID
     Insurance(u64),
     /// Tracks next shipment ID
     NextShipmentId,
+}
+
+/// Delivery escrow status used by timeout release flow
+#[contracttype]
+#[derive(PartialEq, Clone, Debug)]
+pub enum DeliveryStatus {
+    Pending,
+    Confirmed,
+    Disputed,
+    AutoReleased,
+}
+
+/// Delivery escrow record keyed by shipment id
+#[contracttype]
+#[derive(Clone)]
+pub struct DeliveryEscrow {
+    pub carrier: Address,
+    pub receiver: Address,
+    pub amount: i128,
+    pub auto_release_after: u64,
+    pub status: DeliveryStatus,
 }
 
 /// Represents a lockup configuration for assets

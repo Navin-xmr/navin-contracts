@@ -2,8 +2,8 @@
 
 extern crate std;
 
-use crate::{SecureAssetVault, SecureAssetVaultClient};
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use crate::{DeliveryStatus, SecureAssetVault, SecureAssetVaultClient};
+use soroban_sdk::{testutils::{Address as _, Ledger}, Address, BytesN, Env, String};
 
 #[test]
 fn test_initialization() {
@@ -139,6 +139,116 @@ fn test_multiple_withdrawals() {
 
     // Verify remaining balance
     assert_eq!(contract_client.get_balance(&user), 500);
+}
+
+fn setup_delivery_escrow(env: &Env, amount: i128, auto_release_after: u64) -> (
+    SecureAssetVaultClient<'_>,
+    Address,
+    Address,
+    Address,
+    BytesN<32>,
+) {
+    let admin = Address::generate(env);
+    let sender = Address::generate(env);
+    let carrier = Address::generate(env);
+    let receiver = Address::generate(env);
+    let shipment_id = BytesN::from_array(env, &[7; 32]);
+
+    let contract_client = SecureAssetVaultClient::new(env, &env.register(SecureAssetVault {}, ()));
+    env.mock_all_auths();
+
+    contract_client.initialize(&admin);
+    contract_client.deposit(&sender, &amount);
+    contract_client.create_delivery(
+        &shipment_id,
+        &sender,
+        &carrier,
+        &receiver,
+        &amount,
+        &auto_release_after,
+    );
+
+    (contract_client, sender, carrier, receiver, shipment_id)
+}
+
+#[test]
+fn test_check_auto_release_releases_after_timeout() {
+    let env = Env::default();
+    env.ledger().set_timestamp(100);
+
+    let (contract_client, _sender, carrier, _receiver, shipment_id) =
+        setup_delivery_escrow(&env, 500, 200);
+
+    env.ledger().set_timestamp(201);
+    assert_eq!(contract_client.check_auto_release(&shipment_id), true);
+    assert_eq!(contract_client.get_balance(&carrier), 500);
+
+    let delivery = contract_client.get_delivery(&shipment_id);
+    assert_eq!(delivery.status, DeliveryStatus::AutoReleased);
+}
+
+#[test]
+fn test_check_auto_release_early_no_release() {
+    let env = Env::default();
+    env.ledger().set_timestamp(100);
+
+    let (contract_client, _sender, carrier, _receiver, shipment_id) =
+        setup_delivery_escrow(&env, 500, 200);
+
+    env.ledger().set_timestamp(199);
+    assert_eq!(contract_client.check_auto_release(&shipment_id), false);
+    assert_eq!(contract_client.get_balance(&carrier), 0);
+
+    let delivery = contract_client.get_delivery(&shipment_id);
+    assert_eq!(delivery.status, DeliveryStatus::Pending);
+}
+
+#[test]
+fn test_check_auto_release_no_release_if_confirmed() {
+    let env = Env::default();
+    env.ledger().set_timestamp(100);
+
+    let (contract_client, _sender, carrier, receiver, shipment_id) =
+        setup_delivery_escrow(&env, 500, 200);
+
+    contract_client.confirm_delivery(&shipment_id, &receiver);
+    env.ledger().set_timestamp(300);
+    assert_eq!(contract_client.check_auto_release(&shipment_id), false);
+    assert_eq!(contract_client.get_balance(&carrier), 500);
+
+    let delivery = contract_client.get_delivery(&shipment_id);
+    assert_eq!(delivery.status, DeliveryStatus::Confirmed);
+}
+
+#[test]
+fn test_check_auto_release_no_release_if_disputed() {
+    let env = Env::default();
+    env.ledger().set_timestamp(100);
+
+    let (contract_client, _sender, carrier, receiver, shipment_id) =
+        setup_delivery_escrow(&env, 500, 200);
+
+    contract_client.dispute_delivery(&shipment_id, &receiver);
+    env.ledger().set_timestamp(300);
+    assert_eq!(contract_client.check_auto_release(&shipment_id), false);
+    assert_eq!(contract_client.get_balance(&carrier), 0);
+
+    let delivery = contract_client.get_delivery(&shipment_id);
+    assert_eq!(delivery.status, DeliveryStatus::Disputed);
+}
+
+#[test]
+fn test_check_auto_release_idempotent() {
+    let env = Env::default();
+    env.ledger().set_timestamp(100);
+
+    let (contract_client, _sender, carrier, _receiver, shipment_id) =
+        setup_delivery_escrow(&env, 500, 200);
+
+    env.ledger().set_timestamp(201);
+    assert_eq!(contract_client.check_auto_release(&shipment_id), true);
+    assert_eq!(contract_client.check_auto_release(&shipment_id), false);
+    assert_eq!(contract_client.get_balance(&carrier), 500);
 }
 
 #[test]
