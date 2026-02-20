@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, Address, Env, Error, String, Vec};
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Error, String, Symbol, Vec};
 
 mod storage;
 mod test;

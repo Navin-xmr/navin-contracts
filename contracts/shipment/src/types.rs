@@ -1,6 +1,5 @@
 use soroban_sdk::{contracttype, Address, BytesN};
 
-/// Storage keys for the shipment contract
 #[contracttype]
 pub enum DataKey {
     /// The contract admin address

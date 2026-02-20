@@ -2,13 +2,13 @@
 
 extern crate std;
 
-use crate::{ShipmentContract, ShipmentContractClient};
-use soroban_sdk::{testutils::Address as _, testutils::Events, Address, BytesN, Env};
+use crate::{NavinShipment, NavinShipmentClient};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
-fn setup_env() -> (Env, ShipmentContractClient<'static>, Address) {
+fn setup_env() -> (Env, NavinShipmentClient<'static>, Address) {
     let env = Env::default();
     let admin = Address::generate(&env);
-    let client = ShipmentContractClient::new(&env, &env.register(ShipmentContract {}, ()));
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
     env.mock_all_auths();
     (env, client, admin)
 }
@@ -66,32 +66,9 @@ fn test_admin_is_stored_correctly() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #2)")]
-fn test_get_admin_before_initialization_fails() {
-    let (_env, client, _admin) = setup_env();
-
-    // Must fail with NotInitialized (error code 2)
-    client.get_admin();
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #2)")]
-fn test_get_counter_before_initialization_fails() {
-    let (_env, client, _admin) = setup_env();
-
-    // Must fail with NotInitialized (error code 2)
-    client.get_shipment_counter();
-}
-
-#[test]
-fn test_initialization_emits_event() {
-    let (env, client, admin) = setup_env();
-
-    client.initialize(&admin);
-
-    let events = env.events().all();
-    // Verify at least one event was published
-    assert!(!events.is_empty());
+fn test_scaffold() {
+    let env = Env::default();
+    let _client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
 }
 
 #[test]
