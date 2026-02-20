@@ -1,6 +1,7 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, BytesN, Env, Error, Symbol};
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, BytesN, Env, Symbol};
+use soroban_sdk::Error as SdkError;
 
 mod errors;
 mod events;
@@ -21,14 +22,14 @@ pub enum NavinError {
     ShipmentNotFound,
 }
 
-impl From<NavinError> for Error {
+impl From<NavinError> for SdkError {
     fn from(err: NavinError) -> Self {
         match err {
-            NavinError::AlreadyInitialized => Error::from_contract_error(1),
-            NavinError::NotInitialized => Error::from_contract_error(2),
-            NavinError::Unauthorized => Error::from_contract_error(3),
-            NavinError::CounterOverflow => Error::from_contract_error(4),
-            NavinError::ShipmentNotFound => Error::from_contract_error(5),
+            NavinError::AlreadyInitialized => SdkError::from_contract_error(1),
+            NavinError::NotInitialized => SdkError::from_contract_error(2),
+            NavinError::Unauthorized => SdkError::from_contract_error(3),
+            NavinError::CounterOverflow => SdkError::from_contract_error(4),
+            NavinError::ShipmentNotFound => SdkError::from_contract_error(5),
         }
     }
 }
@@ -36,14 +37,14 @@ impl From<NavinError> for Error {
 #[contract]
 pub struct NavinShipment;
 
-fn require_initialized(env: &Env) -> Result<(), Error> {
+fn require_initialized(env: &Env) -> Result<(), SdkError> {
     if !storage::is_initialized(env) {
         return Err(NavinError::NotInitialized.into());
     }
     Ok(())
 }
 
-fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), Error> {
+fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), SdkError> {
     if !storage::is_initialized(env) {
         return Err(NavinError::NotInitialized.into());
     }
@@ -60,10 +61,10 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), Error> {
 }
 
 #[contractimpl]
-impl ShipmentContract {
+impl NavinShipment {
     /// Initialize the contract with an admin address.
     /// Can only be called once. Sets the admin and shipment counter to 0.
-    pub fn initialize(env: Env, admin: Address) -> Result<(), Error> {
+    pub fn initialize(env: Env, admin: Address) -> Result<(), SdkError> {
         if storage::is_initialized(&env) {
             return Err(NavinError::AlreadyInitialized.into());
         }
@@ -79,19 +80,19 @@ impl ShipmentContract {
     }
 
     /// Get the contract admin address
-    pub fn get_admin(env: Env) -> Result<Address, Error> {
+    pub fn get_admin(env: Env) -> Result<Address, SdkError> {
         require_initialized(&env)?;
         Ok(storage::get_admin(&env))
     }
 
     /// Get the current shipment counter
-    pub fn get_shipment_counter(env: Env) -> Result<u64, Error> {
+    pub fn get_shipment_counter(env: Env) -> Result<u64, SdkError> {
         require_initialized(&env)?;
         Ok(storage::get_shipment_counter(&env))
     }
 
     /// Allow admin to grant Company role.
-    pub fn add_company(env: Env, admin: Address, company: Address) -> Result<(), Error> {
+    pub fn add_company(env: Env, admin: Address, company: Address) -> Result<(), SdkError> {
         require_initialized(&env)?;
         admin.require_auth();
 
@@ -110,7 +111,7 @@ impl ShipmentContract {
         receiver: Address,
         carrier: Address,
         data_hash: BytesN<32>,
-    ) -> Result<u64, Error> {
+    ) -> Result<u64, SdkError> {
         require_initialized(&env)?;
         sender.require_auth();
         require_role(&env, &sender, Role::Company)?;
@@ -143,7 +144,7 @@ impl ShipmentContract {
     }
 
     /// Retrieve shipment details by ID.
-    pub fn get_shipment(env: Env, shipment_id: u64) -> Result<Shipment, Error> {
+    pub fn get_shipment(env: Env, shipment_id: u64) -> Result<Shipment, SdkError> {
         require_initialized(&env)?;
         storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound.into())
     }

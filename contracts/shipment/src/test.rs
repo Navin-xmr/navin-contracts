@@ -2,13 +2,13 @@
 
 extern crate std;
 
-use crate::{ShipmentContract, ShipmentContractClient};
-use soroban_sdk::{testutils::Address as _, testutils::Events, Address, BytesN, Env};
+use crate::{NavinShipment, NavinShipmentClient};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
-fn setup_env() -> (Env, ShipmentContractClient<'static>, Address) {
+fn setup_env() -> (Env, NavinShipmentClient<'static>, Address) {
     let env = Env::default();
     let admin = Address::generate(&env);
-    let client = ShipmentContractClient::new(&env, &env.register(ShipmentContract {}, ()));
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
     env.mock_all_auths();
     (env, client, admin)
 }
