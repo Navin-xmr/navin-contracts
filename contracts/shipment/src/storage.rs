@@ -47,3 +47,33 @@ pub fn is_carrier_whitelisted(env: &Env, company: &Address, carrier: &Address) -
     let key = DataKey::CarrierWhitelist(company.clone(), carrier.clone());
     env.storage().instance().get(&key).unwrap_or(false)
 }
+
+
+/// Grant Company role to an address
+pub fn set_company_role(env: &Env, company: &Address) {
+    env.storage()
+        .instance()
+        .set(&DataKey::Company(company.clone()), &true);
+}
+
+/// Check whether an address has Company role
+pub fn has_company_role(env: &Env, address: &Address) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::Company(address.clone()))
+        .unwrap_or(false)
+}
+
+/// Get shipment by ID
+pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
+    env.storage()
+        .instance()
+        .get(&DataKey::Shipment(shipment_id))
+}
+
+/// Persist shipment by ID
+pub fn set_shipment(env: &Env, shipment: &Shipment) {
+    env.storage()
+        .instance()
+        .set(&DataKey::Shipment(shipment.id), shipment);
+}

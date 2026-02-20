@@ -25,6 +25,26 @@ pub enum DataKey {
     NextShipmentId,
     /// Tracks carriers
     Carriers,
+    /// Tracks actual shipment data from batch creation
+    BatchShipment(u64),
+}
+
+/// Represents a lockup configuration for assets
+#[contracttype]
+#[derive(Clone)]
+pub struct AssetLock {
+    pub amount: i128,        // Locked amount
+    pub release_time: u64,   // Timestamp when assets can be unlocked
+    pub description: String, // Purpose of the lock
+}
+
+/// Represents input data for a new shipment
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ShipmentInput {
+    pub receiver: Address,
+    pub carrier: Address,
+    pub data_hash: BytesN<32>,
 }
 
 /// Delivery escrow status used by timeout release flow
@@ -48,13 +68,22 @@ pub struct DeliveryEscrow {
     pub status: DeliveryStatus,
 }
 
-/// Represents a lockup configuration for assets
+/// Represents a stored batch shipment
 #[contracttype]
-#[derive(Clone)]
-pub struct AssetLock {
-    pub amount: i128,        // Locked amount
-    pub release_time: u64,   // Timestamp when assets can be unlocked
-    pub description: String, // Purpose of the lock
+#[derive(Clone, Debug)]
+pub struct BatchShipment {
+    pub id: u64,
+    pub receiver: Address,
+    pub carrier: Address,
+    pub data_hash: BytesN<32>,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub enum ShipmentError {
+    BatchTooLarge,
+    InvalidShipment,
 }
 
 /// Tracks permission levels for different roles
