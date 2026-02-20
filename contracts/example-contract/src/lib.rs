@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, Address, Env, Error, String, Vec};
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Error, String, Symbol, Vec};
 
 mod storage;
 mod test;
@@ -18,6 +18,9 @@ pub enum VaultError {
     Unauthorized,
     InvalidAmount,
     AssetLocked,
+    EscrowNotFound,
+    EscrowAlreadyExists,
+    InvalidEscrowState,
     ShipmentNotFound,
     InsuranceAlreadyClaimed,
     InvalidShipmentStatus,
@@ -35,7 +38,9 @@ impl From<VaultError> for Error {
             VaultError::ShipmentNotFound => Error::from_contract_error(5),
             VaultError::InsuranceAlreadyClaimed => Error::from_contract_error(6),
             VaultError::InvalidShipmentStatus => Error::from_contract_error(7),
-            VaultError::InvalidStatus => Error::from_contract_error(8),
+            VaultError::EscrowNotFound => Error::from_contract_error(8),
+            VaultError::EscrowAlreadyExists => Error::from_contract_error(9),
+            VaultError::InvalidEscrowState => Error::from_contract_error(10),
         }
     }
 }
@@ -163,6 +168,146 @@ impl SecureAssetVault {
     /// Retrieve current balance
     pub fn get_balance(env: Env, address: Address) -> i128 {
         storage::get_balance(&env, &address)
+    }
+
+    /// Create delivery escrow with auto-release timeout.
+    pub fn create_delivery(
+        env: Env,
+        shipment_id: BytesN<32>,
+        sender: Address,
+        carrier: Address,
+        receiver: Address,
+        amount: i128,
+        auto_release_after: u64,
+    ) -> Result<(), Error> {
+        sender.require_auth();
+
+        if amount <= 0 || auto_release_after <= env.ledger().timestamp() {
+            return Err(VaultError::InvalidAmount.into());
+        }
+
+        if env.storage().instance().has(&DataKey::Escrow(shipment_id.clone())) {
+            return Err(VaultError::EscrowAlreadyExists.into());
+        }
+
+        let sender_balance = storage::get_balance(&env, &sender);
+        if sender_balance < amount {
+            return Err(VaultError::InsufficientFunds.into());
+        }
+
+        storage::update_balance(&env, &sender, sender_balance - amount);
+        let escrow = DeliveryEscrow {
+            carrier,
+            receiver,
+            amount,
+            auto_release_after,
+            status: DeliveryStatus::Pending,
+        };
+        env.storage()
+            .instance()
+            .set(&DataKey::Escrow(shipment_id), &escrow);
+
+        Ok(())
+    }
+
+    /// Confirm delivery and release escrow to carrier.
+    pub fn confirm_delivery(
+        env: Env,
+        shipment_id: BytesN<32>,
+        receiver: Address,
+    ) -> Result<(), Error> {
+        receiver.require_auth();
+
+        let mut escrow: DeliveryEscrow = env
+            .storage()
+            .instance()
+            .get(&DataKey::Escrow(shipment_id.clone()))
+            .ok_or(VaultError::EscrowNotFound)?;
+
+        if escrow.receiver != receiver {
+            return Err(VaultError::Unauthorized.into());
+        }
+        if escrow.status != DeliveryStatus::Pending {
+            return Err(VaultError::InvalidEscrowState.into());
+        }
+
+        let carrier_balance = storage::get_balance(&env, &escrow.carrier);
+        storage::update_balance(&env, &escrow.carrier, carrier_balance + escrow.amount);
+        escrow.status = DeliveryStatus::Confirmed;
+        env.storage()
+            .instance()
+            .set(&DataKey::Escrow(shipment_id), &escrow);
+
+        Ok(())
+    }
+
+    /// Dispute delivery and keep escrow locked.
+    pub fn dispute_delivery(
+        env: Env,
+        shipment_id: BytesN<32>,
+        receiver: Address,
+    ) -> Result<(), Error> {
+        receiver.require_auth();
+
+        let mut escrow: DeliveryEscrow = env
+            .storage()
+            .instance()
+            .get(&DataKey::Escrow(shipment_id.clone()))
+            .ok_or(VaultError::EscrowNotFound)?;
+
+        if escrow.receiver != receiver {
+            return Err(VaultError::Unauthorized.into());
+        }
+        if escrow.status != DeliveryStatus::Pending {
+            return Err(VaultError::InvalidEscrowState.into());
+        }
+
+        escrow.status = DeliveryStatus::Disputed;
+        env.storage()
+            .instance()
+            .set(&DataKey::Escrow(shipment_id), &escrow);
+
+        Ok(())
+    }
+
+    /// Check if escrow timer is expired and auto-release if eligible.
+    /// Returns true when release happens, false otherwise.
+    pub fn check_auto_release(env: Env, shipment_id: BytesN<32>) -> Result<bool, Error> {
+        let mut escrow: DeliveryEscrow = env
+            .storage()
+            .instance()
+            .get(&DataKey::Escrow(shipment_id.clone()))
+            .ok_or(VaultError::EscrowNotFound)?;
+
+        if escrow.status != DeliveryStatus::Pending {
+            return Ok(false);
+        }
+        let now = env.ledger().timestamp();
+        if now < escrow.auto_release_after {
+            return Ok(false);
+        }
+
+        let carrier_balance = storage::get_balance(&env, &escrow.carrier);
+        storage::update_balance(&env, &escrow.carrier, carrier_balance + escrow.amount);
+        escrow.status = DeliveryStatus::AutoReleased;
+        env.storage()
+            .instance()
+            .set(&DataKey::Escrow(shipment_id.clone()), &escrow);
+
+        env.events().publish(
+            (Symbol::new(&env, "escrow_auto_released"), shipment_id),
+            (escrow.carrier, escrow.amount, now),
+        );
+
+        Ok(true)
+    }
+
+    /// Retrieve delivery escrow details.
+    pub fn get_delivery(env: Env, shipment_id: BytesN<32>) -> Result<DeliveryEscrow, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Escrow(shipment_id))
+            .ok_or(VaultError::EscrowNotFound.into())
     }
 
     /// Create a new shipment with escrow
