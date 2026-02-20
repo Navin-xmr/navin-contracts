@@ -12,24 +12,28 @@ mod types;
 pub use errors::*;
 pub use types::*;
 
-/// Error types for the shipment contract
-#[derive(Clone, Debug)]
-pub enum NavinError {
-    AlreadyInitialized,
-    NotInitialized,
-    Unauthorized,
-    CounterOverflow,
-    ShipmentNotFound,
+#[derive(Clone, Copy)]
+pub enum Role {
+    Company,
 }
 
-impl From<NavinError> for SdkError {
-    fn from(err: NavinError) -> Self {
-        match err {
-            NavinError::AlreadyInitialized => SdkError::from_contract_error(1),
-            NavinError::NotInitialized => SdkError::from_contract_error(2),
-            NavinError::Unauthorized => SdkError::from_contract_error(3),
-            NavinError::CounterOverflow => SdkError::from_contract_error(4),
-            NavinError::ShipmentNotFound => SdkError::from_contract_error(5),
+fn require_initialized(env: &Env) -> Result<(), SdkError> {
+    if !storage::is_initialized(env) {
+        return Err(SdkError::from_contract_error(2));
+    }
+    Ok(())
+}
+
+fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), SdkError> {
+    require_initialized(env)?;
+
+    match role {
+        Role::Company => {
+            if storage::has_company_role(env, address) {
+                Ok(())
+            } else {
+                Err(SdkError::from_contract_error(3))
+            }
         }
     }
 }
@@ -37,36 +41,13 @@ impl From<NavinError> for SdkError {
 #[contract]
 pub struct NavinShipment;
 
-fn require_initialized(env: &Env) -> Result<(), SdkError> {
-    if !storage::is_initialized(env) {
-        return Err(NavinError::NotInitialized.into());
-    }
-    Ok(())
-}
-
-fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), SdkError> {
-    if !storage::is_initialized(env) {
-        return Err(NavinError::NotInitialized.into());
-    }
-
-    match role {
-        Role::Company => {
-            if storage::has_company_role(env, address) {
-                Ok(())
-            } else {
-                Err(NavinError::Unauthorized.into())
-            }
-        }
-    }
-}
-
 #[contractimpl]
 impl NavinShipment {
     /// Initialize the contract with an admin address.
     /// Can only be called once. Sets the admin and shipment counter to 0.
     pub fn initialize(env: Env, admin: Address) -> Result<(), SdkError> {
         if storage::is_initialized(&env) {
-            return Err(NavinError::AlreadyInitialized.into());
+            return Err(SdkError::from_contract_error(1));
         }
 
         storage::set_admin(&env, &admin);
@@ -91,13 +72,64 @@ impl NavinShipment {
         Ok(storage::get_shipment_counter(&env))
     }
 
+    /// Add a carrier to a company's whitelist
+    /// Only the company can add carriers to their own whitelist
+    pub fn add_carrier_to_whitelist(
+        env: Env,
+        company: Address,
+        carrier: Address,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        company.require_auth();
+
+        storage::add_carrier_to_whitelist(&env, &company, &carrier);
+
+        env.events().publish(
+            (symbol_short!("add_wl"),),
+            (company.clone(), carrier.clone()),
+        );
+
+        Ok(())
+    }
+
+    /// Remove a carrier from a company's whitelist
+    /// Only the company can remove carriers from their own whitelist
+    pub fn remove_carrier_from_whitelist(
+        env: Env,
+        company: Address,
+        carrier: Address,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        company.require_auth();
+
+        storage::remove_carrier_from_whitelist(&env, &company, &carrier);
+
+        env.events().publish(
+            (symbol_short!("rm_wl"),),
+            (company.clone(), carrier.clone()),
+        );
+
+        Ok(())
+    }
+
+    /// Check if a carrier is whitelisted for a company
+    pub fn is_carrier_whitelisted(
+        env: Env,
+        company: Address,
+        carrier: Address,
+    ) -> Result<bool, SdkError> {
+        require_initialized(&env)?;
+
+        Ok(storage::is_carrier_whitelisted(&env, &company, &carrier))
+    }
+
     /// Allow admin to grant Company role.
     pub fn add_company(env: Env, admin: Address, company: Address) -> Result<(), SdkError> {
         require_initialized(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized.into());
+            return Err(SdkError::from_contract_error(3));
         }
 
         storage::set_company_role(&env, &company);
@@ -118,7 +150,7 @@ impl NavinShipment {
 
         let shipment_id = storage::get_shipment_counter(&env)
             .checked_add(1)
-            .ok_or(NavinError::CounterOverflow)?;
+            .ok_or(SdkError::from_contract_error(5))?;
         let now = env.ledger().timestamp();
 
         let shipment = Shipment {
@@ -146,6 +178,6 @@ impl NavinShipment {
     /// Retrieve shipment details by ID.
     pub fn get_shipment(env: Env, shipment_id: u64) -> Result<Shipment, SdkError> {
         require_initialized(&env)?;
-        storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound.into())
+        storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))
     }
 }

@@ -10,6 +10,8 @@ pub enum DataKey {
     Company(Address),
     /// Individual shipment data keyed by ID
     Shipment(u64),
+    /// Carrier whitelist for a company - (company, carrier) -> bool
+    CarrierWhitelist(Address, Address),
 }
 
 /// Supported user roles

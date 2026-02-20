@@ -30,6 +30,23 @@ pub fn set_shipment_counter(env: &Env, counter: u64) {
         .instance()
         .set(&DataKey::ShipmentCounter, &counter);
 }
+/// Add a carrier to a company's whitelist
+pub fn add_carrier_to_whitelist(env: &Env, company: &Address, carrier: &Address) {
+    let key = DataKey::CarrierWhitelist(company.clone(), carrier.clone());
+    env.storage().instance().set(&key, &true);
+}
+
+/// Remove a carrier from a company's whitelist
+pub fn remove_carrier_from_whitelist(env: &Env, company: &Address, carrier: &Address) {
+    let key = DataKey::CarrierWhitelist(company.clone(), carrier.clone());
+    env.storage().instance().remove(&key);
+}
+
+/// Check if a carrier is whitelisted for a company
+pub fn is_carrier_whitelisted(env: &Env, company: &Address, carrier: &Address) -> bool {
+    let key = DataKey::CarrierWhitelist(company.clone(), carrier.clone());
+    env.storage().instance().get(&key).unwrap_or(false)
+}
 
 /// Grant Company role to an address
 pub fn set_company_role(env: &Env, company: &Address) {
