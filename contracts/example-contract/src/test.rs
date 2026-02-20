@@ -250,3 +250,107 @@ fn test_check_auto_release_idempotent() {
     assert_eq!(contract_client.check_auto_release(&shipment_id), false);
     assert_eq!(contract_client.get_balance(&carrier), 500);
 }
+
+#[test]
+fn test_deposit_insurance() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    let contract_client = SecureAssetVaultClient::new(&env, &env.register(SecureAssetVault {}, ()));
+
+    env.mock_all_auths();
+
+    contract_client.initialize(&admin);
+
+    let shipment_id = contract_client.create_shipment(&company, &receiver, &10000);
+    contract_client.deposit_insurance(&company, &shipment_id, &2000);
+
+    let shipment = contract_client.get_shipment(&shipment_id);
+    assert_eq!(shipment.insurance_amount, 2000);
+    assert_eq!(shipment.escrow_amount, 10000);
+}
+
+#[test]
+fn test_claim_insurance_after_dispute() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    let contract_client = SecureAssetVaultClient::new(&env, &env.register(SecureAssetVault {}, ()));
+
+    env.mock_all_auths();
+
+    contract_client.initialize(&admin);
+
+    let shipment_id = contract_client.create_shipment(&company, &receiver, &10000);
+    contract_client.deposit_insurance(&company, &shipment_id, &2000);
+    contract_client.mark_disputed(&admin, &shipment_id);
+    contract_client.claim_insurance(&admin, &shipment_id, &receiver);
+
+    let shipment = contract_client.get_shipment(&shipment_id);
+    assert_eq!(shipment.insurance_amount, 2000);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_claim_insurance_twice_fails() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    let contract_client = SecureAssetVaultClient::new(&env, &env.register(SecureAssetVault {}, ()));
+
+    env.mock_all_auths();
+
+    contract_client.initialize(&admin);
+
+    let shipment_id = contract_client.create_shipment(&company, &receiver, &10000);
+    contract_client.deposit_insurance(&company, &shipment_id, &2000);
+    contract_client.mark_disputed(&admin, &shipment_id);
+    contract_client.claim_insurance(&admin, &shipment_id, &receiver);
+    contract_client.claim_insurance(&admin, &shipment_id, &receiver);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_unauthorized_claim_fails() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let unauthorized = Address::generate(&env);
+
+    let contract_client = SecureAssetVaultClient::new(&env, &env.register(SecureAssetVault {}, ()));
+
+    env.mock_all_auths();
+
+    contract_client.initialize(&admin);
+
+    let shipment_id = contract_client.create_shipment(&company, &receiver, &10000);
+    contract_client.deposit_insurance(&company, &shipment_id, &2000);
+    contract_client.mark_disputed(&admin, &shipment_id);
+    contract_client.claim_insurance(&unauthorized, &shipment_id, &receiver);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")]
+fn test_claim_insurance_without_dispute_fails() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    let contract_client = SecureAssetVaultClient::new(&env, &env.register(SecureAssetVault {}, ()));
+
+    env.mock_all_auths();
+
+    contract_client.initialize(&admin);
+
+    let shipment_id = contract_client.create_shipment(&company, &receiver, &10000);
+    contract_client.deposit_insurance(&company, &shipment_id, &2000);
+    contract_client.claim_insurance(&admin, &shipment_id, &receiver);
+}

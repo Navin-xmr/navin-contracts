@@ -17,6 +17,12 @@ pub enum DataKey {
     WithdrawalLimits(Address),
     /// Escrowed delivery state by shipment id
     Escrow(BytesN<32>),
+    /// Tracks shipments by ID
+    Shipment(u64),
+    /// Tracks insurance deposits by shipment ID
+    Insurance(u64),
+    /// Tracks next shipment ID
+    NextShipmentId,
 }
 
 /// Delivery escrow status used by timeout release flow
@@ -79,4 +85,38 @@ pub enum TransactionType {
     Lock,
     Unlock,
     Transfer,
+    InsuranceDeposit,
+    InsuranceClaim,
+}
+
+/// Represents a shipment with insurance
+#[contracttype]
+#[derive(Clone)]
+pub struct Shipment {
+    pub id: u64,
+    pub company: Address,
+    pub receiver: Address,
+    pub escrow_amount: i128,
+    pub insurance_amount: i128,
+    pub status: ShipmentStatus,
+}
+
+/// Shipment status
+#[contracttype]
+#[derive(Clone, PartialEq)]
+pub enum ShipmentStatus {
+    Active,
+    Completed,
+    Disputed,
+    InsuranceClaimed,
+}
+
+/// Insurance deposit record
+#[contracttype]
+#[derive(Clone)]
+pub struct InsuranceDeposit {
+    pub shipment_id: u64,
+    pub depositor: Address,
+    pub amount: i128,
+    pub claimed: bool,
 }
