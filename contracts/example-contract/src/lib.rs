@@ -50,6 +50,7 @@ impl From<ShipmentError> for Error {
     fn from(err: ShipmentError) -> Self {
         match err {
             ShipmentError::BatchTooLarge => Error::from_contract_error(5),
+            ShipmentError::InvalidShipment => Error::from_contract_error(6),
         }
     }
 }
@@ -91,7 +92,11 @@ impl SecureAssetVault {
 
         for shipment_input in shipments.iter() {
             // Atomic validation: In Soroban, any error or panic will rollback the entire transaction.
-            // We increment the count and save each shipment.
+            // Requirement check: Invalid input in batch rejects entire batch
+            if shipment_input.receiver == shipment_input.carrier {
+                return Err(ShipmentError::InvalidShipment.into());
+            }
+
             let id = storage::get_next_shipment_id(&env);
             let shipment = BatchShipment {
                 id,

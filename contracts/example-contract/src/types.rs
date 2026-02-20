@@ -83,6 +83,7 @@ pub struct BatchShipment {
 #[derive(Clone, Debug)]
 pub enum ShipmentError {
     BatchTooLarge,
+    InvalidShipment,
 }
 
 /// Tracks permission levels for different roles
