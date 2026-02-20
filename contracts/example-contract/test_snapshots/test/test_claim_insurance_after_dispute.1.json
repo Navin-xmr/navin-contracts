@@ -378,6 +378,14 @@
                             },
                             {
                               "key": {
+                                "symbol": "data_hash"
+                              },
+                              "val": {
+                                "string": ""
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "escrow_amount"
                               },
                               "val": {
@@ -424,6 +432,14 @@
                                     "symbol": "InsuranceClaimed"
                                   }
                                 ]
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "updated_at"
+                              },
+                              "val": {
+                                "u64": 0
                               }
                             }
                           ]

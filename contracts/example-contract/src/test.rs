@@ -244,3 +244,162 @@ fn test_claim_insurance_without_dispute_fails() {
     contract_client.deposit_insurance(&company, &shipment_id, &2000);
     contract_client.claim_insurance(&admin, &shipment_id, &receiver);
 }
+
+#[test]
+fn test_update_status_valid_transition() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    let contract_client = SecureAssetVaultClient::new(&env, &env.register(SecureAssetVault {}, ()));
+
+    env.mock_all_auths();
+
+    contract_client.initialize(&admin);
+    contract_client.add_carrier(&admin, &carrier);
+
+    let shipment_id = contract_client.create_shipment(&company, &receiver, &10000);
+
+    use crate::ShipmentStatus;
+    contract_client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &String::from_str(&env, "hash123"),
+    );
+
+    let shipment = contract_client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::InTransit);
+    assert_eq!(shipment.data_hash, String::from_str(&env, "hash123"));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")]
+fn test_update_status_invalid_transition() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    let contract_client = SecureAssetVaultClient::new(&env, &env.register(SecureAssetVault {}, ()));
+
+    env.mock_all_auths();
+
+    contract_client.initialize(&admin);
+    contract_client.add_carrier(&admin, &carrier);
+
+    let shipment_id = contract_client.create_shipment(&company, &receiver, &10000);
+
+    use crate::ShipmentStatus;
+    contract_client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &String::from_str(&env, "hash123"),
+    );
+
+    contract_client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::Created,
+        &String::from_str(&env, "hash456"),
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_update_status_unauthorized() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let unauthorized = Address::generate(&env);
+
+    let contract_client = SecureAssetVaultClient::new(&env, &env.register(SecureAssetVault {}, ()));
+
+    env.mock_all_auths();
+
+    contract_client.initialize(&admin);
+
+    let shipment_id = contract_client.create_shipment(&company, &receiver, &10000);
+
+    use crate::ShipmentStatus;
+    contract_client.update_status(
+        &unauthorized,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &String::from_str(&env, "hash123"),
+    );
+}
+
+#[test]
+fn test_update_status_admin_can_update() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    let contract_client = SecureAssetVaultClient::new(&env, &env.register(SecureAssetVault {}, ()));
+
+    env.mock_all_auths();
+
+    contract_client.initialize(&admin);
+
+    let shipment_id = contract_client.create_shipment(&company, &receiver, &10000);
+
+    use crate::ShipmentStatus;
+    contract_client.update_status(
+        &admin,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &String::from_str(&env, "hash_admin"),
+    );
+
+    let shipment = contract_client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::InTransit);
+    assert_eq!(shipment.data_hash, String::from_str(&env, "hash_admin"));
+}
+
+#[test]
+fn test_update_status_full_workflow() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    let contract_client = SecureAssetVaultClient::new(&env, &env.register(SecureAssetVault {}, ()));
+
+    env.mock_all_auths();
+
+    contract_client.initialize(&admin);
+    contract_client.add_carrier(&admin, &carrier);
+
+    let shipment_id = contract_client.create_shipment(&company, &receiver, &10000);
+
+    use crate::ShipmentStatus;
+
+    contract_client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &String::from_str(&env, "gps_data_1"),
+    );
+
+    let shipment = contract_client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::InTransit);
+
+    contract_client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::Delivered,
+        &String::from_str(&env, "final_location"),
+    );
+
+    let shipment = contract_client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Delivered);
+    assert_eq!(shipment.data_hash, String::from_str(&env, "final_location"));
+}

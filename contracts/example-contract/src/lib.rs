@@ -21,6 +21,7 @@ pub enum VaultError {
     ShipmentNotFound,
     InsuranceAlreadyClaimed,
     InvalidShipmentStatus,
+    InvalidStatus,
 }
 
 // Implement conversion for VaultError to Soroban Error
@@ -34,6 +35,7 @@ impl From<VaultError> for Error {
             VaultError::ShipmentNotFound => Error::from_contract_error(5),
             VaultError::InsuranceAlreadyClaimed => Error::from_contract_error(6),
             VaultError::InvalidShipmentStatus => Error::from_contract_error(7),
+            VaultError::InvalidStatus => Error::from_contract_error(8),
         }
     }
 }
@@ -188,7 +190,9 @@ impl SecureAssetVault {
             receiver,
             escrow_amount,
             insurance_amount: 0,
-            status: ShipmentStatus::Active,
+            status: ShipmentStatus::Created,
+            data_hash: String::from_str(&env, ""),
+            updated_at: env.ledger().timestamp(),
         };
 
         env.storage()
@@ -344,4 +348,83 @@ impl SecureAssetVault {
             .get(&DataKey::Shipment(shipment_id))
             .ok_or(VaultError::ShipmentNotFound.into())
     }
+
+    /// Add a carrier (only callable by admins)
+    pub fn add_carrier(env: Env, admin: Address, carrier: Address) -> Result<(), Error> {
+        admin.require_auth();
+
+        if !storage::is_admin(&env, &admin) {
+            return Err(VaultError::Unauthorized.into());
+        }
+
+        let mut carriers: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::Carriers)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        if !carriers.contains(&carrier) {
+            carriers.push_back(carrier);
+            env.storage().instance().set(&DataKey::Carriers, &carriers);
+        }
+
+        Ok(())
+    }
+
+    /// Update shipment status with data hash
+    pub fn update_status(
+        env: Env,
+        caller: Address,
+        shipment_id: u64,
+        new_status: ShipmentStatus,
+        data_hash: String,
+    ) -> Result<(), Error> {
+        caller.require_auth();
+
+        let is_carrier = storage::is_carrier(&env, &caller);
+        let is_admin = storage::is_admin(&env, &caller);
+
+        if !is_carrier && !is_admin {
+            return Err(VaultError::Unauthorized.into());
+        }
+
+        let mut shipment: Shipment = env
+            .storage()
+            .instance()
+            .get(&DataKey::Shipment(shipment_id))
+            .ok_or(VaultError::ShipmentNotFound)?;
+
+        let old_status = shipment.status.clone();
+
+        if !is_valid_transition(&old_status, &new_status) {
+            return Err(VaultError::InvalidStatus.into());
+        }
+
+        shipment.status = new_status.clone();
+        shipment.data_hash = data_hash.clone();
+        shipment.updated_at = env.ledger().timestamp();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::Shipment(shipment_id), &shipment);
+
+        env.events().publish(
+            (String::from_str(&env, "status_updated"),),
+            (shipment_id, old_status, new_status, data_hash),
+        );
+
+        Ok(())
+    }
+}
+
+fn is_valid_transition(old: &ShipmentStatus, new: &ShipmentStatus) -> bool {
+    matches!(
+        (old, new),
+        (ShipmentStatus::Created, ShipmentStatus::InTransit)
+            | (ShipmentStatus::InTransit, ShipmentStatus::Delivered)
+            | (ShipmentStatus::Created, ShipmentStatus::Disputed)
+            | (ShipmentStatus::InTransit, ShipmentStatus::Disputed)
+            | (ShipmentStatus::Active, ShipmentStatus::Completed)
+            | (ShipmentStatus::Active, ShipmentStatus::Disputed)
+    )
 }
