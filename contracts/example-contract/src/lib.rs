@@ -41,6 +41,7 @@ impl From<VaultError> for Error {
             VaultError::EscrowNotFound => Error::from_contract_error(8),
             VaultError::EscrowAlreadyExists => Error::from_contract_error(9),
             VaultError::InvalidEscrowState => Error::from_contract_error(10),
+            VaultError::InvalidStatus => Error::from_contract_error(11),
         }
     }
 }
@@ -233,7 +234,11 @@ impl SecureAssetVault {
             return Err(VaultError::InvalidAmount.into());
         }
 
-        if env.storage().instance().has(&DataKey::Escrow(shipment_id.clone())) {
+        if env
+            .storage()
+            .instance()
+            .has(&DataKey::Escrow(shipment_id.clone()))
+        {
             return Err(VaultError::EscrowAlreadyExists.into());
         }
 
