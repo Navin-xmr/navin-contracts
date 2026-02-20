@@ -45,6 +45,15 @@ impl From<VaultError> for Error {
     }
 }
 
+// Implement conversion for ShipmentError to Soroban Error
+impl From<ShipmentError> for Error {
+    fn from(err: ShipmentError) -> Self {
+        match err {
+            ShipmentError::BatchTooLarge => Error::from_contract_error(5),
+        }
+    }
+}
+
 #[contract]
 pub struct SecureAssetVault;
 
@@ -63,6 +72,39 @@ impl SecureAssetVault {
         env.storage().instance().set(&DataKey::Admins, &admins);
 
         Ok(())
+    }
+
+    pub fn create_shipments_batch(
+        env: Env,
+        company: Address,
+        shipments: Vec<ShipmentInput>,
+    ) -> Result<Vec<u64>, Error> {
+        company.require_auth();
+
+        // Limit batch to 10 shipments max
+        if shipments.len() > 10 {
+            return Err(ShipmentError::BatchTooLarge.into());
+        }
+
+        let mut ids = Vec::new(&env);
+        let timestamp = env.ledger().timestamp();
+
+        for shipment_input in shipments.iter() {
+            // Atomic validation: In Soroban, any error or panic will rollback the entire transaction.
+            // We increment the count and save each shipment.
+            let id = storage::get_next_shipment_id(&env);
+            let shipment = BatchShipment {
+                id,
+                receiver: shipment_input.receiver.clone(),
+                carrier: shipment_input.carrier.clone(),
+                data_hash: shipment_input.data_hash.clone(),
+                timestamp,
+            };
+            storage::save_batch_shipment(&env, &shipment);
+            ids.push_back(id);
+        }
+
+        Ok(ids)
     }
 
     /// Deposit assets into the vault
