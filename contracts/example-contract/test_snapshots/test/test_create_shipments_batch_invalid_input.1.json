@@ -128,10 +128,10 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Shipment"
+                              "symbol": "BatchShipment"
                             },
                             {
-                              "u32": 1
+                              "u64": 1
                             }
                           ]
                         },
@@ -158,7 +158,7 @@
                                 "symbol": "id"
                               },
                               "val": {
-                                "u32": 1
+                                "u64": 1
                               }
                             },
                             {
@@ -184,12 +184,12 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "ShipmentCount"
+                              "symbol": "NextShipmentId"
                             }
                           ]
                         },
                         "val": {
-                          "u32": 1
+                          "u64": 2
                         }
                       }
                     ]

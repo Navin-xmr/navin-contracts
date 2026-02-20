@@ -239,10 +239,10 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Shipment"
+                              "symbol": "BatchShipment"
                             },
                             {
-                              "u32": 1
+                              "u64": 1
                             }
                           ]
                         },
@@ -269,7 +269,7 @@
                                 "symbol": "id"
                               },
                               "val": {
-                                "u32": 1
+                                "u64": 1
                               }
                             },
                             {
@@ -295,10 +295,10 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Shipment"
+                              "symbol": "BatchShipment"
                             },
                             {
-                              "u32": 2
+                              "u64": 2
                             }
                           ]
                         },
@@ -325,7 +325,7 @@
                                 "symbol": "id"
                               },
                               "val": {
-                                "u32": 2
+                                "u64": 2
                               }
                             },
                             {
@@ -351,10 +351,10 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Shipment"
+                              "symbol": "BatchShipment"
                             },
                             {
-                              "u32": 3
+                              "u64": 3
                             }
                           ]
                         },
@@ -381,7 +381,7 @@
                                 "symbol": "id"
                               },
                               "val": {
-                                "u32": 3
+                                "u64": 3
                               }
                             },
                             {
@@ -407,10 +407,10 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Shipment"
+                              "symbol": "BatchShipment"
                             },
                             {
-                              "u32": 4
+                              "u64": 4
                             }
                           ]
                         },
@@ -437,7 +437,7 @@
                                 "symbol": "id"
                               },
                               "val": {
-                                "u32": 4
+                                "u64": 4
                               }
                             },
                             {
@@ -463,10 +463,10 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Shipment"
+                              "symbol": "BatchShipment"
                             },
                             {
-                              "u32": 5
+                              "u64": 5
                             }
                           ]
                         },
@@ -493,7 +493,7 @@
                                 "symbol": "id"
                               },
                               "val": {
-                                "u32": 5
+                                "u64": 5
                               }
                             },
                             {
@@ -519,12 +519,12 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "ShipmentCount"
+                              "symbol": "NextShipmentId"
                             }
                           ]
                         },
                         "val": {
-                          "u32": 5
+                          "u64": 6
                         }
                       }
                     ]

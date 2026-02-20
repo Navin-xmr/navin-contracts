@@ -64,8 +64,10 @@ pub fn get_next_shipment_id(env: &Env) -> u64 {
         .instance()
         .get(&DataKey::NextShipmentId)
         .unwrap_or(1u64);
-    
-    env.storage().instance().set(&DataKey::NextShipmentId, &(id + 1));
+
+    env.storage()
+        .instance()
+        .set(&DataKey::NextShipmentId, &(id + 1));
     id
 }
 
@@ -75,4 +77,3 @@ pub fn save_batch_shipment(env: &Env, shipment: &BatchShipment) {
         .instance()
         .set(&DataKey::BatchShipment(shipment.id), shipment);
 }
-
