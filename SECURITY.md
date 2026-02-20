@@ -11,7 +11,7 @@ The Navin team takes security vulnerabilities seriously. We appreciate your effo
 
 ### Please DO:
 
-*Report security vulnerabilities to: navinxmr@gmail.com*
+_Report security vulnerabilities to: navinxmr@gmail.com_
 
 OR
 
@@ -56,7 +56,6 @@ We currently support security updates for:
 5. **Test edge cases**: Include security-focused tests
 6. **Review dependencies**: Keep dependencies updated
 
-
 ## Security Audit Process
 
 Before major releases:
@@ -82,4 +81,4 @@ For general questions: Open a GitHub Discussion
 
 ---
 
-**Thank you for helping keep Navin secure!** 
+**Thank you for helping keep Navin secure!**

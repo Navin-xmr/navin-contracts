@@ -1,6 +1,7 @@
 # Contributing to Navin
 
-Thank you for your interest in contributing to Navin! This guide will help you get started and ensure your contributions can be smoothly integrated.
+Thank you for your interest in contributing to Navin! We truly appreciate it!!
+This guide will help you get started and ensure your contributions can be smoothly integrated.
 
 ## Table of Contents
 
@@ -19,21 +20,21 @@ Thank you for your interest in contributing to Navin! This guide will help you g
 
 Before contributing, ensure you have the following installed:
 
- **Rust** (latest stable version)
-
+**Rust** (latest stable version)
 
 ### Fork and Clone
 
 1. Fork the repository on GitHub by clicking the "Fork" button
 
 2. Clone your fork locally:
+
    ```bash
    git clone https://github.com/YOUR-USERNAME/navin-contracts.git
    cd navin-contracts
    ```
 
-3. Add the upstream repository: (So you can pull and sync new updates) 
-NB: This is optional as you can just sync fork through github website
+3. Add the upstream repository: (So you can pull and sync new updates)
+   NB: This is optional as you can just sync fork through github website
    ```bash
    git remote add upstream https://github.com/Navin-xmr/navin-contracts.git
    ```
@@ -65,21 +66,22 @@ git checkout main
 
 ```
 
-If you added the upstream branch, pull the changes 
+If you added the upstream branch, pull the changes
 
 (optional - you can just use github to sync your fork)
+
 ```
 git pull upstream main
 ```
 
 ## Create a new branch with a descriptive name
-git checkout -b feature/your-feature-name
+
+git checkout -b issue#<number>
+
 ```
 ### Examples of good branch names:
- - feature/add-delivery-status
- - fix/timestamp-validation
- - docs/update-readme
- - refactor/optimize-storage
+ - issue#23
+ - issue#45
 ```
 
 ### Step 2: Make Your Changes
@@ -87,7 +89,7 @@ git checkout -b feature/your-feature-name
 1. Write your code following our [Code Standards](#code-standards)
 2. Add or update tests for your changes
 3. Update documentation if needed
-4. Keep commits focused and atomic
+4. Keep commits focused and precise
 
 ### Step 3: Test Your Changes Locally
 
@@ -124,7 +126,8 @@ Longer explanation if needed.
 - Detail 2"
 ```
 
-**Commit Message Format:**
+**Commit Message Format we prefer:**
+
 - `feat:` - New feature
 - `fix:` - Bug fix
 - `docs:` - Documentation changes
@@ -133,6 +136,7 @@ Longer explanation if needed.
 - `chore:` - Maintenance tasks
 
 **Examples:**
+
 ```bash
 git commit -m "feat: add delivery status tracking"
 git commit -m "fix: resolve timestamp overflow in lock_assets"
@@ -142,7 +146,7 @@ git commit -m "docs: update installation instructions"
 ### Step 5: Push to Your Fork
 
 ```bash
-git push origin feature/your-feature-name
+git push origin issue#<number>
 ```
 
 ### Step 6: Create a Pull Request
@@ -164,15 +168,16 @@ Before submitting your PR, ensure you've completed ALL of these steps:
 - [ ] All tests pass: `cargo test`
 - [ ] WASM builds successfully: `cargo build --target wasm32-unknown-unknown --release`
 - [ ] New tests added for new functionality
+- [ ] Old tests previously passing before you added changes still pass
 - [ ] Documentation updated (if applicable)
-- [ ] Commit messages follow the format guidelines
-- [ ] Branch is up to date with `main` or `develop`
+- [ ] Branch is up to date with `main` or `dev`
 
 ## CI/CD Requirements
 
 Our CI pipeline runs the following checks. **All must pass** before your PR can be merged:
 
 ### 1. Code Formatting Check
+
 ```bash
 # Command run by CI:
 cargo fmt --check
@@ -182,6 +187,7 @@ cargo fmt
 ```
 
 ### 2. Clippy Lints
+
 ```bash
 # Command run by CI:
 cargo clippy --all-targets --all-features -- -D warnings
@@ -190,6 +196,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 ```
 
 ### 3. Tests
+
 ```bash
 # Command run by CI:
 cargo test
@@ -198,6 +205,7 @@ cargo test
 ```
 
 ### 4. WASM Build
+
 ```bash
 # Command run by CI:
 cargo build --target wasm32-unknown-unknown --release
@@ -206,9 +214,10 @@ cargo build --target wasm32-unknown-unknown --release
 ```
 
 ### 5. Security Audit
+
 ```bash
 # Command run by CI:
-cargo audit --ignore RUSTSEC-0000-0000
+cargo audit
 
 # Checks for known security vulnerabilities in dependencies
 ```
@@ -226,7 +235,7 @@ cargo audit --ignore RUSTSEC-0000-0000
 1. **Error Handling**
    - Always use proper error types (don't use `panic!`)
    - Return `Result<T, Error>` for fallible operations
-   
+
    ```rust
    // Good
    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) -> Result<(), Error> {
@@ -235,7 +244,7 @@ cargo audit --ignore RUSTSEC-0000-0000
        }
        Ok(())
    }
-   
+
    // Bad
    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
        assert!(amount > 0);  // Don't use assertions for validation
@@ -244,7 +253,7 @@ cargo audit --ignore RUSTSEC-0000-0000
 
 2. **Authentication**
    - Always verify addresses with `require_auth()`
-   
+
    ```rust
    pub fn withdraw(env: Env, from: Address, amount: i128) -> Result<(), Error> {
        from.require_auth();  // Always first!
@@ -261,14 +270,14 @@ cargo audit --ignore RUSTSEC-0000-0000
    - Add doc comments to all public functions
    - Explain complex logic
    - Document error conditions
-   
+
    ```rust
    /// Deposits assets into the vault
-   /// 
+   ///
    /// # Arguments
    /// * `from` - The address depositing assets
    /// * `amount` - Amount to deposit (must be positive)
-   /// 
+   ///
    /// # Errors
    /// Returns `InvalidAmount` if amount <= 0
    pub fn deposit(env: Env, from: Address, amount: i128) -> Result<(), Error> {
@@ -281,16 +290,17 @@ cargo audit --ignore RUSTSEC-0000-0000
 ### Writing Tests
 
 1. **Test Structure**
+
    ```rust
    #[test]
    fn test_descriptive_name() {
        // Setup
        let env = Env::default();
        let contract = setup_contract(&env);
-       
+
        // Execute
        let result = contract.function_to_test();
-       
+
        // Assert
        assert!(result.is_ok());
    }
@@ -314,12 +324,12 @@ fn test_withdraw_insufficient_funds() {
     let env = Env::default();
     let contract_id = env.register_contract(None, SecureAssetVault);
     let client = SecureAssetVaultClient::new(&env, &contract_id);
-    
+
     let user = Address::generate(&env);
-    
+
     // Try to withdraw more than deposited
     let result = client.try_withdraw(&user, &user, &1000);
-    
+
     // Should fail with InsufficientFunds
     assert!(result.is_err());
 }
@@ -367,11 +377,11 @@ assert!(true, "Always passes");
 
 1. **Automated Checks**: CI must pass (typically 5 minutes)
 2. **Code Review**: Maintainer reviews code (1-3 days)
-3. **Revisions**: Address feedback. fix conflicts and push updates 
+3. **Revisions**: Address feedback. fix conflicts and push updates
 
-### Disclaimer: 
+### Disclaimer:
+
 Please do not just combine both conflicts when trying to resolve merge conflicts then just push. Such PRs will not be merged. Actually check the differences, add and fix issues, ensure your build and tests work then you can push.
-
 
 ## Quick Command Reference
 
@@ -383,17 +393,17 @@ cargo test
 cargo build --target wasm32-unknown-unknown --release
 
 # Create and switch to a new branch
-git checkout -b feature/your-feature
+git checkout -b issue#<number>
 
 # Stage, commit, and push
 git add .
 git commit -m "feat: your change description"
-git push origin feature/your-feature
+git push origin issue#<number>
 
 # Update your branch with latest upstream changes (Optional - Can be done on Website)
 git checkout main
 git pull upstream main
-git checkout feature/your-feature
+git checkout issue#<number>
 git rebase main
 ```
 

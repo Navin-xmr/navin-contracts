@@ -10,12 +10,12 @@ Run this command to check if you have everything installed:
 make check-setup
 ```
 
-
 ## Fork and Clone
 
 1. Fork the repository on GitHub (click the "Fork" button)
 
 2. Clone your fork:
+
    ```bash
    git clone https://github.com/YOUR_USERNAME/navin-contracts.git
    cd navin-contracts
@@ -60,6 +60,7 @@ git commit -m "feat: add your feature description"
 ```
 
 Good commit message examples:
+
 - `feat(tracking): add delivery status endpoint`
 - `fix(storage): resolve balance overflow bug`
 - `docs: update installation instructions`
@@ -104,6 +105,7 @@ make pre-commit
 ```
 
 This single command runs:
+
 1. ✅ Format check (`cargo fmt --check`)
 2. ✅ Lint check (`cargo clippy`)
 3. ✅ All tests (`cargo test`)
@@ -146,6 +148,7 @@ git push
 ### Issue: "Format check failed"
 
 **Solution:**
+
 ```bash
 make fmt
 git add .
@@ -156,6 +159,7 @@ git push
 ### Issue: "Clippy lints failed"
 
 **Solution:**
+
 ```bash
 make lint-fix  # Auto-fix what's possible
 make lint      # See remaining issues
@@ -168,6 +172,7 @@ git push
 ### Issue: "Tests failed"
 
 **Solution:**
+
 ```bash
 cargo test -- --nocapture  # See detailed output
 # Fix the failing tests
@@ -179,6 +184,7 @@ git push
 ### Issue: "Build failed"
 
 **Solution:**
+
 ```bash
 cargo build --target wasm32-unknown-unknown --release
 # Fix compilation errors
@@ -190,16 +196,19 @@ git push
 ## Testing Your Changes
 
 ### Run all tests:
+
 ```bash
 make test
 ```
 
 ### Run specific test:
+
 ```bash
 cargo test test_name
 ```
 
 ### Run tests with output:
+
 ```bash
 make test-verbose
 ```
