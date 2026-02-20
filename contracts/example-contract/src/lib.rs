@@ -18,6 +18,9 @@ pub enum VaultError {
     Unauthorized,
     InvalidAmount,
     AssetLocked,
+    ShipmentNotFound,
+    InsuranceAlreadyClaimed,
+    InvalidShipmentStatus,
 }
 
 // Implement conversion for VaultError to Soroban Error
@@ -28,6 +31,9 @@ impl From<VaultError> for Error {
             VaultError::Unauthorized => Error::from_contract_error(2),
             VaultError::InvalidAmount => Error::from_contract_error(3),
             VaultError::AssetLocked => Error::from_contract_error(4),
+            VaultError::ShipmentNotFound => Error::from_contract_error(5),
+            VaultError::InsuranceAlreadyClaimed => Error::from_contract_error(6),
+            VaultError::InvalidShipmentStatus => Error::from_contract_error(7),
         }
     }
 }
@@ -155,5 +161,187 @@ impl SecureAssetVault {
     /// Retrieve current balance
     pub fn get_balance(env: Env, address: Address) -> i128 {
         storage::get_balance(&env, &address)
+    }
+
+    /// Create a new shipment with escrow
+    pub fn create_shipment(
+        env: Env,
+        company: Address,
+        receiver: Address,
+        escrow_amount: i128,
+    ) -> Result<u64, Error> {
+        company.require_auth();
+
+        if escrow_amount <= 0 {
+            return Err(VaultError::InvalidAmount.into());
+        }
+
+        let shipment_id = env
+            .storage()
+            .instance()
+            .get(&DataKey::NextShipmentId)
+            .unwrap_or(1u64);
+
+        let shipment = Shipment {
+            id: shipment_id,
+            company: company.clone(),
+            receiver,
+            escrow_amount,
+            insurance_amount: 0,
+            status: ShipmentStatus::Active,
+        };
+
+        env.storage()
+            .instance()
+            .set(&DataKey::Shipment(shipment_id), &shipment);
+        env.storage()
+            .instance()
+            .set(&DataKey::NextShipmentId, &(shipment_id + 1));
+
+        Ok(shipment_id)
+    }
+
+    /// Deposit insurance for a shipment
+    pub fn deposit_insurance(
+        env: Env,
+        company: Address,
+        shipment_id: u64,
+        amount: i128,
+    ) -> Result<(), Error> {
+        company.require_auth();
+
+        if amount <= 0 {
+            return Err(VaultError::InvalidAmount.into());
+        }
+
+        let mut shipment: Shipment = env
+            .storage()
+            .instance()
+            .get(&DataKey::Shipment(shipment_id))
+            .ok_or(VaultError::ShipmentNotFound)?;
+
+        if shipment.company != company {
+            return Err(VaultError::Unauthorized.into());
+        }
+
+        shipment.insurance_amount += amount;
+        env.storage()
+            .instance()
+            .set(&DataKey::Shipment(shipment_id), &shipment);
+
+        let insurance = InsuranceDeposit {
+            shipment_id,
+            depositor: company.clone(),
+            amount,
+            claimed: false,
+        };
+
+        env.storage()
+            .instance()
+            .set(&DataKey::Insurance(shipment_id), &insurance);
+
+        transactions::log_transaction(
+            &env,
+            &company,
+            &company,
+            amount,
+            TransactionType::InsuranceDeposit,
+        );
+
+        env.events().publish(
+            (String::from_str(&env, "insurance_deposited"),),
+            (shipment_id, amount),
+        );
+
+        Ok(())
+    }
+
+    /// Claim insurance after dispute resolution (admin only)
+    pub fn claim_insurance(
+        env: Env,
+        admin: Address,
+        shipment_id: u64,
+        claimant: Address,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+
+        if !storage::is_admin(&env, &admin) {
+            return Err(VaultError::Unauthorized.into());
+        }
+
+        let mut insurance: InsuranceDeposit = env
+            .storage()
+            .instance()
+            .get(&DataKey::Insurance(shipment_id))
+            .ok_or(VaultError::ShipmentNotFound)?;
+
+        if insurance.claimed {
+            return Err(VaultError::InsuranceAlreadyClaimed.into());
+        }
+
+        let mut shipment: Shipment = env
+            .storage()
+            .instance()
+            .get(&DataKey::Shipment(shipment_id))
+            .ok_or(VaultError::ShipmentNotFound)?;
+
+        if shipment.status != ShipmentStatus::Disputed {
+            return Err(VaultError::InvalidShipmentStatus.into());
+        }
+
+        insurance.claimed = true;
+        shipment.status = ShipmentStatus::InsuranceClaimed;
+
+        env.storage()
+            .instance()
+            .set(&DataKey::Insurance(shipment_id), &insurance);
+        env.storage()
+            .instance()
+            .set(&DataKey::Shipment(shipment_id), &shipment);
+
+        transactions::log_transaction(
+            &env,
+            &shipment.company,
+            &claimant,
+            insurance.amount,
+            TransactionType::InsuranceClaim,
+        );
+
+        env.events().publish(
+            (String::from_str(&env, "insurance_claimed"),),
+            (shipment_id, claimant, insurance.amount),
+        );
+
+        Ok(())
+    }
+
+    /// Mark shipment as disputed (for testing)
+    pub fn mark_disputed(env: Env, admin: Address, shipment_id: u64) -> Result<(), Error> {
+        admin.require_auth();
+
+        if !storage::is_admin(&env, &admin) {
+            return Err(VaultError::Unauthorized.into());
+        }
+
+        let mut shipment: Shipment = env
+            .storage()
+            .instance()
+            .get(&DataKey::Shipment(shipment_id))
+            .ok_or(VaultError::ShipmentNotFound)?;
+
+        shipment.status = ShipmentStatus::Disputed;
+        env.storage()
+            .instance()
+            .set(&DataKey::Shipment(shipment_id), &shipment);
+
+        Ok(())
+    }
+
+    /// Get shipment details
+    pub fn get_shipment(env: Env, shipment_id: u64) -> Result<Shipment, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Shipment(shipment_id))
+            .ok_or(VaultError::ShipmentNotFound.into())
     }
 }
