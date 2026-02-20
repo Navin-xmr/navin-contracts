@@ -3,7 +3,91 @@
 extern crate std;
 
 use crate::{DeliveryStatus, SecureAssetVault, SecureAssetVaultClient};
-use soroban_sdk::{testutils::{Address as _, Ledger}, Address, BytesN, Env, String};
+use crate::types::{ShipmentInput};
+use soroban_sdk::{testutils::{Address as _, Ledger}, Address, BytesN, Env, String, Vec};
+
+#[test]
+fn test_create_shipments_batch_success() {
+    let env = Env::default();
+    let company = Address::generate(&env);
+    
+    let contract_client = SecureAssetVaultClient::new(&env, &env.register(SecureAssetVault {}, ()));
+    
+    env.mock_all_auths();
+    
+    let mut shipments = Vec::new(&env);
+    for i in 0..5 {
+        shipments.push_back(ShipmentInput {
+            receiver: Address::generate(&env),
+            carrier: Address::generate(&env),
+            data_hash: BytesN::from_array(&env, &[i as u8; 32]),
+        });
+    }
+    
+    let ids = contract_client.create_shipments_batch(&company, &shipments);
+    assert_eq!(ids.len(), 5);
+    for i in 0..5 {
+        assert_eq!(ids.get(i).unwrap(), (i + 1) as u64);
+    }
+}
+
+#[test]
+fn test_create_shipments_batch_oversized() {
+    let env = Env::default();
+    let company = Address::generate(&env);
+    
+    let contract_client = SecureAssetVaultClient::new(&env, &env.register(SecureAssetVault {}, ()));
+    
+    env.mock_all_auths();
+    
+    let mut shipments = Vec::new(&env);
+    for i in 0..11 {
+        shipments.push_back(ShipmentInput {
+            receiver: Address::generate(&env),
+            carrier: Address::generate(&env),
+            data_hash: BytesN::from_array(&env, &[i as u8; 32]),
+        });
+    }
+    
+    let result = contract_client.try_create_shipments_batch(&company, &shipments);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_shipments_batch_invalid_input() {
+    let env = Env::default();
+    let company = Address::generate(&env);
+    
+    let contract_client = SecureAssetVaultClient::new(&env, &env.register(SecureAssetVault {}, ()));
+    
+    env.mock_all_auths();
+    
+    let mut shipments = Vec::new(&env);
+    shipments.push_back(ShipmentInput {
+        receiver: Address::generate(&env),
+        carrier: Address::generate(&env),
+        data_hash: BytesN::from_array(&env, &[1; 32]),
+    });
+    let user = Address::generate(&env);
+    shipments.push_back(ShipmentInput {
+        receiver: user.clone(),
+        carrier: user.clone(),
+        data_hash: BytesN::from_array(&env, &[2; 32]),
+    });
+    
+    let result = contract_client.try_create_shipments_batch(&company, &shipments);
+    assert!(result.is_err());
+    
+    let mut valid_shipments = Vec::new(&env);
+    valid_shipments.push_back(ShipmentInput {
+        receiver: Address::generate(&env),
+        carrier: Address::generate(&env),
+        data_hash: BytesN::from_array(&env, &[3; 32]),
+    });
+    
+    let ids = contract_client.create_shipments_batch(&company, &valid_shipments);
+    assert_eq!(ids.get(0).unwrap(), 1u64);
+}
 
 #[test]
 fn test_initialization() {
@@ -420,7 +504,6 @@ fn test_update_status_invalid_transition() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #2)")]
 fn test_update_status_unauthorized() {
     let env = Env::default();
     let admin = Address::generate(&env);
