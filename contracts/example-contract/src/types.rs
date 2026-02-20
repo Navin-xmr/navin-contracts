@@ -79,6 +79,12 @@ pub struct BatchShipment {
     pub timestamp: u64,
 }
 
+#[contracttype]
+#[derive(Clone, Debug)]
+pub enum ShipmentError {
+    BatchTooLarge,
+}
+
 /// Tracks permission levels for different roles
 #[contracttype]
 #[derive(PartialEq, Clone)]
