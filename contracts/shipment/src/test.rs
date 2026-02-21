@@ -1176,3 +1176,209 @@ fn test_cancel_shipment_disputed_should_fail() {
 
     client.cancel_shipment(&company, &shipment_id, &reason_hash);
 }
+
+// ============= Escrow Lifecycle Integration Tests =============
+
+#[test]
+fn test_escrow_happy_path_create_deposit_transit_deliver_confirm() {
+    use crate::ShipmentStatus;
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let hash2 = BytesN::from_array(&env, &[2u8; 32]);
+    let hash3 = BytesN::from_array(&env, &[3u8; 32]);
+    let confirmation_hash = BytesN::from_array(&env, &[99u8; 32]);
+    let escrow_amount: i128 = 10_000;
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash2);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &hash3,
+    );
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Delivered);
+    assert_eq!(shipment.escrow_amount, escrow_amount);
+}
+
+#[test]
+fn test_escrow_cancel_path_create_deposit_cancel_refund() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[4u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[44u8; 32]);
+    let escrow_amount: i128 = 5_000;
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    client.cancel_shipment(&company, &shipment_id, &reason_hash);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+#[test]
+fn test_escrow_dispute_resolve_to_delivered() {
+    use crate::ShipmentStatus;
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[5u8; 32]);
+    let hash2 = BytesN::from_array(&env, &[6u8; 32]);
+    let hash3 = BytesN::from_array(&env, &[7u8; 32]);
+    let escrow_amount: i128 = 3_000;
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash2);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::Disputed, &hash3);
+    client.update_status(&admin, &shipment_id, &ShipmentStatus::Delivered, &hash3);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Delivered);
+}
+
+#[test]
+fn test_escrow_dispute_resolve_to_cancelled() {
+    use crate::ShipmentStatus;
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[8u8; 32]);
+    let hash2 = BytesN::from_array(&env, &[9u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[77u8; 32]);
+    let escrow_amount: i128 = 2_000;
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash2);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::Disputed, &hash2);
+    client.update_status(
+        &admin,
+        &shipment_id,
+        &ShipmentStatus::Cancelled,
+        &reason_hash,
+    );
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #11)")]
+fn test_escrow_double_deposit_prevention() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[10u8; 32]);
+    let escrow_amount: i128 = 1_000;
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")]
+fn test_escrow_release_without_delivery_confirm_from_created_fails() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[11u8; 32]);
+    let confirmation_hash = BytesN::from_array(&env, &[66u8; 32]);
+    let escrow_amount: i128 = 1_500;
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_escrow_refund_after_delivery_fails() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[12u8; 32]);
+    let hash2 = BytesN::from_array(&env, &[13u8; 32]);
+    let confirmation_hash = BytesN::from_array(&env, &[55u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[33u8; 32]);
+    let escrow_amount: i128 = 2_500;
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::ShipmentStatus::InTransit,
+        &hash2,
+    );
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    client.cancel_shipment(&company, &shipment_id, &reason_hash);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_escrow_deposit_after_status_change_fails() {
+    use crate::ShipmentStatus;
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[14u8; 32]);
+    let hash2 = BytesN::from_array(&env, &[15u8; 32]);
+    let escrow_amount: i128 = 1_000;
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash2);
+
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+}
