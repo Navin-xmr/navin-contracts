@@ -530,4 +530,43 @@ impl NavinShipment {
 
         Ok(())
     }
+
+    /// Refund escrowed funds to the company if shipment is cancelled.
+    /// Only the sender (Company) or admin can trigger refund.
+    /// Shipment must be in Created or Cancelled status.
+    pub fn refund_escrow(env: Env, caller: Address, shipment_id: u64) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        caller.require_auth();
+
+        let admin = storage::get_admin(&env);
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+
+        if caller != shipment.sender && caller != admin {
+            return Err(SdkError::from_contract_error(3));
+        }
+
+        if shipment.status != ShipmentStatus::Created
+            && shipment.status != ShipmentStatus::Cancelled
+        {
+            return Err(SdkError::from_contract_error(9));
+        }
+
+        let escrow_amount = shipment.escrow_amount;
+        if escrow_amount == 0 {
+            return Err(SdkError::from_contract_error(8));
+        }
+
+        shipment.escrow_amount = 0;
+        shipment.status = ShipmentStatus::Cancelled;
+        shipment.updated_at = env.ledger().timestamp();
+
+        storage::set_shipment(&env, &shipment);
+        storage::remove_escrow_balance(&env, shipment_id);
+        extend_shipment_ttl(&env, shipment_id);
+
+        events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
+
+        Ok(())
+    }
 }

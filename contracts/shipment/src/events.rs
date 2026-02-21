@@ -167,6 +167,27 @@ pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i
     );
 }
 
+/// Emits an `escrow_refunded` event when escrowed funds are returned to the company.
+///
+/// # Event Data
+///
+/// | Field       | Type      | Description                                  |
+/// |-------------|-----------|----------------------------------------------|
+/// | shipment_id | `u64`     | Shipment the escrow was held for              |
+/// | to          | `Address` | Company address receiving the refund          |
+/// | amount      | `i128`    | Amount refunded (in stroops)                  |
+///
+/// # Listeners
+///
+/// - **Express backend**: Updates the escrow ledger and notifies the company.
+/// - **Frontend**: Shows the refund status on the shipment detail page.
+pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i128) {
+    env.events().publish(
+        (Symbol::new(env, "escrow_refunded"),),
+        (shipment_id, to.clone(), amount),
+    );
+}
+
 /// Emits a `dispute_raised` event when a party disputes a shipment.
 ///
 /// The `reason_hash` follows the same Hash-and-Emit pattern: the full dispute
