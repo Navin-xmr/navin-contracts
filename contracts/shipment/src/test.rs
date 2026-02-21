@@ -330,7 +330,7 @@ fn test_report_geofence_zone_entry() {
 
     // Verify event was emitted (at least 1 geofence event)
     let events = env.events().all();
-    assert!(events.len() >= 1);
+    assert!(!events.is_empty());
 }
 
 #[test]
@@ -358,7 +358,7 @@ fn test_report_geofence_zone_exit() {
 
     // Verify event was emitted
     let events = env.events().all();
-    assert!(events.len() >= 1);
+    assert!(!events.is_empty());
 }
 
 #[test]
@@ -386,7 +386,7 @@ fn test_report_geofence_route_deviation() {
 
     // Verify event was emitted
     let events = env.events().all();
-    assert!(events.len() >= 1);
+    assert!(!events.is_empty());
 }
 
 #[test]
