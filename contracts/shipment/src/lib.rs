@@ -197,6 +197,12 @@ impl NavinShipment {
         storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))
     }
 
+    /// Returns the total number of shipments created on the platform.
+    /// Returns 0 if the contract has not been initialized.
+    pub fn get_shipment_count(env: Env) -> u64 {
+        storage::get_shipment_counter(&env)
+    }
+
     /// Report a geofence event for a shipment.
     /// Only registered carriers can report geofence events.
     pub fn report_geofence_event(

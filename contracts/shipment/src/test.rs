@@ -258,6 +258,51 @@ fn test_add_whitelist_fails_before_initialization() {
     client.add_carrier_to_whitelist(&company, &carrier);
 }
 
+// ============= Get Shipment Count Tests =============
+
+#[test]
+fn test_get_shipment_count_returns_zero_on_fresh_contract() {
+    let (_env, client, _admin) = setup_env();
+
+    // Returns 0 even without initialization
+    assert_eq!(client.get_shipment_count(), 0);
+}
+
+#[test]
+fn test_get_shipment_count_returns_zero_after_initialization() {
+    let (_env, client, admin) = setup_env();
+
+    client.initialize(&admin);
+
+    assert_eq!(client.get_shipment_count(), 0);
+}
+
+#[test]
+fn test_get_shipment_count_after_creating_shipments() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    // Count after 1 shipment
+    let hash_one = BytesN::from_array(&env, &[1u8; 32]);
+    client.create_shipment(&company, &receiver, &carrier, &hash_one);
+    assert_eq!(client.get_shipment_count(), 1);
+
+    // Count after 2 shipments
+    let hash_two = BytesN::from_array(&env, &[2u8; 32]);
+    client.create_shipment(&company, &receiver, &carrier, &hash_two);
+    assert_eq!(client.get_shipment_count(), 2);
+
+    // Count after 3 shipments
+    let hash_three = BytesN::from_array(&env, &[3u8; 32]);
+    client.create_shipment(&company, &receiver, &carrier, &hash_three);
+    assert_eq!(client.get_shipment_count(), 3);
+}
+
 // ============= Get Shipment Tests =============
 
 #[test]
