@@ -40,25 +40,6 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), SdkError
     }
 }
 
-fn is_valid_transition(from: &ShipmentStatus, to: &ShipmentStatus) -> bool {
-    use ShipmentStatus::*;
-
-    matches!(
-        (from, to),
-        (Created, InTransit)
-            | (Created, Cancelled)
-            | (InTransit, AtCheckpoint)
-            | (InTransit, Delivered)
-            | (InTransit, Disputed)
-            | (AtCheckpoint, InTransit)
-            | (AtCheckpoint, Delivered)
-            | (AtCheckpoint, Disputed)
-            | (Delivered, Disputed)
-            | (Disputed, Delivered)
-            | (Disputed, Cancelled)
-    )
-}
-
 #[contract]
 pub struct NavinShipment;
 
@@ -271,7 +252,7 @@ impl NavinShipment {
             return Err(SdkError::from_contract_error(3));
         }
 
-        if !is_valid_transition(&shipment.status, &new_status) {
+        if !shipment.status.is_valid_transition(&new_status) {
             return Err(SdkError::from_contract_error(10));
         }
 
@@ -329,10 +310,12 @@ impl NavinShipment {
             return Err(SdkError::from_contract_error(3));
         }
 
-        // Shipment must be InTransit or AtCheckpoint
-        match shipment.status {
-            ShipmentStatus::InTransit | ShipmentStatus::AtCheckpoint => {}
-            _ => return Err(SdkError::from_contract_error(8)),
+        // Validate transition to Delivered
+        if !shipment
+            .status
+            .is_valid_transition(&ShipmentStatus::Delivered)
+        {
+            return Err(SdkError::from_contract_error(8));
         }
 
         let now = env.ledger().timestamp();

@@ -456,7 +456,6 @@ fn test_get_escrow_balance_returns_zero_without_deposit() {
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[10u8; 32]);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
 
     client.initialize(&admin);
@@ -961,4 +960,94 @@ fn test_record_milestone_unauthorized() {
 
     // Attempt to record with outsider should fail with CarrierNotAuthorized = 7
     client.record_milestone(&outsider, &shipment_id, &checkpoint, &data_hash);
+}
+
+#[test]
+fn test_status_transition_matrix_logic() {
+    use crate::ShipmentStatus::*;
+
+    // Valid transitions
+    assert!(Created.is_valid_transition(&InTransit));
+    assert!(Created.is_valid_transition(&Cancelled));
+    assert!(Created.is_valid_transition(&Disputed));
+
+    assert!(InTransit.is_valid_transition(&AtCheckpoint));
+    assert!(InTransit.is_valid_transition(&Delivered));
+    assert!(InTransit.is_valid_transition(&Disputed));
+    assert!(InTransit.is_valid_transition(&Cancelled));
+
+    assert!(AtCheckpoint.is_valid_transition(&InTransit));
+    assert!(AtCheckpoint.is_valid_transition(&Delivered));
+    assert!(AtCheckpoint.is_valid_transition(&Disputed));
+    assert!(AtCheckpoint.is_valid_transition(&Cancelled));
+
+    assert!(Disputed.is_valid_transition(&Cancelled));
+    assert!(Disputed.is_valid_transition(&Delivered));
+
+    // Invalid transitions
+    assert!(!Created.is_valid_transition(&AtCheckpoint));
+    assert!(!Created.is_valid_transition(&Delivered));
+
+    assert!(!Delivered.is_valid_transition(&Created));
+    assert!(!Delivered.is_valid_transition(&InTransit));
+    assert!(!Delivered.is_valid_transition(&AtCheckpoint));
+    assert!(!Delivered.is_valid_transition(&Cancelled)); // any -> Cancelled (except Delivered)
+    assert!(!Delivered.is_valid_transition(&Disputed)); // any -> Disputed (except Cancelled/Delivered)
+
+    assert!(!Cancelled.is_valid_transition(&Created));
+    assert!(!Cancelled.is_valid_transition(&InTransit));
+    assert!(!Cancelled.is_valid_transition(&AtCheckpoint));
+    assert!(!Cancelled.is_valid_transition(&Delivered));
+    assert!(!Cancelled.is_valid_transition(&Disputed)); // any -> Disputed (except Cancelled/Delivered)
+}
+
+#[test]
+fn test_update_status_complex_flow() {
+    use crate::ShipmentStatus;
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let hash = BytesN::from_array(&env, &[0u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    let id = client.create_shipment(&company, &receiver, &carrier, &hash);
+
+    // Created -> InTransit
+    client.update_status(&carrier, &id, &ShipmentStatus::InTransit, &hash);
+
+    // InTransit -> AtCheckpoint
+    client.update_status(&carrier, &id, &ShipmentStatus::AtCheckpoint, &hash);
+
+    // AtCheckpoint -> InTransit
+    client.update_status(&carrier, &id, &ShipmentStatus::InTransit, &hash);
+
+    // InTransit -> Disputed
+    client.update_status(&carrier, &id, &ShipmentStatus::Disputed, &hash);
+
+    // Disputed -> Delivered (Recovery)
+    client.update_status(&admin, &id, &ShipmentStatus::Delivered, &hash);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_update_status_illegal_transition_delivered_to_cancelled() {
+    use crate::ShipmentStatus;
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let hash = BytesN::from_array(&env, &[0u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    let id = client.create_shipment(&company, &receiver, &carrier, &hash);
+
+    // Created -> InTransit -> Delivered
+    client.update_status(&carrier, &id, &ShipmentStatus::InTransit, &hash);
+    client.update_status(&carrier, &id, &ShipmentStatus::Delivered, &hash);
+
+    // Illegal: Delivered -> Cancelled
+    client.update_status(&admin, &id, &ShipmentStatus::Cancelled, &hash);
 }
