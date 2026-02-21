@@ -12,11 +12,6 @@ mod types;
 pub use errors::*;
 pub use types::*;
 
-#[derive(Clone, Copy)]
-pub enum Role {
-    Company,
-}
-
 fn require_initialized(env: &Env) -> Result<(), SdkError> {
     if !storage::is_initialized(env) {
         return Err(SdkError::from_contract_error(2));
@@ -24,17 +19,13 @@ fn require_initialized(env: &Env) -> Result<(), SdkError> {
     Ok(())
 }
 
-fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), SdkError> {
+fn require_role(env: &Env, address: &Address, role: &Role) -> Result<(), SdkError> {
     require_initialized(env)?;
 
-    match role {
-        Role::Company => {
-            if storage::has_company_role(env, address) {
-                Ok(())
-            } else {
-                Err(SdkError::from_contract_error(3))
-            }
-        }
+    if storage::has_role(env, address, role) {
+        Ok(())
+    } else {
+        Err(SdkError::from_contract_error(3))
     }
 }
 
@@ -52,7 +43,8 @@ impl NavinShipment {
 
         storage::set_admin(&env, &admin);
         storage::set_shipment_counter(&env, 0);
-        storage::set_company_role(&env, &admin);
+        storage::set_role(&env, &admin, &Role::Admin);
+        storage::set_role(&env, &admin, &Role::Company);
 
         env.events()
             .publish((symbol_short!("init"),), admin.clone());
@@ -136,6 +128,32 @@ impl NavinShipment {
         Ok(())
     }
 
+    /// Assign a role to a target address.
+    /// Only the admin can assign roles.
+    pub fn assign_role(
+        env: Env,
+        admin: Address,
+        target: Address,
+        role: Role,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        // Verify that the caller is the admin
+        require_role(&env, &admin, &Role::Admin)?;
+
+        // Assign the role to the target address
+        storage::set_role(&env, &target, &role);
+
+        // Emit a role_assigned event
+        env.events().publish(
+            (symbol_short!("role_asn"),),
+            (admin.clone(), target.clone(), role.clone()),
+        );
+
+        Ok(())
+    }
+
     /// Create a shipment and emit the shipment_created event.
     pub fn create_shipment(
         env: Env,
@@ -146,7 +164,7 @@ impl NavinShipment {
     ) -> Result<u64, SdkError> {
         require_initialized(&env)?;
         sender.require_auth();
-        require_role(&env, &sender, Role::Company)?;
+        require_role(&env, &sender, &Role::Company)?;
 
         let shipment_id = storage::get_shipment_counter(&env)
             .checked_add(1)

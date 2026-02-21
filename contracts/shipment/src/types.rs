@@ -7,24 +7,28 @@ pub enum DataKey {
     Admin,
     /// Counter tracking total shipments created.
     ShipmentCount,
-    /// Addresses with Company role.
-    Company(Address),
+    /// Role assigned to an address — (address, role) -> bool.
+    UserRole(Address, Role),
     /// Individual shipment data keyed by ID.
     Shipment(u64),
     /// Carrier whitelist for a company — (company, carrier) -> bool.
     CarrierWhitelist(Address, Address),
     /// Escrow balance for a shipment.
     Escrow(u64),
-    /// Role assigned to an address.
-    Role(Address),
 }
 
 /// Supported user roles.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Role {
+    /// Contract administrator with full permissions.
+    Admin,
     /// A registered company that can create shipments.
     Company,
+    /// A carrier that can handle shipments.
+    Carrier,
+    /// A customer that can interact with shipments.
+    Customer,
 }
 
 /// Shipment status lifecycle.

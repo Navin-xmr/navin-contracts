@@ -145,10 +145,29 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Company"
+                              "symbol": "ShipmentCount"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u64": 0
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "UserRole"
                             },
                             {
                               "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                            },
+                            {
+                              "vec": [
+                                {
+                                  "symbol": "Admin"
+                                }
+                              ]
                             }
                           ]
                         },
@@ -160,12 +179,22 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "ShipmentCount"
+                              "symbol": "UserRole"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                            },
+                            {
+                              "vec": [
+                                {
+                                  "symbol": "Company"
+                                }
+                              ]
                             }
                           ]
                         },
                         "val": {
-                          "u64": 0
+                          "bool": true
                         }
                       }
                     ]
