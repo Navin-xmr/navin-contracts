@@ -935,6 +935,138 @@ fn test_confirm_delivery_wrong_status() {
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
 }
 
+// ============= Release Escrow Tests =============
+
+#[test]
+fn test_release_escrow_success() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let escrow_amount: i128 = 5000;
+
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::ShipmentStatus::Delivered;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+
+    client.release_escrow(&receiver, &shipment_id);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")]
+fn test_release_escrow_double_release() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let escrow_amount: i128 = 5000;
+
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::ShipmentStatus::Delivered;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+
+    client.release_escrow(&receiver, &shipment_id);
+    client.release_escrow(&receiver, &shipment_id);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_release_escrow_unauthorized() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let unauthorized = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let escrow_amount: i128 = 5000;
+
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::ShipmentStatus::Delivered;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+
+    client.release_escrow(&unauthorized, &shipment_id);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_release_escrow_wrong_status() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let escrow_amount: i128 = 5000;
+
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    client.release_escrow(&receiver, &shipment_id);
+}
+
+#[test]
+fn test_release_escrow_by_admin() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let escrow_amount: i128 = 5000;
+
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::ShipmentStatus::Delivered;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+
+    client.release_escrow(&admin, &shipment_id);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
 // ============= Milestone Event Tests =============
 
 #[test]

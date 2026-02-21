@@ -523,4 +523,40 @@ impl NavinShipment {
 
         Ok(())
     }
+
+    /// Release escrowed funds to the carrier after delivery confirmation.
+    /// Only the receiver or admin can trigger release.
+    /// Shipment must be in Delivered status.
+    pub fn release_escrow(env: Env, caller: Address, shipment_id: u64) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        caller.require_auth();
+
+        let admin = storage::get_admin(&env);
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+
+        if caller != shipment.receiver && caller != admin {
+            return Err(SdkError::from_contract_error(3));
+        }
+
+        if shipment.status != ShipmentStatus::Delivered {
+            return Err(SdkError::from_contract_error(9));
+        }
+
+        let escrow_amount = shipment.escrow_amount;
+        if escrow_amount == 0 {
+            return Err(SdkError::from_contract_error(8));
+        }
+
+        shipment.escrow_amount = 0;
+        shipment.updated_at = env.ledger().timestamp();
+
+        storage::set_shipment(&env, &shipment);
+        storage::remove_escrow_balance(&env, shipment_id);
+        extend_shipment_ttl(&env, shipment_id);
+
+        events::emit_escrow_released(&env, shipment_id, &shipment.carrier, escrow_amount);
+
+        Ok(())
+    }
 }
