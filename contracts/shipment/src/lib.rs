@@ -181,4 +181,39 @@ impl NavinShipment {
         require_initialized(&env)?;
         storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))
     }
+
+    /// Deposit escrow funds for a shipment.
+    /// Only a Company can deposit, and the shipment must be in Created status.
+    pub fn deposit_escrow(
+        env: Env,
+        from: Address,
+        shipment_id: u64,
+        amount: i128,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        from.require_auth();
+        require_role(&env, &from, Role::Company)?;
+
+        if amount <= 0 {
+            return Err(SdkError::from_contract_error(8));
+        }
+
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+
+        if shipment.status != ShipmentStatus::Created {
+            return Err(SdkError::from_contract_error(7));
+        }
+
+        shipment.escrow_amount = amount;
+        shipment.updated_at = env.ledger().timestamp();
+        storage::set_shipment(&env, &shipment);
+
+        env.events().publish(
+            (Symbol::new(&env, "escrow_deposited"),),
+            (shipment_id, from, amount),
+        );
+
+        Ok(())
+    }
 }

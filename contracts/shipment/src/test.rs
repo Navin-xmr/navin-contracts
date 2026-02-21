@@ -253,3 +253,76 @@ fn test_add_whitelist_fails_before_initialization() {
     // Must fail with NotInitialized (error code 2)
     client.add_carrier_to_whitelist(&company, &carrier);
 }
+
+// ============= Deposit Escrow Tests =============
+
+#[test]
+fn test_deposit_escrow_success() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[10u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    let escrow_amount: i128 = 1000;
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.escrow_amount, escrow_amount);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_deposit_escrow_unauthorized() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let non_company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[11u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    let escrow_amount: i128 = 1000;
+    client.deposit_escrow(&non_company, &shipment_id, &escrow_amount);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_deposit_escrow_shipment_not_found() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let non_existent_shipment_id = 999u64;
+    let escrow_amount: i128 = 1000;
+    client.deposit_escrow(&company, &non_existent_shipment_id, &escrow_amount);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")]
+fn test_deposit_escrow_invalid_amount() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[12u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    let invalid_amount: i128 = 0;
+    client.deposit_escrow(&company, &shipment_id, &invalid_amount);
+}
