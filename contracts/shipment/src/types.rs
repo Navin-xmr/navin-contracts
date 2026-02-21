@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, BytesN, Symbol};
+use soroban_sdk::{contracttype, Address, BytesN, Symbol, Vec};
 
 /// Storage keys for contract data.
 #[contracttype]
@@ -136,6 +136,10 @@ pub struct Shipment {
     pub updated_at: u64,
     /// Amount held in escrow for this shipment.
     pub escrow_amount: i128,
+    /// Total amount deposited in escrow.
+    pub total_escrow: i128,
+    /// Milestone-based payment schedule: (checkpoint name, percentage).
+    pub payment_milestones: Vec<(Symbol, u32)>,
 }
 
 /// A checkpoint milestone recorded during shipment transit.
@@ -174,4 +178,5 @@ pub struct ShipmentInput {
     pub receiver: Address,
     pub carrier: Address,
     pub data_hash: BytesN<32>,
+    pub payment_milestones: Vec<(Symbol, u32)>,
 }

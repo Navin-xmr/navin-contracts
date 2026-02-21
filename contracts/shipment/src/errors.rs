@@ -17,4 +17,6 @@ pub enum Error {
     EscrowAlreadyDeposited = 11,
     BatchTooLarge = 12,
     InvalidShipmentInput = 13,
+    MilestoneSumInvalid = 14,
+    MilestoneAlreadyPaid = 15,
 }
