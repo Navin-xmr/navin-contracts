@@ -12,4 +12,5 @@ pub enum Error {
     ShipmentNotFound = 6,
     CarrierNotAuthorized = 7,
     InvalidStatus = 8,
+    InvalidEta = 9,
 }
