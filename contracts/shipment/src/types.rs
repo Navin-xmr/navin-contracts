@@ -19,6 +19,8 @@ pub enum DataKey {
     Escrow(u64),
     /// Role assigned to an address.
     Role(Address),
+    /// Hash of proof-of-delivery data for a shipment.
+    ConfirmationHash(u64),
 }
 
 /// Supported user roles.

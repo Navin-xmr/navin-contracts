@@ -143,10 +143,8 @@ fn test_add_carrier_to_whitelist() {
     let company = Address::generate(&_env);
     let carrier = Address::generate(&_env);
 
-    // Add carrier to whitelist
     client.add_carrier_to_whitelist(&company, &carrier);
 
-    // Verify carrier is whitelisted
     assert!(client.is_carrier_whitelisted(&company, &carrier));
 }
 
@@ -158,14 +156,11 @@ fn test_remove_carrier_from_whitelist() {
     let company = Address::generate(&_env);
     let carrier = Address::generate(&_env);
 
-    // Add carrier to whitelist
     client.add_carrier_to_whitelist(&company, &carrier);
     assert!(client.is_carrier_whitelisted(&company, &carrier));
 
-    // Remove carrier from whitelist
     client.remove_carrier_from_whitelist(&company, &carrier);
 
-    // Verify carrier is no longer whitelisted
     assert!(!client.is_carrier_whitelisted(&company, &carrier));
 }
 
@@ -177,7 +172,6 @@ fn test_is_carrier_whitelisted_returns_false_for_non_whitelisted() {
     let company = Address::generate(&_env);
     let carrier = Address::generate(&_env);
 
-    // Verify carrier is not whitelisted by default
     assert!(!client.is_carrier_whitelisted(&company, &carrier));
 }
 
@@ -191,21 +185,15 @@ fn test_multiple_carriers_whitelist() {
     let carrier2 = Address::generate(&_env);
     let carrier3 = Address::generate(&_env);
 
-    // Add multiple carriers
     client.add_carrier_to_whitelist(&company, &carrier1);
     client.add_carrier_to_whitelist(&company, &carrier2);
 
-    // Verify added carriers are whitelisted
     assert!(client.is_carrier_whitelisted(&company, &carrier1));
     assert!(client.is_carrier_whitelisted(&company, &carrier2));
-
-    // Verify carrier3 is not whitelisted
     assert!(!client.is_carrier_whitelisted(&company, &carrier3));
 
-    // Remove one carrier
     client.remove_carrier_from_whitelist(&company, &carrier1);
 
-    // Verify carrier1 is removed but carrier2 is still whitelisted
     assert!(!client.is_carrier_whitelisted(&company, &carrier1));
     assert!(client.is_carrier_whitelisted(&company, &carrier2));
 }
@@ -219,17 +207,13 @@ fn test_whitelist_per_company() {
     let company2 = Address::generate(&_env);
     let carrier = Address::generate(&_env);
 
-    // Add carrier to company1's whitelist only
     client.add_carrier_to_whitelist(&company1, &carrier);
 
-    // Verify carrier is whitelisted for company1 but not for company2
     assert!(client.is_carrier_whitelisted(&company1, &carrier));
     assert!(!client.is_carrier_whitelisted(&company2, &carrier));
 
-    // Add same carrier to company2's whitelist
     client.add_carrier_to_whitelist(&company2, &carrier);
 
-    // Verify carrier is now whitelisted for both companies
     assert!(client.is_carrier_whitelisted(&company1, &carrier));
     assert!(client.is_carrier_whitelisted(&company2, &carrier));
 }
@@ -242,7 +226,6 @@ fn test_whitelist_functions_fail_before_initialization() {
     let company = Address::generate(&_env);
     let carrier = Address::generate(&_env);
 
-    // Must fail with NotInitialized (error code 2)
     client.is_carrier_whitelisted(&company, &carrier);
 }
 
@@ -254,7 +237,6 @@ fn test_add_whitelist_fails_before_initialization() {
     let company = Address::generate(&_env);
     let carrier = Address::generate(&_env);
 
-    // Must fail with NotInitialized (error code 2)
     client.add_carrier_to_whitelist(&company, &carrier);
 }
 
@@ -459,7 +441,6 @@ fn test_get_escrow_balance_returns_zero_without_deposit() {
 
     let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
 
-    // No escrow deposited yet, should return 0
     assert_eq!(client.get_escrow_balance(&shipment_id), 0);
 }
 
@@ -476,7 +457,6 @@ fn test_get_escrow_balance_after_deposit() {
 
     let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
 
-    // Simulate a deposit by setting escrow balance directly
     env.as_contract(&client.address, || {
         crate::storage::set_escrow_balance(&env, shipment_id, 500_000);
     });
@@ -497,7 +477,6 @@ fn test_get_escrow_balance_after_release() {
 
     let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
 
-    // Simulate deposit then release
     env.as_contract(&client.address, || {
         crate::storage::set_escrow_balance(&env, shipment_id, 1_000_000);
     });
@@ -507,7 +486,6 @@ fn test_get_escrow_balance_after_release() {
         crate::storage::remove_escrow_balance(&env, shipment_id);
     });
 
-    // After release, should return 0
     assert_eq!(client.get_escrow_balance(&shipment_id), 0);
 }
 
@@ -518,7 +496,6 @@ fn test_get_escrow_balance_shipment_not_found() {
 
     client.initialize(&admin);
 
-    // Must fail with ShipmentNotFound (error code 6)
     client.get_escrow_balance(&999);
 }
 
@@ -527,7 +504,6 @@ fn test_get_escrow_balance_shipment_not_found() {
 fn test_get_escrow_balance_fails_before_initialization() {
     let (_env, client, _admin) = setup_env();
 
-    // Must fail with NotInitialized (error code 2)
     client.get_escrow_balance(&1);
 }
 
@@ -537,7 +513,6 @@ fn test_get_escrow_balance_fails_before_initialization() {
 fn test_get_shipment_count_returns_zero_on_fresh_contract() {
     let (_env, client, _admin) = setup_env();
 
-    // Returns 0 even without initialization
     assert_eq!(client.get_shipment_count(), 0);
 }
 
@@ -560,17 +535,14 @@ fn test_get_shipment_count_after_creating_shipments() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    // Count after 1 shipment
     let hash_one = BytesN::from_array(&env, &[1u8; 32]);
     client.create_shipment(&company, &receiver, &carrier, &hash_one);
     assert_eq!(client.get_shipment_count(), 1);
 
-    // Count after 2 shipments
     let hash_two = BytesN::from_array(&env, &[2u8; 32]);
     client.create_shipment(&company, &receiver, &carrier, &hash_two);
     assert_eq!(client.get_shipment_count(), 2);
 
-    // Count after 3 shipments
     let hash_three = BytesN::from_array(&env, &[3u8; 32]);
     client.create_shipment(&company, &receiver, &carrier, &hash_three);
     assert_eq!(client.get_shipment_count(), 3);
@@ -608,7 +580,6 @@ fn test_get_shipment_not_found() {
 
     client.initialize(&admin);
 
-    // Must fail with ShipmentNotFound (error code 6)
     client.get_shipment(&999);
 }
 
@@ -617,7 +588,6 @@ fn test_get_shipment_not_found() {
 fn test_get_shipment_fails_before_initialization() {
     let (_env, client, _admin) = setup_env();
 
-    // Must fail with NotInitialized (error code 2)
     client.get_shipment(&1);
 }
 
@@ -638,7 +608,6 @@ fn test_report_geofence_zone_entry() {
 
     let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
 
-    // Report ZoneEntry
     client.report_geofence_event(
         &carrier,
         &shipment_id,
@@ -646,7 +615,6 @@ fn test_report_geofence_zone_entry() {
         &event_hash,
     );
 
-    // Verify event was emitted (at least 1 geofence event)
     let events = env.events().all();
     assert!(!events.is_empty());
 }
@@ -666,7 +634,6 @@ fn test_report_geofence_zone_exit() {
 
     let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
 
-    // Report ZoneExit
     client.report_geofence_event(
         &carrier,
         &shipment_id,
@@ -674,7 +641,6 @@ fn test_report_geofence_zone_exit() {
         &event_hash,
     );
 
-    // Verify event was emitted
     let events = env.events().all();
     assert!(!events.is_empty());
 }
@@ -694,7 +660,6 @@ fn test_report_geofence_route_deviation() {
 
     let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
 
-    // Report RouteDeviation
     client.report_geofence_event(
         &carrier,
         &shipment_id,
@@ -702,7 +667,6 @@ fn test_report_geofence_route_deviation() {
         &event_hash,
     );
 
-    // Verify event was emitted
     let events = env.events().all();
     assert!(!events.is_empty());
 }
@@ -724,7 +688,6 @@ fn test_report_geofence_event_unauthorized_role() {
 
     let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
 
-    // Attempt to report geofence event should fail with CarrierNotAuthorized (error code 7)
     client.report_geofence_event(
         &outsider,
         &shipment_id,
@@ -743,8 +706,97 @@ fn test_report_geofence_event_non_existent_shipment() {
     client.initialize(&admin);
     client.add_carrier(&admin, &carrier);
 
-    // Attempt to report for non-existent shipment should fail with ShipmentNotFound (error code 6)
     client.report_geofence_event(&carrier, &999, &GeofenceEvent::ZoneEntry, &event_hash);
+}
+
+// ============= Confirm Delivery Tests =============
+
+fn setup_shipment_with_status(
+    env: &Env,
+    client: &NavinShipmentClient,
+    admin: &Address,
+    status: crate::ShipmentStatus,
+) -> (Address, Address, u64) {
+    let company = Address::generate(env);
+    let receiver = Address::generate(env);
+    let carrier = Address::generate(env);
+    let data_hash = BytesN::from_array(env, &[1u8; 32]);
+
+    client.initialize(admin);
+    client.add_company(admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    // Patch status directly in contract storage to simulate a mid-lifecycle state
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(env, shipment_id).unwrap();
+        shipment.status = status;
+        crate::storage::set_shipment(env, &shipment);
+    });
+
+    (receiver, carrier, shipment_id)
+}
+
+#[test]
+fn test_confirm_delivery_success_in_transit() {
+    let (env, client, admin) = setup_env();
+    let confirmation_hash = BytesN::from_array(&env, &[99u8; 32]);
+
+    let (receiver, _carrier, shipment_id) =
+        setup_shipment_with_status(&env, &client, &admin, crate::ShipmentStatus::InTransit);
+
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::ShipmentStatus::Delivered);
+
+    // Verify confirmation hash was persisted on-chain
+    let stored_hash = env.as_contract(&client.address, || {
+        crate::storage::get_confirmation_hash(&env, shipment_id)
+    });
+    assert_eq!(stored_hash, Some(confirmation_hash));
+}
+
+#[test]
+fn test_confirm_delivery_success_at_checkpoint() {
+    let (env, client, admin) = setup_env();
+    let confirmation_hash = BytesN::from_array(&env, &[88u8; 32]);
+
+    let (receiver, _carrier, shipment_id) =
+        setup_shipment_with_status(&env, &client, &admin, crate::ShipmentStatus::AtCheckpoint);
+
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::ShipmentStatus::Delivered);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_confirm_delivery_wrong_receiver() {
+    let (env, client, admin) = setup_env();
+    let confirmation_hash = BytesN::from_array(&env, &[77u8; 32]);
+    let imposter = Address::generate(&env);
+
+    let (_receiver, _carrier, shipment_id) =
+        setup_shipment_with_status(&env, &client, &admin, crate::ShipmentStatus::InTransit);
+
+    // imposter is NOT the designated receiver — must fail with Unauthorized (error code 3)
+    client.confirm_delivery(&imposter, &shipment_id, &confirmation_hash);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")]
+fn test_confirm_delivery_wrong_status() {
+    let (env, client, admin) = setup_env();
+    let confirmation_hash = BytesN::from_array(&env, &[66u8; 32]);
+
+    // Shipment starts in Created status, which is invalid for confirmation
+    let (receiver, _carrier, shipment_id) =
+        setup_shipment_with_status(&env, &client, &admin, crate::ShipmentStatus::Created);
+
+    // Must fail with InvalidStatus (error code 8)
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
 }
 
 // ============= Milestone Event Tests =============
@@ -774,10 +826,8 @@ fn test_record_milestone_success() {
     client.record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
 
     let events = env.events().all();
-    // Verify milestone_recorded event is in the events
     let mut found = false;
     for (_, _, _event_data) in events.iter() {
-        // Skip over events we don't care about, just check if it executed
         found = true;
     }
     assert!(found);
