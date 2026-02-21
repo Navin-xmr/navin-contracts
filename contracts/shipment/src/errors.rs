@@ -11,6 +11,9 @@ pub enum Error {
     CounterOverflow = 5,
     ShipmentNotFound = 6,
     CarrierNotAuthorized = 7,
+    InvalidAmount = 8,
+    InvalidShipmentStatus = 9,
+    InvalidStatus = 10,
     InvalidStatus = 8,
     InvalidEta = 9,
 }
