@@ -462,4 +462,49 @@ impl NavinShipment {
         extend_shipment_ttl(&env, shipment_id);
         Ok(())
     }
+
+    /// Cancel a shipment before it is delivered.
+    /// Only the Company (sender) or Admin can cancel.
+    /// Shipment must not be Delivered or Disputed.
+    /// If escrow exists, triggers automatic refund to the Company.
+    pub fn cancel_shipment(
+        env: Env,
+        caller: Address,
+        shipment_id: u64,
+        reason_hash: BytesN<32>,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        caller.require_auth();
+
+        let admin = storage::get_admin(&env);
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+
+        if caller != shipment.sender && caller != admin {
+            return Err(SdkError::from_contract_error(3));
+        }
+
+        match shipment.status {
+            ShipmentStatus::Delivered | ShipmentStatus::Disputed => {
+                return Err(SdkError::from_contract_error(9));
+            }
+            _ => {}
+        }
+
+        let escrow_amount = shipment.escrow_amount;
+        shipment.status = ShipmentStatus::Cancelled;
+        shipment.escrow_amount = 0;
+        shipment.updated_at = env.ledger().timestamp();
+
+        storage::set_shipment(&env, &shipment);
+        if escrow_amount > 0 {
+            storage::remove_escrow_balance(&env, shipment_id);
+            events::emit_escrow_released(&env, shipment_id, &shipment.sender, escrow_amount);
+        }
+        extend_shipment_ttl(&env, shipment_id);
+
+        events::emit_shipment_cancelled(&env, shipment_id, &caller, &reason_hash);
+
+        Ok(())
+    }
 }

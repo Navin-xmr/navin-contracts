@@ -1082,3 +1082,97 @@ fn test_manual_ttl_extension() {
         assert!(ttl >= 518_400);
     });
 }
+
+// ============= Cancel Shipment Tests =============
+
+#[test]
+fn test_cancel_shipment_with_escrow() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[99u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let escrow_amount: i128 = 5000;
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    client.cancel_shipment(&company, &shipment_id, &reason_hash);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+#[test]
+fn test_cancel_shipment_without_escrow() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[88u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    client.cancel_shipment(&company, &shipment_id, &reason_hash);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+#[test]
+fn test_cancel_shipment_by_admin() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[3u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[66u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    client.cancel_shipment(&admin, &shipment_id, &reason_hash);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_cancel_shipment_delivered_should_fail() {
+    let (env, client, admin) = setup_env();
+    let reason_hash = BytesN::from_array(&env, &[77u8; 32]);
+
+    let (_receiver, _carrier, shipment_id) =
+        setup_shipment_with_status(&env, &client, &admin, crate::ShipmentStatus::Delivered);
+
+    let shipment = client.get_shipment(&shipment_id);
+    let company = shipment.sender;
+
+    client.cancel_shipment(&company, &shipment_id, &reason_hash);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_cancel_shipment_disputed_should_fail() {
+    let (env, client, admin) = setup_env();
+    let reason_hash = BytesN::from_array(&env, &[55u8; 32]);
+
+    let (_receiver, _carrier, shipment_id) =
+        setup_shipment_with_status(&env, &client, &admin, crate::ShipmentStatus::Disputed);
+
+    let shipment = client.get_shipment(&shipment_id);
+    let company = shipment.sender;
+
+    client.cancel_shipment(&company, &shipment_id, &reason_hash);
+}
