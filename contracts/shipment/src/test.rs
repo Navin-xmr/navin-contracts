@@ -258,6 +258,93 @@ fn test_add_whitelist_fails_before_initialization() {
     client.add_carrier_to_whitelist(&company, &carrier);
 }
 
+// ============= Get Escrow Balance Tests =============
+
+#[test]
+fn test_get_escrow_balance_returns_zero_without_deposit() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    // No escrow deposited yet, should return 0
+    assert_eq!(client.get_escrow_balance(&shipment_id), 0);
+}
+
+#[test]
+fn test_get_escrow_balance_after_deposit() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    // Simulate a deposit by setting escrow balance directly
+    env.as_contract(&client.address, || {
+        crate::storage::set_escrow_balance(&env, shipment_id, 500_000);
+    });
+
+    assert_eq!(client.get_escrow_balance(&shipment_id), 500_000);
+}
+
+#[test]
+fn test_get_escrow_balance_after_release() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[3u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    // Simulate deposit then release
+    env.as_contract(&client.address, || {
+        crate::storage::set_escrow_balance(&env, shipment_id, 1_000_000);
+    });
+    assert_eq!(client.get_escrow_balance(&shipment_id), 1_000_000);
+
+    env.as_contract(&client.address, || {
+        crate::storage::remove_escrow_balance(&env, shipment_id);
+    });
+
+    // After release, should return 0
+    assert_eq!(client.get_escrow_balance(&shipment_id), 0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_get_escrow_balance_shipment_not_found() {
+    let (_env, client, admin) = setup_env();
+
+    client.initialize(&admin);
+
+    // Must fail with ShipmentNotFound (error code 6)
+    client.get_escrow_balance(&999);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_get_escrow_balance_fails_before_initialization() {
+    let (_env, client, _admin) = setup_env();
+
+    // Must fail with NotInitialized (error code 2)
+    client.get_escrow_balance(&1);
+}
+
 // ============= Get Shipment Count Tests =============
 
 #[test]
