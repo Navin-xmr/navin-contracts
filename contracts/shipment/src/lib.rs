@@ -284,4 +284,45 @@ impl NavinShipment {
 
         Ok(())
     }
+
+    /// Record a milestone for a shipment.
+    /// Only registered carriers can record milestones.
+    pub fn record_milestone(
+        env: Env,
+        carrier: Address,
+        shipment_id: u64,
+        checkpoint: Symbol,
+        data_hash: BytesN<32>,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        carrier.require_auth();
+        require_role(&env, &carrier, Role::Carrier)?;
+
+        // Verify shipment exists and status
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+
+        if shipment.status != ShipmentStatus::InTransit {
+            return Err(SdkError::from_contract_error(8));
+        }
+
+        let timestamp = env.ledger().timestamp();
+
+        let _milestone = Milestone {
+            shipment_id,
+            checkpoint: checkpoint.clone(),
+            data_hash: data_hash.clone(),
+            timestamp,
+            reporter: carrier.clone(),
+        };
+
+        // Do NOT store the milestone on-chain
+        // Emit the milestone_recorded event (Hash-and-Emit pattern)
+        env.events().publish(
+            (Symbol::new(&env, "milestone_recorded"),),
+            (shipment_id, checkpoint, data_hash, carrier),
+        );
+
+        Ok(())
+    }
 }
