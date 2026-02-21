@@ -206,7 +206,6 @@ pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i
 ///
 /// - **Express backend**: Creates a dispute case and alerts the admin.
 /// - **Frontend**: Opens the dispute resolution workflow for both parties.
-#[allow(dead_code)]
 pub fn emit_dispute_raised(
     env: &Env,
     shipment_id: u64,

@@ -166,3 +166,13 @@ pub enum GeofenceEvent {
     /// Shipment deviated from the expected route.
     RouteDeviation,
 }
+
+/// Dispute resolution options for admin.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum DisputeResolution {
+    /// Release escrowed funds to the carrier.
+    ReleaseToCarrier,
+    /// Refund escrowed funds to the company.
+    RefundToCompany,
+}
