@@ -66,6 +66,7 @@ impl NavinShipment {
 
         storage::set_admin(&env, &admin);
         storage::set_shipment_counter(&env, 0);
+        storage::set_version(&env, 1);
         storage::set_company_role(&env, &admin);
 
         env.events()
@@ -78,6 +79,12 @@ impl NavinShipment {
     pub fn get_admin(env: Env) -> Result<Address, SdkError> {
         require_initialized(&env)?;
         Ok(storage::get_admin(&env))
+    }
+
+    /// Get the contract version number.
+    pub fn get_version(env: Env) -> Result<u32, SdkError> {
+        require_initialized(&env)?;
+        Ok(storage::get_version(&env))
     }
 
     /// Get the current shipment counter
@@ -491,6 +498,28 @@ impl NavinShipment {
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_shipment_cancelled(&env, shipment_id, &caller, &reason_hash);
+
+        Ok(())
+    }
+
+    /// Upgrade the contract to a new WASM implementation.
+    /// Only the admin can trigger upgrades. State is preserved.
+    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(SdkError::from_contract_error(3));
+        }
+
+        let new_version = storage::get_version(&env)
+            .checked_add(1)
+            .ok_or(SdkError::from_contract_error(5))?;
+
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
+        storage::set_version(&env, new_version);
+        events::emit_contract_upgraded(&env, &admin, &new_wasm_hash, new_version);
 
         Ok(())
     }

@@ -24,6 +24,7 @@ fn test_successful_initialization() {
 
     assert_eq!(client.get_admin(), admin);
     assert_eq!(client.get_shipment_counter(), 0);
+    assert_eq!(client.get_version(), 1);
 }
 
 #[test]
@@ -1513,4 +1514,49 @@ fn test_escrow_deposit_after_status_change_fails() {
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash2);
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+}
+
+// ============= Contract Upgrade Tests =============
+
+#[test]
+fn test_upgrade_success() {
+    let (env, client, admin) = setup_env();
+
+    let wasm_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/wasm32-unknown-unknown/release/shipment.wasm");
+    let wasm = match std::fs::read(&wasm_path) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            std::eprintln!(
+                "Skipping test_upgrade_success: run `cargo build --target wasm32-unknown-unknown \
+                 --release` first."
+            );
+            return;
+        }
+    };
+
+    client.initialize(&admin);
+    assert_eq!(client.get_version(), 1);
+
+    let new_wasm_hash = env.deployer().upload_contract_wasm(wasm.as_slice());
+    client.upgrade(&admin, &new_wasm_hash);
+
+    assert_eq!(client.get_version(), 2);
+
+    let events = env.events().all();
+    let last = events.get(events.len() - 1).unwrap();
+    let topic = Symbol::try_from_val(&env, &last.1.get(0).unwrap()).unwrap();
+    assert_eq!(topic, Symbol::new(&env, "contract_upgraded"));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_upgrade_unauthorized() {
+    let (env, client, admin) = setup_env();
+    let non_admin = Address::generate(&env);
+    let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
+
+    client.initialize(&admin);
+
+    client.upgrade(&non_admin, &new_wasm_hash);
 }

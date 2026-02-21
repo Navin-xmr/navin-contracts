@@ -1,11 +1,9 @@
 {
   "generators": {
-    "address": 3,
+    "address": 2,
     "nonce": 0
   },
   "auth": [
-    [],
-    [],
     []
   ],
   "ledger": {
@@ -40,59 +38,7 @@
                     "executable": {
                       "wasm": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
                     },
-                    "storage": [
-                      {
-                        "key": {
-                          "vec": [
-                            {
-                              "symbol": "Admin"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
-                              "symbol": "Company"
-                            },
-                            {
-                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "bool": true
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
-                              "symbol": "ShipmentCount"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "u64": 0
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
-                              "symbol": "Version"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "u32": 1
-                        }
-                      }
-                    ]
+                    "storage": null
                   }
                 }
               }

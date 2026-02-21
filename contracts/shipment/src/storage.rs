@@ -16,6 +16,16 @@ pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
 }
 
+/// Get the contract version number.
+pub fn get_version(env: &Env) -> u32 {
+    env.storage().instance().get(&DataKey::Version).unwrap_or(1)
+}
+
+/// Set the contract version number.
+pub fn set_version(env: &Env, version: u32) {
+    env.storage().instance().set(&DataKey::Version, &version);
+}
+
 /// Get the current shipment counter
 pub fn get_shipment_counter(env: &Env) -> u64 {
     env.storage()
