@@ -38,6 +38,24 @@ fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(),
     Ok(())
 }
 
+fn internal_release_escrow(env: &Env, shipment: &mut Shipment, amount: i128) {
+    if amount <= 0 {
+        return;
+    }
+    let actual_release = if amount > shipment.escrow_amount {
+        shipment.escrow_amount
+    } else {
+        amount
+    };
+
+    if actual_release > 0 {
+        shipment.escrow_amount -= actual_release;
+        shipment.updated_at = env.ledger().timestamp();
+        storage::set_shipment(env, shipment);
+        events::emit_escrow_released(env, shipment.id, &shipment.carrier, actual_release);
+    }
+}
+
 fn require_initialized(env: &Env) -> Result<(), SdkError> {
     if !storage::is_initialized(env) {
         return Err(SdkError::from_contract_error(2));
@@ -416,6 +434,9 @@ impl NavinShipment {
         storage::set_confirmation_hash(&env, shipment_id, &confirmation_hash);
         extend_shipment_ttl(&env, shipment_id);
 
+        let remaining_escrow = shipment.escrow_amount;
+        internal_release_escrow(&env, &mut shipment, remaining_escrow);
+
         env.events().publish(
             (Symbol::new(&env, "delivery_confirmed"),),
             (shipment_id, receiver, confirmation_hash),
@@ -520,6 +541,33 @@ impl NavinShipment {
         // Emit the milestone_recorded event (Hash-and-Emit pattern)
         events::emit_milestone_recorded(&env, shipment_id, &checkpoint, &data_hash, &carrier);
 
+        // Check for milestone-based payments
+        let mut mut_shipment = shipment;
+        let mut found_index = None;
+        for (i, milestone) in mut_shipment.payment_milestones.iter().enumerate() {
+            if milestone.0 == checkpoint {
+                found_index = Some(i);
+                break;
+            }
+        }
+
+        if let Some(idx) = found_index {
+            let mut already_paid = false;
+            for paid_symbol in mut_shipment.paid_milestones.iter() {
+                if paid_symbol == checkpoint {
+                    already_paid = true;
+                    break;
+                }
+            }
+
+            if !already_paid {
+                let milestone = mut_shipment.payment_milestones.get(idx as u32).unwrap();
+                let release_amount = (mut_shipment.total_escrow * milestone.1 as i128) / 100;
+                mut_shipment.paid_milestones.push_back(checkpoint.clone());
+                internal_release_escrow(&env, &mut mut_shipment, release_amount);
+            }
+        }
+
         Ok(())
     }
 
@@ -599,14 +647,7 @@ impl NavinShipment {
             return Err(SdkError::from_contract_error(8));
         }
 
-        shipment.escrow_amount = 0;
-        shipment.updated_at = env.ledger().timestamp();
-
-        storage::set_shipment(&env, &shipment);
-        storage::remove_escrow_balance(&env, shipment_id);
-        extend_shipment_ttl(&env, shipment_id);
-
-        events::emit_escrow_released(&env, shipment_id, &shipment.carrier, escrow_amount);
+        internal_release_escrow(&env, &mut shipment, escrow_amount);
 
         Ok(())
     }
