@@ -262,6 +262,24 @@ fn test_add_whitelist_fails_before_initialization() {
 
 #[test]
 fn test_deposit_escrow_success() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let escrow_amount: i128 = 1000;
+
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.escrow_amount, escrow_amount);
+}
+
 // ============= Status Update Tests =============
 
 #[test]
@@ -322,7 +340,7 @@ fn test_update_status_valid_transition_by_admin() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #8)")]
+#[should_panic(expected = "Error(Contract, #10)")]
 fn test_update_status_invalid_transition() {
     use crate::ShipmentStatus;
     let (env, client, admin) = setup_env();
@@ -774,6 +792,10 @@ fn test_deposit_escrow_shipment_not_found() {
     let non_existent_shipment_id = 999u64;
     let escrow_amount: i128 = 1000;
     client.deposit_escrow(&company, &non_existent_shipment_id, &escrow_amount);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
 fn test_report_geofence_event_non_existent_shipment() {
     let (env, client, admin) = setup_env();
     let carrier = Address::generate(&env);
@@ -825,6 +847,24 @@ fn test_record_milestone_success() {
 #[test]
 #[should_panic(expected = "Error(Contract, #8)")]
 fn test_deposit_escrow_invalid_amount() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let invalid_escrow_amount: i128 = 0;
+
+    // Should panic with error code 8 for invalid amount
+    client.deposit_escrow(&company, &shipment_id, &invalid_escrow_amount);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
 fn test_record_milestone_wrong_status() {
     let (env, client, admin) = setup_env();
     let company = Address::generate(&env);
@@ -855,19 +895,12 @@ fn test_record_milestone_unauthorized() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
-
-    let invalid_amount: i128 = 0;
-    client.deposit_escrow(&company, &shipment_id, &invalid_amount);
-    let outsider = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let checkpoint = soroban_sdk::Symbol::new(&env, "port_arrival");
-
-    client.initialize(&admin);
-    client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
     let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    let outsider = Address::generate(&env);
+    let checkpoint = soroban_sdk::Symbol::new(&env, "port_arrival");
 
     env.as_contract(&client.address, || {
         let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();

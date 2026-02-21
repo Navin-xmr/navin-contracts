@@ -236,7 +236,7 @@ impl NavinShipment {
             storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
 
         if shipment.status != ShipmentStatus::Created {
-            return Err(SdkError::from_contract_error(7));
+            return Err(SdkError::from_contract_error(9));
         }
 
         shipment.escrow_amount = amount;
@@ -246,6 +246,11 @@ impl NavinShipment {
         env.events().publish(
             (Symbol::new(&env, "escrow_deposited"),),
             (shipment_id, from, amount),
+        );
+
+        Ok(())
+    }
+
     /// Update shipment status with transition validation.
     /// Only the carrier or admin can update the status.
     pub fn update_status(
@@ -267,7 +272,7 @@ impl NavinShipment {
         }
 
         if !is_valid_transition(&shipment.status, &new_status) {
-            return Err(SdkError::from_contract_error(8));
+            return Err(SdkError::from_contract_error(10));
         }
 
         let old_status = shipment.status.clone();
@@ -348,7 +353,7 @@ impl NavinShipment {
             storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
 
         if shipment.status != ShipmentStatus::InTransit {
-            return Err(SdkError::from_contract_error(8));
+            return Err(SdkError::from_contract_error(10));
         }
 
         let timestamp = env.ledger().timestamp();

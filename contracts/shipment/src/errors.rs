@@ -10,8 +10,8 @@ pub enum Error {
     CarrierNotWhitelisted = 4,
     CounterOverflow = 5,
     ShipmentNotFound = 6,
-    InvalidShipmentStatus = 7,
-    InvalidAmount = 8,
     CarrierNotAuthorized = 7,
-    InvalidStatus = 8,
+    InvalidAmount = 8,
+    InvalidShipmentStatus = 9,
+    InvalidStatus = 10,
 }
