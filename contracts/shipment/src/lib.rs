@@ -40,6 +40,25 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), SdkError
     }
 }
 
+fn is_valid_transition(from: &ShipmentStatus, to: &ShipmentStatus) -> bool {
+    use ShipmentStatus::*;
+
+    matches!(
+        (from, to),
+        (Created, InTransit)
+            | (Created, Cancelled)
+            | (InTransit, AtCheckpoint)
+            | (InTransit, Delivered)
+            | (InTransit, Disputed)
+            | (AtCheckpoint, InTransit)
+            | (AtCheckpoint, Delivered)
+            | (AtCheckpoint, Disputed)
+            | (Delivered, Disputed)
+            | (Disputed, Delivered)
+            | (Disputed, Cancelled)
+    )
+}
+
 #[contract]
 pub struct NavinShipment;
 
@@ -227,6 +246,45 @@ impl NavinShipment {
         env.events().publish(
             (Symbol::new(&env, "escrow_deposited"),),
             (shipment_id, from, amount),
+    /// Update shipment status with transition validation.
+    /// Only the carrier or admin can update the status.
+    pub fn update_status(
+        env: Env,
+        caller: Address,
+        shipment_id: u64,
+        new_status: ShipmentStatus,
+        data_hash: BytesN<32>,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        caller.require_auth();
+
+        let admin = storage::get_admin(&env);
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+
+        if caller != shipment.carrier && caller != admin {
+            return Err(SdkError::from_contract_error(3));
+        }
+
+        if !is_valid_transition(&shipment.status, &new_status) {
+            return Err(SdkError::from_contract_error(8));
+        }
+
+        let old_status = shipment.status.clone();
+        shipment.status = new_status.clone();
+        shipment.data_hash = data_hash.clone();
+        shipment.updated_at = env.ledger().timestamp();
+
+        storage::set_shipment(&env, &shipment);
+
+        env.events().publish(
+            (Symbol::new(&env, "status_updated"),),
+            (shipment_id, old_status, new_status, data_hash),
+        );
+
+        Ok(())
+    }
+
     /// Returns the current escrowed amount for a specific shipment.
     /// Returns 0 if no escrow has been deposited.
     /// Returns ShipmentNotFound if the shipment does not exist.
