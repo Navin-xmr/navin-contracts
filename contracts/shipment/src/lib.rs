@@ -170,6 +170,47 @@ impl NavinShipment {
         Ok(())
     }
 
+    /// Revoke a role from an address.
+    /// Only admin can revoke roles. Admin cannot self-revoke (use transfer_admin instead).
+    pub fn revoke_role(
+        env: Env,
+        admin: Address,
+        target: Address,
+        role: Role,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(SdkError::from_contract_error(3));
+        }
+
+        // Admin cannot revoke their own role
+        if admin == target {
+            return Err(SdkError::from_contract_error(11));
+        }
+
+        // Verify target actually has the role before revoking
+        match role {
+            Role::Company => {
+                if !storage::has_company_role(&env, &target) {
+                    return Err(SdkError::from_contract_error(12));
+                }
+                storage::remove_company_role(&env, &target);
+            }
+            Role::Carrier => {
+                if !storage::has_carrier_role(&env, &target) {
+                    return Err(SdkError::from_contract_error(12));
+                }
+                storage::remove_carrier_role(&env, &target);
+            }
+        }
+
+        events::emit_role_revoked(&env, &admin, &target, &role);
+
+        Ok(())
+    }
+
     /// Create a shipment and emit the shipment_created event.
     pub fn create_shipment(
         env: Env,

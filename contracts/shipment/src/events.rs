@@ -18,7 +18,7 @@
 //! Each event uses a single descriptive `Symbol` as its topic so that
 //! consumers can filter by topic when subscribing to contract events.
 
-use crate::types::ShipmentStatus;
+use crate::types::{Role, ShipmentStatus};
 use soroban_sdk::{Address, BytesN, Env, Symbol};
 
 /// Emits a `shipment_created` event when a new shipment is registered.
@@ -121,6 +121,27 @@ pub fn emit_milestone_recorded(
             data_hash.clone(),
             reporter.clone(),
         ),
+    );
+}
+
+/// Emits a `role_revoked` event when an admin removes a role from an address.
+///
+/// # Event Data
+///
+/// | Field   | Type      | Description                            |
+/// |---------|-----------|----------------------------------------|
+/// | admin   | `Address` | Admin who revoked the role             |
+/// | target  | `Address` | Address whose role was revoked         |
+/// | role    | `Role`    | The role that was revoked              |
+///
+/// # Listeners
+///
+/// - **Express backend**: Updates the access-control records in the DB.
+/// - **Frontend**: Reflects permission changes in the admin dashboard.
+pub fn emit_role_revoked(env: &Env, admin: &Address, target: &Address, role: &Role) {
+    env.events().publish(
+        (Symbol::new(env, "role_revoked"),),
+        (admin.clone(), target.clone(), role.clone()),
     );
 }
 

@@ -2,7 +2,7 @@
 
 extern crate std;
 
-use crate::{GeofenceEvent, NavinShipment, NavinShipmentClient};
+use crate::{GeofenceEvent, NavinShipment, NavinShipmentClient, Role};
 use soroban_sdk::{
     testutils::{Address as _, Events},
     Address, BytesN, Env, Symbol, TryFromVal,
@@ -1034,4 +1034,133 @@ fn test_record_milestone_unauthorized() {
 
     // Attempt to record with outsider should fail with CarrierNotAuthorized = 7
     client.record_milestone(&outsider, &shipment_id, &checkpoint, &data_hash);
+}
+
+// ============= Revoke Role Tests =============
+
+#[test]
+fn test_revoke_company_role_success() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    // Company can create shipments before revocation
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    assert_eq!(shipment_id, 1);
+
+    // Revoke Company role
+    client.revoke_role(&admin, &company, &Role::Company);
+
+    // Verify role_revoked event was emitted
+    let events = env.events().all();
+    let last = events.get(events.len() - 1).unwrap();
+    let topic = Symbol::try_from_val(&env, &last.1.get(0).unwrap()).unwrap();
+    assert_eq!(topic, Symbol::new(&env, "role_revoked"));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_revoke_company_then_create_shipment_fails() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    // Revoke Company role
+    client.revoke_role(&admin, &company, &Role::Company);
+
+    // Attempting to create a shipment after revocation must fail
+    client.create_shipment(&company, &receiver, &carrier, &data_hash);
+}
+
+#[test]
+fn test_revoke_carrier_role_success() {
+    let (env, client, admin) = setup_env();
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.add_carrier(&admin, &carrier);
+
+    // Revoke Carrier role
+    client.revoke_role(&admin, &carrier, &Role::Carrier);
+
+    // Verify role_revoked event was emitted
+    let events = env.events().all();
+    let last = events.get(events.len() - 1).unwrap();
+    let topic = Symbol::try_from_val(&env, &last.1.get(0).unwrap()).unwrap();
+    assert_eq!(topic, Symbol::new(&env, "role_revoked"));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")]
+fn test_revoke_carrier_then_report_geofence_fails() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let event_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    // Revoke Carrier role
+    client.revoke_role(&admin, &carrier, &Role::Carrier);
+
+    // Attempting a carrier-gated operation after revocation must fail
+    client.report_geofence_event(
+        &carrier,
+        &shipment_id,
+        &GeofenceEvent::ZoneEntry,
+        &event_hash,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #11)")]
+fn test_admin_cannot_self_revoke() {
+    let (_env, client, admin) = setup_env();
+
+    client.initialize(&admin);
+
+    // Admin trying to revoke their own Company role must fail with CannotSelfRevoke
+    client.revoke_role(&admin, &admin, &Role::Company);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_revoke_role_non_admin_fails() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let outsider = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    // Non-admin trying to revoke a role must fail with Unauthorized
+    client.revoke_role(&outsider, &company, &Role::Company);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #12)")]
+fn test_revoke_role_not_assigned_fails() {
+    let (env, client, admin) = setup_env();
+    let random_address = Address::generate(&env);
+
+    client.initialize(&admin);
+
+    // Revoking a role that was never assigned must fail
+    client.revoke_role(&admin, &random_address, &Role::Company);
 }

@@ -62,6 +62,20 @@ pub fn set_carrier_role(env: &Env, carrier: &Address) {
         .set(&DataKey::Carrier(carrier.clone()), &true);
 }
 
+/// Remove Company role from an address
+pub fn remove_company_role(env: &Env, company: &Address) {
+    env.storage()
+        .instance()
+        .remove(&DataKey::Company(company.clone()));
+}
+
+/// Remove Carrier role from an address
+pub fn remove_carrier_role(env: &Env, carrier: &Address) {
+    env.storage()
+        .instance()
+        .remove(&DataKey::Carrier(carrier.clone()));
+}
+
 /// Check whether an address has Company role
 pub fn has_company_role(env: &Env, address: &Address) -> bool {
     env.storage()
