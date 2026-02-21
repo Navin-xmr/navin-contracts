@@ -55,11 +55,26 @@ pub fn set_company_role(env: &Env, company: &Address) {
         .set(&DataKey::Company(company.clone()), &true);
 }
 
+/// Grant Carrier role to an address
+pub fn set_carrier_role(env: &Env, carrier: &Address) {
+    env.storage()
+        .instance()
+        .set(&DataKey::Carrier(carrier.clone()), &true);
+}
+
 /// Check whether an address has Company role
 pub fn has_company_role(env: &Env, address: &Address) -> bool {
     env.storage()
         .instance()
         .get(&DataKey::Company(address.clone()))
+        .unwrap_or(false)
+}
+
+/// Check whether an address has Carrier role
+pub fn has_carrier_role(env: &Env, address: &Address) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::Carrier(address.clone()))
         .unwrap_or(false)
 }
 
@@ -75,4 +90,26 @@ pub fn set_shipment(env: &Env, shipment: &Shipment) {
     env.storage()
         .instance()
         .set(&DataKey::Shipment(shipment.id), shipment);
+}
+
+/// Get escrow balance for a shipment. Returns 0 if no escrow exists.
+pub fn get_escrow_balance(env: &Env, shipment_id: u64) -> i128 {
+    env.storage()
+        .instance()
+        .get(&DataKey::Escrow(shipment_id))
+        .unwrap_or(0)
+}
+
+/// Set escrow balance for a shipment.
+pub fn set_escrow_balance(env: &Env, shipment_id: u64, amount: i128) {
+    env.storage()
+        .instance()
+        .set(&DataKey::Escrow(shipment_id), &amount);
+}
+
+/// Remove escrow balance for a shipment.
+pub fn remove_escrow_balance(env: &Env, shipment_id: u64) {
+    env.storage()
+        .instance()
+        .remove(&DataKey::Escrow(shipment_id));
 }
