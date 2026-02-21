@@ -24,6 +24,20 @@ fn extend_shipment_ttl(env: &Env, shipment_id: u64) {
     );
 }
 
+fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(), SdkError> {
+    if milestones.len() == 0 {
+        return Ok(());
+    }
+    let mut total_percentage = 0;
+    for milestone in milestones.iter() {
+        total_percentage += milestone.1;
+    }
+    if total_percentage != 100 {
+        return Err(Error::MilestoneSumInvalid.into());
+    }
+    Ok(())
+}
+
 fn require_initialized(env: &Env) -> Result<(), SdkError> {
     if !storage::is_initialized(env) {
         return Err(SdkError::from_contract_error(2));
@@ -170,10 +184,12 @@ impl NavinShipment {
         receiver: Address,
         carrier: Address,
         data_hash: BytesN<32>,
+        payment_milestones: Vec<(Symbol, u32)>,
     ) -> Result<u64, SdkError> {
         require_initialized(&env)?;
         sender.require_auth();
         require_role(&env, &sender, Role::Company)?;
+        validate_milestones(&env, &payment_milestones)?;
 
         let shipment_id = storage::get_shipment_counter(&env)
             .checked_add(1)
@@ -190,6 +206,9 @@ impl NavinShipment {
             created_at: now,
             updated_at: now,
             escrow_amount: 0,
+            total_escrow: 0,
+            payment_milestones,
+            paid_milestones: Vec::new(&env),
         };
 
         storage::set_shipment(&env, &shipment);
@@ -223,6 +242,7 @@ impl NavinShipment {
             if shipment_input.receiver == shipment_input.carrier {
                 return Err(Error::InvalidShipmentInput.into());
             }
+            validate_milestones(&env, &shipment_input.payment_milestones)?;
 
             let shipment_id = storage::get_shipment_counter(&env)
                 .checked_add(1)
@@ -238,6 +258,9 @@ impl NavinShipment {
                 created_at: now,
                 updated_at: now,
                 escrow_amount: 0,
+                total_escrow: 0,
+                payment_milestones: shipment_input.payment_milestones,
+                paid_milestones: Vec::new(&env),
             };
 
             storage::set_shipment(&env, &shipment);
@@ -291,6 +314,7 @@ impl NavinShipment {
         }
 
         shipment.escrow_amount = amount;
+        shipment.total_escrow = amount;
         shipment.updated_at = env.ledger().timestamp();
         storage::set_shipment(&env, &shipment);
         extend_shipment_ttl(&env, shipment_id);
