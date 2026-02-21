@@ -2,7 +2,7 @@
 
 extern crate std;
 
-use crate::{GeofenceEvent, NavinShipment, NavinShipmentClient};
+use crate::{GeofenceEvent, NavinShipment, NavinShipmentClient, ShipmentInput};
 use soroban_sdk::{
     testutils::{storage::Persistent, Address as _, Events},
     Address, BytesN, Env, Symbol, TryFromVal,
@@ -95,6 +95,77 @@ fn test_create_shipment_success() {
     assert_eq!(shipment.receiver, receiver);
     assert_eq!(shipment.carrier, carrier);
     assert_eq!(shipment.data_hash, data_hash);
+}
+
+#[test]
+fn test_create_shipments_batch_success() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let mut shipments = soroban_sdk::Vec::new(&env);
+    for i in 0..5 {
+        shipments.push_back(ShipmentInput {
+            receiver: Address::generate(&env),
+            carrier: Address::generate(&env),
+            data_hash: BytesN::from_array(&env, &[i as u8; 32]),
+        });
+    }
+
+    let ids = client.create_shipments_batch(&company, &shipments);
+    assert_eq!(ids.len(), 5);
+    for i in 0..5 {
+        assert_eq!(ids.get(i).unwrap(), (i + 1) as u64);
+    }
+    assert_eq!(client.get_shipment_counter(), 5);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #12)")]
+fn test_create_shipments_batch_oversized() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let mut shipments = soroban_sdk::Vec::new(&env);
+    for i in 0..11 {
+        shipments.push_back(ShipmentInput {
+            receiver: Address::generate(&env),
+            carrier: Address::generate(&env),
+            data_hash: BytesN::from_array(&env, &[i as u8; 32]),
+        });
+    }
+
+    client.create_shipments_batch(&company, &shipments);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_create_shipments_batch_invalid_input() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let mut shipments = soroban_sdk::Vec::new(&env);
+    shipments.push_back(ShipmentInput {
+        receiver: Address::generate(&env),
+        carrier: Address::generate(&env),
+        data_hash: BytesN::from_array(&env, &[1u8; 32]),
+    });
+    let user = Address::generate(&env);
+    shipments.push_back(ShipmentInput {
+        receiver: user.clone(),
+        carrier: user,
+        data_hash: BytesN::from_array(&env, &[2u8; 32]),
+    });
+
+    client.create_shipments_batch(&company, &shipments);
 }
 
 #[test]

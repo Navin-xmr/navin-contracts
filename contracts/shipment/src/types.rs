@@ -166,3 +166,12 @@ pub enum GeofenceEvent {
     /// Shipment deviated from the expected route.
     RouteDeviation,
 }
+
+/// Input data for creating a shipment in a batch.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ShipmentInput {
+    pub receiver: Address,
+    pub carrier: Address,
+    pub data_hash: BytesN<32>,
+}

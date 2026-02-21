@@ -1,7 +1,7 @@
 #![no_std]
 
 use soroban_sdk::Error as SdkError;
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, BytesN, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, BytesN, Env, Symbol, Vec};
 
 mod errors;
 mod events;
@@ -199,6 +199,62 @@ impl NavinShipment {
         events::emit_shipment_created(&env, shipment_id, &sender, &receiver, &data_hash);
 
         Ok(shipment_id)
+    }
+
+    /// Create multiple shipments in a single atomic transaction.
+    /// Limit: 10 shipments per batch.
+    pub fn create_shipments_batch(
+        env: Env,
+        sender: Address,
+        shipments: Vec<ShipmentInput>,
+    ) -> Result<Vec<u64>, SdkError> {
+        require_initialized(&env)?;
+        sender.require_auth();
+        require_role(&env, &sender, Role::Company)?;
+
+        if shipments.len() > 10 {
+            return Err(Error::BatchTooLarge.into());
+        }
+
+        let mut ids = Vec::new(&env);
+        let now = env.ledger().timestamp();
+
+        for shipment_input in shipments.iter() {
+            if shipment_input.receiver == shipment_input.carrier {
+                return Err(Error::InvalidShipmentInput.into());
+            }
+
+            let shipment_id = storage::get_shipment_counter(&env)
+                .checked_add(1)
+                .ok_or(Error::CounterOverflow)?;
+
+            let shipment = Shipment {
+                id: shipment_id,
+                sender: sender.clone(),
+                receiver: shipment_input.receiver.clone(),
+                carrier: shipment_input.carrier.clone(),
+                data_hash: shipment_input.data_hash.clone(),
+                status: ShipmentStatus::Created,
+                created_at: now,
+                updated_at: now,
+                escrow_amount: 0,
+            };
+
+            storage::set_shipment(&env, &shipment);
+            storage::set_shipment_counter(&env, shipment_id);
+            extend_shipment_ttl(&env, shipment_id);
+
+            events::emit_shipment_created(
+                &env,
+                shipment_id,
+                &sender,
+                &shipment_input.receiver,
+                &shipment_input.data_hash,
+            );
+            ids.push_back(shipment_id);
+        }
+
+        Ok(ids)
     }
 
     /// Retrieve shipment details by ID.
