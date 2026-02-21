@@ -202,10 +202,7 @@ impl NavinShipment {
         storage::set_shipment(&env, &shipment);
         storage::set_shipment_counter(&env, shipment_id);
 
-        env.events().publish(
-            (Symbol::new(&env, "shipment_created"),),
-            (shipment_id, sender, receiver, data_hash),
-        );
+        events::emit_shipment_created(&env, shipment_id, &sender, &receiver, &data_hash);
 
         Ok(shipment_id)
     }
@@ -214,6 +211,38 @@ impl NavinShipment {
     pub fn get_shipment(env: Env, shipment_id: u64) -> Result<Shipment, SdkError> {
         require_initialized(&env)?;
         storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))
+    }
+
+    /// Deposit escrow funds for a shipment.
+    /// Only a Company can deposit, and the shipment must be in Created status.
+    pub fn deposit_escrow(
+        env: Env,
+        from: Address,
+        shipment_id: u64,
+        amount: i128,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        from.require_auth();
+        require_role(&env, &from, Role::Company)?;
+
+        if amount <= 0 {
+            return Err(SdkError::from_contract_error(8));
+        }
+
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+
+        if shipment.status != ShipmentStatus::Created {
+            return Err(SdkError::from_contract_error(9));
+        }
+
+        shipment.escrow_amount = amount;
+        shipment.updated_at = env.ledger().timestamp();
+        storage::set_shipment(&env, &shipment);
+
+        events::emit_escrow_deposited(&env, shipment_id, &from, amount);
+
+        Ok(())
     }
 
     /// Update shipment status with transition validation.
@@ -237,7 +266,7 @@ impl NavinShipment {
         }
 
         if !is_valid_transition(&shipment.status, &new_status) {
-            return Err(SdkError::from_contract_error(8));
+            return Err(SdkError::from_contract_error(10));
         }
 
         let old_status = shipment.status.clone();
@@ -247,10 +276,7 @@ impl NavinShipment {
 
         storage::set_shipment(&env, &shipment);
 
-        env.events().publish(
-            (Symbol::new(&env, "status_updated"),),
-            (shipment_id, old_status, new_status, data_hash),
-        );
+        events::emit_status_updated(&env, shipment_id, &old_status, &new_status, &data_hash);
 
         Ok(())
     }
@@ -270,6 +296,49 @@ impl NavinShipment {
     /// Returns 0 if the contract has not been initialized.
     pub fn get_shipment_count(env: Env) -> u64 {
         storage::get_shipment_counter(&env)
+    }
+
+    /// Confirm delivery of a shipment.
+    /// Only the designated receiver can call this function.
+    /// Shipment must be in InTransit or AtCheckpoint status.
+    /// Stores the confirmation_hash (hash of proof-of-delivery data) and
+    /// transitions the shipment status to Delivered.
+    pub fn confirm_delivery(
+        env: Env,
+        receiver: Address,
+        shipment_id: u64,
+        confirmation_hash: BytesN<32>,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        receiver.require_auth();
+
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+
+        // Only the designated receiver can confirm delivery
+        if shipment.receiver != receiver {
+            return Err(SdkError::from_contract_error(3));
+        }
+
+        // Shipment must be InTransit or AtCheckpoint
+        match shipment.status {
+            ShipmentStatus::InTransit | ShipmentStatus::AtCheckpoint => {}
+            _ => return Err(SdkError::from_contract_error(8)),
+        }
+
+        let now = env.ledger().timestamp();
+        shipment.status = ShipmentStatus::Delivered;
+        shipment.updated_at = now;
+
+        storage::set_shipment(&env, &shipment);
+        storage::set_confirmation_hash(&env, shipment_id, &confirmation_hash);
+
+        env.events().publish(
+            (Symbol::new(&env, "delivery_confirmed"),),
+            (shipment_id, receiver, confirmation_hash),
+        );
+
+        Ok(())
     }
 
     /// Report a geofence event for a shipment.
@@ -300,6 +369,39 @@ impl NavinShipment {
         Ok(())
     }
 
+    /// Update ETA for a shipment.
+    /// Only the designated registered carrier can update ETA.
+    /// ETA must be strictly in the future.
+    pub fn update_eta(
+        env: Env,
+        carrier: Address,
+        shipment_id: u64,
+        eta_timestamp: u64,
+        data_hash: BytesN<32>,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        carrier.require_auth();
+        require_role(&env, &carrier, Role::Carrier)?;
+
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+
+        if shipment.carrier != carrier {
+            return Err(SdkError::from_contract_error(3));
+        }
+
+        if eta_timestamp <= env.ledger().timestamp() {
+            return Err(SdkError::from_contract_error(9));
+        }
+
+        env.events().publish(
+            (Symbol::new(&env, "eta_updated"),),
+            (shipment_id, eta_timestamp, data_hash),
+        );
+
+        Ok(())
+    }
+
     /// Record a milestone for a shipment.
     /// Only registered carriers can record milestones.
     pub fn record_milestone(
@@ -318,7 +420,7 @@ impl NavinShipment {
             storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
 
         if shipment.status != ShipmentStatus::InTransit {
-            return Err(SdkError::from_contract_error(8));
+            return Err(SdkError::from_contract_error(10));
         }
 
         let timestamp = env.ledger().timestamp();
@@ -333,10 +435,7 @@ impl NavinShipment {
 
         // Do NOT store the milestone on-chain
         // Emit the milestone_recorded event (Hash-and-Emit pattern)
-        env.events().publish(
-            (Symbol::new(&env, "milestone_recorded"),),
-            (shipment_id, checkpoint, data_hash, carrier),
-        );
+        events::emit_milestone_recorded(&env, shipment_id, &checkpoint, &data_hash, &carrier);
 
         Ok(())
     }
