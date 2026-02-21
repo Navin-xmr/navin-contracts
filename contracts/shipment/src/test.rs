@@ -263,10 +263,6 @@ fn test_add_whitelist_fails_before_initialization() {
 #[test]
 fn test_update_status_valid_transition_by_carrier() {
     use crate::ShipmentStatus;
-// ============= Get Escrow Balance Tests =============
-
-#[test]
-fn test_get_escrow_balance_returns_zero_without_deposit() {
     let (env, client, admin) = setup_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -297,6 +293,171 @@ fn test_get_escrow_balance_returns_zero_without_deposit() {
 #[test]
 fn test_update_status_valid_transition_by_admin() {
     use crate::ShipmentStatus;
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let new_data_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    client.update_status(
+        &admin,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &new_data_hash,
+    );
+
+    let shipment_after = client.get_shipment(&shipment_id);
+    assert_eq!(shipment_after.status, ShipmentStatus::InTransit);
+    assert_eq!(shipment_after.data_hash, new_data_hash);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")]
+fn test_update_status_invalid_transition() {
+    use crate::ShipmentStatus;
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let new_data_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &new_data_hash,
+    );
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::Delivered,
+        &new_data_hash,
+    );
+
+    // Invalid: Delivered → Created
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::Created,
+        &new_data_hash,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_update_status_unauthorized() {
+    use crate::ShipmentStatus;
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let unauthorized_user = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let new_data_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    // Unauthorized user trying to update status
+    client.update_status(
+        &unauthorized_user,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &new_data_hash,
+    );
+}
+
+#[test]
+fn test_update_status_multiple_valid_transitions() {
+    use crate::ShipmentStatus;
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let hash_2 = BytesN::from_array(&env, &[2u8; 32]);
+    let hash_3 = BytesN::from_array(&env, &[3u8; 32]);
+    let hash_4 = BytesN::from_array(&env, &[4u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    assert_eq!(
+        client.get_shipment(&shipment_id).status,
+        ShipmentStatus::Created
+    );
+
+    // Created → InTransit
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash_2);
+    assert_eq!(
+        client.get_shipment(&shipment_id).status,
+        ShipmentStatus::InTransit
+    );
+
+    // InTransit → AtCheckpoint
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &hash_3,
+    );
+    assert_eq!(
+        client.get_shipment(&shipment_id).status,
+        ShipmentStatus::AtCheckpoint
+    );
+
+    // AtCheckpoint → Delivered
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::Delivered, &hash_4);
+    assert_eq!(
+        client.get_shipment(&shipment_id).status,
+        ShipmentStatus::Delivered
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_update_status_nonexistent_shipment() {
+    use crate::ShipmentStatus;
+    let (env, client, admin) = setup_env();
+    let carrier = Address::generate(&env);
+    let new_data_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.initialize(&admin);
+
+    // Try to update a non-existent shipment
+    client.update_status(&carrier, &999, &ShipmentStatus::InTransit, &new_data_hash);
+}
+
+// ============= Get Escrow Balance Tests =============
+
+#[test]
+fn test_get_escrow_balance_returns_zero_without_deposit() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
 
     // No escrow deposited yet, should return 0
     assert_eq!(client.get_escrow_balance(&shipment_id), 0);
@@ -329,8 +490,6 @@ fn test_get_escrow_balance_after_release() {
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let new_data_hash = BytesN::from_array(&env, &[2u8; 32]);
     let data_hash = BytesN::from_array(&env, &[3u8; 32]);
 
     client.initialize(&admin);
@@ -338,22 +497,6 @@ fn test_get_escrow_balance_after_release() {
 
     let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
 
-    client.update_status(
-        &admin,
-        &shipment_id,
-        &ShipmentStatus::InTransit,
-        &new_data_hash,
-    );
-
-    let shipment_after = client.get_shipment(&shipment_id);
-    assert_eq!(shipment_after.status, ShipmentStatus::InTransit);
-    assert_eq!(shipment_after.data_hash, new_data_hash);
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #7)")]
-fn test_update_status_invalid_transition() {
-    use crate::ShipmentStatus;
     // Simulate deposit then release
     env.as_contract(&client.address, || {
         crate::storage::set_escrow_balance(&env, shipment_id, 1_000_000);
@@ -487,40 +630,6 @@ fn test_report_geofence_zone_entry() {
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let new_data_hash = BytesN::from_array(&env, &[2u8; 32]);
-
-    client.initialize(&admin);
-    client.add_company(&admin, &company);
-
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
-
-    client.update_status(
-        &carrier,
-        &shipment_id,
-        &ShipmentStatus::InTransit,
-        &new_data_hash,
-    );
-
-    client.update_status(
-        &carrier,
-        &shipment_id,
-        &ShipmentStatus::Delivered,
-        &new_data_hash,
-    );
-
-    // Invalid: Delivered → Created
-    client.update_status(
-        &carrier,
-        &shipment_id,
-        &ShipmentStatus::Created,
-        &new_data_hash,
-    );
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #3)")]
-fn test_update_status_unauthorized() {
-    use crate::ShipmentStatus;
     let event_hash = BytesN::from_array(&env, &[2u8; 32]);
 
     client.initialize(&admin);
@@ -605,21 +714,6 @@ fn test_report_geofence_event_unauthorized_role() {
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
-    let unauthorized_user = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let new_data_hash = BytesN::from_array(&env, &[2u8; 32]);
-
-    client.initialize(&admin);
-    client.add_company(&admin, &company);
-
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
-
-    // Unauthorized user trying to update status
-    client.update_status(
-        &unauthorized_user,
-        &shipment_id,
-        &ShipmentStatus::InTransit,
-        &new_data_hash,
     let outsider = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let event_hash = BytesN::from_array(&env, &[2u8; 32]);
@@ -640,8 +734,6 @@ fn test_report_geofence_event_unauthorized_role() {
 }
 
 #[test]
-fn test_update_status_multiple_valid_transitions() {
-    use crate::ShipmentStatus;
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_report_geofence_event_non_existent_shipment() {
     let (env, client, admin) = setup_env();
@@ -664,58 +756,6 @@ fn test_record_milestone_success() {
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let hash_2 = BytesN::from_array(&env, &[2u8; 32]);
-    let hash_3 = BytesN::from_array(&env, &[3u8; 32]);
-    let hash_4 = BytesN::from_array(&env, &[4u8; 32]);
-
-    client.initialize(&admin);
-    client.add_company(&admin, &company);
-
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
-    assert_eq!(
-        client.get_shipment(&shipment_id).status,
-        ShipmentStatus::Created
-    );
-
-    // Created → InTransit
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash_2);
-    assert_eq!(
-        client.get_shipment(&shipment_id).status,
-        ShipmentStatus::InTransit
-    );
-
-    // InTransit → AtCheckpoint
-    client.update_status(
-        &carrier,
-        &shipment_id,
-        &ShipmentStatus::AtCheckpoint,
-        &hash_3,
-    );
-    assert_eq!(
-        client.get_shipment(&shipment_id).status,
-        ShipmentStatus::AtCheckpoint
-    );
-
-    // AtCheckpoint → Delivered
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::Delivered, &hash_4);
-    assert_eq!(
-        client.get_shipment(&shipment_id).status,
-        ShipmentStatus::Delivered
-    );
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #6)")]
-fn test_update_status_nonexistent_shipment() {
-    use crate::ShipmentStatus;
-    let (env, client, admin) = setup_env();
-    let carrier = Address::generate(&env);
-    let new_data_hash = BytesN::from_array(&env, &[2u8; 32]);
-
-    client.initialize(&admin);
-
-    // Try to update a non-existent shipment
-    client.update_status(&carrier, &999, &ShipmentStatus::InTransit, &new_data_hash);
     let checkpoint = soroban_sdk::Symbol::new(&env, "port_arrival");
 
     client.initialize(&admin);

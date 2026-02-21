@@ -237,7 +237,7 @@ impl NavinShipment {
         }
 
         if !is_valid_transition(&shipment.status, &new_status) {
-            return Err(SdkError::from_contract_error(7));
+            return Err(SdkError::from_contract_error(8));
         }
 
         let old_status = shipment.status.clone();
@@ -250,6 +250,11 @@ impl NavinShipment {
         env.events().publish(
             (Symbol::new(&env, "status_updated"),),
             (shipment_id, old_status, new_status, data_hash),
+        );
+
+        Ok(())
+    }
+
     /// Returns the current escrowed amount for a specific shipment.
     /// Returns 0 if no escrow has been deposited.
     /// Returns ShipmentNotFound if the shipment does not exist.

@@ -10,10 +10,6 @@ pub enum Error {
     CarrierNotWhitelisted = 4,
     CounterOverflow = 5,
     ShipmentNotFound = 6,
-<<<<<<< feat/shipment-status-transitions
-    InvalidStatus = 7,
-=======
     CarrierNotAuthorized = 7,
     InvalidStatus = 8,
->>>>>>> main
 }
