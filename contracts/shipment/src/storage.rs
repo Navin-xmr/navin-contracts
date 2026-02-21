@@ -250,126 +250,52 @@ pub fn is_carrier_whitelisted(env: &Env, company: &Address, carrier: &Address) -
     env.storage().instance().get(&key).unwrap_or(false)
 }
 
-/// Store a role for an address in instance storage.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `address` - The address to assign a role to.
-/// * `role` - The role to assign.
-///
-/// # Returns
-/// No return value.
-///
-/// # Examples
-/// ```rust
-/// // storage::set_role(&env, &user_addr, &Role::Company);
-/// ```
+/// Assign a role to an address (supports multiple roles per address)
 pub fn set_role(env: &Env, address: &Address, role: &Role) {
+    let key = DataKey::UserRole(address.clone(), role.clone());
+    env.storage().instance().set(&key, &true);
+    // also set legacy single-role slot for compatibility for the primary role
     env.storage()
         .instance()
         .set(&DataKey::Role(address.clone()), role);
 }
 
-/// Retrieve the role assigned to an address. Returns None if not set.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `address` - The address.
-///
-/// # Returns
-/// * `Option<Role>` - The assigned role or None.
-///
-/// # Examples
-/// ```rust
-/// // let role_opt = storage::get_role(&env, &user_addr);
-/// ```
+/// Check if an address has a specific role
+pub fn has_role(env: &Env, address: &Address, role: &Role) -> bool {
+    let key = DataKey::UserRole(address.clone(), role.clone());
+    env.storage().instance().get(&key).unwrap_or(false)
+}
+
+/// Retrieve the role assigned to an address (legacy compatibility). Returns None if not set.
 pub fn get_role(env: &Env, address: &Address) -> Option<Role> {
     env.storage()
         .instance()
         .get(&DataKey::Role(address.clone()))
 }
 
-/// Backwards-compatible: grant Company role to an address.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `company` - The address to grant the Company role to.
-///
-/// # Returns
-/// No return value.
-///
-/// # Examples
-/// ```rust
-/// // storage::set_company_role(&env, &user_addr);
-/// ```
+/// Grant Company role to an address (legacy compatibility)
 pub fn set_company_role(env: &Env, company: &Address) {
     set_role(env, company, &Role::Company);
 }
 
 /// Backwards-compatible: grant Carrier role to an address.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `carrier` - The address to grant the Carrier role to.
-///
-/// # Returns
-/// No return value.
-///
-/// # Examples
-/// ```rust
-/// // storage::set_carrier_role(&env, &user_addr);
-/// ```
 pub fn set_carrier_role(env: &Env, carrier: &Address) {
     set_role(env, carrier, &Role::Carrier);
 }
 
-/// Backwards-compatible: check whether an address has Company role.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `address` - The address to check.
-///
-/// # Returns
-/// * `bool` - True if the address has the Company role.
-///
-/// # Examples
-/// ```rust
-/// // let is_company = storage::has_company_role(&env, &user_addr);
-/// ```
+/// Check whether an address has Company role (legacy compatibility)
+#[allow(dead_code)]
 pub fn has_company_role(env: &Env, address: &Address) -> bool {
-    matches!(get_role(env, address), Some(Role::Company))
+    has_role(env, address, &Role::Company)
 }
 
-/// Backwards-compatible: check whether an address has Carrier role.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `address` - The address to check.
-///
-/// # Returns
-/// * `bool` - True if the address has the Carrier role.
-///
-/// # Examples
-/// ```rust
-/// // let is_carrier = storage::has_carrier_role(&env, &user_addr);
-/// ```
+/// Check whether an address has Carrier role (legacy compatibility)
+#[allow(dead_code)]
 pub fn has_carrier_role(env: &Env, address: &Address) -> bool {
-    matches!(get_role(env, address), Some(Role::Carrier))
+    has_role(env, address, &Role::Carrier)
 }
 
-/// Retrieve a shipment from persistent storage. Returns None if not found.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `shipment_id` - The ID of the shipment.
-///
-/// # Returns
-/// * `Option<Shipment>` - The shipment data if it exists.
-///
-/// # Examples
-/// ```rust
-/// // let shipment = storage::get_shipment(&env, 1);
-/// ```
+/// Get shipment by ID
 pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
     env.storage()
         .persistent()
