@@ -202,10 +202,7 @@ impl NavinShipment {
         storage::set_shipment(&env, &shipment);
         storage::set_shipment_counter(&env, shipment_id);
 
-        env.events().publish(
-            (Symbol::new(&env, "shipment_created"),),
-            (shipment_id, sender, receiver, data_hash),
-        );
+        events::emit_shipment_created(&env, shipment_id, &sender, &receiver, &data_hash);
 
         Ok(shipment_id)
     }
@@ -247,10 +244,7 @@ impl NavinShipment {
 
         storage::set_shipment(&env, &shipment);
 
-        env.events().publish(
-            (Symbol::new(&env, "status_updated"),),
-            (shipment_id, old_status, new_status, data_hash),
-        );
+        events::emit_status_updated(&env, shipment_id, &old_status, &new_status, &data_hash);
 
         Ok(())
     }
@@ -376,10 +370,7 @@ impl NavinShipment {
 
         // Do NOT store the milestone on-chain
         // Emit the milestone_recorded event (Hash-and-Emit pattern)
-        env.events().publish(
-            (Symbol::new(&env, "milestone_recorded"),),
-            (shipment_id, checkpoint, data_hash, carrier),
-        );
+        events::emit_milestone_recorded(&env, shipment_id, &checkpoint, &data_hash, &carrier);
 
         Ok(())
     }
