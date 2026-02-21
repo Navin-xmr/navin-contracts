@@ -12,6 +12,18 @@ mod types;
 pub use errors::*;
 pub use types::*;
 
+const SHIPMENT_TTL_THRESHOLD: u32 = 17_280; // ~1 day
+const SHIPMENT_TTL_EXTENSION: u32 = 518_400; // ~30 days
+
+fn extend_shipment_ttl(env: &Env, shipment_id: u64) {
+    storage::extend_shipment_ttl(
+        env,
+        shipment_id,
+        SHIPMENT_TTL_THRESHOLD,
+        SHIPMENT_TTL_EXTENSION,
+    );
+}
+
 fn require_initialized(env: &Env) -> Result<(), SdkError> {
     if !storage::is_initialized(env) {
         return Err(SdkError::from_contract_error(2));
@@ -182,6 +194,7 @@ impl NavinShipment {
 
         storage::set_shipment(&env, &shipment);
         storage::set_shipment_counter(&env, shipment_id);
+        extend_shipment_ttl(&env, shipment_id);
 
         events::emit_shipment_created(&env, shipment_id, &sender, &receiver, &data_hash);
 
@@ -217,9 +230,14 @@ impl NavinShipment {
             return Err(SdkError::from_contract_error(9));
         }
 
+        if shipment.escrow_amount > 0 {
+            return Err(SdkError::from_contract_error(11));
+        }
+
         shipment.escrow_amount = amount;
         shipment.updated_at = env.ledger().timestamp();
         storage::set_shipment(&env, &shipment);
+        extend_shipment_ttl(&env, shipment_id);
 
         events::emit_escrow_deposited(&env, shipment_id, &from, amount);
 
@@ -256,6 +274,7 @@ impl NavinShipment {
         shipment.updated_at = env.ledger().timestamp();
 
         storage::set_shipment(&env, &shipment);
+        extend_shipment_ttl(&env, shipment_id);
 
         events::emit_status_updated(&env, shipment_id, &old_status, &new_status, &data_hash);
 
@@ -315,6 +334,7 @@ impl NavinShipment {
 
         storage::set_shipment(&env, &shipment);
         storage::set_confirmation_hash(&env, shipment_id, &confirmation_hash);
+        extend_shipment_ttl(&env, shipment_id);
 
         env.events().publish(
             (Symbol::new(&env, "delivery_confirmed"),),
@@ -419,6 +439,58 @@ impl NavinShipment {
         // Do NOT store the milestone on-chain
         // Emit the milestone_recorded event (Hash-and-Emit pattern)
         events::emit_milestone_recorded(&env, shipment_id, &checkpoint, &data_hash, &carrier);
+
+        Ok(())
+    }
+
+    /// Extend the TTL of a shipment's persistent storage entries.
+    pub fn extend_shipment_ttl(env: Env, shipment_id: u64) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        extend_shipment_ttl(&env, shipment_id);
+        Ok(())
+    }
+
+    /// Cancel a shipment before it is delivered.
+    /// Only the Company (sender) or Admin can cancel.
+    /// Shipment must not be Delivered or Disputed.
+    /// If escrow exists, triggers automatic refund to the Company.
+    pub fn cancel_shipment(
+        env: Env,
+        caller: Address,
+        shipment_id: u64,
+        reason_hash: BytesN<32>,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        caller.require_auth();
+
+        let admin = storage::get_admin(&env);
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+
+        if caller != shipment.sender && caller != admin {
+            return Err(SdkError::from_contract_error(3));
+        }
+
+        match shipment.status {
+            ShipmentStatus::Delivered | ShipmentStatus::Disputed => {
+                return Err(SdkError::from_contract_error(9));
+            }
+            _ => {}
+        }
+
+        let escrow_amount = shipment.escrow_amount;
+        shipment.status = ShipmentStatus::Cancelled;
+        shipment.escrow_amount = 0;
+        shipment.updated_at = env.ledger().timestamp();
+
+        storage::set_shipment(&env, &shipment);
+        if escrow_amount > 0 {
+            storage::remove_escrow_balance(&env, shipment_id);
+            events::emit_escrow_released(&env, shipment_id, &shipment.sender, escrow_amount);
+        }
+        extend_shipment_ttl(&env, shipment_id);
+
+        events::emit_shipment_cancelled(&env, shipment_id, &caller, &reason_hash);
 
         Ok(())
     }
