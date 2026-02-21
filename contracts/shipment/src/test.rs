@@ -4,7 +4,7 @@ extern crate std;
 
 use crate::{GeofenceEvent, NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
-    testutils::{Address as _, Events},
+    testutils::{storage::Persistent, Address as _, Events},
     Address, BytesN, Env, Symbol, TryFromVal,
 };
 
@@ -1034,4 +1034,51 @@ fn test_record_milestone_unauthorized() {
 
     // Attempt to record with outsider should fail with CarrierNotAuthorized = 7
     client.record_milestone(&outsider, &shipment_id, &checkpoint, &data_hash);
+}
+
+// ============= TTL Extension Tests =============
+
+#[test]
+fn test_ttl_extension_on_shipment_creation() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    env.as_contract(&client.address, || {
+        let key = crate::types::DataKey::Shipment(shipment_id);
+        let ttl = env.storage().persistent().get_ttl(&key);
+        // SHIPMENT_TTL_EXTENSION is 518_400
+        assert!(ttl >= 518_400);
+    });
+}
+
+#[test]
+fn test_manual_ttl_extension() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    // Initial extension happens on creation.
+    // Call manual extension
+    client.extend_shipment_ttl(&shipment_id);
+
+    env.as_contract(&client.address, || {
+        let key = crate::types::DataKey::Shipment(shipment_id);
+        let ttl = env.storage().persistent().get_ttl(&key);
+        assert!(ttl >= 518_400);
+    });
 }
