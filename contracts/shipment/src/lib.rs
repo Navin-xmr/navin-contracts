@@ -213,6 +213,38 @@ impl NavinShipment {
         storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))
     }
 
+    /// Deposit escrow funds for a shipment.
+    /// Only a Company can deposit, and the shipment must be in Created status.
+    pub fn deposit_escrow(
+        env: Env,
+        from: Address,
+        shipment_id: u64,
+        amount: i128,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        from.require_auth();
+        require_role(&env, &from, Role::Company)?;
+
+        if amount <= 0 {
+            return Err(SdkError::from_contract_error(8));
+        }
+
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+
+        if shipment.status != ShipmentStatus::Created {
+            return Err(SdkError::from_contract_error(9));
+        }
+
+        shipment.escrow_amount = amount;
+        shipment.updated_at = env.ledger().timestamp();
+        storage::set_shipment(&env, &shipment);
+
+        events::emit_escrow_deposited(&env, shipment_id, &from, amount);
+
+        Ok(())
+    }
+
     /// Update shipment status with transition validation.
     /// Only the carrier or admin can update the status.
     pub fn update_status(
@@ -234,7 +266,7 @@ impl NavinShipment {
         }
 
         if !is_valid_transition(&shipment.status, &new_status) {
-            return Err(SdkError::from_contract_error(8));
+            return Err(SdkError::from_contract_error(10));
         }
 
         let old_status = shipment.status.clone();
@@ -355,7 +387,7 @@ impl NavinShipment {
             storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
 
         if shipment.status != ShipmentStatus::InTransit {
-            return Err(SdkError::from_contract_error(8));
+            return Err(SdkError::from_contract_error(10));
         }
 
         let timestamp = env.ledger().timestamp();
