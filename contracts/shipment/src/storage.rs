@@ -1,5 +1,5 @@
 use crate::types::*;
-use soroban_sdk::{Address, Env};
+use soroban_sdk::{Address, BytesN, Env};
 
 /// Check if the contract has been initialized
 pub fn is_initialized(env: &Env) -> bool {
@@ -101,6 +101,7 @@ pub fn get_escrow_balance(env: &Env, shipment_id: u64) -> i128 {
 }
 
 /// Set escrow balance for a shipment.
+#[allow(dead_code)]
 pub fn set_escrow_balance(env: &Env, shipment_id: u64, amount: i128) {
     env.storage()
         .instance()
@@ -108,8 +109,22 @@ pub fn set_escrow_balance(env: &Env, shipment_id: u64, amount: i128) {
 }
 
 /// Remove escrow balance for a shipment.
+#[allow(dead_code)]
 pub fn remove_escrow_balance(env: &Env, shipment_id: u64) {
     env.storage()
         .instance()
         .remove(&DataKey::Escrow(shipment_id));
+}
+
+/// Store the confirmation hash for a shipment.
+pub fn set_confirmation_hash(env: &Env, shipment_id: u64, hash: &BytesN<32>) {
+    let key = DataKey::ConfirmationHash(shipment_id);
+    env.storage().instance().set(&key, hash);
+}
+
+/// Get the confirmation hash for a shipment.
+#[allow(dead_code)]
+pub fn get_confirmation_hash(env: &Env, shipment_id: u64) -> Option<BytesN<32>> {
+    let key = DataKey::ConfirmationHash(shipment_id);
+    env.storage().instance().get(&key)
 }

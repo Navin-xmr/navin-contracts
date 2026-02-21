@@ -560,3 +560,93 @@ fn test_report_geofence_event_non_existent_shipment() {
     // Attempt to report for non-existent shipment should fail with ShipmentNotFound (error code 6)
     client.report_geofence_event(&carrier, &999, &GeofenceEvent::ZoneEntry, &event_hash);
 }
+
+// ============= Confirm Delivery Tests =============
+
+fn setup_shipment_with_status(
+    env: &Env,
+    client: &NavinShipmentClient,
+    admin: &Address,
+    status: crate::ShipmentStatus,
+) -> (Address, Address, u64) {
+    let company = Address::generate(env);
+    let receiver = Address::generate(env);
+    let carrier = Address::generate(env);
+    let data_hash = BytesN::from_array(env, &[1u8; 32]);
+
+    client.initialize(admin);
+    client.add_company(admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    // Patch status directly in contract storage to simulate a mid-lifecycle state
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(env, shipment_id).unwrap();
+        shipment.status = status;
+        crate::storage::set_shipment(env, &shipment);
+    });
+
+    (receiver, carrier, shipment_id)
+}
+
+#[test]
+fn test_confirm_delivery_success_in_transit() {
+    let (env, client, admin) = setup_env();
+    let confirmation_hash = BytesN::from_array(&env, &[99u8; 32]);
+
+    let (receiver, _carrier, shipment_id) =
+        setup_shipment_with_status(&env, &client, &admin, crate::ShipmentStatus::InTransit);
+
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::ShipmentStatus::Delivered);
+
+    // Verify confirmation hash was persisted on-chain
+    let stored_hash = env.as_contract(&client.address, || {
+        crate::storage::get_confirmation_hash(&env, shipment_id)
+    });
+    assert_eq!(stored_hash, Some(confirmation_hash));
+}
+
+#[test]
+fn test_confirm_delivery_success_at_checkpoint() {
+    let (env, client, admin) = setup_env();
+    let confirmation_hash = BytesN::from_array(&env, &[88u8; 32]);
+
+    let (receiver, _carrier, shipment_id) =
+        setup_shipment_with_status(&env, &client, &admin, crate::ShipmentStatus::AtCheckpoint);
+
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::ShipmentStatus::Delivered);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_confirm_delivery_wrong_receiver() {
+    let (env, client, admin) = setup_env();
+    let confirmation_hash = BytesN::from_array(&env, &[77u8; 32]);
+    let imposter = Address::generate(&env);
+
+    let (_receiver, _carrier, shipment_id) =
+        setup_shipment_with_status(&env, &client, &admin, crate::ShipmentStatus::InTransit);
+
+    // imposter is NOT the designated receiver — must fail with Unauthorized (error code 3)
+    client.confirm_delivery(&imposter, &shipment_id, &confirmation_hash);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")]
+fn test_confirm_delivery_wrong_status() {
+    let (env, client, admin) = setup_env();
+    let confirmation_hash = BytesN::from_array(&env, &[66u8; 32]);
+
+    // Shipment starts in Created status, which is invalid for confirmation
+    let (receiver, _carrier, shipment_id) =
+        setup_shipment_with_status(&env, &client, &admin, crate::ShipmentStatus::Created);
+
+    // Must fail with InvalidStatus (error code 8)
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+}
