@@ -101,6 +101,7 @@ pub fn get_escrow_balance(env: &Env, shipment_id: u64) -> i128 {
 }
 
 /// Set escrow balance for a shipment.
+#[allow(dead_code)]
 pub fn set_escrow_balance(env: &Env, shipment_id: u64, amount: i128) {
     env.storage()
         .instance()
@@ -108,6 +109,7 @@ pub fn set_escrow_balance(env: &Env, shipment_id: u64, amount: i128) {
 }
 
 /// Remove escrow balance for a shipment.
+#[allow(dead_code)]
 pub fn remove_escrow_balance(env: &Env, shipment_id: u64) {
     env.storage()
         .instance()
