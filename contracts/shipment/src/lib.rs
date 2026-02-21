@@ -181,4 +181,10 @@ impl NavinShipment {
         require_initialized(&env)?;
         storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))
     }
+
+    /// Returns the total number of shipments created on the platform.
+    /// Returns 0 if the contract has not been initialized.
+    pub fn get_shipment_count(env: Env) -> u64 {
+        storage::get_shipment_counter(&env)
+    }
 }
