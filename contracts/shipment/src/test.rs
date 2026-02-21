@@ -253,3 +253,48 @@ fn test_add_whitelist_fails_before_initialization() {
     // Must fail with NotInitialized (error code 2)
     client.add_carrier_to_whitelist(&company, &carrier);
 }
+
+// ============= Get Shipment Tests =============
+
+#[test]
+fn test_get_shipment_returns_correct_data() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[42u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.id, shipment_id);
+    assert_eq!(shipment.sender, company);
+    assert_eq!(shipment.receiver, receiver);
+    assert_eq!(shipment.carrier, carrier);
+    assert_eq!(shipment.data_hash, data_hash);
+    assert_eq!(shipment.status, crate::ShipmentStatus::Created);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_get_shipment_not_found() {
+    let (_env, client, admin) = setup_env();
+
+    client.initialize(&admin);
+
+    // Must fail with ShipmentNotFound (error code 6)
+    client.get_shipment(&999);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_get_shipment_fails_before_initialization() {
+    let (_env, client, _admin) = setup_env();
+
+    // Must fail with NotInitialized (error code 2)
+    client.get_shipment(&1);
+}
