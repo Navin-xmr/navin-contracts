@@ -249,6 +249,10 @@ impl NavinShipment {
             return Err(SdkError::from_contract_error(9));
         }
 
+        if shipment.escrow_amount > 0 {
+            return Err(SdkError::from_contract_error(11));
+        }
+
         shipment.escrow_amount = amount;
         shipment.updated_at = env.ledger().timestamp();
         storage::set_shipment(&env, &shipment);
