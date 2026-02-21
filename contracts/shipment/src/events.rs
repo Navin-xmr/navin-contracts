@@ -160,7 +160,6 @@ pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount
 ///
 /// - **Express backend**: Finalizes the payment record and triggers settlement.
 /// - **Frontend**: Confirms payment completion to both parties.
-#[allow(dead_code)]
 pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i128) {
     env.events().publish(
         (Symbol::new(env, "escrow_released"),),
@@ -196,5 +195,26 @@ pub fn emit_dispute_raised(
     env.events().publish(
         (Symbol::new(env, "dispute_raised"),),
         (shipment_id, raised_by.clone(), reason_hash.clone()),
+    );
+}
+
+/// Emits a `shipment_cancelled` event when a shipment is cancelled.
+///
+/// # Event Data
+///
+/// | Field       | Type         | Description                                   |
+/// |-------------|--------------|-----------------------------------------------|
+/// | shipment_id | `u64`        | Cancelled shipment identifier                  |
+/// | caller      | `Address`    | Company or Admin that cancelled the shipment   |
+/// | reason_hash | `BytesN<32>` | SHA-256 hash of the off-chain cancellation reason |
+pub fn emit_shipment_cancelled(
+    env: &Env,
+    shipment_id: u64,
+    caller: &Address,
+    reason_hash: &BytesN<32>,
+) {
+    env.events().publish(
+        (Symbol::new(env, "shipment_cancelled"),),
+        (shipment_id, caller.clone(), reason_hash.clone()),
     );
 }
