@@ -2,7 +2,7 @@
 
 extern crate std;
 
-use crate::{GeofenceEvent, NavinShipment, NavinShipmentClient, ShipmentInput};
+use crate::{GeofenceEvent, NavinShipment, NavinShipmentClient, ShipmentInput, ShipmentStatus};
 use soroban_sdk::{
     testutils::{storage::Persistent, Address as _, Events},
     Address, BytesN, Env, Symbol, TryFromVal,
@@ -85,7 +85,13 @@ fn test_create_shipment_success() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     assert_eq!(shipment_id, 1);
     assert_eq!(client.get_shipment_counter(), 1);
 
@@ -111,6 +117,7 @@ fn test_create_shipments_batch_success() {
             receiver: Address::generate(&env),
             carrier: Address::generate(&env),
             data_hash: BytesN::from_array(&env, &[i as u8; 32]),
+            payment_milestones: soroban_sdk::Vec::new(&env),
         });
     }
 
@@ -137,6 +144,7 @@ fn test_create_shipments_batch_oversized() {
             receiver: Address::generate(&env),
             carrier: Address::generate(&env),
             data_hash: BytesN::from_array(&env, &[i as u8; 32]),
+            payment_milestones: soroban_sdk::Vec::new(&env),
         });
     }
 
@@ -157,12 +165,14 @@ fn test_create_shipments_batch_invalid_input() {
         receiver: Address::generate(&env),
         carrier: Address::generate(&env),
         data_hash: BytesN::from_array(&env, &[1u8; 32]),
+        payment_milestones: soroban_sdk::Vec::new(&env),
     });
     let user = Address::generate(&env);
     shipments.push_back(ShipmentInput {
         receiver: user.clone(),
         carrier: user,
         data_hash: BytesN::from_array(&env, &[2u8; 32]),
+        payment_milestones: soroban_sdk::Vec::new(&env),
     });
 
     client.create_shipments_batch(&company, &shipments);
@@ -178,7 +188,13 @@ fn test_create_shipment_unauthorized() {
     let data_hash = BytesN::from_array(&env, &[9u8; 32]);
 
     client.initialize(&admin);
-    client.create_shipment(&outsider, &receiver, &carrier, &data_hash);
+    client.create_shipment(
+        &outsider,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 }
 
 #[test]
@@ -194,9 +210,27 @@ fn test_multiple_shipments_have_unique_ids() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let id_one = client.create_shipment(&company, &receiver, &carrier, &hash_one);
-    let id_two = client.create_shipment(&company, &receiver, &carrier, &hash_two);
-    let id_three = client.create_shipment(&company, &receiver, &carrier, &hash_three);
+    let id_one = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &hash_one,
+        &soroban_sdk::Vec::new(&env),
+    );
+    let id_two = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &hash_two,
+        &soroban_sdk::Vec::new(&env),
+    );
+    let id_three = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &hash_three,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     assert_eq!(id_one, 1);
     assert_eq!(id_two, 2);
@@ -324,7 +358,13 @@ fn test_deposit_escrow_success() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let escrow_amount: i128 = 1000;
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
@@ -348,7 +388,13 @@ fn test_update_status_valid_transition_by_carrier() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let shipment_before = client.get_shipment(&shipment_id);
     assert_eq!(shipment_before.status, ShipmentStatus::Created);
 
@@ -378,7 +424,13 @@ fn test_update_status_valid_transition_by_admin() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     client.update_status(
         &admin,
@@ -406,7 +458,13 @@ fn test_update_status_invalid_transition() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     client.update_status(
         &carrier,
@@ -446,7 +504,13 @@ fn test_update_status_unauthorized() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     // Unauthorized user trying to update status
     client.update_status(
@@ -472,7 +536,13 @@ fn test_update_status_multiple_valid_transitions() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     assert_eq!(
         client.get_shipment(&shipment_id).status,
         ShipmentStatus::Created
@@ -532,7 +602,13 @@ fn test_get_escrow_balance_returns_zero_without_deposit() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     let escrow_amount: i128 = 1000;
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
@@ -554,7 +630,13 @@ fn test_deposit_escrow_unauthorized() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     let escrow_amount: i128 = 1000;
     client.deposit_escrow(&non_company, &shipment_id, &escrow_amount);
@@ -573,7 +655,13 @@ fn test_get_escrow_balance_after_deposit() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     env.as_contract(&client.address, || {
         crate::storage::set_escrow_balance(&env, shipment_id, 500_000);
@@ -593,7 +681,13 @@ fn test_get_escrow_balance_after_release() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     env.as_contract(&client.address, || {
         crate::storage::set_escrow_balance(&env, shipment_id, 1_000_000);
@@ -654,15 +748,33 @@ fn test_get_shipment_count_after_creating_shipments() {
     client.add_company(&admin, &company);
 
     let hash_one = BytesN::from_array(&env, &[1u8; 32]);
-    client.create_shipment(&company, &receiver, &carrier, &hash_one);
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &hash_one,
+        &soroban_sdk::Vec::new(&env),
+    );
     assert_eq!(client.get_shipment_count(), 1);
 
     let hash_two = BytesN::from_array(&env, &[2u8; 32]);
-    client.create_shipment(&company, &receiver, &carrier, &hash_two);
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &hash_two,
+        &soroban_sdk::Vec::new(&env),
+    );
     assert_eq!(client.get_shipment_count(), 2);
 
     let hash_three = BytesN::from_array(&env, &[3u8; 32]);
-    client.create_shipment(&company, &receiver, &carrier, &hash_three);
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &hash_three,
+        &soroban_sdk::Vec::new(&env),
+    );
     assert_eq!(client.get_shipment_count(), 3);
 }
 
@@ -679,7 +791,13 @@ fn test_get_shipment_returns_correct_data() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.id, shipment_id);
@@ -724,7 +842,13 @@ fn test_report_geofence_zone_entry() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     client.report_geofence_event(
         &carrier,
@@ -750,7 +874,13 @@ fn test_report_geofence_zone_exit() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     client.report_geofence_event(
         &carrier,
@@ -776,7 +906,13 @@ fn test_report_geofence_route_deviation() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     client.report_geofence_event(
         &carrier,
@@ -804,7 +940,13 @@ fn test_report_geofence_event_unauthorized_role() {
     client.add_company(&admin, &company);
     // Note: outsider NOT added as carrier
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     client.report_geofence_event(
         &outsider,
@@ -856,7 +998,13 @@ fn test_update_eta_valid_emits_event() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &shipment_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &shipment_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let eta_timestamp = env.ledger().timestamp() + 60;
 
     client.update_eta(&carrier, &shipment_id, &eta_timestamp, &eta_hash);
@@ -887,7 +1035,13 @@ fn test_update_eta_rejects_past_timestamp() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &shipment_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &shipment_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let past_eta = env.ledger().timestamp();
 
     client.update_eta(&carrier, &shipment_id, &past_eta, &eta_hash);
@@ -908,7 +1062,13 @@ fn test_update_eta_unauthorized() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &shipment_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &shipment_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let eta_timestamp = env.ledger().timestamp() + 120;
 
     // outsider is not a registered carrier
@@ -931,7 +1091,13 @@ fn setup_shipment_with_status(
     client.initialize(admin);
     client.add_company(admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(env),
+    );
 
     // Patch status directly in contract storage to simulate a mid-lifecycle state
     env.as_contract(&client.address, || {
@@ -1018,7 +1184,13 @@ fn test_release_escrow_success() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let escrow_amount: i128 = 5000;
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
@@ -1047,7 +1219,13 @@ fn test_release_escrow_double_release() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let escrow_amount: i128 = 5000;
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
@@ -1075,7 +1253,13 @@ fn test_release_escrow_unauthorized() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let escrow_amount: i128 = 5000;
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
@@ -1101,7 +1285,13 @@ fn test_release_escrow_wrong_status() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let escrow_amount: i128 = 5000;
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
@@ -1120,7 +1310,13 @@ fn test_release_escrow_by_admin() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let escrow_amount: i128 = 5000;
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
@@ -1152,7 +1348,13 @@ fn test_record_milestone_success() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     // Manually set status to InTransit
     env.as_contract(&client.address, || {
@@ -1183,7 +1385,13 @@ fn test_deposit_escrow_invalid_amount() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let invalid_escrow_amount: i128 = 0;
 
     // Should panic with error code 8 for invalid amount
@@ -1204,7 +1412,13 @@ fn test_record_milestone_wrong_status() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     // Status is Created by default, which is wrong status for milestone
     client.record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
@@ -1224,7 +1438,13 @@ fn test_record_milestone_unauthorized() {
 
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     let outsider = Address::generate(&env);
     let checkpoint = soroban_sdk::Symbol::new(&env, "port_arrival");
@@ -1252,7 +1472,13 @@ fn test_ttl_extension_on_shipment_creation() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     env.as_contract(&client.address, || {
         let key = crate::types::DataKey::Shipment(shipment_id);
@@ -1273,7 +1499,13 @@ fn test_manual_ttl_extension() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     // Initial extension happens on creation.
     // Call manual extension
@@ -1300,7 +1532,13 @@ fn test_cancel_shipment_with_escrow() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let escrow_amount: i128 = 5000;
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
 
@@ -1323,7 +1561,13 @@ fn test_cancel_shipment_without_escrow() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     client.cancel_shipment(&company, &shipment_id, &reason_hash);
 
     let shipment = client.get_shipment(&shipment_id);
@@ -1343,7 +1587,13 @@ fn test_cancel_shipment_by_admin() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     client.cancel_shipment(&admin, &shipment_id, &reason_hash);
 
     let shipment = client.get_shipment(&shipment_id);
@@ -1399,7 +1649,13 @@ fn test_escrow_happy_path_create_deposit_transit_deliver_confirm() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
 
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash2);
@@ -1413,7 +1669,7 @@ fn test_escrow_happy_path_create_deposit_transit_deliver_confirm() {
 
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, ShipmentStatus::Delivered);
-    assert_eq!(shipment.escrow_amount, escrow_amount);
+    assert_eq!(shipment.escrow_amount, 0);
 }
 
 #[test]
@@ -1429,7 +1685,13 @@ fn test_escrow_cancel_path_create_deposit_cancel_refund() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
 
     client.cancel_shipment(&company, &shipment_id, &reason_hash);
@@ -1455,7 +1717,13 @@ fn test_escrow_dispute_resolve_to_delivered() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash2);
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::Disputed, &hash3);
@@ -1481,7 +1749,13 @@ fn test_escrow_dispute_resolve_to_cancelled() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash2);
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::Disputed, &hash2);
@@ -1509,7 +1783,13 @@ fn test_escrow_double_deposit_prevention() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
 }
@@ -1528,7 +1808,13 @@ fn test_escrow_release_without_delivery_confirm_from_created_fails() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
 
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
@@ -1551,7 +1837,13 @@ fn test_escrow_refund_after_delivery_fails() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
     client.update_status(
         &carrier,
@@ -1580,8 +1872,171 @@ fn test_escrow_deposit_after_status_change_fails() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash2);
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+}
+
+#[test]
+fn test_milestone_payment_success() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let escrow_amount: i128 = 1000;
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "warehouse"), 30));
+    milestones.push_back((Symbol::new(&env, "port"), 30));
+    milestones.push_back((Symbol::new(&env, "last_mile"), 40));
+
+    let shipment_id =
+        client.create_shipment(&company, &receiver, &carrier, &data_hash, &milestones);
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    // Status InTransit
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    // Record Milestone 1: Warehouse (30% of 1000 = 300)
+    client.record_milestone(
+        &carrier,
+        &shipment_id,
+        &Symbol::new(&env, "warehouse"),
+        &data_hash,
+    );
+    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 700);
+
+    // Record Milestone 2: Port (30% of 1000 = 300)
+    client.record_milestone(
+        &carrier,
+        &shipment_id,
+        &Symbol::new(&env, "port"),
+        &data_hash,
+    );
+    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 400);
+
+    // Record Milestone 3: Last Mile (40% of 1000 = 400)
+    client.record_milestone(
+        &carrier,
+        &shipment_id,
+        &Symbol::new(&env, "last_mile"),
+        &data_hash,
+    );
+    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 0);
+}
+
+#[test]
+fn test_milestone_payment_delivery_releases_remaining() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let escrow_amount: i128 = 1000;
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "checkpoint1"), 25));
+    milestones.push_back((Symbol::new(&env, "checkpoint2"), 75));
+
+    let shipment_id =
+        client.create_shipment(&company, &receiver, &carrier, &data_hash, &milestones);
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    // Record Milestone 1 (25% = 250)
+    client.record_milestone(
+        &carrier,
+        &shipment_id,
+        &Symbol::new(&env, "checkpoint1"),
+        &data_hash,
+    );
+    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 750);
+
+    // Skip Milestone 2 and Confirm Delivery
+    // Remaining 75% should be released
+    client.confirm_delivery(&receiver, &shipment_id, &data_hash);
+    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #14)")]
+fn test_milestone_payment_invalid_sum_fails() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "m1"), 50));
+    milestones.push_back((Symbol::new(&env, "m2"), 60)); // Total 110%
+
+    client.create_shipment(&company, &receiver, &carrier, &data_hash, &milestones);
+}
+
+#[test]
+fn test_milestone_payment_duplicate_record_no_double_pay() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let escrow_amount: i128 = 1000;
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "m1"), 50));
+    milestones.push_back((Symbol::new(&env, "m2"), 50));
+
+    let shipment_id =
+        client.create_shipment(&company, &receiver, &carrier, &data_hash, &milestones);
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    // Record Milestone 1 (50% = 500)
+    client.record_milestone(&carrier, &shipment_id, &Symbol::new(&env, "m1"), &data_hash);
+    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 500);
+
+    // Record Milestone 1 AGAIN
+    client.record_milestone(&carrier, &shipment_id, &Symbol::new(&env, "m1"), &data_hash);
+    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 500); // Should still be 500
 }
