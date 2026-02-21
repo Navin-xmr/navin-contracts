@@ -1,0 +1,27 @@
+   Compiling serde_json v1.0.140
+   Compiling darling v0.20.11
+   Compiling hex v0.4.3
+   Compiling digest v0.10.7
+   Compiling escape-bytes v0.1.1
+   Compiling num-traits v0.2.19
+   Compiling num-integer v0.1.46
+   Compiling static_assertions v1.1.0
+   Compiling serde_with_macros v3.12.0
+   Compiling ethnum v1.5.1
+   Compiling sha2 v0.10.9
+   Compiling num-bigint v0.4.6
+   Compiling soroban-sdk v22.0.7
+   Compiling serde_with v3.12.0
+   Compiling crate-git-revision v0.0.6
+   Compiling stellar-strkey v0.0.9
+   Compiling stellar-xdr v22.1.0
+   Compiling soroban-env-common v22.1.3
+   Compiling soroban-sdk-macros v22.0.7
+   Compiling bytes-lit v0.0.5
+   Compiling soroban-spec v22.0.7
+   Compiling soroban-spec-rust v22.0.7
+   Compiling soroban-env-macros v22.1.3
+   Compiling soroban-env-guest v22.1.3
+   Compiling shipment v0.0.0 (/home/edohwares/Desktop/Room/drips/navin-contracts/contracts/shipment)
+   Compiling example-contract v0.0.0 (/home/edohwares/Desktop/Room/drips/navin-contracts/contracts/example-contract)
+    Finished `release` profile [optimized] target(s) in 43.25s

@@ -383,3 +383,108 @@ fn test_report_geofence_event_non_existent_shipment() {
     // Attempt to report for non-existent shipment should fail with ShipmentNotFound (error code 6)
     client.report_geofence_event(&carrier, &999, &GeofenceEvent::ZoneEntry, &event_hash);
 }
+
+// ============= Cancel Shipment Tests =============
+
+#[test]
+fn test_cancel_shipment_without_escrow() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    client.cancel_shipment(&company, &shipment_id, &reason_hash);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::types::ShipmentStatus::Cancelled);
+}
+
+#[test]
+fn test_cancel_shipment_with_escrow() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    // Manually add escrow and set escrow_amount to mock an escrow existing
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.escrow_amount = 1000;
+        crate::storage::set_shipment(&env, &shipment);
+        env.storage()
+            .instance()
+            .set(&crate::types::DataKey::Escrow(shipment_id), &1000i128);
+    });
+
+    client.cancel_shipment(&company, &shipment_id, &reason_hash);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::types::ShipmentStatus::Cancelled);
+    assert_eq!(shipment.escrow_amount, 0);
+
+    // Verify escrow is removed
+    env.as_contract(&client.address, || {
+        assert!(!env
+            .storage()
+            .instance()
+            .has(&crate::types::DataKey::Escrow(shipment_id)));
+    });
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")]
+fn test_cancel_delivered_shipment_fails() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    // Set to delivered
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::types::ShipmentStatus::Delivered;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+
+    client.cancel_shipment(&company, &shipment_id, &reason_hash);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_cancel_shipment_unauthorized() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let outsider = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    client.cancel_shipment(&outsider, &shipment_id, &reason_hash);
+}

@@ -224,4 +224,54 @@ impl NavinShipment {
 
         Ok(())
     }
+
+    /// Cancel a shipment before it is delivered.
+    /// Only Company (sender) or Admin can cancel.
+    pub fn cancel_shipment(
+        env: Env,
+        caller: Address,
+        shipment_id: u64,
+        reason_hash: BytesN<32>,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        caller.require_auth();
+
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?; // ShipmentNotFound
+
+        // Only Company (sender) or Admin can cancel
+        let is_admin = storage::get_admin(&env) == caller;
+        if shipment.sender != caller && !is_admin {
+            return Err(SdkError::from_contract_error(3)); // Unauthorized
+        }
+
+        // Shipment must not be Delivered or Disputed
+        if shipment.status == ShipmentStatus::Delivered
+            || shipment.status == ShipmentStatus::Disputed
+        {
+            return Err(SdkError::from_contract_error(8)); // InvalidStatus
+        }
+
+        shipment.status = ShipmentStatus::Cancelled;
+        shipment.updated_at = env.ledger().timestamp();
+
+        // If escrow exists, trigger automatic refund to Company
+        let escrow_key = DataKey::Escrow(shipment_id);
+        if env.storage().instance().has(&escrow_key) {
+            env.storage().instance().remove(&escrow_key);
+        }
+
+        // Ensure escrow amount on struct is 0 (refunded conceptually)
+        shipment.escrow_amount = 0;
+
+        storage::set_shipment(&env, &shipment);
+
+        // Emit shipment_cancelled event with reason_hash
+        env.events().publish(
+            (Symbol::new(&env, "shipment_cancelled"),),
+            (shipment_id, caller, reason_hash),
+        );
+
+        Ok(())
+    }
 }

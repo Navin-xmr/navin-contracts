@@ -1,0 +1,16 @@
+   Compiling serde v1.0.219
+   Compiling darling_macro v0.20.11
+   Compiling thiserror v1.0.69
+   Compiling crypto-common v0.1.6
+   Compiling block-buffer v0.10.4
+   Compiling wasmparser v0.116.1
+   Compiling escape-bytes v0.1.1
+   Compiling prettyplease v0.2.32
+error[E0463]: can't find crate for `core`
+  |
+  = note: the `wasm32-unknown-unknown` target may not be installed
+  = help: consider downloading the target with `rustup target add wasm32-unknown-unknown`
+
+For more information about this error, try `rustc --explain E0463`.
+error: could not compile `escape-bytes` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
