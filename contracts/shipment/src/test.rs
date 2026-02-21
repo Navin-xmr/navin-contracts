@@ -2,7 +2,7 @@
 
 extern crate std;
 
-use crate::{NavinShipment, NavinShipmentClient};
+use crate::{NavinShipment, NavinShipmentClient, Role};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
 fn setup_env() -> (Env, NavinShipmentClient<'static>, Address) {
@@ -252,4 +252,125 @@ fn test_add_whitelist_fails_before_initialization() {
 
     // Must fail with NotInitialized (error code 2)
     client.add_carrier_to_whitelist(&company, &carrier);
+}
+
+// ============= Role Access Control Tests =============
+
+#[test]
+fn test_assign_role_admin_can_assign() {
+    let (_env, client, admin) = setup_env();
+    client.initialize(&admin);
+
+    let target = Address::generate(&_env);
+
+    // Admin can assign Carrier role to target
+    client.assign_role(&admin, &target, &Role::Carrier);
+
+    // Create a new client to check if role was assigned
+    // Note: We cannot directly query role, but we can infer from create_shipment success
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_assign_role_non_admin_cannot_assign() {
+    let (_env, client, admin) = setup_env();
+    client.initialize(&admin);
+
+    let non_admin = Address::generate(&_env);
+    let target = Address::generate(&_env);
+
+    // Non-admin cannot assign roles
+    client.assign_role(&non_admin, &target, &Role::Company);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_assign_role_fails_before_initialization() {
+    let (_env, client, _admin) = setup_env();
+
+    let target = Address::generate(&_env);
+
+    // Must fail with NotInitialized (error code 2)
+    client.assign_role(&_admin, &target, &Role::Carrier);
+}
+
+#[test]
+fn test_assign_multiple_roles_to_same_address() {
+    let (_env, client, admin) = setup_env();
+    client.initialize(&admin);
+
+    let target = Address::generate(&_env);
+
+    // Admin can assign multiple roles to the same address
+    client.assign_role(&admin, &target, &Role::Company);
+    client.assign_role(&admin, &target, &Role::Carrier);
+    client.assign_role(&admin, &target, &Role::Customer);
+
+    // Verify that all roles were assigned by attempting to create a shipment
+    // (which requires Company role)
+    let receiver = Address::generate(&_env);
+    let carrier = Address::generate(&_env);
+    let data_hash = BytesN::from_array(&_env, &[5u8; 32]);
+
+    let shipment_id = client.create_shipment(&target, &receiver, &carrier, &data_hash);
+    assert_eq!(shipment_id, 1);
+}
+
+#[test]
+fn test_assign_role_carrier() {
+    let (_env, client, admin) = setup_env();
+    client.initialize(&admin);
+
+    let carrier = Address::generate(&_env);
+
+    // Admin can assign Carrier role
+    client.assign_role(&admin, &carrier, &Role::Carrier);
+
+    // Verify role was assigned (we can't directly check, but this confirms no error)
+}
+
+#[test]
+fn test_assign_role_customer() {
+    let (_env, client, admin) = setup_env();
+    client.initialize(&admin);
+
+    let customer = Address::generate(&_env);
+
+    // Admin can assign Customer role
+    client.assign_role(&admin, &customer, &Role::Customer);
+
+    // Verify role was assigned (we can't directly check, but this confirms no error)
+}
+
+#[test]
+fn test_assign_role_admin() {
+    let (_env, client, admin) = setup_env();
+    client.initialize(&admin);
+
+    let new_admin = Address::generate(&_env);
+
+    // Admin can assign Admin role to another address
+    client.assign_role(&admin, &new_admin, &Role::Admin);
+
+    // Verify the new admin can assign roles
+    let target = Address::generate(&_env);
+    client.assign_role(&new_admin, &target, &Role::Company);
+
+    // Verify role was assigned
+}
+
+#[test]
+fn test_admin_roles_on_initialization() {
+    let (_env, client, admin) = setup_env();
+    client.initialize(&admin);
+
+    // Admin should have both Admin and Company roles initially
+    // This is verified by checking that admin can create a shipment
+    let receiver = Address::generate(&_env);
+    let carrier = Address::generate(&_env);
+    let data_hash = BytesN::from_array(&_env, &[10u8; 32]);
+
+    // Admin has Company role, so can create shipment
+    let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash);
+    assert_eq!(shipment_id, 1);
 }

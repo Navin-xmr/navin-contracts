@@ -48,20 +48,29 @@ pub fn is_carrier_whitelisted(env: &Env, company: &Address, carrier: &Address) -
     env.storage().instance().get(&key).unwrap_or(false)
 }
 
-/// Grant Company role to an address
-pub fn set_company_role(env: &Env, company: &Address) {
-    env.storage()
-        .instance()
-        .set(&DataKey::Company(company.clone()), &true);
+/// Assign a role to an address
+pub fn set_role(env: &Env, address: &Address, role: &Role) {
+    let key = DataKey::UserRole(address.clone(), role.clone());
+    env.storage().instance().set(&key, &true);
 }
 
-/// Check whether an address has Company role
-pub fn has_company_role(env: &Env, address: &Address) -> bool {
-    env.storage()
-        .instance()
-        .get(&DataKey::Company(address.clone()))
-        .unwrap_or(false)
+/// Check if an address has a specific role
+pub fn has_role(env: &Env, address: &Address, role: &Role) -> bool {
+    let key = DataKey::UserRole(address.clone(), role.clone());
+    env.storage().instance().get(&key).unwrap_or(false)
 }
+
+/// Grant Company role to an address (legacy compatibility)
+pub fn set_company_role(env: &Env, company: &Address) {
+    set_role(env, company, &Role::Company);
+}
+
+/// Check whether an address has Company role (legacy compatibility)
+#[allow(dead_code)]
+pub fn has_company_role(env: &Env, address: &Address) -> bool {
+    has_role(env, address, &Role::Company)
+}
+
 
 /// Get shipment by ID
 pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
