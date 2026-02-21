@@ -9,6 +9,8 @@ pub enum DataKey {
     ShipmentCount,
     /// Addresses with Company role.
     Company(Address),
+    /// Addresses with Carrier role.
+    Carrier(Address),
     /// Individual shipment data keyed by ID.
     Shipment(u64),
     /// Carrier whitelist for a company — (company, carrier) -> bool.
@@ -25,6 +27,8 @@ pub enum DataKey {
 pub enum Role {
     /// A registered company that can create shipments.
     Company,
+    /// A registered carrier that can transport shipments and report geofence events.
+    Carrier,
 }
 
 /// Shipment status lifecycle.
@@ -85,4 +89,16 @@ pub struct Milestone {
     pub timestamp: u64,
     /// Address that reported this milestone.
     pub reporter: Address,
+}
+
+/// Geofence event types for tracking shipment location events.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum GeofenceEvent {
+    /// Shipment entered a predefined geographical zone.
+    ZoneEntry,
+    /// Shipment exited a predefined geographical zone.
+    ZoneExit,
+    /// Shipment deviated from the expected route.
+    RouteDeviation,
 }

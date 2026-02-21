@@ -55,11 +55,26 @@ pub fn set_company_role(env: &Env, company: &Address) {
         .set(&DataKey::Company(company.clone()), &true);
 }
 
+/// Grant Carrier role to an address
+pub fn set_carrier_role(env: &Env, carrier: &Address) {
+    env.storage()
+        .instance()
+        .set(&DataKey::Carrier(carrier.clone()), &true);
+}
+
 /// Check whether an address has Company role
 pub fn has_company_role(env: &Env, address: &Address) -> bool {
     env.storage()
         .instance()
         .get(&DataKey::Company(address.clone()))
+        .unwrap_or(false)
+}
+
+/// Check whether an address has Carrier role
+pub fn has_carrier_role(env: &Env, address: &Address) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::Carrier(address.clone()))
         .unwrap_or(false)
 }
 

@@ -2,8 +2,11 @@
 
 extern crate std;
 
-use crate::{NavinShipment, NavinShipmentClient};
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
+use crate::{GeofenceEvent, NavinShipment, NavinShipmentClient};
+use soroban_sdk::{
+    testutils::{Address as _, Events},
+    Address, BytesN, Env,
+};
 
 fn setup_env() -> (Env, NavinShipmentClient<'static>, Address) {
     let env = Env::default();
@@ -129,6 +132,7 @@ fn test_multiple_shipments_have_unique_ids() {
     assert_eq!(id_three, 3);
     assert_eq!(client.get_shipment_counter(), 3);
 }
+
 // ============= Carrier Whitelist Tests =============
 
 #[test]
@@ -339,4 +343,220 @@ fn test_get_escrow_balance_fails_before_initialization() {
 
     // Must fail with NotInitialized (error code 2)
     client.get_escrow_balance(&1);
+}
+
+// ============= Get Shipment Count Tests =============
+
+#[test]
+fn test_get_shipment_count_returns_zero_on_fresh_contract() {
+    let (_env, client, _admin) = setup_env();
+
+    // Returns 0 even without initialization
+    assert_eq!(client.get_shipment_count(), 0);
+}
+
+#[test]
+fn test_get_shipment_count_returns_zero_after_initialization() {
+    let (_env, client, admin) = setup_env();
+
+    client.initialize(&admin);
+
+    assert_eq!(client.get_shipment_count(), 0);
+}
+
+#[test]
+fn test_get_shipment_count_after_creating_shipments() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    // Count after 1 shipment
+    let hash_one = BytesN::from_array(&env, &[1u8; 32]);
+    client.create_shipment(&company, &receiver, &carrier, &hash_one);
+    assert_eq!(client.get_shipment_count(), 1);
+
+    // Count after 2 shipments
+    let hash_two = BytesN::from_array(&env, &[2u8; 32]);
+    client.create_shipment(&company, &receiver, &carrier, &hash_two);
+    assert_eq!(client.get_shipment_count(), 2);
+
+    // Count after 3 shipments
+    let hash_three = BytesN::from_array(&env, &[3u8; 32]);
+    client.create_shipment(&company, &receiver, &carrier, &hash_three);
+    assert_eq!(client.get_shipment_count(), 3);
+}
+
+// ============= Get Shipment Tests =============
+
+#[test]
+fn test_get_shipment_returns_correct_data() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[42u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.id, shipment_id);
+    assert_eq!(shipment.sender, company);
+    assert_eq!(shipment.receiver, receiver);
+    assert_eq!(shipment.carrier, carrier);
+    assert_eq!(shipment.data_hash, data_hash);
+    assert_eq!(shipment.status, crate::ShipmentStatus::Created);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_get_shipment_not_found() {
+    let (_env, client, admin) = setup_env();
+
+    client.initialize(&admin);
+
+    // Must fail with ShipmentNotFound (error code 6)
+    client.get_shipment(&999);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_get_shipment_fails_before_initialization() {
+    let (_env, client, _admin) = setup_env();
+
+    // Must fail with NotInitialized (error code 2)
+    client.get_shipment(&1);
+}
+
+// ============= Geofence Event Tests =============
+
+#[test]
+fn test_report_geofence_zone_entry() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let event_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    // Report ZoneEntry
+    client.report_geofence_event(
+        &carrier,
+        &shipment_id,
+        &GeofenceEvent::ZoneEntry,
+        &event_hash,
+    );
+
+    // Verify event was emitted (at least 1 geofence event)
+    let events = env.events().all();
+    assert!(!events.is_empty());
+}
+
+#[test]
+fn test_report_geofence_zone_exit() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let event_hash = BytesN::from_array(&env, &[3u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    // Report ZoneExit
+    client.report_geofence_event(
+        &carrier,
+        &shipment_id,
+        &GeofenceEvent::ZoneExit,
+        &event_hash,
+    );
+
+    // Verify event was emitted
+    let events = env.events().all();
+    assert!(!events.is_empty());
+}
+
+#[test]
+fn test_report_geofence_route_deviation() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let event_hash = BytesN::from_array(&env, &[4u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    // Report RouteDeviation
+    client.report_geofence_event(
+        &carrier,
+        &shipment_id,
+        &GeofenceEvent::RouteDeviation,
+        &event_hash,
+    );
+
+    // Verify event was emitted
+    let events = env.events().all();
+    assert!(!events.is_empty());
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")]
+fn test_report_geofence_event_unauthorized_role() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let outsider = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let event_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    // Note: outsider NOT added as carrier
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash);
+
+    // Attempt to report geofence event should fail with CarrierNotAuthorized (error code 7)
+    client.report_geofence_event(
+        &outsider,
+        &shipment_id,
+        &GeofenceEvent::ZoneEntry,
+        &event_hash,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_report_geofence_event_non_existent_shipment() {
+    let (env, client, admin) = setup_env();
+    let carrier = Address::generate(&env);
+    let event_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.initialize(&admin);
+    client.add_carrier(&admin, &carrier);
+
+    // Attempt to report for non-existent shipment should fail with ShipmentNotFound (error code 6)
+    client.report_geofence_event(&carrier, &999, &GeofenceEvent::ZoneEntry, &event_hash);
 }
