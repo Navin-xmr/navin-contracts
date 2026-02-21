@@ -12,11 +12,6 @@ mod types;
 pub use errors::*;
 pub use types::*;
 
-#[derive(Clone, Copy)]
-pub enum Role {
-    Company,
-}
-
 fn require_initialized(env: &Env) -> Result<(), SdkError> {
     if !storage::is_initialized(env) {
         return Err(SdkError::from_contract_error(2));
@@ -33,6 +28,13 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), SdkError
                 Ok(())
             } else {
                 Err(SdkError::from_contract_error(3))
+            }
+        }
+        Role::Carrier => {
+            if storage::has_carrier_role(env, address) {
+                Ok(())
+            } else {
+                Err(SdkError::from_contract_error(7))
             }
         }
     }
@@ -136,6 +138,19 @@ impl NavinShipment {
         Ok(())
     }
 
+    /// Allow admin to grant Carrier role.
+    pub fn add_carrier(env: Env, admin: Address, carrier: Address) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(SdkError::from_contract_error(3));
+        }
+
+        storage::set_carrier_role(&env, &carrier);
+        Ok(())
+    }
+
     /// Create a shipment and emit the shipment_created event.
     pub fn create_shipment(
         env: Env,
@@ -180,5 +195,33 @@ impl NavinShipment {
     pub fn get_shipment(env: Env, shipment_id: u64) -> Result<Shipment, SdkError> {
         require_initialized(&env)?;
         storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))
+    }
+
+    /// Report a geofence event for a shipment.
+    /// Only registered carriers can report geofence events.
+    pub fn report_geofence_event(
+        env: Env,
+        carrier: Address,
+        shipment_id: u64,
+        zone_type: GeofenceEvent,
+        data_hash: BytesN<32>,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        carrier.require_auth();
+        require_role(&env, &carrier, Role::Carrier)?;
+
+        // Verify shipment exists
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(SdkError::from_contract_error(6));
+        }
+
+        let timestamp = env.ledger().timestamp();
+
+        env.events().publish(
+            (Symbol::new(&env, "geofence_event"),),
+            (shipment_id, zone_type, data_hash, timestamp),
+        );
+
+        Ok(())
     }
 }
