@@ -181,4 +181,15 @@ impl NavinShipment {
         require_initialized(&env)?;
         storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))
     }
+
+    /// Returns the current escrowed amount for a specific shipment.
+    /// Returns 0 if no escrow has been deposited.
+    /// Returns ShipmentNotFound if the shipment does not exist.
+    pub fn get_escrow_balance(env: Env, shipment_id: u64) -> Result<i128, SdkError> {
+        require_initialized(&env)?;
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(SdkError::from_contract_error(6));
+        }
+        Ok(storage::get_escrow_balance(&env, shipment_id))
+    }
 }
