@@ -5,7 +5,7 @@ extern crate std;
 use crate::{GeofenceEvent, NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
     testutils::{Address as _, Events},
-    Address, BytesN, Env,
+    Address, BytesN, Env, Symbol, TryFromVal,
 };
 
 fn setup_env() -> (Env, NavinShipmentClient<'static>, Address) {
@@ -768,6 +768,80 @@ fn test_report_geofence_event_non_existent_shipment() {
     client.add_carrier(&admin, &carrier);
 
     client.report_geofence_event(&carrier, &999, &GeofenceEvent::ZoneEntry, &event_hash);
+}
+
+// ============= ETA Update Tests =============
+
+#[test]
+fn test_update_eta_valid_emits_event() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let shipment_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let eta_hash = BytesN::from_array(&env, &[9u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &shipment_hash);
+    let eta_timestamp = env.ledger().timestamp() + 60;
+
+    client.update_eta(&carrier, &shipment_id, &eta_timestamp, &eta_hash);
+
+    let events = env.events().all();
+    let last = events.get(events.len() - 1).unwrap();
+
+    assert_eq!(last.0, client.address);
+
+    let topic = Symbol::try_from_val(&env, &last.1.get(0).unwrap()).unwrap();
+    assert_eq!(topic, Symbol::new(&env, "eta_updated"));
+
+    let event_data = <(u64, u64, BytesN<32>)>::try_from_val(&env, &last.2).unwrap();
+    assert_eq!(event_data, (shipment_id, eta_timestamp, eta_hash));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_update_eta_rejects_past_timestamp() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let shipment_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let eta_hash = BytesN::from_array(&env, &[8u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &shipment_hash);
+    let past_eta = env.ledger().timestamp();
+
+    client.update_eta(&carrier, &shipment_id, &past_eta, &eta_hash);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")]
+fn test_update_eta_unauthorized() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let outsider = Address::generate(&env);
+    let shipment_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let eta_hash = BytesN::from_array(&env, &[7u8; 32]);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &shipment_hash);
+    let eta_timestamp = env.ledger().timestamp() + 120;
+
+    // outsider is not a registered carrier
+    client.update_eta(&outsider, &shipment_id, &eta_timestamp, &eta_hash);
 }
 
 // ============= Confirm Delivery Tests =============

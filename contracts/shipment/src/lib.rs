@@ -183,10 +183,7 @@ impl NavinShipment {
         storage::set_shipment(&env, &shipment);
         storage::set_shipment_counter(&env, shipment_id);
 
-        env.events().publish(
-            (Symbol::new(&env, "shipment_created"),),
-            (shipment_id, sender, receiver, data_hash),
-        );
+        events::emit_shipment_created(&env, shipment_id, &sender, &receiver, &data_hash);
 
         Ok(shipment_id)
     }
@@ -224,10 +221,7 @@ impl NavinShipment {
         shipment.updated_at = env.ledger().timestamp();
         storage::set_shipment(&env, &shipment);
 
-        env.events().publish(
-            (Symbol::new(&env, "escrow_deposited"),),
-            (shipment_id, from, amount),
-        );
+        events::emit_escrow_deposited(&env, shipment_id, &from, amount);
 
         Ok(())
     }
@@ -263,10 +257,7 @@ impl NavinShipment {
 
         storage::set_shipment(&env, &shipment);
 
-        env.events().publish(
-            (Symbol::new(&env, "status_updated"),),
-            (shipment_id, old_status, new_status, data_hash),
-        );
+        events::emit_status_updated(&env, shipment_id, &old_status, &new_status, &data_hash);
 
         Ok(())
     }
@@ -361,6 +352,39 @@ impl NavinShipment {
         Ok(())
     }
 
+    /// Update ETA for a shipment.
+    /// Only the designated registered carrier can update ETA.
+    /// ETA must be strictly in the future.
+    pub fn update_eta(
+        env: Env,
+        carrier: Address,
+        shipment_id: u64,
+        eta_timestamp: u64,
+        data_hash: BytesN<32>,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        carrier.require_auth();
+        require_role(&env, &carrier, Role::Carrier)?;
+
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+
+        if shipment.carrier != carrier {
+            return Err(SdkError::from_contract_error(3));
+        }
+
+        if eta_timestamp <= env.ledger().timestamp() {
+            return Err(SdkError::from_contract_error(9));
+        }
+
+        env.events().publish(
+            (Symbol::new(&env, "eta_updated"),),
+            (shipment_id, eta_timestamp, data_hash),
+        );
+
+        Ok(())
+    }
+
     /// Record a milestone for a shipment.
     /// Only registered carriers can record milestones.
     pub fn record_milestone(
@@ -394,10 +418,7 @@ impl NavinShipment {
 
         // Do NOT store the milestone on-chain
         // Emit the milestone_recorded event (Hash-and-Emit pattern)
-        env.events().publish(
-            (Symbol::new(&env, "milestone_recorded"),),
-            (shipment_id, checkpoint, data_hash, carrier),
-        );
+        events::emit_milestone_recorded(&env, shipment_id, &checkpoint, &data_hash, &carrier);
 
         Ok(())
     }
