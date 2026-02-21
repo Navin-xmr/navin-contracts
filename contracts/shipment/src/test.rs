@@ -456,7 +456,6 @@ fn test_get_escrow_balance_returns_zero_without_deposit() {
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[10u8; 32]);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
 
     client.initialize(&admin);
