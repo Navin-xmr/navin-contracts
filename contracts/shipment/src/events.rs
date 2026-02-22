@@ -36,6 +36,21 @@ use soroban_sdk::{Address, BytesN, Env, Symbol};
 ///
 /// - **Express backend**: Creates the initial shipment record in the DB.
 /// - **Frontend**: Displays real-time shipment creation notifications.
+///
+/// # Arguments
+/// * `env` - Extracted execution environment.
+/// * `shipment_id` - ID of the created shipment.
+/// * `sender` - Originating company.
+/// * `receiver` - Target destination address.
+/// * `data_hash` - The off-chain data hash tracking.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_shipment_created(&env, id, &sender, &receiver, &hash);
+/// ```
 pub fn emit_shipment_created(
     env: &Env,
     shipment_id: u64,
@@ -69,6 +84,21 @@ pub fn emit_shipment_created(
 ///
 /// - **Express backend**: Updates shipment status in the DB and triggers webhooks.
 /// - **Frontend**: Refreshes the shipment timeline in the tracking UI.
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `shipment_id` - Assigned ID of the shipment.
+/// * `old_status` - Replaced status.
+/// * `new_status` - Promoted status.
+/// * `data_hash` - Latest hash of off-chain records tracking.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_status_updated(&env, id, &ShipmentStatus::Created, &ShipmentStatus::InTransit, &hash);
+/// ```
 pub fn emit_status_updated(
     env: &Env,
     shipment_id: u64,
@@ -106,6 +136,21 @@ pub fn emit_status_updated(
 ///
 /// - **Express backend**: Stores the full milestone record and verifies the hash.
 /// - **Frontend**: Adds a new point on the shipment tracking map.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - ID of the shipment.
+/// * `checkpoint` - The target checkpoint recorded.
+/// * `data_hash` - Encoded offchain metadata representation hashes.
+/// * `reporter` - The active address recording milestone.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_milestone_recorded(&env, 1, &Symbol::new(&env, "warehouse"), &hash, &carrier);
+/// ```
 pub fn emit_milestone_recorded(
     env: &Env,
     shipment_id: u64,
@@ -138,6 +183,20 @@ pub fn emit_milestone_recorded(
 ///
 /// - **Express backend**: Updates the escrow ledger and notifies the carrier.
 /// - **Frontend**: Shows the escrow status on the shipment detail page.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - Target shipment.
+/// * `from` - Depositor address.
+/// * `amount` - Escrow funds.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_escrow_deposited(&env, 1, &company_addr, 1000);
+/// ```
 #[allow(dead_code)]
 pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount: i128) {
     env.events().publish(
@@ -160,6 +219,20 @@ pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount
 ///
 /// - **Express backend**: Finalizes the payment record and triggers settlement.
 /// - **Frontend**: Confirms payment completion to both parties.
+///
+/// # Arguments
+/// * `env` - Extracted execution environment
+/// * `shipment_id` - Corresponding shipment target identifier
+/// * `to` - Receivers payment delivery destination
+/// * `amount` - Transfer quantifiers emitted.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_escrow_released(&env, 1, &carrier_addr, 1000);
+/// ```
 pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i128) {
     env.events().publish(
         (Symbol::new(env, "escrow_released"),),
@@ -181,6 +254,20 @@ pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i
 ///
 /// - **Express backend**: Updates the escrow ledger and notifies the company.
 /// - **Frontend**: Shows the refund status on the shipment detail page.
+///
+/// # Arguments
+/// * `env` - Execution environment references
+/// * `shipment_id` - Bound identifier
+/// * `to` - Bound targets receiving refunds.
+/// * `amount` - Total refund magnitude.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_escrow_refunded(&env, 1, &company_addr, 1000);
+/// ```
 pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i128) {
     env.events().publish(
         (Symbol::new(env, "escrow_refunded"),),
@@ -206,6 +293,20 @@ pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i
 ///
 /// - **Express backend**: Creates a dispute case and alerts the admin.
 /// - **Frontend**: Opens the dispute resolution workflow for both parties.
+///
+/// # Arguments
+/// * `env` - Operating environment mappings
+/// * `shipment_id` - Identifier tracking dispute
+/// * `raised_by` - Object instance generating dispute action
+/// * `reason_hash` - Formatted storage mapping to offchain dispute proof
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_dispute_raised(&env, 1, &caller, &hash);
+/// ```
 pub fn emit_dispute_raised(
     env: &Env,
     shipment_id: u64,
@@ -227,6 +328,20 @@ pub fn emit_dispute_raised(
 /// | shipment_id | `u64`        | Cancelled shipment identifier                  |
 /// | caller      | `Address`    | Company or Admin that cancelled the shipment   |
 /// | reason_hash | `BytesN<32>` | SHA-256 hash of the off-chain cancellation reason |
+///
+/// # Arguments
+/// * `env` - Binding caller environment context map
+/// * `shipment_id` - ID specifying cancelled shipment instance
+/// * `caller` - Requestor generating cancellations
+/// * `reason_hash` - The mapped hash associated to the cancellation context.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_shipment_cancelled(&env, 1, &caller, &hash);
+/// ```
 pub fn emit_shipment_cancelled(
     env: &Env,
     shipment_id: u64,
@@ -248,6 +363,20 @@ pub fn emit_shipment_cancelled(
 /// | admin         | `Address`    | Admin that triggered the upgrade |
 /// | new_wasm_hash | `BytesN<32>` | Hash of the new contract WASM   |
 /// | version       | `u32`        | Contract version after upgrade  |
+///
+/// # Arguments
+/// * `env` - Env runtime context tracker
+/// * `admin` - Contract mapping triggering the event notification
+/// * `new_wasm_hash` - Reference byte arrays mapping the deployed WASM context
+/// * `version` - Deployment identifier index context
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_contract_upgraded(&env, &admin, &hash, 2);
+/// ```
 pub fn emit_contract_upgraded(
     env: &Env,
     admin: &Address,
@@ -275,6 +404,21 @@ pub fn emit_contract_upgraded(
 ///
 /// - **Express backend**: Updates carrier assignment and triggers notifications.
 /// - **Frontend**: Shows carrier change in shipment tracking UI.
+///
+/// # Arguments
+/// * `env` - Invoker environment handler instance
+/// * `shipment_id` - Target referencing the handoff sequence
+/// * `from_carrier` - Initial handler returning mapping to shipment ID sequence
+/// * `to_carrier` - Target updated recipient acting as carrier
+/// * `handoff_hash` - Validation signature array mapping references.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_carrier_handoff(&env, 1, &curr_carr, &new_carr, &hash);
+/// ```
 pub fn emit_carrier_handoff(
     env: &Env,
     shipment_id: u64,
@@ -310,6 +454,21 @@ pub fn emit_carrier_handoff(
 ///
 /// - **Express backend**: Records the breach event and triggers alerts.
 /// - **Frontend**: Flags the shipment with a condition-breach warning badge.
+///
+/// # Arguments
+/// * `env` - Invoker mapping of standard SDK elements mappings
+/// * `shipment_id` - Primary index resolving context arrays mappings reference.
+/// * `carrier` - Invoking controller array mappings identifiers scope handlers.
+/// * `breach_type` - Type tracking parameter reference format mapping instances.
+/// * `data_hash` - External proof pointer array.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_condition_breach(&env, 1, &carrier_addr, &BreachType::TemperatureHigh, &hash);
+/// ```
 pub fn emit_condition_breach(
     env: &Env,
     shipment_id: u64,
