@@ -1,16 +1,13 @@
 [package]
-name = "shipment"
-version = "0.0.0"
+name = "navin-token"
+version = "0.1.0"
 edition = "2021"
-publish = false
 
 [lib]
-crate-type = ["lib", "cdylib"]
-doctest = false
+crate-type = ["cdylib"]
 
 [dependencies]
 soroban-sdk = { workspace = true }
-navin-token = { path = "../token" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }

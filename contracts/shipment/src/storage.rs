@@ -206,3 +206,15 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
 pub fn get_escrow_balance(env: &Env, shipment_id: u64) -> i128 {
     get_escrow(env, shipment_id)
 }
+
+/// Get the token contract address
+pub fn get_token_contract(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::TokenContract)
+}
+
+/// Set the token contract address
+pub fn set_token_contract(env: &Env, token_contract: &Address) {
+    env.storage()
+        .instance()
+        .set(&DataKey::TokenContract, token_contract);
+}

@@ -1,6 +1,8 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, BytesN, Env, Map, Symbol, Vec};
+use soroban_sdk::{
+    contract, contractimpl, symbol_short, Address, BytesN, Env, IntoVal, Map, Symbol, Vec,
+};
 
 mod errors;
 mod events;
@@ -53,6 +55,18 @@ fn internal_release_escrow(env: &Env, shipment: &mut Shipment, amount: i128) {
         shipment.escrow_amount -= actual_release;
         shipment.updated_at = env.ledger().timestamp();
         storage::set_shipment(env, shipment);
+
+        // Get token contract address
+        if let Some(token_contract) = storage::get_token_contract(env) {
+            // Transfer tokens from this contract to carrier
+            let contract_address = env.current_contract_address();
+            let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(env);
+            args.push_back(contract_address.into_val(env));
+            args.push_back(shipment.carrier.clone().into_val(env));
+            args.push_back(actual_release.into_val(env));
+            env.invoke_contract::<()>(&token_contract, &symbol_short!("transfer"), args);
+        }
+
         events::emit_escrow_released(env, shipment.id, &shipment.carrier, actual_release);
     }
 }
@@ -120,20 +134,23 @@ impl NavinShipment {
         storage::set_shipment(&env, &shipment);
         Ok(())
     }
-    /// Initialize the contract with an admin address.
+    /// Initialize the contract with an admin address and token contract address.
     /// Can only be called once. Sets the admin and shipment counter to 0.
-    pub fn initialize(env: Env, admin: Address) -> Result<(), NavinError> {
+    pub fn initialize(env: Env, admin: Address, token_contract: Address) -> Result<(), NavinError> {
         if storage::is_initialized(&env) {
             return Err(NavinError::AlreadyInitialized);
         }
 
         storage::set_admin(&env, &admin);
+        storage::set_token_contract(&env, &token_contract);
         storage::set_shipment_counter(&env, 0);
         storage::set_version(&env, 1);
         storage::set_company_role(&env, &admin);
 
-        env.events()
-            .publish((symbol_short!("init"),), admin.clone());
+        env.events().publish(
+            (symbol_short!("init"),),
+            (admin.clone(), token_contract.clone()),
+        );
 
         Ok(())
     }
@@ -383,6 +400,17 @@ impl NavinShipment {
         if shipment.escrow_amount > 0 {
             return Err(NavinError::EscrowLocked);
         }
+
+        // Get token contract address
+        let token_contract = storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
+
+        // Transfer tokens from user to this contract
+        let contract_address = env.current_contract_address();
+        let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(&env);
+        args.push_back(from.clone().into_val(&env));
+        args.push_back(contract_address.into_val(&env));
+        args.push_back(amount.into_val(&env));
+        env.invoke_contract::<()>(&token_contract, &symbol_short!("transfer"), args);
 
         shipment.escrow_amount = amount;
         shipment.total_escrow = amount;
@@ -752,6 +780,17 @@ impl NavinShipment {
         if escrow_amount == 0 {
             return Err(NavinError::InsufficientFunds);
         }
+
+        // Get token contract address
+        let token_contract = storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
+
+        // Transfer tokens from this contract to company
+        let contract_address = env.current_contract_address();
+        let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(&env);
+        args.push_back(contract_address.into_val(&env));
+        args.push_back(shipment.sender.clone().into_val(&env));
+        args.push_back(escrow_amount.into_val(&env));
+        env.invoke_contract::<soroban_sdk::Val>(&token_contract, &symbol_short!("transfer"), args);
 
         shipment.escrow_amount = 0;
         shipment.status = ShipmentStatus::Cancelled;
