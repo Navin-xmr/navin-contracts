@@ -184,3 +184,13 @@ pub struct ShipmentInput {
     pub data_hash: BytesN<32>,
     pub payment_milestones: Vec<(Symbol, u32)>,
 }
+
+/// Dispute resolution options for admin.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum DisputeResolution {
+    /// Release escrowed funds to the carrier.
+    ReleaseToCarrier,
+    /// Refund escrowed funds to the company.
+    RefundToCompany,
+}
