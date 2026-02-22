@@ -2568,3 +2568,22 @@ fn test_get_contract_metadata_after_creating_shipments() {
     assert_eq!(meta.shipment_count, 2);
     assert!(meta.initialized);
 }
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_create_shipment_fails_before_initialization() {
+    let (env, client, _admin, _token_contract) = setup_env();
+    let sender = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    // Contract not initialized — should panic with NotInitialized (#2)
+    client.create_shipment(
+        &sender,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
+}
