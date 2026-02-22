@@ -12,7 +12,7 @@ pub enum Error {
     ShipmentNotFound = 6,
     CarrierNotAuthorized = 7,
     InvalidAmount = 8,
-    InvalidShipmentStatus = 9,
+    InvalidEta = 9,
     InvalidStatus = 10,
     EscrowAlreadyDeposited = 11,
 }

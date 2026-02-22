@@ -234,7 +234,7 @@ impl NavinShipment {
             storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
 
         if shipment.status != ShipmentStatus::Created {
-            return Err(SdkError::from_contract_error(9));
+            return Err(SdkError::from_contract_error(10));
         }
 
         if shipment.escrow_amount > 0 {
