@@ -140,6 +140,8 @@ pub struct Shipment {
     pub total_escrow: i128,
     /// Milestone-based payment schedule: (checkpoint name, percentage).
     pub payment_milestones: Vec<(Symbol, u32)>,
+    /// List of symbols for milestones that have already been paid.
+    pub paid_milestones: Vec<Symbol>,
 }
 
 /// A checkpoint milestone recorded during shipment transit.

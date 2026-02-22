@@ -24,8 +24,8 @@ fn extend_shipment_ttl(env: &Env, shipment_id: u64) {
     );
 }
 
-fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(), SdkError> {
-    if milestones.len() == 0 {
+fn validate_milestones(_env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(), SdkError> {
+    if milestones.is_empty() {
         return Ok(());
     }
     let mut total_percentage = 0;
