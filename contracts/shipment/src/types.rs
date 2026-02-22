@@ -51,6 +51,68 @@ pub enum ShipmentStatus {
     Cancelled,
 }
 
+impl ShipmentStatus {
+    /// Checks if a transition from the current status to a new status is valid.
+    ///
+    /// ### Status Transition Diagram
+    /// ```text
+    ///           +-----------+       +-----------+       +-----------+
+    ///           |  Created  |------>| InTransit |<----->| AtCheckpt |
+    ///           +-----------+       +-----------+       +-----------+
+    ///                 |                   |                   |
+    ///                 |           +-------+-------+-----------+
+    ///                 |           |               |
+    ///                 v           v               v
+    ///           +-----------+-----------+   +-----------+
+    ///           | Cancelled | Disputed  |<--| Delivered |
+    ///           +-----------+-----------+   +-----------+
+    ///                               |
+    ///                               v
+    ///                         (Terminal States)
+    /// ```
+    ///
+    /// **Valid Transitions:**
+    /// - `Created` -> `InTransit`, `Cancelled`
+    /// - `InTransit` -> `AtCheckpoint`, `Delivered`, `Disputed`
+    /// - `AtCheckpoint` -> `InTransit`, `Delivered`, `Disputed`
+    /// - `Any` -> `Cancelled` (except `Delivered`)
+    /// - `Any` -> `Disputed` (except `Cancelled`, `Delivered`)
+    /// - `Disputed` -> `Cancelled`, `Delivered` (Special recovery cases if needed, but per requirements: "any -> Disputed (except Cancelled/Delivered)")
+    pub fn is_valid_transition(&self, to: &ShipmentStatus) -> bool {
+        match (self, to) {
+            // Created transitions
+            (Self::Created, Self::InTransit) => true,
+            (Self::Created, Self::Cancelled) => true,
+            (Self::Created, Self::Disputed) => true,
+
+            // InTransit transitions
+            (Self::InTransit, Self::AtCheckpoint) => true,
+            (Self::InTransit, Self::Delivered) => true,
+            (Self::InTransit, Self::Disputed) => true,
+            (Self::InTransit, Self::Cancelled) => true,
+
+            // AtCheckpoint transitions
+            (Self::AtCheckpoint, Self::InTransit) => true,
+            (Self::AtCheckpoint, Self::Delivered) => true,
+            (Self::AtCheckpoint, Self::Disputed) => true,
+            (Self::AtCheckpoint, Self::Cancelled) => true,
+
+            // Disputed transitions
+            (Self::Disputed, Self::Cancelled) => true,
+            (Self::Disputed, Self::Delivered) => true, // Recovery to delivered
+
+            // Universal transitions (Handled above partially)
+            // any -> Cancelled (except Delivered)
+            (_, Self::Cancelled) if self != &Self::Delivered => true,
+
+            // any -> Disputed (except Cancelled/Delivered)
+            (_, Self::Disputed) if self != &Self::Cancelled && self != &Self::Delivered => true,
+
+            _ => false,
+        }
+    }
+}
+
 /// Core shipment data stored on-chain.
 /// Raw payload is off-chain; only the hash is stored.
 #[contracttype]
