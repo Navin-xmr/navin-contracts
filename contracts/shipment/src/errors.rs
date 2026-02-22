@@ -28,4 +28,6 @@ pub enum NavinError {
     MilestoneSumInvalid = 18,
     MilestoneAlreadyPaid = 19,
     MetadataLimitExceeded = 20,
+    /// Status update rejected because the minimum time interval has not elapsed.
+    RateLimitExceeded = 21,
 }

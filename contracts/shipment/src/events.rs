@@ -18,7 +18,7 @@
 //! Each event uses a single descriptive `Symbol` as its topic so that
 //! consumers can filter by topic when subscribing to contract events.
 
-use crate::types::ShipmentStatus;
+use crate::types::{BreachType, ShipmentStatus};
 use soroban_sdk::{Address, BytesN, Env, Symbol};
 
 /// Emits a `shipment_created` event when a new shipment is registered.
@@ -289,6 +289,41 @@ pub fn emit_carrier_handoff(
             from_carrier.clone(),
             to_carrier.clone(),
             handoff_hash.clone(),
+        ),
+    );
+}
+
+/// Emits a `condition_breach` event when a carrier detects an out-of-range sensor reading.
+///
+/// The full sensor payload remains off-chain; only the `data_hash` is emitted.
+///
+/// # Event Data
+///
+/// | Field        | Type         | Description                                          |
+/// |--------------|--------------|------------------------------------------------------|
+/// | shipment_id  | `u64`        | Shipment where the breach occurred                   |
+/// | carrier      | `Address`    | Carrier that reported the breach                     |
+/// | breach_type  | `BreachType` | Category of the condition breach                     |
+/// | data_hash    | `BytesN<32>` | SHA-256 hash of the off-chain sensor data payload    |
+///
+/// # Listeners
+///
+/// - **Express backend**: Records the breach event and triggers alerts.
+/// - **Frontend**: Flags the shipment with a condition-breach warning badge.
+pub fn emit_condition_breach(
+    env: &Env,
+    shipment_id: u64,
+    carrier: &Address,
+    breach_type: &BreachType,
+    data_hash: &BytesN<32>,
+) {
+    env.events().publish(
+        (Symbol::new(env, "condition_breach"),),
+        (
+            shipment_id,
+            carrier.clone(),
+            breach_type.clone(),
+            data_hash.clone(),
         ),
     );
 }

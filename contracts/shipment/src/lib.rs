@@ -15,6 +15,9 @@ pub use types::*;
 
 const SHIPMENT_TTL_THRESHOLD: u32 = 17_280; // ~1 day
 const SHIPMENT_TTL_EXTENSION: u32 = 518_400; // ~30 days
+/// Minimum seconds that must pass between status updates on the same shipment.
+/// Admin is exempt from this restriction.
+const MIN_STATUS_UPDATE_INTERVAL: u64 = 60; // 60 seconds / ~10 ledgers
 
 fn extend_shipment_ttl(env: &Env, shipment_id: u64) {
     storage::extend_shipment_ttl(
@@ -443,6 +446,16 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
 
+        // Rate-limit check: admin bypasses; all other callers must wait the minimum interval.
+        if caller != admin {
+            if let Some(last) = storage::get_last_status_update(&env, shipment_id) {
+                let now = env.ledger().timestamp();
+                if now.saturating_sub(last) < MIN_STATUS_UPDATE_INTERVAL {
+                    return Err(NavinError::RateLimitExceeded);
+                }
+            }
+        }
+
         if !shipment.status.is_valid_transition(&new_status) {
             return Err(NavinError::InvalidStatus);
         }
@@ -453,6 +466,7 @@ impl NavinShipment {
         shipment.updated_at = env.ledger().timestamp();
 
         storage::set_shipment(&env, &shipment);
+        storage::set_last_status_update(&env, shipment_id, env.ledger().timestamp());
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_status_updated(&env, shipment_id, &old_status, &new_status, &data_hash);
@@ -950,5 +964,54 @@ impl NavinShipment {
         );
 
         Ok(())
+    }
+
+    /// Report a condition breach for a shipment (temperature, humidity, impact, tamper).
+    ///
+    /// Only the assigned carrier can report a breach. This is purely informational:
+    /// shipment status is **not** changed. The full sensor payload stays off-chain;
+    /// only its `data_hash` is emitted on-chain following the Hash-and-Emit pattern.
+    pub fn report_condition_breach(
+        env: Env,
+        carrier: Address,
+        shipment_id: u64,
+        breach_type: BreachType,
+        data_hash: BytesN<32>,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        carrier.require_auth();
+        require_role(&env, &carrier, Role::Carrier)?;
+
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        // Only the assigned carrier for this shipment may report
+        if shipment.carrier != carrier {
+            return Err(NavinError::Unauthorized);
+        }
+
+        events::emit_condition_breach(&env, shipment_id, &carrier, &breach_type, &data_hash);
+
+        Ok(())
+    }
+
+    /// Verify a proof-of-delivery hash against the stored confirmation hash.
+    ///
+    /// Returns `true` if `proof_hash` matches the hash stored during delivery confirmation,
+    /// `false` if delivered but hashes differ, and errors if the shipment does not exist.
+    pub fn verify_delivery_proof(
+        env: Env,
+        shipment_id: u64,
+        proof_hash: BytesN<32>,
+    ) -> Result<bool, NavinError> {
+        require_initialized(&env)?;
+
+        // Ensure the shipment exists
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+
+        let stored = storage::get_confirmation_hash(&env, shipment_id);
+        Ok(stored == Some(proof_hash))
     }
 }

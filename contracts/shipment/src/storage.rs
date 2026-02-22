@@ -218,3 +218,18 @@ pub fn set_token_contract(env: &Env, token_contract: &Address) {
         .instance()
         .set(&DataKey::TokenContract, token_contract);
 }
+
+/// Retrieve the timestamp of the last status update for a shipment.
+/// Returns None if no status update has been recorded yet.
+pub fn get_last_status_update(env: &Env, shipment_id: u64) -> Option<u64> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::LastStatusUpdate(shipment_id))
+}
+
+/// Persist the timestamp of the last status update for a shipment.
+pub fn set_last_status_update(env: &Env, shipment_id: u64, timestamp: u64) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::LastStatusUpdate(shipment_id), &timestamp);
+}
