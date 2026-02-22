@@ -5,3 +5,4 @@ test_snapshots/**/test_snapshots/
 .agents/
 issue.md
 skills-lock.json
+PR_DESCRIPTION.md

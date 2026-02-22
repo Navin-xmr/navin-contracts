@@ -182,3 +182,13 @@ pub struct ContractMetadata {
     /// Whether the contract has been initialized.
     pub initialized: bool,
 }
+
+/// Dispute resolution options for admin.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum DisputeResolution {
+    /// Release escrowed funds to the carrier.
+    ReleaseToCarrier,
+    /// Refund escrowed funds to the company.
+    RefundToCompany,
+}
