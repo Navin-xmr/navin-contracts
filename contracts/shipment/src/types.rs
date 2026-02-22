@@ -1,6 +1,12 @@
 use soroban_sdk::{contracttype, Address, BytesN, Map, Symbol, Vec};
 
 /// Storage keys for contract data.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::DataKey;
+/// let key = DataKey::Admin;
+/// ```
 #[contracttype]
 pub enum DataKey {
     /// The contract admin address.
@@ -30,6 +36,12 @@ pub enum DataKey {
 }
 
 /// Supported user roles.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::Role;
+/// let role = Role::Company;
+/// ```
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Role {
@@ -40,6 +52,12 @@ pub enum Role {
 }
 
 /// Shipment status lifecycle.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::ShipmentStatus;
+/// let status = ShipmentStatus::Created;
+/// ```
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ShipmentStatus {
@@ -83,37 +101,37 @@ impl ShipmentStatus {
     /// - `AtCheckpoint` -> `InTransit`, `Delivered`, `Disputed`
     /// - `Any` -> `Cancelled` (except `Delivered`)
     /// - `Any` -> `Disputed` (except `Cancelled`, `Delivered`)
-    /// - `Disputed` -> `Cancelled`, `Delivered` (Special recovery cases if needed, but per requirements: "any -> Disputed (except Cancelled/Delivered)")
+    /// - `Disputed` -> `Cancelled`, `Delivered` (Special recovery cases if needed)
+    ///
+    /// # Arguments
+    /// * `to` - The target status to transition to.
+    ///
+    /// # Returns
+    /// * `bool` - `true` if the transition is valid, `false` otherwise.
+    ///
+    /// # Examples
+    /// ```rust
+    /// use crate::types::ShipmentStatus;
+    /// let status = ShipmentStatus::Created;
+    /// assert!(status.is_valid_transition(&ShipmentStatus::InTransit));
+    /// ```
     pub fn is_valid_transition(&self, to: &ShipmentStatus) -> bool {
         match (self, to) {
-            // Created transitions
             (Self::Created, Self::InTransit) => true,
             (Self::Created, Self::Cancelled) => true,
             (Self::Created, Self::Disputed) => true,
-
-            // InTransit transitions
             (Self::InTransit, Self::AtCheckpoint) => true,
             (Self::InTransit, Self::Delivered) => true,
             (Self::InTransit, Self::Disputed) => true,
             (Self::InTransit, Self::Cancelled) => true,
-
-            // AtCheckpoint transitions
             (Self::AtCheckpoint, Self::InTransit) => true,
             (Self::AtCheckpoint, Self::Delivered) => true,
             (Self::AtCheckpoint, Self::Disputed) => true,
             (Self::AtCheckpoint, Self::Cancelled) => true,
-
-            // Disputed transitions
             (Self::Disputed, Self::Cancelled) => true,
-            (Self::Disputed, Self::Delivered) => true, // Recovery to delivered
-
-            // Universal transitions (Handled above partially)
-            // any -> Cancelled (except Delivered)
+            (Self::Disputed, Self::Delivered) => true,
             (_, Self::Cancelled) if self != &Self::Delivered => true,
-
-            // any -> Disputed (except Cancelled/Delivered)
             (_, Self::Disputed) if self != &Self::Cancelled && self != &Self::Delivered => true,
-
             _ => false,
         }
     }
@@ -121,6 +139,11 @@ impl ShipmentStatus {
 
 /// Core shipment data stored on-chain.
 /// Raw payload is off-chain; only the hash is stored.
+///
+/// # Examples
+/// ```rust
+/// // Struct represents the full shipment payload tracked on-chain.
+/// ```
 #[contracttype]
 #[derive(Clone)]
 pub struct Shipment {
@@ -154,6 +177,11 @@ pub struct Shipment {
 
 /// A checkpoint milestone recorded during shipment transit.
 /// Only the data hash is stored; full details live off-chain.
+///
+/// # Examples
+/// ```rust
+/// // Struct represents a milestone reached by a shipment.
+/// ```
 #[contracttype]
 #[derive(Clone)]
 pub struct Milestone {
@@ -170,6 +198,12 @@ pub struct Milestone {
 }
 
 /// Condition breach types reported by carriers for out-of-range sensor readings.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::BreachType;
+/// let breach = BreachType::TemperatureHigh;
+/// ```
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub enum BreachType {
@@ -186,6 +220,12 @@ pub enum BreachType {
 }
 
 /// Geofence event types for tracking shipment location events.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::GeofenceEvent;
+/// let event = GeofenceEvent::ZoneEntry;
+/// ```
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub enum GeofenceEvent {
@@ -198,6 +238,11 @@ pub enum GeofenceEvent {
 }
 
 /// Input data for creating a shipment in a batch.
+///
+/// # Examples
+/// ```rust
+/// // Struct represents batch creation parameters for a shipment.
+/// ```
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct ShipmentInput {
@@ -208,6 +253,11 @@ pub struct ShipmentInput {
 }
 
 /// On-chain introspection snapshot of the contract state.
+///
+/// # Examples
+/// ```rust
+/// // Struct holds metadata about the contract state itself.
+/// ```
 #[contracttype]
 #[derive(Clone)]
 pub struct ContractMetadata {
@@ -222,6 +272,12 @@ pub struct ContractMetadata {
 }
 
 /// Dispute resolution options for admin.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::DisputeResolution;
+/// let resolution = DisputeResolution::RefundToCompany;
+/// ```
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub enum DisputeResolution {
