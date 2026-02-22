@@ -66,6 +66,7 @@ impl NavinShipment {
 
         storage::set_admin(&env, &admin);
         storage::set_shipment_counter(&env, 0);
+        storage::set_version(&env, 1);
         storage::set_company_role(&env, &admin);
 
         env.events()
@@ -78,6 +79,12 @@ impl NavinShipment {
     pub fn get_admin(env: Env) -> Result<Address, SdkError> {
         require_initialized(&env)?;
         Ok(storage::get_admin(&env))
+    }
+
+    /// Get the contract version number.
+    pub fn get_version(env: Env) -> Result<u32, SdkError> {
+        require_initialized(&env)?;
+        Ok(storage::get_version(&env))
     }
 
     /// Get the current shipment counter
@@ -491,6 +498,196 @@ impl NavinShipment {
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_shipment_cancelled(&env, shipment_id, &caller, &reason_hash);
+
+        Ok(())
+    }
+
+    /// Upgrade the contract to a new WASM implementation.
+    /// Only the admin can trigger upgrades. State is preserved.
+    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(SdkError::from_contract_error(3));
+        }
+
+        let new_version = storage::get_version(&env)
+            .checked_add(1)
+            .ok_or(SdkError::from_contract_error(5))?;
+
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
+        storage::set_version(&env, new_version);
+        events::emit_contract_upgraded(&env, &admin, &new_wasm_hash, new_version);
+
+        Ok(())
+    }
+
+    /// Release escrowed funds to the carrier after delivery confirmation.
+    /// Only the receiver or admin can trigger release.
+    /// Shipment must be in Delivered status.
+    pub fn release_escrow(env: Env, caller: Address, shipment_id: u64) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        caller.require_auth();
+
+        let admin = storage::get_admin(&env);
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+
+        if caller != shipment.receiver && caller != admin {
+            return Err(SdkError::from_contract_error(3));
+        }
+
+        if shipment.status != ShipmentStatus::Delivered {
+            return Err(SdkError::from_contract_error(9));
+        }
+
+        let escrow_amount = shipment.escrow_amount;
+        if escrow_amount == 0 {
+            return Err(SdkError::from_contract_error(8));
+        }
+
+        shipment.escrow_amount = 0;
+        shipment.updated_at = env.ledger().timestamp();
+
+        storage::set_shipment(&env, &shipment);
+        storage::remove_escrow_balance(&env, shipment_id);
+        extend_shipment_ttl(&env, shipment_id);
+
+        events::emit_escrow_released(&env, shipment_id, &shipment.carrier, escrow_amount);
+
+        Ok(())
+    }
+
+    /// Refund escrowed funds to the company if shipment is cancelled.
+    /// Only the sender (Company) or admin can trigger refund.
+    /// Shipment must be in Created or Cancelled status.
+    pub fn refund_escrow(env: Env, caller: Address, shipment_id: u64) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        caller.require_auth();
+
+        let admin = storage::get_admin(&env);
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+
+        if caller != shipment.sender && caller != admin {
+            return Err(SdkError::from_contract_error(3));
+        }
+
+        if shipment.status != ShipmentStatus::Created
+            && shipment.status != ShipmentStatus::Cancelled
+        {
+            return Err(SdkError::from_contract_error(9));
+        }
+
+        let escrow_amount = shipment.escrow_amount;
+        if escrow_amount == 0 {
+            return Err(SdkError::from_contract_error(8));
+        }
+
+        shipment.escrow_amount = 0;
+        shipment.status = ShipmentStatus::Cancelled;
+        shipment.updated_at = env.ledger().timestamp();
+
+        storage::set_shipment(&env, &shipment);
+        storage::remove_escrow_balance(&env, shipment_id);
+        extend_shipment_ttl(&env, shipment_id);
+
+        events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
+
+        Ok(())
+    }
+
+    /// Raise a dispute for a shipment.
+    /// Only the sender, receiver, or carrier can raise a dispute.
+    /// Shipment must not be Cancelled or already Disputed.
+    pub fn raise_dispute(
+        env: Env,
+        caller: Address,
+        shipment_id: u64,
+        reason_hash: BytesN<32>,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        caller.require_auth();
+
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+
+        if caller != shipment.sender && caller != shipment.receiver && caller != shipment.carrier {
+            return Err(SdkError::from_contract_error(3));
+        }
+
+        if shipment.status == ShipmentStatus::Cancelled
+            || shipment.status == ShipmentStatus::Disputed
+        {
+            return Err(SdkError::from_contract_error(9));
+        }
+
+        shipment.status = ShipmentStatus::Disputed;
+        shipment.updated_at = env.ledger().timestamp();
+
+        storage::set_shipment(&env, &shipment);
+        extend_shipment_ttl(&env, shipment_id);
+
+        events::emit_dispute_raised(&env, shipment_id, &caller, &reason_hash);
+
+        Ok(())
+    }
+
+    /// Resolve a dispute by releasing funds to carrier or refunding to company.
+    /// Only admin can resolve disputes.
+    pub fn resolve_dispute(
+        env: Env,
+        admin: Address,
+        shipment_id: u64,
+        resolution: DisputeResolution,
+    ) -> Result<(), SdkError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(SdkError::from_contract_error(3));
+        }
+
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+
+        if shipment.status != ShipmentStatus::Disputed {
+            return Err(SdkError::from_contract_error(9));
+        }
+
+        let escrow_amount = shipment.escrow_amount;
+        if escrow_amount == 0 {
+            return Err(SdkError::from_contract_error(8));
+        }
+
+        shipment.escrow_amount = 0;
+        shipment.updated_at = env.ledger().timestamp();
+
+        let recipient = match resolution {
+            DisputeResolution::ReleaseToCarrier => {
+                shipment.status = ShipmentStatus::Delivered;
+                shipment.carrier.clone()
+            }
+            DisputeResolution::RefundToCompany => {
+                shipment.status = ShipmentStatus::Cancelled;
+                shipment.sender.clone()
+            }
+        };
+
+        storage::set_shipment(&env, &shipment);
+        storage::remove_escrow_balance(&env, shipment_id);
+        extend_shipment_ttl(&env, shipment_id);
+
+        match resolution {
+            DisputeResolution::ReleaseToCarrier => {
+                events::emit_escrow_released(&env, shipment_id, &recipient, escrow_amount);
+            }
+            DisputeResolution::RefundToCompany => {
+                events::emit_escrow_refunded(&env, shipment_id, &recipient, escrow_amount);
+            }
+        }
 
         Ok(())
     }

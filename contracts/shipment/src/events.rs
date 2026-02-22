@@ -167,6 +167,27 @@ pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i
     );
 }
 
+/// Emits an `escrow_refunded` event when escrowed funds are returned to the company.
+///
+/// # Event Data
+///
+/// | Field       | Type      | Description                                  |
+/// |-------------|-----------|----------------------------------------------|
+/// | shipment_id | `u64`     | Shipment the escrow was held for              |
+/// | to          | `Address` | Company address receiving the refund          |
+/// | amount      | `i128`    | Amount refunded (in stroops)                  |
+///
+/// # Listeners
+///
+/// - **Express backend**: Updates the escrow ledger and notifies the company.
+/// - **Frontend**: Shows the refund status on the shipment detail page.
+pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i128) {
+    env.events().publish(
+        (Symbol::new(env, "escrow_refunded"),),
+        (shipment_id, to.clone(), amount),
+    );
+}
+
 /// Emits a `dispute_raised` event when a party disputes a shipment.
 ///
 /// The `reason_hash` follows the same Hash-and-Emit pattern: the full dispute
@@ -185,7 +206,6 @@ pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i
 ///
 /// - **Express backend**: Creates a dispute case and alerts the admin.
 /// - **Frontend**: Opens the dispute resolution workflow for both parties.
-#[allow(dead_code)]
 pub fn emit_dispute_raised(
     env: &Env,
     shipment_id: u64,
@@ -216,5 +236,26 @@ pub fn emit_shipment_cancelled(
     env.events().publish(
         (Symbol::new(env, "shipment_cancelled"),),
         (shipment_id, caller.clone(), reason_hash.clone()),
+    );
+}
+
+/// Emits a `contract_upgraded` event when the contract WASM is upgraded.
+///
+/// # Event Data
+///
+/// | Field         | Type         | Description                    |
+/// |---------------|--------------|--------------------------------|
+/// | admin         | `Address`    | Admin that triggered the upgrade |
+/// | new_wasm_hash | `BytesN<32>` | Hash of the new contract WASM   |
+/// | version       | `u32`        | Contract version after upgrade  |
+pub fn emit_contract_upgraded(
+    env: &Env,
+    admin: &Address,
+    new_wasm_hash: &BytesN<32>,
+    version: u32,
+) {
+    env.events().publish(
+        (Symbol::new(env, "contract_upgraded"),),
+        (admin.clone(), new_wasm_hash.clone(), version),
     );
 }

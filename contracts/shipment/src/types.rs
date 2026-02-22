@@ -5,6 +5,8 @@ use soroban_sdk::{contracttype, Address, BytesN, Symbol};
 pub enum DataKey {
     /// The contract admin address.
     Admin,
+    /// Contract version number, incremented on each upgrade.
+    Version,
     /// Counter tracking total shipments created.
     ShipmentCount,
     /// Addresses with Company role.
@@ -165,4 +167,14 @@ pub enum GeofenceEvent {
     ZoneExit,
     /// Shipment deviated from the expected route.
     RouteDeviation,
+}
+
+/// Dispute resolution options for admin.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum DisputeResolution {
+    /// Release escrowed funds to the carrier.
+    ReleaseToCarrier,
+    /// Refund escrowed funds to the company.
+    RefundToCompany,
 }
