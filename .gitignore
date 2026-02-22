@@ -6,7 +6,3 @@ test_snapshots/**/test_snapshots/
 issue.md
 skills-lock.json
 PR_DESCRIPTION.md
-
-# Frontend
-frontend/node_modules
-frontend/dist
