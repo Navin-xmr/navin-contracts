@@ -23,6 +23,8 @@ pub enum DataKey {
     Role(Address),
     /// Hash of proof-of-delivery data for a shipment.
     ConfirmationHash(u64),
+    /// Token contract address for payments.
+    TokenContract,
 }
 
 /// Supported user roles.
