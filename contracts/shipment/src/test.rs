@@ -22,8 +22,7 @@ impl MockToken {
 fn setup_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
     let env = Env::default();
     let admin = Address::generate(&env);
-    let token_contract_address = Address::generate(&env);
-    let token_contract = env.register_contract(&token_contract_address, MockToken {});
+    let token_contract = env.register(MockToken {}, ());
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
     env.mock_all_auths();
 
@@ -44,7 +43,7 @@ fn test_successful_initialization() {
 #[test]
 #[should_panic(expected = "Error(Contract, #1)")]
 fn test_re_initialization_fails() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_env();
 
     client.initialize(&admin, &token_contract);
     // Second call must fail with AlreadyInitialized (error code 1)
@@ -65,7 +64,7 @@ fn test_re_initialization_with_different_admin_fails() {
 
 #[test]
 fn test_shipment_counter_starts_at_zero() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -341,7 +340,7 @@ fn test_whitelist_per_company() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_whitelist_functions_fail_before_initialization() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, _admin, _token_contract) = setup_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -352,7 +351,7 @@ fn test_whitelist_functions_fail_before_initialization() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_add_whitelist_fails_before_initialization() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, _admin, _token_contract) = setup_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -719,7 +718,7 @@ fn test_get_escrow_balance_after_release() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_get_escrow_balance_shipment_not_found() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -738,14 +737,14 @@ fn test_get_escrow_balance_fails_before_initialization() {
 
 #[test]
 fn test_get_shipment_count_returns_zero_on_fresh_contract() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (_env, client, _admin, _token_contract) = setup_env();
 
     assert_eq!(client.get_shipment_count(), 0);
 }
 
 #[test]
 fn test_get_shipment_count_returns_zero_after_initialization() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -827,7 +826,7 @@ fn test_get_shipment_returns_correct_data() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_get_shipment_not_found() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -837,7 +836,7 @@ fn test_get_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_get_shipment_fails_before_initialization() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (_env, client, _admin, _token_contract) = setup_env();
 
     client.get_shipment(&1);
 }
@@ -2527,7 +2526,7 @@ fn test_upgrade_unauthorized() {
 
 #[test]
 fn test_get_contract_metadata_after_init() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -2817,6 +2816,8 @@ fn test_handoff_nonexistent_shipment() {
         &nonexistent_shipment_id,
         &handoff_hash,
     );
+}
+
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_create_shipment_fails_before_initialization() {
