@@ -1,17 +1,17 @@
 use crate::types::*;
 use soroban_sdk::{Address, BytesN, Env};
 
-/// Check if the contract has been initialized
+/// Check if the contract has been initialized (admin set).
 pub fn is_initialized(env: &Env) -> bool {
     env.storage().instance().has(&DataKey::Admin)
 }
 
-/// Get the admin address
+/// Returns the stored admin address. Panics if not set.
 pub fn get_admin(env: &Env) -> Address {
     env.storage().instance().get(&DataKey::Admin).unwrap()
 }
 
-/// Set the admin address
+/// Store the admin address in instance storage (config scope).
 pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
 }
@@ -26,7 +26,7 @@ pub fn set_version(env: &Env, version: u32) {
     env.storage().instance().set(&DataKey::Version, &version);
 }
 
-/// Get the current shipment counter
+/// Get the current shipment counter from instance storage.
 pub fn get_shipment_counter(env: &Env) -> u64 {
     env.storage()
         .instance()
@@ -34,105 +34,144 @@ pub fn get_shipment_counter(env: &Env) -> u64 {
         .unwrap_or(0)
 }
 
-/// Set the shipment counter
+/// Set the shipment counter in instance storage.
 pub fn set_shipment_counter(env: &Env, counter: u64) {
     env.storage()
         .instance()
         .set(&DataKey::ShipmentCount, &counter);
 }
-/// Add a carrier to a company's whitelist
+
+/// Increment the shipment counter by 1 and return the new value.
+#[allow(dead_code)]
+pub fn increment_shipment_counter(env: &Env) -> u64 {
+    let cur = get_shipment_counter(env);
+    let next = cur.checked_add(1).unwrap_or(cur);
+    set_shipment_counter(env, next);
+    next
+}
+
+/// Alternate name requested: returns the shipment count (wrapper).
+#[allow(dead_code)]
+pub fn get_shipment_count(env: &Env) -> u64 {
+    get_shipment_counter(env)
+}
+
+/// Alternate name requested: increment shipment count and return new value.
+#[allow(dead_code)]
+pub fn increment_shipment_count(env: &Env) -> u64 {
+    increment_shipment_counter(env)
+}
+
+/// Add a carrier to a company's whitelist in instance storage.
 pub fn add_carrier_to_whitelist(env: &Env, company: &Address, carrier: &Address) {
     let key = DataKey::CarrierWhitelist(company.clone(), carrier.clone());
     env.storage().instance().set(&key, &true);
 }
 
-/// Remove a carrier from a company's whitelist
+/// Remove a carrier from a company's whitelist in instance storage.
 pub fn remove_carrier_from_whitelist(env: &Env, company: &Address, carrier: &Address) {
     let key = DataKey::CarrierWhitelist(company.clone(), carrier.clone());
     env.storage().instance().remove(&key);
 }
 
-/// Check if a carrier is whitelisted for a company
+/// Check whether a carrier is whitelisted for a given company.
 pub fn is_carrier_whitelisted(env: &Env, company: &Address, carrier: &Address) -> bool {
     let key = DataKey::CarrierWhitelist(company.clone(), carrier.clone());
     env.storage().instance().get(&key).unwrap_or(false)
 }
 
-/// Grant Company role to an address
+/// Store a role for an address in instance storage.
+pub fn set_role(env: &Env, address: &Address, role: &Role) {
+    env.storage()
+        .instance()
+        .set(&DataKey::Role(address.clone()), role);
+}
+
+/// Retrieve the role assigned to an address. Returns None if not set.
+pub fn get_role(env: &Env, address: &Address) -> Option<Role> {
+    env.storage()
+        .instance()
+        .get(&DataKey::Role(address.clone()))
+}
+
+/// Backwards-compatible: grant Company role to an address.
 pub fn set_company_role(env: &Env, company: &Address) {
-    env.storage()
-        .instance()
-        .set(&DataKey::Company(company.clone()), &true);
+    set_role(env, company, &Role::Company);
 }
 
-/// Grant Carrier role to an address
+/// Backwards-compatible: grant Carrier role to an address.
 pub fn set_carrier_role(env: &Env, carrier: &Address) {
-    env.storage()
-        .instance()
-        .set(&DataKey::Carrier(carrier.clone()), &true);
+    set_role(env, carrier, &Role::Carrier);
 }
 
-/// Check whether an address has Company role
+/// Backwards-compatible: check whether an address has Company role.
 pub fn has_company_role(env: &Env, address: &Address) -> bool {
-    env.storage()
-        .instance()
-        .get(&DataKey::Company(address.clone()))
-        .unwrap_or(false)
+    matches!(get_role(env, address), Some(Role::Company))
 }
 
-/// Check whether an address has Carrier role
+/// Backwards-compatible: check whether an address has Carrier role.
 pub fn has_carrier_role(env: &Env, address: &Address) -> bool {
-    env.storage()
-        .instance()
-        .get(&DataKey::Carrier(address.clone()))
-        .unwrap_or(false)
+    matches!(get_role(env, address), Some(Role::Carrier))
 }
 
-/// Get shipment by ID
+/// Retrieve a shipment from persistent storage. Returns None if not found.
 pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
     env.storage()
         .persistent()
         .get(&DataKey::Shipment(shipment_id))
 }
 
-/// Persist shipment by ID
+/// Persist a shipment to persistent storage (survives TTL extension).
 pub fn set_shipment(env: &Env, shipment: &Shipment) {
     env.storage()
         .persistent()
         .set(&DataKey::Shipment(shipment.id), shipment);
 }
 
-/// Get escrow balance for a shipment. Returns 0 if no escrow exists.
-pub fn get_escrow_balance(env: &Env, shipment_id: u64) -> i128 {
+/// Get escrow amount for a shipment from persistent storage. Returns 0 if unset.
+pub fn get_escrow(env: &Env, shipment_id: u64) -> i128 {
     env.storage()
         .persistent()
         .get(&DataKey::Escrow(shipment_id))
         .unwrap_or(0)
 }
 
-/// Set escrow balance for a shipment.
+/// Set escrow amount for a shipment in persistent storage.
 #[allow(dead_code)]
-pub fn set_escrow_balance(env: &Env, shipment_id: u64, amount: i128) {
+pub fn set_escrow(env: &Env, shipment_id: u64, amount: i128) {
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(shipment_id), &amount);
 }
 
-/// Remove escrow balance for a shipment.
+/// Remove escrow for a shipment from persistent storage.
 #[allow(dead_code)]
-pub fn remove_escrow_balance(env: &Env, shipment_id: u64) {
+pub fn remove_escrow(env: &Env, shipment_id: u64) {
     env.storage()
         .persistent()
         .remove(&DataKey::Escrow(shipment_id));
 }
 
-/// Store the confirmation hash for a shipment.
+/// Backwards-compatible name used by tests: set escrow balance.
+#[allow(dead_code)]
+pub fn set_escrow_balance(env: &Env, shipment_id: u64, amount: i128) {
+    set_escrow(env, shipment_id, amount);
+}
+
+/// Backwards-compatible name used by tests: remove escrow balance.
+#[allow(dead_code)]
+pub fn remove_escrow_balance(env: &Env, shipment_id: u64) {
+    remove_escrow(env, shipment_id);
+}
+
+/// Store confirmation hash for a shipment in persistent storage.
 pub fn set_confirmation_hash(env: &Env, shipment_id: u64, hash: &BytesN<32>) {
     let key = DataKey::ConfirmationHash(shipment_id);
     env.storage().persistent().set(&key, hash);
+    env.storage().persistent().set(&key, hash);
 }
 
-/// Get the confirmation hash for a shipment.
+/// Retrieve confirmation hash for a shipment from persistent storage.
 #[allow(dead_code)]
 pub fn get_confirmation_hash(env: &Env, shipment_id: u64) -> Option<BytesN<32>> {
     let key = DataKey::ConfirmationHash(shipment_id);
@@ -161,4 +200,9 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
             .persistent()
             .extend_ttl(&hash_key, threshold, extend_to);
     }
+}
+
+/// Backwards-compatible wrapper used by existing contract code/tests.
+pub fn get_escrow_balance(env: &Env, shipment_id: u64) -> i128 {
+    get_escrow(env, shipment_id)
 }

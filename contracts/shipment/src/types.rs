@@ -185,6 +185,20 @@ pub struct ShipmentInput {
     pub payment_milestones: Vec<(Symbol, u32)>,
 }
 
+/// On-chain introspection snapshot of the contract state.
+#[contracttype]
+#[derive(Clone)]
+pub struct ContractMetadata {
+    /// Current contract version (starts at 1, incremented on each upgrade).
+    pub version: u32,
+    /// Address of the contract administrator.
+    pub admin: Address,
+    /// Total number of shipments created since initialization.
+    pub shipment_count: u64,
+    /// Whether the contract has been initialized.
+    pub initialized: bool,
+}
+
 /// Dispute resolution options for admin.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]

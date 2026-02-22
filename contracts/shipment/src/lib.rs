@@ -24,7 +24,7 @@ fn extend_shipment_ttl(env: &Env, shipment_id: u64) {
     );
 }
 
-fn validate_milestones(_env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(), SdkError> {
+fn validate_milestones(_env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(), NavinError> {
     if milestones.is_empty() {
         return Ok(());
     }
@@ -32,9 +32,11 @@ fn validate_milestones(_env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<()
     for milestone in milestones.iter() {
         total_percentage += milestone.1;
     }
+
     if total_percentage != 100 {
-        return Err(Error::MilestoneSumInvalid.into());
+        return Err(NavinError::MilestoneSumInvalid);
     }
+
     Ok(())
 }
 
@@ -56,14 +58,14 @@ fn internal_release_escrow(env: &Env, shipment: &mut Shipment, amount: i128) {
     }
 }
 
-fn require_initialized(env: &Env) -> Result<(), SdkError> {
+fn require_initialized(env: &Env) -> Result<(), NavinError> {
     if !storage::is_initialized(env) {
-        return Err(SdkError::from_contract_error(2));
+        return Err(NavinError::NotInitialized);
     }
     Ok(())
 }
 
-fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), SdkError> {
+fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinError> {
     require_initialized(env)?;
 
     match role {
@@ -71,14 +73,14 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), SdkError
             if storage::has_company_role(env, address) {
                 Ok(())
             } else {
-                Err(SdkError::from_contract_error(3))
+                Err(NavinError::Unauthorized)
             }
         }
         Role::Carrier => {
             if storage::has_carrier_role(env, address) {
                 Ok(())
             } else {
-                Err(SdkError::from_contract_error(7))
+                Err(NavinError::Unauthorized)
             }
         }
     }
@@ -91,9 +93,9 @@ pub struct NavinShipment;
 impl NavinShipment {
     /// Initialize the contract with an admin address.
     /// Can only be called once. Sets the admin and shipment counter to 0.
-    pub fn initialize(env: Env, admin: Address) -> Result<(), SdkError> {
+    pub fn initialize(env: Env, admin: Address) -> Result<(), NavinError> {
         if storage::is_initialized(&env) {
-            return Err(SdkError::from_contract_error(1));
+            return Err(NavinError::AlreadyInitialized);
         }
 
         storage::set_admin(&env, &admin);
@@ -108,19 +110,32 @@ impl NavinShipment {
     }
 
     /// Get the contract admin address
-    pub fn get_admin(env: Env) -> Result<Address, SdkError> {
+    pub fn get_admin(env: Env) -> Result<Address, NavinError> {
         require_initialized(&env)?;
         Ok(storage::get_admin(&env))
     }
 
     /// Get the contract version number.
-    pub fn get_version(env: Env) -> Result<u32, SdkError> {
+    pub fn get_version(env: Env) -> Result<u32, NavinError> {
         require_initialized(&env)?;
         Ok(storage::get_version(&env))
     }
 
+    /// Get on-chain metadata for this contract.
+    /// Returns version, admin, shipment count, and initialization status.
+    /// Read-only — no authentication required.
+    pub fn get_contract_metadata(env: Env) -> Result<ContractMetadata, NavinError> {
+        require_initialized(&env)?;
+        Ok(ContractMetadata {
+            version: storage::get_version(&env),
+            admin: storage::get_admin(&env),
+            shipment_count: storage::get_shipment_counter(&env),
+            initialized: true,
+        })
+    }
+
     /// Get the current shipment counter
-    pub fn get_shipment_counter(env: Env) -> Result<u64, SdkError> {
+    pub fn get_shipment_counter(env: Env) -> Result<u64, NavinError> {
         require_initialized(&env)?;
         Ok(storage::get_shipment_counter(&env))
     }
@@ -131,7 +146,7 @@ impl NavinShipment {
         env: Env,
         company: Address,
         carrier: Address,
-    ) -> Result<(), SdkError> {
+    ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         company.require_auth();
 
@@ -151,7 +166,7 @@ impl NavinShipment {
         env: Env,
         company: Address,
         carrier: Address,
-    ) -> Result<(), SdkError> {
+    ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         company.require_auth();
 
@@ -170,19 +185,19 @@ impl NavinShipment {
         env: Env,
         company: Address,
         carrier: Address,
-    ) -> Result<bool, SdkError> {
+    ) -> Result<bool, NavinError> {
         require_initialized(&env)?;
 
         Ok(storage::is_carrier_whitelisted(&env, &company, &carrier))
     }
 
     /// Allow admin to grant Company role.
-    pub fn add_company(env: Env, admin: Address, company: Address) -> Result<(), SdkError> {
+    pub fn add_company(env: Env, admin: Address, company: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
-            return Err(SdkError::from_contract_error(3));
+            return Err(NavinError::Unauthorized);
         }
 
         storage::set_company_role(&env, &company);
@@ -190,12 +205,12 @@ impl NavinShipment {
     }
 
     /// Allow admin to grant Carrier role.
-    pub fn add_carrier(env: Env, admin: Address, carrier: Address) -> Result<(), SdkError> {
+    pub fn add_carrier(env: Env, admin: Address, carrier: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
-            return Err(SdkError::from_contract_error(3));
+            return Err(NavinError::Unauthorized);
         }
 
         storage::set_carrier_role(&env, &carrier);
@@ -210,7 +225,7 @@ impl NavinShipment {
         carrier: Address,
         data_hash: BytesN<32>,
         payment_milestones: Vec<(Symbol, u32)>,
-    ) -> Result<u64, SdkError> {
+    ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
         sender.require_auth();
         require_role(&env, &sender, Role::Company)?;
@@ -218,7 +233,7 @@ impl NavinShipment {
 
         let shipment_id = storage::get_shipment_counter(&env)
             .checked_add(1)
-            .ok_or(SdkError::from_contract_error(5))?;
+            .ok_or(NavinError::CounterOverflow)?;
         let now = env.ledger().timestamp();
 
         let shipment = Shipment {
@@ -251,13 +266,13 @@ impl NavinShipment {
         env: Env,
         sender: Address,
         shipments: Vec<ShipmentInput>,
-    ) -> Result<Vec<u64>, SdkError> {
+    ) -> Result<Vec<u64>, NavinError> {
         require_initialized(&env)?;
         sender.require_auth();
         require_role(&env, &sender, Role::Company)?;
 
         if shipments.len() > 10 {
-            return Err(Error::BatchTooLarge.into());
+            return Err(NavinError::BatchTooLarge);
         }
 
         let mut ids = Vec::new(&env);
@@ -265,13 +280,13 @@ impl NavinShipment {
 
         for shipment_input in shipments.iter() {
             if shipment_input.receiver == shipment_input.carrier {
-                return Err(Error::InvalidShipmentInput.into());
+                return Err(NavinError::InvalidShipmentInput);
             }
             validate_milestones(&env, &shipment_input.payment_milestones)?;
 
             let shipment_id = storage::get_shipment_counter(&env)
                 .checked_add(1)
-                .ok_or(Error::CounterOverflow)?;
+                .ok_or(NavinError::CounterOverflow)?;
 
             let shipment = Shipment {
                 id: shipment_id,
@@ -306,9 +321,9 @@ impl NavinShipment {
     }
 
     /// Retrieve shipment details by ID.
-    pub fn get_shipment(env: Env, shipment_id: u64) -> Result<Shipment, SdkError> {
+    pub fn get_shipment(env: Env, shipment_id: u64) -> Result<Shipment, NavinError> {
         require_initialized(&env)?;
-        storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))
+        storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)
     }
 
     /// Deposit escrow funds for a shipment.
@@ -318,24 +333,24 @@ impl NavinShipment {
         from: Address,
         shipment_id: u64,
         amount: i128,
-    ) -> Result<(), SdkError> {
+    ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         from.require_auth();
         require_role(&env, &from, Role::Company)?;
 
         if amount <= 0 {
-            return Err(SdkError::from_contract_error(8));
+            return Err(NavinError::InsufficientFunds);
         }
 
         let mut shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
         if shipment.status != ShipmentStatus::Created {
-            return Err(SdkError::from_contract_error(9));
+            return Err(NavinError::InvalidStatus);
         }
 
         if shipment.escrow_amount > 0 {
-            return Err(SdkError::from_contract_error(11));
+            return Err(NavinError::EscrowLocked);
         }
 
         shipment.escrow_amount = amount;
@@ -357,20 +372,20 @@ impl NavinShipment {
         shipment_id: u64,
         new_status: ShipmentStatus,
         data_hash: BytesN<32>,
-    ) -> Result<(), SdkError> {
+    ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         caller.require_auth();
 
         let admin = storage::get_admin(&env);
         let mut shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
         if caller != shipment.carrier && caller != admin {
-            return Err(SdkError::from_contract_error(3));
+            return Err(NavinError::Unauthorized);
         }
 
         if !shipment.status.is_valid_transition(&new_status) {
-            return Err(SdkError::from_contract_error(10));
+            return Err(NavinError::InvalidStatus);
         }
 
         let old_status = shipment.status.clone();
@@ -389,10 +404,10 @@ impl NavinShipment {
     /// Returns the current escrowed amount for a specific shipment.
     /// Returns 0 if no escrow has been deposited.
     /// Returns ShipmentNotFound if the shipment does not exist.
-    pub fn get_escrow_balance(env: Env, shipment_id: u64) -> Result<i128, SdkError> {
+    pub fn get_escrow_balance(env: Env, shipment_id: u64) -> Result<i128, NavinError> {
         require_initialized(&env)?;
         if storage::get_shipment(&env, shipment_id).is_none() {
-            return Err(SdkError::from_contract_error(6));
+            return Err(NavinError::ShipmentNotFound);
         }
         Ok(storage::get_escrow_balance(&env, shipment_id))
     }
@@ -413,16 +428,16 @@ impl NavinShipment {
         receiver: Address,
         shipment_id: u64,
         confirmation_hash: BytesN<32>,
-    ) -> Result<(), SdkError> {
+    ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         receiver.require_auth();
 
         let mut shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
         // Only the designated receiver can confirm delivery
         if shipment.receiver != receiver {
-            return Err(SdkError::from_contract_error(3));
+            return Err(NavinError::Unauthorized);
         }
 
         // Validate transition to Delivered
@@ -430,7 +445,7 @@ impl NavinShipment {
             .status
             .is_valid_transition(&ShipmentStatus::Delivered)
         {
-            return Err(SdkError::from_contract_error(8));
+            return Err(NavinError::InvalidStatus);
         }
 
         let now = env.ledger().timestamp();
@@ -460,14 +475,14 @@ impl NavinShipment {
         shipment_id: u64,
         zone_type: GeofenceEvent,
         data_hash: BytesN<32>,
-    ) -> Result<(), SdkError> {
+    ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
 
         // Verify shipment exists
         if storage::get_shipment(&env, shipment_id).is_none() {
-            return Err(SdkError::from_contract_error(6));
+            return Err(NavinError::ShipmentNotFound);
         }
 
         let timestamp = env.ledger().timestamp();
@@ -489,20 +504,20 @@ impl NavinShipment {
         shipment_id: u64,
         eta_timestamp: u64,
         data_hash: BytesN<32>,
-    ) -> Result<(), SdkError> {
+    ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
 
         let shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
         if shipment.carrier != carrier {
-            return Err(SdkError::from_contract_error(3));
+            return Err(NavinError::Unauthorized);
         }
 
         if eta_timestamp <= env.ledger().timestamp() {
-            return Err(SdkError::from_contract_error(9));
+            return Err(NavinError::InvalidTimestamp);
         }
 
         env.events().publish(
@@ -521,17 +536,17 @@ impl NavinShipment {
         shipment_id: u64,
         checkpoint: Symbol,
         data_hash: BytesN<32>,
-    ) -> Result<(), SdkError> {
+    ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
 
         // Verify shipment exists and status
         let shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
         if shipment.status != ShipmentStatus::InTransit {
-            return Err(SdkError::from_contract_error(10));
+            return Err(NavinError::InvalidStatus);
         }
 
         let timestamp = env.ledger().timestamp();
@@ -579,7 +594,7 @@ impl NavinShipment {
     }
 
     /// Extend the TTL of a shipment's persistent storage entries.
-    pub fn extend_shipment_ttl(env: Env, shipment_id: u64) -> Result<(), SdkError> {
+    pub fn extend_shipment_ttl(env: Env, shipment_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
         extend_shipment_ttl(&env, shipment_id);
         Ok(())
@@ -594,21 +609,21 @@ impl NavinShipment {
         caller: Address,
         shipment_id: u64,
         reason_hash: BytesN<32>,
-    ) -> Result<(), SdkError> {
+    ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         caller.require_auth();
 
         let admin = storage::get_admin(&env);
         let mut shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
         if caller != shipment.sender && caller != admin {
-            return Err(SdkError::from_contract_error(3));
+            return Err(NavinError::Unauthorized);
         }
 
         match shipment.status {
             ShipmentStatus::Delivered | ShipmentStatus::Disputed => {
-                return Err(SdkError::from_contract_error(9));
+                return Err(NavinError::ShipmentAlreadyCompleted);
             }
             _ => {}
         }
@@ -632,17 +647,17 @@ impl NavinShipment {
 
     /// Upgrade the contract to a new WASM implementation.
     /// Only the admin can trigger upgrades. State is preserved.
-    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) -> Result<(), SdkError> {
+    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) -> Result<(), NavinError> {
         require_initialized(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
-            return Err(SdkError::from_contract_error(3));
+            return Err(NavinError::Unauthorized);
         }
 
         let new_version = storage::get_version(&env)
             .checked_add(1)
-            .ok_or(SdkError::from_contract_error(5))?;
+            .ok_or(NavinError::CounterOverflow)?;
 
         env.deployer()
             .update_current_contract_wasm(new_wasm_hash.clone());
@@ -655,25 +670,25 @@ impl NavinShipment {
     /// Release escrowed funds to the carrier after delivery confirmation.
     /// Only the receiver or admin can trigger release.
     /// Shipment must be in Delivered status.
-    pub fn release_escrow(env: Env, caller: Address, shipment_id: u64) -> Result<(), SdkError> {
+    pub fn release_escrow(env: Env, caller: Address, shipment_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
         caller.require_auth();
 
         let admin = storage::get_admin(&env);
         let mut shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
         if caller != shipment.receiver && caller != admin {
-            return Err(SdkError::from_contract_error(3));
+            return Err(NavinError::Unauthorized);
         }
 
         if shipment.status != ShipmentStatus::Delivered {
-            return Err(SdkError::from_contract_error(9));
+            return Err(NavinError::InvalidStatus);
         }
 
         let escrow_amount = shipment.escrow_amount;
         if escrow_amount == 0 {
-            return Err(SdkError::from_contract_error(8));
+            return Err(NavinError::InsufficientFunds);
         }
 
         internal_release_escrow(&env, &mut shipment, escrow_amount);
@@ -684,27 +699,27 @@ impl NavinShipment {
     /// Refund escrowed funds to the company if shipment is cancelled.
     /// Only the sender (Company) or admin can trigger refund.
     /// Shipment must be in Created or Cancelled status.
-    pub fn refund_escrow(env: Env, caller: Address, shipment_id: u64) -> Result<(), SdkError> {
+    pub fn refund_escrow(env: Env, caller: Address, shipment_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
         caller.require_auth();
 
         let admin = storage::get_admin(&env);
         let mut shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
         if caller != shipment.sender && caller != admin {
-            return Err(SdkError::from_contract_error(3));
+            return Err(NavinError::Unauthorized);
         }
 
         if shipment.status != ShipmentStatus::Created
             && shipment.status != ShipmentStatus::Cancelled
         {
-            return Err(SdkError::from_contract_error(9));
+            return Err(NavinError::InvalidStatus);
         }
 
         let escrow_amount = shipment.escrow_amount;
         if escrow_amount == 0 {
-            return Err(SdkError::from_contract_error(8));
+            return Err(NavinError::InsufficientFunds);
         }
 
         shipment.escrow_amount = 0;
@@ -728,21 +743,21 @@ impl NavinShipment {
         caller: Address,
         shipment_id: u64,
         reason_hash: BytesN<32>,
-    ) -> Result<(), SdkError> {
+    ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         caller.require_auth();
 
         let mut shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
         if caller != shipment.sender && caller != shipment.receiver && caller != shipment.carrier {
-            return Err(SdkError::from_contract_error(3));
+            return Err(NavinError::Unauthorized);
         }
 
         if shipment.status == ShipmentStatus::Cancelled
             || shipment.status == ShipmentStatus::Disputed
         {
-            return Err(SdkError::from_contract_error(9));
+            return Err(NavinError::ShipmentAlreadyCompleted);
         }
 
         shipment.status = ShipmentStatus::Disputed;
@@ -763,24 +778,24 @@ impl NavinShipment {
         admin: Address,
         shipment_id: u64,
         resolution: DisputeResolution,
-    ) -> Result<(), SdkError> {
+    ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
-            return Err(SdkError::from_contract_error(3));
+            return Err(NavinError::Unauthorized);
         }
 
         let mut shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(SdkError::from_contract_error(6))?;
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
         if shipment.status != ShipmentStatus::Disputed {
-            return Err(SdkError::from_contract_error(9));
+            return Err(NavinError::InvalidStatus);
         }
 
         let escrow_amount = shipment.escrow_amount;
         if escrow_amount == 0 {
-            return Err(SdkError::from_contract_error(8));
+            return Err(NavinError::InsufficientFunds);
         }
 
         shipment.escrow_amount = 0;

@@ -324,7 +324,7 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Company"
+                              "symbol": "Role"
                             },
                             {
                               "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
@@ -332,14 +332,18 @@
                           ]
                         },
                         "val": {
-                          "bool": true
+                          "vec": [
+                            {
+                              "symbol": "Company"
+                            }
+                          ]
                         }
                       },
                       {
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Company"
+                              "symbol": "Role"
                             },
                             {
                               "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
@@ -347,7 +351,11 @@
                           ]
                         },
                         "val": {
-                          "bool": true
+                          "vec": [
+                            {
+                              "symbol": "Company"
+                            }
+                          ]
                         }
                       },
                       {
