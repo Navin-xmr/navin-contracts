@@ -1,7 +1,6 @@
 #![no_std]
 
-use soroban_sdk::Error as SdkError;
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, BytesN, Env, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, BytesN, Env, Map, Symbol, Vec};
 
 mod errors;
 mod events;
@@ -91,6 +90,36 @@ pub struct NavinShipment;
 
 #[contractimpl]
 impl NavinShipment {
+    /// Set metadata key-value pair for a shipment. Only Company (sender) or Admin can set.
+    /// Max 5 metadata entries allowed.
+    pub fn set_shipment_metadata(
+        env: Env,
+        caller: Address,
+        shipment_id: u64,
+        key: Symbol,
+        value: Symbol,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        caller.require_auth();
+        let admin = storage::get_admin(&env);
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        // Only sender or admin can set
+        if caller != shipment.sender && caller != admin {
+            return Err(NavinError::Unauthorized);
+        }
+        // Initialize metadata map if not present
+        let mut metadata = shipment.metadata.unwrap_or(Map::new(&env));
+        // Enforce max 5 keys
+        if !metadata.contains_key(key.clone()) && metadata.len() >= 5 {
+            return Err(NavinError::MetadataLimitExceeded);
+        }
+        metadata.set(key.clone(), value.clone());
+        shipment.metadata = Some(metadata);
+        shipment.updated_at = env.ledger().timestamp();
+        storage::set_shipment(&env, &shipment);
+        Ok(())
+    }
     /// Initialize the contract with an admin address.
     /// Can only be called once. Sets the admin and shipment counter to 0.
     pub fn initialize(env: Env, admin: Address) -> Result<(), NavinError> {
@@ -249,6 +278,7 @@ impl NavinShipment {
             total_escrow: 0,
             payment_milestones,
             paid_milestones: Vec::new(&env),
+            metadata: None,
         };
 
         storage::set_shipment(&env, &shipment);
@@ -301,6 +331,7 @@ impl NavinShipment {
                 total_escrow: 0,
                 payment_milestones: shipment_input.payment_milestones,
                 paid_milestones: Vec::new(&env),
+                metadata: None,
             };
 
             storage::set_shipment(&env, &shipment);
