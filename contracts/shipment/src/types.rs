@@ -5,6 +5,8 @@ use soroban_sdk::{contracttype, Address, BytesN, Symbol, Vec};
 pub enum DataKey {
     /// The contract admin address.
     Admin,
+    /// Contract version number, incremented on each upgrade.
+    Version,
     /// Counter tracking total shipments created.
     ShipmentCount,
     /// Addresses with Company role.

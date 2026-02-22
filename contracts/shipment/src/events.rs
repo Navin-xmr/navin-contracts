@@ -218,3 +218,24 @@ pub fn emit_shipment_cancelled(
         (shipment_id, caller.clone(), reason_hash.clone()),
     );
 }
+
+/// Emits a `contract_upgraded` event when the contract WASM is upgraded.
+///
+/// # Event Data
+///
+/// | Field         | Type         | Description                    |
+/// |---------------|--------------|--------------------------------|
+/// | admin         | `Address`    | Admin that triggered the upgrade |
+/// | new_wasm_hash | `BytesN<32>` | Hash of the new contract WASM   |
+/// | version       | `u32`        | Contract version after upgrade  |
+pub fn emit_contract_upgraded(
+    env: &Env,
+    admin: &Address,
+    new_wasm_hash: &BytesN<32>,
+    version: u32,
+) {
+    env.events().publish(
+        (Symbol::new(env, "contract_upgraded"),),
+        (admin.clone(), new_wasm_hash.clone(), version),
+    );
+}
