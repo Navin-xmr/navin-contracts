@@ -1,3 +1,8 @@
 target
 test_snapshots/**/test_snapshots/
+
+.agent/
+.agents/
+issue.md
+skills-lock.json
 PR_DESCRIPTION.md

@@ -1899,3 +1899,48 @@ fn test_upgrade_unauthorized() {
 
     client.upgrade(&non_admin, &new_wasm_hash);
 }
+
+// ============= Contract Metadata Tests =============
+
+#[test]
+fn test_get_contract_metadata_after_init() {
+    let (_env, client, admin) = setup_env();
+
+    client.initialize(&admin);
+
+    let meta = client.get_contract_metadata();
+    assert_eq!(meta.version, 1);
+    assert_eq!(meta.admin, admin);
+    assert_eq!(meta.shipment_count, 0);
+    assert!(meta.initialized);
+}
+
+#[test]
+fn test_get_contract_metadata_after_creating_shipments() {
+    let (env, client, admin) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.add_company(&admin, &company);
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[2u8; 32]),
+    );
+
+    let meta = client.get_contract_metadata();
+    assert_eq!(meta.version, 1);
+    assert_eq!(meta.admin, admin);
+    assert_eq!(meta.shipment_count, 2);
+    assert!(meta.initialized);
+}
