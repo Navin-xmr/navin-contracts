@@ -118,7 +118,6 @@ pub fn has_carrier_role(env: &Env, address: &Address) -> bool {
 pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
     env.storage()
         .persistent()
-        .persistent()
         .get(&DataKey::Shipment(shipment_id))
 }
 
@@ -126,14 +125,12 @@ pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
 pub fn set_shipment(env: &Env, shipment: &Shipment) {
     env.storage()
         .persistent()
-        .persistent()
         .set(&DataKey::Shipment(shipment.id), shipment);
 }
 
 /// Get escrow amount for a shipment from persistent storage. Returns 0 if unset.
 pub fn get_escrow(env: &Env, shipment_id: u64) -> i128 {
     env.storage()
-        .persistent()
         .persistent()
         .get(&DataKey::Escrow(shipment_id))
         .unwrap_or(0)
@@ -144,7 +141,6 @@ pub fn get_escrow(env: &Env, shipment_id: u64) -> i128 {
 pub fn set_escrow(env: &Env, shipment_id: u64, amount: i128) {
     env.storage()
         .persistent()
-        .persistent()
         .set(&DataKey::Escrow(shipment_id), &amount);
 }
 
@@ -152,7 +148,6 @@ pub fn set_escrow(env: &Env, shipment_id: u64, amount: i128) {
 #[allow(dead_code)]
 pub fn remove_escrow(env: &Env, shipment_id: u64) {
     env.storage()
-        .persistent()
         .persistent()
         .remove(&DataKey::Escrow(shipment_id));
 }
@@ -205,7 +200,6 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
             .persistent()
             .extend_ttl(&hash_key, threshold, extend_to);
     }
-    env.storage().persistent().get(&key)
 }
 
 /// Backwards-compatible wrapper used by existing contract code/tests.
