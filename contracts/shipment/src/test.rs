@@ -2,7 +2,9 @@
 
 extern crate std;
 
-use crate::{BreachType, GeofenceEvent, NavinShipment, NavinShipmentClient, ShipmentInput, ShipmentStatus};
+use crate::{
+    BreachType, GeofenceEvent, NavinShipment, NavinShipmentClient, ShipmentInput, ShipmentStatus,
+};
 use soroban_sdk::{
     contract, contractimpl,
     testutils::{storage::Persistent, Address as _, Events, Ledger as _},
@@ -2868,7 +2870,12 @@ fn test_report_condition_breach_success() {
     );
 
     // Carrier reports a temperature breach — no error, status unchanged
-    client.report_condition_breach(&carrier, &shipment_id, &BreachType::TemperatureHigh, &breach_hash);
+    client.report_condition_breach(
+        &carrier,
+        &shipment_id,
+        &BreachType::TemperatureHigh,
+        &breach_hash,
+    );
 
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, ShipmentStatus::Created);
@@ -2926,7 +2933,12 @@ fn test_report_condition_breach_wrong_carrier() {
     );
 
     // A registered carrier that is NOT assigned to this shipment cannot report
-    client.report_condition_breach(&other_carrier, &shipment_id, &BreachType::TamperDetected, &breach_hash);
+    client.report_condition_breach(
+        &other_carrier,
+        &shipment_id,
+        &BreachType::TamperDetected,
+        &breach_hash,
+    );
 }
 
 // ── Issue #2: verify_delivery_proof ──────────────────────────────────────────
@@ -2954,7 +2966,12 @@ fn test_verify_delivery_proof_match() {
 
     // Move to InTransit so confirm_delivery is valid
     let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
 
@@ -2984,7 +3001,12 @@ fn test_verify_delivery_proof_mismatch() {
     );
 
     let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
 
     assert!(!client.verify_delivery_proof(&shipment_id, &wrong_hash));
@@ -3030,7 +3052,12 @@ fn test_rate_limit_rapid_update_fails() {
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash1);
 
     // Immediate second update — same ledger timestamp — must be rejected (#21)
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &hash2);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &hash2,
+    );
 }
 
 #[test]
@@ -3098,7 +3125,12 @@ fn test_rate_limit_update_after_interval_succeeds() {
     });
 
     // Second update after the interval — should succeed
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &hash2);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &hash2,
+    );
 
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, ShipmentStatus::AtCheckpoint);
