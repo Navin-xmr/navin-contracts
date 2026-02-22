@@ -897,4 +897,58 @@ impl NavinShipment {
 
         Ok(())
     }
+
+    /// Handoff a shipment from current carrier to a new carrier.
+    /// Only the current assigned carrier can initiate the handoff.
+    /// New carrier must have Carrier role.
+    pub fn handoff_shipment(
+        env: Env,
+        current_carrier: Address,
+        new_carrier: Address,
+        shipment_id: u64,
+        handoff_hash: BytesN<32>,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        current_carrier.require_auth();
+        require_role(&env, &current_carrier, Role::Carrier)?;
+        require_role(&env, &new_carrier, Role::Carrier)?;
+
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        // Verify current carrier is the assigned carrier
+        if shipment.carrier != current_carrier {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // Prevent handoff from completed shipments
+        match shipment.status {
+            ShipmentStatus::Delivered | ShipmentStatus::Cancelled => {
+                return Err(NavinError::ShipmentAlreadyCompleted);
+            }
+            _ => {}
+        }
+
+        // Update carrier address on the shipment
+        let old_carrier = shipment.carrier.clone();
+        shipment.carrier = new_carrier.clone();
+        shipment.updated_at = env.ledger().timestamp();
+
+        storage::set_shipment(&env, &shipment);
+        extend_shipment_ttl(&env, shipment_id);
+
+        // Emit carrier_handoff event
+        events::emit_carrier_handoff(&env, shipment_id, &old_carrier, &new_carrier, &handoff_hash);
+
+        // Record a milestone for the handoff
+        events::emit_milestone_recorded(
+            &env,
+            shipment_id,
+            &symbol_short!("handoff"),
+            &handoff_hash,
+            &current_carrier,
+        );
+
+        Ok(())
+    }
 }

@@ -259,3 +259,36 @@ pub fn emit_contract_upgraded(
         (admin.clone(), new_wasm_hash.clone(), version),
     );
 }
+
+/// Emits a `carrier_handoff` event when a shipment is transferred between carriers.
+///
+/// # Event Data
+///
+/// | Field        | Type         | Description                                    |
+/// |--------------|--------------|------------------------------------------------|
+/// | shipment_id  | `u64`        | Shipment being handed off                      |
+/// | from_carrier | `Address`    | Current carrier handing off the shipment        |
+/// | to_carrier   | `Address`    | New carrier receiving the shipment             |
+/// | handoff_hash | `BytesN<32>` | SHA-256 hash of the off-chain handoff data     |
+///
+/// # Listeners
+///
+/// - **Express backend**: Updates carrier assignment and triggers notifications.
+/// - **Frontend**: Shows carrier change in shipment tracking UI.
+pub fn emit_carrier_handoff(
+    env: &Env,
+    shipment_id: u64,
+    from_carrier: &Address,
+    to_carrier: &Address,
+    handoff_hash: &BytesN<32>,
+) {
+    env.events().publish(
+        (Symbol::new(env, "carrier_handoff"),),
+        (
+            shipment_id,
+            from_carrier.clone(),
+            to_carrier.clone(),
+            handoff_hash.clone(),
+        ),
+    );
+}
