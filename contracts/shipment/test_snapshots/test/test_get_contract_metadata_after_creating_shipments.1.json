@@ -217,6 +217,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "metadata"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "paid_milestones"
                       },
                       "val": {
@@ -366,6 +372,12 @@
                       "val": {
                         "u64": 2
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "metadata"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {

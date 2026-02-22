@@ -358,6 +358,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "metadata"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "paid_milestones"
                       },
                       "val": {
@@ -507,6 +513,12 @@
                       "val": {
                         "u64": 2
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "metadata"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {
@@ -662,6 +674,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "metadata"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "paid_milestones"
                       },
                       "val": {
@@ -814,6 +832,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "metadata"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "paid_milestones"
                       },
                       "val": {
@@ -963,6 +987,12 @@
                       "val": {
                         "u64": 5
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "metadata"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {

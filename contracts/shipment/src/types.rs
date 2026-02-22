@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, BytesN, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, BytesN, Map, Symbol, Vec};
 
 /// Storage keys for contract data.
 #[contracttype]
@@ -140,6 +140,8 @@ pub struct Shipment {
     pub escrow_amount: i128,
     /// Total amount deposited in escrow.
     pub total_escrow: i128,
+    /// Optional metadata for storing small key-value pairs (e.g., weight category, priority).
+    pub metadata: Option<Map<Symbol, Symbol>>,
     /// Milestone-based payment schedule: (checkpoint name, percentage).
     pub payment_milestones: Vec<(Symbol, u32)>,
     /// List of symbols for milestones that have already been paid.

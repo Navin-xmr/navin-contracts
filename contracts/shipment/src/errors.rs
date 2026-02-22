@@ -27,4 +27,5 @@ pub enum NavinError {
     InvalidShipmentInput = 17,
     MilestoneSumInvalid = 18,
     MilestoneAlreadyPaid = 19,
+    MetadataLimitExceeded = 20,
 }
