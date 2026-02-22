@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, BytesN, Symbol};
+use soroban_sdk::{contracttype, Address, BytesN, Symbol, Vec};
 
 /// Storage keys for contract data.
 #[contracttype]
@@ -138,6 +138,12 @@ pub struct Shipment {
     pub updated_at: u64,
     /// Amount held in escrow for this shipment.
     pub escrow_amount: i128,
+    /// Total amount deposited in escrow.
+    pub total_escrow: i128,
+    /// Milestone-based payment schedule: (checkpoint name, percentage).
+    pub payment_milestones: Vec<(Symbol, u32)>,
+    /// List of symbols for milestones that have already been paid.
+    pub paid_milestones: Vec<Symbol>,
 }
 
 /// A checkpoint milestone recorded during shipment transit.
@@ -167,6 +173,16 @@ pub enum GeofenceEvent {
     ZoneExit,
     /// Shipment deviated from the expected route.
     RouteDeviation,
+}
+
+/// Input data for creating a shipment in a batch.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ShipmentInput {
+    pub receiver: Address,
+    pub carrier: Address,
+    pub data_hash: BytesN<32>,
+    pub payment_milestones: Vec<(Symbol, u32)>,
 }
 
 /// On-chain introspection snapshot of the contract state.

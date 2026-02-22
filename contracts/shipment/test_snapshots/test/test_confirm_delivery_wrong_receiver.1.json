@@ -48,6 +48,9 @@
                 },
                 {
                   "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+                },
+                {
+                  "vec": []
                 }
               ]
             }
@@ -184,6 +187,22 @@
                     },
                     {
                       "key": {
+                        "symbol": "paid_milestones"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "payment_milestones"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "receiver"
                       },
                       "val": {
@@ -208,6 +227,17 @@
                             "symbol": "InTransit"
                           }
                         ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "total_escrow"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 0
+                        }
                       }
                     },
                     {
@@ -266,7 +296,7 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Company"
+                              "symbol": "Role"
                             },
                             {
                               "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
@@ -274,14 +304,18 @@
                           ]
                         },
                         "val": {
-                          "bool": true
+                          "vec": [
+                            {
+                              "symbol": "Company"
+                            }
+                          ]
                         }
                       },
                       {
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Company"
+                              "symbol": "Role"
                             },
                             {
                               "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
@@ -289,7 +323,11 @@
                           ]
                         },
                         "val": {
-                          "bool": true
+                          "vec": [
+                            {
+                              "symbol": "Company"
+                            }
+                          ]
                         }
                       },
                       {

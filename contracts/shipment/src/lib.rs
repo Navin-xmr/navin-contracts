@@ -1,6 +1,7 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, BytesN, Env, Symbol};
+use soroban_sdk::Error as SdkError;
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, BytesN, Env, Symbol, Vec};
 
 mod errors;
 mod events;
@@ -21,6 +22,40 @@ fn extend_shipment_ttl(env: &Env, shipment_id: u64) {
         SHIPMENT_TTL_THRESHOLD,
         SHIPMENT_TTL_EXTENSION,
     );
+}
+
+fn validate_milestones(_env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(), NavinError> {
+    if milestones.is_empty() {
+        return Ok(());
+    }
+    let mut total_percentage = 0;
+    for milestone in milestones.iter() {
+        total_percentage += milestone.1;
+    }
+
+    if total_percentage != 100 {
+        return Err(NavinError::MilestoneSumInvalid);
+    }
+
+    Ok(())
+}
+
+fn internal_release_escrow(env: &Env, shipment: &mut Shipment, amount: i128) {
+    if amount <= 0 {
+        return;
+    }
+    let actual_release = if amount > shipment.escrow_amount {
+        shipment.escrow_amount
+    } else {
+        amount
+    };
+
+    if actual_release > 0 {
+        shipment.escrow_amount -= actual_release;
+        shipment.updated_at = env.ledger().timestamp();
+        storage::set_shipment(env, shipment);
+        events::emit_escrow_released(env, shipment.id, &shipment.carrier, actual_release);
+    }
 }
 
 fn require_initialized(env: &Env) -> Result<(), NavinError> {
@@ -89,7 +124,7 @@ impl NavinShipment {
     /// Get on-chain metadata for this contract.
     /// Returns version, admin, shipment count, and initialization status.
     /// Read-only — no authentication required.
-    pub fn get_contract_metadata(env: Env) -> Result<ContractMetadata, SdkError> {
+    pub fn get_contract_metadata(env: Env) -> Result<ContractMetadata, NavinError> {
         require_initialized(&env)?;
         Ok(ContractMetadata {
             version: storage::get_version(&env),
@@ -189,10 +224,12 @@ impl NavinShipment {
         receiver: Address,
         carrier: Address,
         data_hash: BytesN<32>,
+        payment_milestones: Vec<(Symbol, u32)>,
     ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
         sender.require_auth();
         require_role(&env, &sender, Role::Company)?;
+        validate_milestones(&env, &payment_milestones)?;
 
         let shipment_id = storage::get_shipment_counter(&env)
             .checked_add(1)
@@ -209,6 +246,9 @@ impl NavinShipment {
             created_at: now,
             updated_at: now,
             escrow_amount: 0,
+            total_escrow: 0,
+            payment_milestones,
+            paid_milestones: Vec::new(&env),
         };
 
         storage::set_shipment(&env, &shipment);
@@ -218,6 +258,66 @@ impl NavinShipment {
         events::emit_shipment_created(&env, shipment_id, &sender, &receiver, &data_hash);
 
         Ok(shipment_id)
+    }
+
+    /// Create multiple shipments in a single atomic transaction.
+    /// Limit: 10 shipments per batch.
+    pub fn create_shipments_batch(
+        env: Env,
+        sender: Address,
+        shipments: Vec<ShipmentInput>,
+    ) -> Result<Vec<u64>, NavinError> {
+        require_initialized(&env)?;
+        sender.require_auth();
+        require_role(&env, &sender, Role::Company)?;
+
+        if shipments.len() > 10 {
+            return Err(NavinError::BatchTooLarge);
+        }
+
+        let mut ids = Vec::new(&env);
+        let now = env.ledger().timestamp();
+
+        for shipment_input in shipments.iter() {
+            if shipment_input.receiver == shipment_input.carrier {
+                return Err(NavinError::InvalidShipmentInput);
+            }
+            validate_milestones(&env, &shipment_input.payment_milestones)?;
+
+            let shipment_id = storage::get_shipment_counter(&env)
+                .checked_add(1)
+                .ok_or(NavinError::CounterOverflow)?;
+
+            let shipment = Shipment {
+                id: shipment_id,
+                sender: sender.clone(),
+                receiver: shipment_input.receiver.clone(),
+                carrier: shipment_input.carrier.clone(),
+                data_hash: shipment_input.data_hash.clone(),
+                status: ShipmentStatus::Created,
+                created_at: now,
+                updated_at: now,
+                escrow_amount: 0,
+                total_escrow: 0,
+                payment_milestones: shipment_input.payment_milestones,
+                paid_milestones: Vec::new(&env),
+            };
+
+            storage::set_shipment(&env, &shipment);
+            storage::set_shipment_counter(&env, shipment_id);
+            extend_shipment_ttl(&env, shipment_id);
+
+            events::emit_shipment_created(
+                &env,
+                shipment_id,
+                &sender,
+                &shipment_input.receiver,
+                &shipment_input.data_hash,
+            );
+            ids.push_back(shipment_id);
+        }
+
+        Ok(ids)
     }
 
     /// Retrieve shipment details by ID.
@@ -254,6 +354,7 @@ impl NavinShipment {
         }
 
         shipment.escrow_amount = amount;
+        shipment.total_escrow = amount;
         shipment.updated_at = env.ledger().timestamp();
         storage::set_shipment(&env, &shipment);
         extend_shipment_ttl(&env, shipment_id);
@@ -354,6 +455,9 @@ impl NavinShipment {
         storage::set_shipment(&env, &shipment);
         storage::set_confirmation_hash(&env, shipment_id, &confirmation_hash);
         extend_shipment_ttl(&env, shipment_id);
+
+        let remaining_escrow = shipment.escrow_amount;
+        internal_release_escrow(&env, &mut shipment, remaining_escrow);
 
         env.events().publish(
             (Symbol::new(&env, "delivery_confirmed"),),
@@ -459,6 +563,33 @@ impl NavinShipment {
         // Emit the milestone_recorded event (Hash-and-Emit pattern)
         events::emit_milestone_recorded(&env, shipment_id, &checkpoint, &data_hash, &carrier);
 
+        // Check for milestone-based payments
+        let mut mut_shipment = shipment;
+        let mut found_index = None;
+        for (i, milestone) in mut_shipment.payment_milestones.iter().enumerate() {
+            if milestone.0 == checkpoint {
+                found_index = Some(i);
+                break;
+            }
+        }
+
+        if let Some(idx) = found_index {
+            let mut already_paid = false;
+            for paid_symbol in mut_shipment.paid_milestones.iter() {
+                if paid_symbol == checkpoint {
+                    already_paid = true;
+                    break;
+                }
+            }
+
+            if !already_paid {
+                let milestone = mut_shipment.payment_milestones.get(idx as u32).unwrap();
+                let release_amount = (mut_shipment.total_escrow * milestone.1 as i128) / 100;
+                mut_shipment.paid_milestones.push_back(checkpoint.clone());
+                internal_release_escrow(&env, &mut mut_shipment, release_amount);
+            }
+        }
+
         Ok(())
     }
 
@@ -560,14 +691,7 @@ impl NavinShipment {
             return Err(NavinError::InsufficientFunds);
         }
 
-        shipment.escrow_amount = 0;
-        shipment.updated_at = env.ledger().timestamp();
-
-        storage::set_shipment(&env, &shipment);
-        storage::remove_escrow_balance(&env, shipment_id);
-        extend_shipment_ttl(&env, shipment_id);
-
-        events::emit_escrow_released(&env, shipment_id, &shipment.carrier, escrow_amount);
+        internal_release_escrow(&env, &mut shipment, escrow_amount);
 
         Ok(())
     }

@@ -19,4 +19,12 @@ pub enum NavinError {
     ShipmentAlreadyCompleted = 9,
     InvalidTimestamp = 10,
     CounterOverflow = 11,
+    CarrierNotWhitelisted = 12,
+    CarrierNotAuthorized = 13,
+    InvalidAmount = 14,
+    EscrowAlreadyDeposited = 15,
+    BatchTooLarge = 16,
+    InvalidShipmentInput = 17,
+    MilestoneSumInvalid = 18,
+    MilestoneAlreadyPaid = 19,
 }
