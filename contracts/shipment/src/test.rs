@@ -1347,7 +1347,13 @@ fn test_refund_escrow_success() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let escrow_amount: i128 = 3000;
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
@@ -1371,7 +1377,13 @@ fn test_refund_escrow_on_delivered_shipment() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let escrow_amount: i128 = 3000;
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
@@ -1398,7 +1410,13 @@ fn test_refund_escrow_unauthorized() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let escrow_amount: i128 = 3000;
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
@@ -1417,7 +1435,13 @@ fn test_refund_escrow_by_admin() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let escrow_amount: i128 = 3000;
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
@@ -1441,7 +1465,13 @@ fn test_refund_escrow_double_refund() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let escrow_amount: i128 = 3000;
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
@@ -1464,7 +1494,13 @@ fn test_raise_dispute_by_sender() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let escrow_amount: i128 = 5000;
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
@@ -1493,7 +1529,13 @@ fn test_raise_dispute_by_receiver() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     client.raise_dispute(&receiver, &shipment_id, &reason_hash);
 
@@ -1513,7 +1555,13 @@ fn test_raise_dispute_by_carrier() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     client.raise_dispute(&carrier, &shipment_id, &reason_hash);
 
@@ -1535,7 +1583,13 @@ fn test_raise_dispute_unauthorized() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     client.raise_dispute(&outsider, &shipment_id, &reason_hash);
 }
@@ -1553,7 +1607,13 @@ fn test_raise_dispute_on_cancelled_shipment() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     env.as_contract(&client.address, || {
         let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
@@ -1576,7 +1636,13 @@ fn test_resolve_dispute_release_to_carrier() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let escrow_amount: i128 = 5000;
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
@@ -1605,7 +1671,13 @@ fn test_resolve_dispute_refund_to_company() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let escrow_amount: i128 = 5000;
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
@@ -1636,7 +1708,13 @@ fn test_resolve_dispute_unauthorized() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let escrow_amount: i128 = 5000;
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
@@ -1661,7 +1739,13 @@ fn test_resolve_dispute_not_disputed() {
     client.initialize(&admin);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     let escrow_amount: i128 = 5000;
 
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
