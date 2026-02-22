@@ -86,6 +86,19 @@ impl NavinShipment {
         Ok(storage::get_version(&env))
     }
 
+    /// Get on-chain metadata for this contract.
+    /// Returns version, admin, shipment count, and initialization status.
+    /// Read-only — no authentication required.
+    pub fn get_contract_metadata(env: Env) -> Result<ContractMetadata, SdkError> {
+        require_initialized(&env)?;
+        Ok(ContractMetadata {
+            version: storage::get_version(&env),
+            admin: storage::get_admin(&env),
+            shipment_count: storage::get_shipment_counter(&env),
+            initialized: true,
+        })
+    }
+
     /// Get the current shipment counter
     pub fn get_shipment_counter(env: Env) -> Result<u64, NavinError> {
         require_initialized(&env)?;
