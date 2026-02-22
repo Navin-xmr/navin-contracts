@@ -4,6 +4,7 @@ use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String};
 
 mod errors;
 mod storage;
+mod test;
 
 pub use errors::*;
 
@@ -86,6 +87,8 @@ impl NavinToken {
             return Err(TokenError::NotInitialized);
         }
 
+        from.require_auth();
+
         if amount <= 0 {
             return Err(TokenError::InvalidAmount);
         }
@@ -120,6 +123,8 @@ impl NavinToken {
         if !storage::is_initialized(&env) {
             return Err(TokenError::NotInitialized);
         }
+
+        spender.require_auth();
 
         if amount <= 0 {
             return Err(TokenError::InvalidAmount);
@@ -161,6 +166,8 @@ impl NavinToken {
             return Err(TokenError::NotInitialized);
         }
 
+        owner.require_auth();
+
         if amount < 0 {
             return Err(TokenError::InvalidAmount);
         }
@@ -191,6 +198,8 @@ impl NavinToken {
             return Err(TokenError::NotInitialized);
         }
 
+        admin.require_auth();
+
         if storage::get_admin(&env) != admin {
             return Err(TokenError::Unauthorized);
         }
@@ -213,6 +222,8 @@ impl NavinToken {
         if !storage::is_initialized(&env) {
             return Err(TokenError::NotInitialized);
         }
+
+        admin.require_auth();
 
         if storage::get_admin(&env) != admin {
             return Err(TokenError::Unauthorized);
