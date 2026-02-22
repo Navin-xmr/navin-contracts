@@ -48,6 +48,9 @@
                 },
                 {
                   "bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+                },
+                {
+                  "vec": []
                 }
               ]
             }
@@ -241,6 +244,22 @@
                     },
                     {
                       "key": {
+                        "symbol": "paid_milestones"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "payment_milestones"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "receiver"
                       },
                       "val": {
@@ -265,6 +284,17 @@
                             "symbol": "Cancelled"
                           }
                         ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "total_escrow"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 0
+                        }
                       }
                     },
                     {

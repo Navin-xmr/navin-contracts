@@ -48,6 +48,9 @@
                 },
                 {
                   "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+                },
+                {
+                  "vec": []
                 }
               ]
             }
@@ -254,6 +257,22 @@
                     },
                     {
                       "key": {
+                        "symbol": "paid_milestones"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "payment_milestones"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "receiver"
                       },
                       "val": {
@@ -278,6 +297,17 @@
                             "symbol": "Delivered"
                           }
                         ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "total_escrow"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 0
+                        }
                       }
                     },
                     {
