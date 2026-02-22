@@ -323,7 +323,7 @@ fn test_update_status_valid_transition_by_admin() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #10)")]
+#[should_panic(expected = "Error(Contract, #5)")]
 fn test_update_status_invalid_transition() {
     use crate::ShipmentStatus;
     let (env, client, admin) = setup_env();
@@ -436,7 +436,7 @@ fn test_update_status_multiple_valid_transitions() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #6)")]
+#[should_panic(expected = "Error(Contract, #4)")]
 fn test_update_status_nonexistent_shipment() {
     use crate::ShipmentStatus;
     let (env, client, admin) = setup_env();
@@ -538,7 +538,7 @@ fn test_get_escrow_balance_after_release() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #6)")]
+#[should_panic(expected = "Error(Contract, #4)")]
 fn test_get_escrow_balance_shipment_not_found() {
     let (_env, client, admin) = setup_env();
 
@@ -622,7 +622,7 @@ fn test_get_shipment_returns_correct_data() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #6)")]
+#[should_panic(expected = "Error(Contract, #4)")]
 fn test_get_shipment_not_found() {
     let (_env, client, admin) = setup_env();
 
@@ -720,7 +720,7 @@ fn test_report_geofence_route_deviation() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #7)")]
+#[should_panic(expected = "Error(Contract, #3)")]
 fn test_report_geofence_event_unauthorized_role() {
     let (env, client, admin) = setup_env();
     let company = Address::generate(&env);
@@ -745,7 +745,7 @@ fn test_report_geofence_event_unauthorized_role() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #6)")]
+#[should_panic(expected = "Error(Contract, #4)")]
 fn test_deposit_escrow_shipment_not_found() {
     let (env, client, admin) = setup_env();
     let company = Address::generate(&env);
@@ -759,7 +759,7 @@ fn test_deposit_escrow_shipment_not_found() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #6)")]
+#[should_panic(expected = "Error(Contract, #4)")]
 fn test_report_geofence_event_non_existent_shipment() {
     let (env, client, admin) = setup_env();
     let carrier = Address::generate(&env);
@@ -804,7 +804,7 @@ fn test_update_eta_valid_emits_event() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #9)")]
+#[should_panic(expected = "Error(Contract, #10)")]
 fn test_update_eta_rejects_past_timestamp() {
     let (env, client, admin) = setup_env();
     let company = Address::generate(&env);
@@ -824,7 +824,7 @@ fn test_update_eta_rejects_past_timestamp() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #7)")]
+#[should_panic(expected = "Error(Contract, #3)")]
 fn test_update_eta_unauthorized() {
     let (env, client, admin) = setup_env();
     let company = Address::generate(&env);
@@ -922,7 +922,7 @@ fn test_confirm_delivery_wrong_receiver() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #8)")]
+#[should_panic(expected = "Error(Contract, #5)")]
 fn test_confirm_delivery_wrong_status() {
     let (env, client, admin) = setup_env();
     let confirmation_hash = BytesN::from_array(&env, &[66u8; 32]);
@@ -1020,7 +1020,7 @@ fn test_release_escrow_unauthorized() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #9)")]
+#[should_panic(expected = "Error(Contract, #5)")]
 fn test_release_escrow_wrong_status() {
     let (env, client, admin) = setup_env();
     let company = Address::generate(&env);
@@ -1093,7 +1093,7 @@ fn test_refund_escrow_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #9)")]
+#[should_panic(expected = "Error(Contract, #5)")]
 fn test_refund_escrow_on_delivered_shipment() {
     let (env, client, admin) = setup_env();
     let company = Address::generate(&env);
@@ -1383,7 +1383,7 @@ fn test_resolve_dispute_unauthorized() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #9)")]
+#[should_panic(expected = "Error(Contract, #5)")]
 fn test_resolve_dispute_not_disputed() {
     let (env, client, admin) = setup_env();
     let company = Address::generate(&env);
@@ -1460,7 +1460,7 @@ fn test_deposit_escrow_invalid_amount() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #10)")]
+#[should_panic(expected = "Error(Contract, #5)")]
 fn test_record_milestone_wrong_status() {
     let (env, client, admin) = setup_env();
     let company = Address::generate(&env);
@@ -1480,7 +1480,7 @@ fn test_record_milestone_wrong_status() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #7)")]
+#[should_panic(expected = "Error(Contract, #3)")]
 fn test_record_milestone_unauthorized() {
     let (env, client, admin) = setup_env();
     let company = Address::generate(&env);
@@ -1766,7 +1766,7 @@ fn test_escrow_dispute_resolve_to_cancelled() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #11)")]
+#[should_panic(expected = "Error(Contract, #7)")]
 fn test_escrow_double_deposit_prevention() {
     let (env, client, admin) = setup_env();
     let company = Address::generate(&env);
@@ -1784,7 +1784,7 @@ fn test_escrow_double_deposit_prevention() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #8)")]
+#[should_panic(expected = "Error(Contract, #5)")]
 fn test_escrow_release_without_delivery_confirm_from_created_fails() {
     let (env, client, admin) = setup_env();
     let company = Address::generate(&env);
@@ -1834,7 +1834,7 @@ fn test_escrow_refund_after_delivery_fails() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #9)")]
+#[should_panic(expected = "Error(Contract, #5)")]
 fn test_escrow_deposit_after_status_change_fails() {
     use crate::ShipmentStatus;
     let (env, client, admin) = setup_env();
