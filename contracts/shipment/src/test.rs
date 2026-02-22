@@ -2,10 +2,12 @@
 
 extern crate std;
 
-use crate::{GeofenceEvent, NavinShipment, NavinShipmentClient, ShipmentInput, ShipmentStatus};
+use crate::{
+    BreachType, GeofenceEvent, NavinShipment, NavinShipmentClient, ShipmentInput, ShipmentStatus,
+};
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::{storage::Persistent, Address as _, Events},
+    testutils::{storage::Persistent, Address as _, Events, Ledger as _},
     Address, BytesN, Env, Symbol, TryFromVal,
 };
 
@@ -487,6 +489,7 @@ fn test_update_status_invalid_transition() {
         &new_data_hash,
     );
 
+    env.ledger().with_mut(|l| l.timestamp += 61);
     client.update_status(
         &carrier,
         &shipment_id,
@@ -494,6 +497,7 @@ fn test_update_status_invalid_transition() {
         &new_data_hash,
     );
 
+    env.ledger().with_mut(|l| l.timestamp += 61);
     // Invalid: Delivered → Created
     client.update_status(
         &carrier,
@@ -570,6 +574,7 @@ fn test_update_status_multiple_valid_transitions() {
     );
 
     // InTransit → AtCheckpoint
+    env.ledger().with_mut(|l| l.timestamp += 61);
     client.update_status(
         &carrier,
         &shipment_id,
@@ -582,6 +587,7 @@ fn test_update_status_multiple_valid_transitions() {
     );
 
     // AtCheckpoint → Delivered
+    env.ledger().with_mut(|l| l.timestamp += 61);
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::Delivered, &hash_4);
     assert_eq!(
         client.get_shipment(&shipment_id).status,
@@ -2127,6 +2133,7 @@ fn test_escrow_happy_path_create_deposit_transit_deliver_confirm() {
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
 
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash2);
+    env.ledger().with_mut(|l| l.timestamp += 61);
     client.update_status(
         &carrier,
         &shipment_id,
@@ -2194,6 +2201,7 @@ fn test_escrow_dispute_resolve_to_delivered() {
     );
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash2);
+    env.ledger().with_mut(|l| l.timestamp += 61);
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::Disputed, &hash3);
     client.update_status(&admin, &shipment_id, &ShipmentStatus::Delivered, &hash3);
 
@@ -2226,6 +2234,7 @@ fn test_escrow_dispute_resolve_to_cancelled() {
     );
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash2);
+    env.ledger().with_mut(|l| l.timestamp += 61);
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::Disputed, &hash2);
     client.update_status(
         &admin,
@@ -2835,4 +2844,294 @@ fn test_create_shipment_fails_before_initialization() {
         &data_hash,
         &soroban_sdk::Vec::new(&env),
     );
+}
+
+// ── Issue #1: report_condition_breach ────────────────────────────────────────
+
+#[test]
+fn test_report_condition_breach_success() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let breach_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
+
+    // Carrier reports a temperature breach — no error, status unchanged
+    client.report_condition_breach(
+        &carrier,
+        &shipment_id,
+        &BreachType::TemperatureHigh,
+        &breach_hash,
+    );
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Created);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_report_condition_breach_unauthorized_non_carrier() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let rogue = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let breach_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
+
+    // Non-carrier address cannot report a breach
+    client.report_condition_breach(&rogue, &shipment_id, &BreachType::Impact, &breach_hash);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_report_condition_breach_wrong_carrier() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let other_carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let breach_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier(&admin, &other_carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
+
+    // A registered carrier that is NOT assigned to this shipment cannot report
+    client.report_condition_breach(
+        &other_carrier,
+        &shipment_id,
+        &BreachType::TamperDetected,
+        &breach_hash,
+    );
+}
+
+// ── Issue #2: verify_delivery_proof ──────────────────────────────────────────
+
+#[test]
+fn test_verify_delivery_proof_match() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let confirmation_hash = BytesN::from_array(&env, &[9u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
+
+    // Move to InTransit so confirm_delivery is valid
+    let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
+
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    assert!(client.verify_delivery_proof(&shipment_id, &confirmation_hash));
+}
+
+#[test]
+fn test_verify_delivery_proof_mismatch() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let confirmation_hash = BytesN::from_array(&env, &[9u8; 32]);
+    let wrong_hash = BytesN::from_array(&env, &[7u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
+
+    let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    assert!(!client.verify_delivery_proof(&shipment_id, &wrong_hash));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")]
+fn test_verify_delivery_proof_nonexistent_shipment() {
+    let (_env, client, admin, token_contract) = setup_env();
+
+    client.initialize(&admin, &token_contract);
+
+    client.verify_delivery_proof(&999u64, &BytesN::from_array(&_env, &[1u8; 32]));
+}
+
+// ── Issue #3: Rate limiting ───────────────────────────────────────────────────
+
+#[test]
+#[should_panic(expected = "Error(Contract, #21)")]
+fn test_rate_limit_rapid_update_fails() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
+
+    let hash1 = BytesN::from_array(&env, &[2u8; 32]);
+    let hash2 = BytesN::from_array(&env, &[3u8; 32]);
+
+    // First update sets the LastStatusUpdate timestamp
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash1);
+
+    // Immediate second update — same ledger timestamp — must be rejected (#21)
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &hash2,
+    );
+}
+
+#[test]
+fn test_rate_limit_admin_bypasses() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
+
+    let hash1 = BytesN::from_array(&env, &[2u8; 32]);
+    let hash2 = BytesN::from_array(&env, &[3u8; 32]);
+    let hash3 = BytesN::from_array(&env, &[4u8; 32]);
+
+    // Admin can make back-to-back status updates without hitting the rate limit
+    client.update_status(&admin, &shipment_id, &ShipmentStatus::InTransit, &hash1);
+    client.update_status(&admin, &shipment_id, &ShipmentStatus::AtCheckpoint, &hash2);
+    client.update_status(&admin, &shipment_id, &ShipmentStatus::InTransit, &hash3);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::InTransit);
+}
+
+#[test]
+fn test_rate_limit_update_after_interval_succeeds() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
+
+    let hash1 = BytesN::from_array(&env, &[2u8; 32]);
+    let hash2 = BytesN::from_array(&env, &[3u8; 32]);
+
+    // First update
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash1);
+
+    // Advance the ledger timestamp past the 60-second minimum interval
+    env.ledger().with_mut(|l| {
+        l.timestamp += 61;
+    });
+
+    // Second update after the interval — should succeed
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &hash2,
+    );
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::AtCheckpoint);
 }

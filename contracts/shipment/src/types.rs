@@ -25,6 +25,8 @@ pub enum DataKey {
     ConfirmationHash(u64),
     /// Token contract address for payments.
     TokenContract,
+    /// Timestamp of the last status update for a shipment (used for rate limiting).
+    LastStatusUpdate(u64),
 }
 
 /// Supported user roles.
@@ -165,6 +167,22 @@ pub struct Milestone {
     pub timestamp: u64,
     /// Address that reported this milestone.
     pub reporter: Address,
+}
+
+/// Condition breach types reported by carriers for out-of-range sensor readings.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum BreachType {
+    /// Temperature exceeded the upper acceptable limit.
+    TemperatureHigh,
+    /// Temperature dropped below the lower acceptable limit.
+    TemperatureLow,
+    /// Humidity exceeded the upper acceptable limit.
+    HumidityHigh,
+    /// Physical impact detected (shock/drop event).
+    Impact,
+    /// Tamper detection triggered.
+    TamperDetected,
 }
 
 /// Geofence event types for tracking shipment location events.
