@@ -4492,6 +4492,7 @@ fn test_force_release_action() {
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
 
     client.add_company(&admin, &company);
 
@@ -4501,6 +4502,7 @@ fn test_force_release_action() {
         &carrier,
         &data_hash,
         &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
 
     let escrow_amount: i128 = 1000;
@@ -4538,6 +4540,7 @@ fn test_force_refund_action() {
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
 
     client.add_company(&admin, &company);
 
@@ -4547,6 +4550,7 @@ fn test_force_refund_action() {
         &carrier,
         &data_hash,
         &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
 
     let escrow_amount: i128 = 1000;
@@ -4713,7 +4717,7 @@ fn test_check_deadline_success_auto_cancels_and_refunds() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #22)")]
+#[should_panic(expected = "Error(Contract, #29)")]
 fn test_check_deadline_fails_if_not_expired() {
     let (env, client, admin, token_contract) = setup_env();
     let company = Address::generate(&env);
