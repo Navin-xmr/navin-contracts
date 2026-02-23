@@ -904,6 +904,9 @@ impl NavinShipment {
             (shipment_id, receiver, confirmation_hash),
         );
 
+        // Reputation: record successful delivery for the carrier
+        events::emit_delivery_success(&env, &shipment.carrier, shipment_id, now);
+
         Ok(())
     }
 
@@ -1592,6 +1595,8 @@ impl NavinShipment {
             }
             DisputeResolution::RefundToCompany => {
                 events::emit_escrow_refunded(&env, shipment_id, &recipient, escrow_amount);
+                // Reputation: carrier lost this dispute
+                events::emit_carrier_dispute_loss(&env, &shipment.carrier, shipment_id);
             }
         }
 
@@ -1718,6 +1723,9 @@ impl NavinShipment {
         }
 
         events::emit_condition_breach(&env, shipment_id, &carrier, &breach_type, &data_hash);
+
+        // Reputation: record breach against carrier
+        events::emit_carrier_breach(&env, &carrier, shipment_id, &breach_type);
 
         Ok(())
     }
@@ -2247,4 +2255,74 @@ impl NavinShipment {
 
         Ok(())
     }
+}
+
+pub fn confirm_delivery(
+    env: Env,
+    receiver: Address,
+    shipment_id: u64,
+    confirmation_hash: BytesN<32>,
+) -> Result<(), NavinError> {
+    require_initialized(&env)?;
+    receiver.require_auth();
+
+    let mut shipment =
+        storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+    if shipment.receiver != receiver {
+        return Err(NavinError::Unauthorized);
+    }
+
+    if !shipment
+        .status
+        .is_valid_transition(&ShipmentStatus::Delivered)
+    {
+        return Err(NavinError::InvalidStatus);
+    }
+
+    let now = env.ledger().timestamp();
+    shipment.status = ShipmentStatus::Delivered;
+    shipment.updated_at = now;
+
+    storage::set_shipment(&env, &shipment);
+    storage::set_confirmation_hash(&env, shipment_id, &confirmation_hash);
+    extend_shipment_ttl(&env, shipment_id);
+
+    let remaining_escrow = shipment.escrow_amount;
+    internal_release_escrow(&env, &mut shipment, remaining_escrow);
+
+    env.events().publish(
+        (Symbol::new(&env, "delivery_confirmed"),),
+        (shipment_id, receiver, confirmation_hash),
+    );
+
+    // Reputation: record successful delivery for the carrier
+    events::emit_delivery_success(&env, &shipment.carrier, shipment_id, now);
+
+    Ok(())
+}
+
+pub fn report_condition_breach(
+    env: Env,
+    carrier: Address,
+    shipment_id: u64,
+    breach_type: BreachType,
+    data_hash: BytesN<32>,
+) -> Result<(), NavinError> {
+    require_initialized(&env)?;
+    carrier.require_auth();
+    require_role(&env, &carrier, Role::Carrier)?;
+
+    let shipment = storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+    if shipment.carrier != carrier {
+        return Err(NavinError::Unauthorized);
+    }
+
+    events::emit_condition_breach(&env, shipment_id, &carrier, &breach_type, &data_hash);
+
+    // Reputation: record breach against carrier
+    events::emit_carrier_breach(&env, &carrier, shipment_id, &breach_type);
+
+    Ok(())
 }

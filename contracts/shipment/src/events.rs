@@ -514,3 +514,75 @@ pub fn emit_shipment_expired(env: &Env, shipment_id: u64) {
     env.events()
         .publish((Symbol::new(env, "shipment_expired"),), (shipment_id,));
 }
+
+// ─── Paste these three functions at the BOTTOM of src/events.rs ──────────────
+
+/// Emits a `delivery_success` event when a shipment is successfully delivered.
+///
+/// The backend indexes this event to increment the carrier's on-time delivery
+/// count and compute punctuality metrics relative to the shipment deadline.
+///
+/// # Event Data
+///
+/// | Field         | Type      | Description                                      |
+/// |---------------|-----------|--------------------------------------------------|
+/// | carrier       | `Address` | Carrier that completed the delivery               |
+/// | shipment_id   | `u64`     | Shipment that was delivered                       |
+/// | delivery_time | `u64`     | Ledger timestamp at the moment of delivery        |
+///
+/// # Listeners
+/// - **Express backend**: Increments on-time delivery counter in carrier reputation index.
+pub fn emit_delivery_success(env: &Env, carrier: &Address, shipment_id: u64, delivery_time: u64) {
+    env.events().publish(
+        (Symbol::new(env, "delivery_success"),),
+        (carrier.clone(), shipment_id, delivery_time),
+    );
+}
+
+/// Emits a `carrier_breach` event when a carrier reports a condition breach.
+///
+/// The backend indexes this event to increment the carrier's breach count and
+/// adjust the reliability score accordingly.
+///
+/// # Event Data
+///
+/// | Field       | Type         | Description                                    |
+/// |-------------|--------------|------------------------------------------------|
+/// | carrier     | `Address`    | Carrier that reported (and caused) the breach   |
+/// | shipment_id | `u64`        | Shipment where the breach occurred              |
+/// | breach_type | `BreachType` | Category of the condition breach                |
+///
+/// # Listeners
+/// - **Express backend**: Increments breach counter for the carrier's reputation record.
+pub fn emit_carrier_breach(
+    env: &Env,
+    carrier: &Address,
+    shipment_id: u64,
+    breach_type: &BreachType,
+) {
+    env.events().publish(
+        (Symbol::new(env, "carrier_breach"),),
+        (carrier.clone(), shipment_id, breach_type.clone()),
+    );
+}
+
+/// Emits a `carrier_dispute_loss` event when a dispute is resolved against the
+/// carrier (i.e., `DisputeResolution::RefundToCompany`).
+///
+/// The backend indexes this event to penalise the carrier's reputation score.
+///
+/// # Event Data
+///
+/// | Field       | Type      | Description                                     |
+/// |-------------|-----------|-------------------------------------------------|
+/// | carrier     | `Address` | Carrier that lost the dispute                    |
+/// | shipment_id | `u64`     | Shipment the dispute was raised on               |
+///
+/// # Listeners
+/// - **Express backend**: Increments dispute-loss counter in carrier reputation index.
+pub fn emit_carrier_dispute_loss(env: &Env, carrier: &Address, shipment_id: u64) {
+    env.events().publish(
+        (Symbol::new(env, "carrier_dispute_loss"),),
+        (carrier.clone(), shipment_id),
+    );
+}
