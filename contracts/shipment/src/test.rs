@@ -3162,3 +3162,55 @@ fn test_rate_limit_update_after_interval_succeeds() {
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, ShipmentStatus::AtCheckpoint);
 }
+
+// ============= RBAC and Access Control Tests =============
+
+#[test]
+fn test_only_admin_can_assign_roles() {
+    let (env, client, admin, token_contract) = setup_env();
+    client.initialize(&admin, &token_contract);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let outsider = Address::generate(&env);
+
+    // Admin can add company
+    client.add_company(&admin, &company);
+    // Admin can add carrier
+    client.add_carrier(&admin, &carrier);
+
+    // Non-admin cannot add company
+    env.mock_all_auths();
+    let result = client.try_add_company(&outsider, &Address::generate(&env));
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+
+    // Non-admin cannot add carrier
+    let result = client.try_add_carrier(&outsider, &Address::generate(&env));
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+}
+
+#[test]
+fn test_only_company_can_create_shipments() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let outsider = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Company can create shipment
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    assert_eq!(shipment_id, 1);
+
+    // Carrier cannot create shipment
+    let result = client.try_create_shipment(&carrier, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+
+    // Outsider cannot create shipment
+    let result = client.try_create_shipment(&outsider, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+}
