@@ -502,3 +502,15 @@ pub fn emit_admin_transferred(env: &Env, old_admin: &Address, new_admin: &Addres
         (old_admin.clone(), new_admin.clone()),
     );
 }
+
+/// Emits a `shipment_expired` event when a shipment misses its deadline and is auto-cancelled.
+///
+/// # Event Data
+///
+/// | Field       | Type   | Description                                     |
+/// |-------------|--------|-------------------------------------------------|
+/// | shipment_id | `u64`  | Cancelled shipment identifier                   |
+pub fn emit_shipment_expired(env: &Env, shipment_id: u64) {
+    env.events()
+        .publish((Symbol::new(env, "shipment_expired"),), (shipment_id,));
+}

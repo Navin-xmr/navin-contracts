@@ -56,4 +56,6 @@ pub enum NavinError {
     MetadataLimitExceeded = 20,
     /// Status update rejected because the minimum time interval has not elapsed.
     RateLimitExceeded = 21,
+    /// Shipment deadline has not yet expired.
+    NotExpired = 22,
 }

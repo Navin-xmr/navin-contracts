@@ -475,6 +475,7 @@ impl NavinShipment {
     /// * `carrier` - Carrier address assigned to the shipment.
     /// * `data_hash` - Off-chain data hash of shipment details.
     /// * `payment_milestones` - Schedule for escrow releases based on checkpoints.
+    /// * `deadline` - Timestamp after which shipment is considered expired and can be auto-cancelled.
     ///
     /// # Returns
     /// * `Result<u64, NavinError>` - Newly created shipment ID.
@@ -484,10 +485,11 @@ impl NavinShipment {
     /// * `NavinError::Unauthorized` - If caller isn't a Company.
     /// * `NavinError::MilestoneSumInvalid` - If milestone percentages do not equal 100%.
     /// * `NavinError::CounterOverflow` - If total shipment count overflows max u64.
+    /// * `NavinError::InvalidTimestamp` - If the deadline is not strictly in the future.
     ///
     /// # Examples
     /// ```rust
-    /// // let id = contract.create_shipment(&env, &sender, &receiver, &carrier, &hash, vec![(&env, Symbol::new(&env, "warehouse"), 100)]);
+    /// // let id = contract.create_shipment(&env, &sender, &receiver, &carrier, &hash, vec![(&env, Symbol::new(&env, "warehouse"), 100)], deadline_ts);
     /// ```
     pub fn create_shipment(
         env: Env,
@@ -496,16 +498,21 @@ impl NavinShipment {
         carrier: Address,
         data_hash: BytesN<32>,
         payment_milestones: Vec<(Symbol, u32)>,
+        deadline: u64,
     ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
         sender.require_auth();
         require_role(&env, &sender, Role::Company)?;
         validate_milestones(&env, &payment_milestones)?;
 
+        let now = env.ledger().timestamp();
+        if deadline <= now {
+            return Err(NavinError::InvalidTimestamp);
+        }
+
         let shipment_id = storage::get_shipment_counter(&env)
             .checked_add(1)
             .ok_or(NavinError::CounterOverflow)?;
-        let now = env.ledger().timestamp();
 
         let shipment = Shipment {
             id: shipment_id,
@@ -521,6 +528,7 @@ impl NavinShipment {
             payment_milestones,
             paid_milestones: Vec::new(&env),
             metadata: None,
+            deadline,
         };
 
         storage::set_shipment(&env, &shipment);
@@ -549,6 +557,7 @@ impl NavinShipment {
     /// * `NavinError::BatchTooLarge` - If more than 10 shipments are submitted.
     /// * `NavinError::InvalidShipmentInput` - If receiver matches carrier for any shipment.
     /// * `NavinError::MilestoneSumInvalid` - If payment milestones are invalid per item.
+    /// * `NavinError::InvalidTimestamp` - If the deadline is not strictly in the future.
     ///
     /// # Examples
     /// ```rust
@@ -576,6 +585,10 @@ impl NavinShipment {
             }
             validate_milestones(&env, &shipment_input.payment_milestones)?;
 
+            if shipment_input.deadline <= now {
+                return Err(NavinError::InvalidTimestamp);
+            }
+
             let shipment_id = storage::get_shipment_counter(&env)
                 .checked_add(1)
                 .ok_or(NavinError::CounterOverflow)?;
@@ -594,6 +607,7 @@ impl NavinShipment {
                 payment_milestones: shipment_input.payment_milestones,
                 paid_milestones: Vec::new(&env),
                 metadata: None,
+                deadline: shipment_input.deadline,
             };
 
             storage::set_shipment(&env, &shipment);
@@ -1785,6 +1799,69 @@ impl NavinShipment {
         storage::set_company_role(&env, &new_admin);
 
         events::emit_admin_transferred(&env, &old_admin, &new_admin);
+
+        Ok(())
+    }
+
+    /// Cancel a shipment and auto-refund escrow if its delivery deadline has passed.
+    /// Permissionless design — can be triggered by any caller (e.g., automated cron/crank).
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the target shipment.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if successfully cancelled and escrow refunded.
+    ///
+    /// # Errors
+    /// * `NavinError::NotExpired` - If the current ledger time hasn't passed the deadline.
+    /// * `NavinError::ShipmentAlreadyCompleted` - If the shipment is already in a terminal state.
+    pub fn check_deadline(env: Env, shipment_id: u64) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        if env.ledger().timestamp() < shipment.deadline {
+            return Err(NavinError::NotExpired);
+        }
+
+        match shipment.status {
+            ShipmentStatus::Delivered | ShipmentStatus::Disputed | ShipmentStatus::Cancelled => {
+                return Err(NavinError::ShipmentAlreadyCompleted);
+            }
+            _ => {}
+        }
+
+        let escrow_amount = shipment.escrow_amount;
+        shipment.status = ShipmentStatus::Cancelled;
+        shipment.escrow_amount = 0;
+        shipment.updated_at = env.ledger().timestamp();
+
+        storage::set_shipment(&env, &shipment);
+
+        if escrow_amount > 0 {
+            storage::remove_escrow_balance(&env, shipment_id);
+
+            let token_contract =
+                storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
+            let contract_address = env.current_contract_address();
+            let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(&env);
+
+            args.push_back(contract_address.into_val(&env));
+            args.push_back(shipment.sender.clone().into_val(&env));
+            args.push_back(escrow_amount.into_val(&env));
+            env.invoke_contract::<soroban_sdk::Val>(
+                &token_contract,
+                &symbol_short!("transfer"),
+                args,
+            );
+
+            events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
+        }
+
+        extend_shipment_ttl(&env, shipment_id);
+        events::emit_shipment_expired(&env, shipment_id);
 
         Ok(())
     }
