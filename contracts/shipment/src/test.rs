@@ -264,6 +264,7 @@ fn test_add_carrier_to_whitelist() {
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
 
+    client.add_company(&admin, &company);
     client.add_carrier_to_whitelist(&company, &carrier);
 
     assert!(client.is_carrier_whitelisted(&company, &carrier));
@@ -277,6 +278,7 @@ fn test_remove_carrier_from_whitelist() {
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
 
+    client.add_company(&admin, &company);
     client.add_carrier_to_whitelist(&company, &carrier);
     assert!(client.is_carrier_whitelisted(&company, &carrier));
 
@@ -306,6 +308,7 @@ fn test_multiple_carriers_whitelist() {
     let carrier2 = Address::generate(&env);
     let carrier3 = Address::generate(&env);
 
+    client.add_company(&admin, &company);
     client.add_carrier_to_whitelist(&company, &carrier1);
     client.add_carrier_to_whitelist(&company, &carrier2);
 
@@ -328,11 +331,13 @@ fn test_whitelist_per_company() {
     let company2 = Address::generate(&env);
     let carrier = Address::generate(&env);
 
+    client.add_company(&admin, &company1);
     client.add_carrier_to_whitelist(&company1, &carrier);
 
     assert!(client.is_carrier_whitelisted(&company1, &carrier));
     assert!(!client.is_carrier_whitelisted(&company2, &carrier));
 
+    client.add_company(&admin, &company2);
     client.add_carrier_to_whitelist(&company2, &carrier);
 
     assert!(client.is_carrier_whitelisted(&company1, &carrier));
@@ -3203,16 +3208,34 @@ fn test_only_company_can_create_shipments() {
     client.add_carrier(&admin, &carrier);
 
     // Company can create shipment
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     assert_eq!(shipment_id, 1);
 
     // Carrier cannot create shipment
-    let result = client.try_create_shipment(&carrier, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let result = client.try_create_shipment(
+        &carrier,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
 
     // Outsider cannot create shipment
     // Outsider cannot create shipment
-    let result = client.try_create_shipment(&outsider, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let result = client.try_create_shipment(
+        &outsider,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
 }
 
@@ -3231,24 +3254,55 @@ fn test_only_carrier_can_update_status_and_record_milestones() {
     client.add_carrier(&admin, &carrier);
     client.add_carrier(&admin, &other_carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     // Assigned carrier can update status
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &update_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &update_hash,
+    );
 
     // Assigned carrier can record milestone
-    client.record_milestone(&carrier, &shipment_id, &Symbol::new(&env, "checkpoint"), &update_hash);
+    client.record_milestone(
+        &carrier,
+        &shipment_id,
+        &Symbol::new(&env, "checkpoint"),
+        &update_hash,
+    );
 
     // Other carrier (not assigned) cannot update status
-    let result = client.try_update_status(&other_carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &update_hash);
+    let result = client.try_update_status(
+        &other_carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &update_hash,
+    );
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
 
     // Other carrier (not assigned) cannot record milestone
-    let result = client.try_record_milestone(&other_carrier, &shipment_id, &Symbol::new(&env, "checkpoint"), &update_hash);
+    let result = client.try_record_milestone(
+        &other_carrier,
+        &shipment_id,
+        &Symbol::new(&env, "checkpoint"),
+        &update_hash,
+    );
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
 
     // Admin can update status (as seen in lib.rs)
-    client.update_status(&admin, &shipment_id, &ShipmentStatus::AtCheckpoint, &update_hash);
+    client.update_status(
+        &admin,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &update_hash,
+    );
 }
 
 #[test]
@@ -3265,17 +3319,39 @@ fn test_only_receiver_can_confirm_delivery() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
-    
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
+
     // Transition to InTransit first
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
 
     // Receiver can confirm delivery
     client.confirm_delivery(&receiver, &shipment_id, &delivery_hash);
 
     // Test unauthorized (different setup needed since status is now Delivered)
-    let shipment_id_2 = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
-    client.update_status(&carrier, &shipment_id_2, &ShipmentStatus::InTransit, &data_hash);
+    let shipment_id_2 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
+    client.update_status(
+        &carrier,
+        &shipment_id_2,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
 
     // Admin cannot confirm delivery (only designated receiver)
     let result = client.try_confirm_delivery(&admin, &shipment_id_2, &delivery_hash);
@@ -3299,15 +3375,22 @@ fn test_unassigned_addresses_are_rejected() {
     client.initialize(&admin, &token_contract);
 
     // Unassigned cannot create shipment
-    let result = client.try_create_shipment(&outsider, &Address::generate(&env), &Address::generate(&env), &data_hash, &soroban_sdk::Vec::new(&env));
+    let result = client.try_create_shipment(
+        &outsider,
+        &Address::generate(&env),
+        &Address::generate(&env),
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
 
     // Unassigned cannot add carrier to whitelist
     let result = client.try_add_carrier_to_whitelist(&outsider, &Address::generate(&env));
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
-    
+
     // Unassigned cannot report geofence event
-    let result = client.try_report_geofence_event(&outsider, &1, &GeofenceEvent::ZoneEntry, &data_hash);
+    let result =
+        client.try_report_geofence_event(&outsider, &1, &GeofenceEvent::ZoneEntry, &data_hash);
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
 }
 
@@ -3324,10 +3407,21 @@ fn test_rbac_all_gated_functions_with_wrong_role() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
 
     // set_shipment_metadata: sender or admin only
-    let result = client.try_set_shipment_metadata(&outsider, &shipment_id, &Symbol::new(&env, "key"), &Symbol::new(&env, "val"));
+    let result = client.try_set_shipment_metadata(
+        &outsider,
+        &shipment_id,
+        &Symbol::new(&env, "key"),
+        &Symbol::new(&env, "val"),
+    );
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
 
     // add_carrier_to_whitelist: company only
@@ -3339,7 +3433,12 @@ fn test_rbac_all_gated_functions_with_wrong_role() {
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
 
     // report_geofence_event: Carrier only
-    let result = client.try_report_geofence_event(&company, &shipment_id, &GeofenceEvent::ZoneEntry, &data_hash);
+    let result = client.try_report_geofence_event(
+        &company,
+        &shipment_id,
+        &GeofenceEvent::ZoneEntry,
+        &data_hash,
+    );
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
 
     // update_eta: assigned carrier only
@@ -3355,14 +3454,24 @@ fn test_rbac_all_gated_functions_with_wrong_role() {
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
 
     // resolve_dispute: admin only
-    let result = client.try_resolve_dispute(&company, &shipment_id, &crate::DisputeResolution::ReleaseToCarrier);
+    let result = client.try_resolve_dispute(
+        &company,
+        &shipment_id,
+        &crate::DisputeResolution::ReleaseToCarrier,
+    );
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
 
     // handoff_shipment: current carrier only
-    let result = client.try_handoff_shipment(&company, &Address::generate(&env), &shipment_id, &data_hash);
+    let result =
+        client.try_handoff_shipment(&company, &Address::generate(&env), &shipment_id, &data_hash);
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
 
     // update_status: carrier or admin only (Company cannot update status)
-    let result = client.try_update_status(&company, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    let result = client.try_update_status(
+        &company,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
 }
