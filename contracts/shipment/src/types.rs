@@ -185,6 +185,8 @@ pub struct Shipment {
     pub payment_milestones: Vec<(Symbol, u32)>,
     /// List of symbols for milestones that have already been paid.
     pub paid_milestones: Vec<Symbol>,
+    /// Timestamp after which the shipment is considered expired and can be auto-cancelled.
+    pub deadline: u64,
 }
 
 /// A checkpoint milestone recorded during shipment transit.
@@ -262,6 +264,7 @@ pub struct ShipmentInput {
     pub carrier: Address,
     pub data_hash: BytesN<32>,
     pub payment_milestones: Vec<(Symbol, u32)>,
+    pub deadline: u64,
 }
 
 /// On-chain introspection snapshot of the contract state.

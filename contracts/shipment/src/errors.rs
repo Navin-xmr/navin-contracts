@@ -70,4 +70,6 @@ pub enum NavinError {
     NotAnAdmin = 27,
     /// Invalid multi-sig configuration (e.g., threshold > admin count).
     InvalidMultiSigConfig = 28,
+    /// Shipment deadline has not yet expired.
+    NotExpired = 29,
 }
