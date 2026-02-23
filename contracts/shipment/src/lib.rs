@@ -1084,6 +1084,123 @@ impl NavinShipment {
         Ok(())
     }
 
+    /// Record multiple milestones for a shipment in a single atomic transaction.
+    /// Allows a carrier to record multiple checkpoints at once, reducing gas costs.
+    /// Limit: 10 milestones per batch.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `carrier` - Assigned carrier address triggering the recording.
+    /// * `shipment_id` - ID of the tracked shipment.
+    /// * `milestones` - Vector of (checkpoint, data_hash) tuples.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok on successful batch recording.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If called by unassigned identity.
+    /// * `NavinError::ShipmentNotFound` - If shipment instance targets missing entry.
+    /// * `NavinError::InvalidStatus` - If tracked instance is not `InTransit`.
+    /// * `NavinError::BatchTooLarge` - If more than 10 milestones are submitted.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let milestones = vec![
+    /// //     (Symbol::new(&env, "warehouse"), hash1),
+    /// //     (Symbol::new(&env, "port"), hash2),
+    /// // ];
+    /// // contract.record_milestones_batch(&env, &carrier, 1, milestones);
+    /// ```
+    pub fn record_milestones_batch(
+        env: Env,
+        carrier: Address,
+        shipment_id: u64,
+        milestones: Vec<(Symbol, BytesN<32>)>,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        carrier.require_auth();
+        require_role(&env, &carrier, Role::Carrier)?;
+
+        // Validate batch size
+        if milestones.len() > 10 {
+            return Err(NavinError::BatchTooLarge);
+        }
+
+        // Verify shipment exists, carrier is assigned, and status
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        if shipment.carrier != carrier {
+            return Err(NavinError::Unauthorized);
+        }
+
+        if shipment.status != ShipmentStatus::InTransit {
+            return Err(NavinError::InvalidStatus);
+        }
+
+        // Validate all milestones before committing any (atomic operation)
+        // This ensures that if any milestone is invalid, none are committed
+        for milestone_tuple in milestones.iter() {
+            let data_hash = milestone_tuple.1.clone();
+
+            // Basic validation - ensure data_hash is valid
+            if data_hash.len() != 32 {
+                return Err(NavinError::InvalidHash);
+            }
+        }
+
+        // All validations passed, now process each milestone
+        let timestamp = env.ledger().timestamp();
+        let mut mut_shipment = shipment;
+
+        for milestone_tuple in milestones.iter() {
+            let checkpoint = milestone_tuple.0.clone();
+            let data_hash = milestone_tuple.1.clone();
+
+            let _milestone = Milestone {
+                shipment_id,
+                checkpoint: checkpoint.clone(),
+                data_hash: data_hash.clone(),
+                timestamp,
+                reporter: carrier.clone(),
+            };
+
+            // Emit one event per milestone (Hash-and-Emit pattern)
+            events::emit_milestone_recorded(&env, shipment_id, &checkpoint, &data_hash, &carrier);
+
+            // Check for milestone-based payments
+            let mut found_index = None;
+            for (i, payment_milestone) in mut_shipment.payment_milestones.iter().enumerate() {
+                if payment_milestone.0 == checkpoint {
+                    found_index = Some(i);
+                    break;
+                }
+            }
+
+            if let Some(idx) = found_index {
+                let mut already_paid = false;
+                for paid_symbol in mut_shipment.paid_milestones.iter() {
+                    if paid_symbol == checkpoint {
+                        already_paid = true;
+                        break;
+                    }
+                }
+
+                if !already_paid {
+                    let payment_milestone =
+                        mut_shipment.payment_milestones.get(idx as u32).unwrap();
+                    let release_amount =
+                        (mut_shipment.total_escrow * payment_milestone.1 as i128) / 100;
+                    mut_shipment.paid_milestones.push_back(checkpoint.clone());
+                    internal_release_escrow(&env, &mut mut_shipment, release_amount);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Extend the TTL of a shipment's persistent storage entries.
     ///
     /// # Arguments

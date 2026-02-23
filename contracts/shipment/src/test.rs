@@ -1958,6 +1958,317 @@ fn test_record_milestone_unauthorized() {
     client.record_milestone(&outsider, &shipment_id, &checkpoint, &data_hash);
 }
 
+// ============= Batch Milestone Recording Tests =============
+
+#[test]
+fn test_record_milestones_batch_success() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
+
+    // Set shipment to InTransit status
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::types::ShipmentStatus::InTransit;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+
+    // Create batch of milestones
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((
+        Symbol::new(&env, "warehouse"),
+        BytesN::from_array(&env, &[10u8; 32]),
+    ));
+    milestones.push_back((
+        Symbol::new(&env, "port"),
+        BytesN::from_array(&env, &[20u8; 32]),
+    ));
+    milestones.push_back((
+        Symbol::new(&env, "customs"),
+        BytesN::from_array(&env, &[30u8; 32]),
+    ));
+
+    client.record_milestones_batch(&carrier, &shipment_id, &milestones);
+
+    // Verify events were emitted for each milestone
+    let events = env.events().all();
+    let mut milestone_events = 0;
+    for (_contract_id, _topics, _data) in events.iter() {
+        milestone_events += 1;
+    }
+    // We expect at least 3 milestone events (there may be other events too)
+    assert!(milestone_events >= 3);
+}
+
+#[test]
+fn test_record_milestones_batch_single_milestone() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
+
+    // Set shipment to InTransit status
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::types::ShipmentStatus::InTransit;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+
+    // Create batch with single milestone
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((
+        Symbol::new(&env, "warehouse"),
+        BytesN::from_array(&env, &[10u8; 32]),
+    ));
+
+    client.record_milestones_batch(&carrier, &shipment_id, &milestones);
+
+    // Verify event was emitted
+    let events = env.events().all();
+    assert!(!events.is_empty());
+}
+
+#[test]
+fn test_record_milestones_batch_max_size() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
+
+    // Set shipment to InTransit status
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::types::ShipmentStatus::InTransit;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+
+    // Create batch with exactly 10 milestones (max allowed)
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    for i in 0..10 {
+        milestones.push_back((
+            Symbol::new(&env, &std::format!("checkpoint_{}", i)),
+            BytesN::from_array(&env, &[i as u8; 32]),
+        ));
+    }
+
+    client.record_milestones_batch(&carrier, &shipment_id, &milestones);
+
+    // Verify all 10 events were emitted
+    let events = env.events().all();
+    let mut milestone_events = 0;
+    for (_contract_id, _topics, _data) in events.iter() {
+        milestone_events += 1;
+    }
+    // We expect at least 10 milestone events
+    assert!(milestone_events >= 10);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #16)")]
+fn test_record_milestones_batch_oversized() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
+
+    // Set shipment to InTransit status
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::types::ShipmentStatus::InTransit;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+
+    // Create batch with 11 milestones (exceeds limit)
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    for i in 0..11 {
+        milestones.push_back((
+            Symbol::new(&env, &std::format!("checkpoint_{}", i)),
+            BytesN::from_array(&env, &[i as u8; 32]),
+        ));
+    }
+
+    // Should fail with BatchTooLarge error (code 16)
+    client.record_milestones_batch(&carrier, &shipment_id, &milestones);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #5)")]
+fn test_record_milestones_batch_invalid_status() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
+
+    // Shipment is in Created status (not InTransit)
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((
+        Symbol::new(&env, "warehouse"),
+        BytesN::from_array(&env, &[10u8; 32]),
+    ));
+
+    // Should fail with InvalidStatus error (code 5)
+    client.record_milestones_batch(&carrier, &shipment_id, &milestones);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_record_milestones_batch_unauthorized() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+    );
+
+    // Set shipment to InTransit status
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::types::ShipmentStatus::InTransit;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+
+    let outsider = Address::generate(&env);
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((
+        Symbol::new(&env, "warehouse"),
+        BytesN::from_array(&env, &[10u8; 32]),
+    ));
+
+    // Should fail with Unauthorized error (code 3)
+    client.record_milestones_batch(&outsider, &shipment_id, &milestones);
+}
+
+#[test]
+fn test_record_milestones_batch_with_payment_milestones() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Create shipment with payment milestones
+    let mut payment_milestones = soroban_sdk::Vec::new(&env);
+    payment_milestones.push_back((Symbol::new(&env, "warehouse"), 30u32));
+    payment_milestones.push_back((Symbol::new(&env, "port"), 30u32));
+    payment_milestones.push_back((Symbol::new(&env, "delivery"), 40u32));
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &payment_milestones,
+    );
+
+    // Deposit escrow
+    client.deposit_escrow(&company, &shipment_id, &1000);
+
+    // Set shipment to InTransit status
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::types::ShipmentStatus::InTransit;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+
+    // Record batch of milestones
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((
+        Symbol::new(&env, "warehouse"),
+        BytesN::from_array(&env, &[10u8; 32]),
+    ));
+    milestones.push_back((
+        Symbol::new(&env, "port"),
+        BytesN::from_array(&env, &[20u8; 32]),
+    ));
+
+    client.record_milestones_batch(&carrier, &shipment_id, &milestones);
+
+    // Verify escrow was released for both milestones (30% + 30% = 60% of 1000 = 600)
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.escrow_amount, 400); // 1000 - 600 = 400 remaining
+}
+
 // ============= TTL Extension Tests =============
 
 #[test]
