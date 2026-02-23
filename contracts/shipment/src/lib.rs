@@ -1196,8 +1196,7 @@ impl NavinShipment {
 
         storage::set_version(&env, new_version);
         events::emit_contract_upgraded(&env, &admin, &new_wasm_hash, new_version);
-        env.deployer()
-            .update_current_contract_wasm(new_wasm_hash);
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
 
         Ok(())
     }
