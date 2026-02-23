@@ -35,6 +35,14 @@ pub enum DataKey {
     LastStatusUpdate(u64),
     /// Proposed new administrator address.
     ProposedAdmin,
+    /// List of admin addresses for multi-sig.
+    AdminList,
+    /// Multi-sig threshold (number of approvals required).
+    MultiSigThreshold,
+    /// Counter for proposal IDs.
+    ProposalCounter,
+    /// Individual proposal data keyed by ID.
+    Proposal(u64),
 }
 
 /// Supported user roles.
@@ -289,4 +297,49 @@ pub enum DisputeResolution {
     ReleaseToCarrier,
     /// Refund escrowed funds to the company.
     RefundToCompany,
+}
+
+/// Admin action types for multi-signature proposals.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::AdminAction;
+/// let action = AdminAction::Upgrade(hash);
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum AdminAction {
+    /// Upgrade contract to new WASM hash.
+    Upgrade(BytesN<32>),
+    /// Transfer admin role to new address.
+    TransferAdmin(Address),
+    /// Force release escrow for a shipment to carrier.
+    ForceRelease(u64),
+    /// Force refund escrow for a shipment to company.
+    ForceRefund(u64),
+}
+
+/// Multi-signature proposal for critical admin actions.
+///
+/// # Examples
+/// ```rust
+/// // Struct represents a pending multi-sig proposal.
+/// ```
+#[contracttype]
+#[derive(Clone)]
+pub struct Proposal {
+    /// Unique proposal identifier.
+    pub id: u64,
+    /// Address that created the proposal.
+    pub proposer: Address,
+    /// The action to be executed.
+    pub action: AdminAction,
+    /// List of addresses that have approved this proposal.
+    pub approvals: Vec<Address>,
+    /// Ledger timestamp when the proposal was created.
+    pub created_at: u64,
+    /// Ledger timestamp when the proposal expires.
+    pub expires_at: u64,
+    /// Whether the proposal has been executed.
+    pub executed: bool,
 }
