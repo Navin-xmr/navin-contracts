@@ -4788,3 +4788,362 @@ fn test_delivery_before_deadline() {
     let res = client.try_check_deadline(&shipment_id);
     assert_eq!(res, Err(Ok(crate::NavinError::ShipmentAlreadyCompleted)));
 }
+
+#[test]
+fn test_delivery_success_event_emitted_on_confirm_delivery() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let confirm_hash = BytesN::from_array(&env, &[99u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    client.confirm_delivery(&receiver, &shipment_id, &confirm_hash);
+
+    let events = env.events().all();
+    let found = events.iter().any(|(_contract, topics, _data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "delivery_success");
+            }
+        }
+        false
+    });
+    assert!(
+        found,
+        "delivery_success event must be emitted on confirm_delivery"
+    );
+}
+
+#[test]
+fn test_delivery_success_event_contains_correct_carrier() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let confirm_hash = BytesN::from_array(&env, &[88u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    client.confirm_delivery(&receiver, &shipment_id, &confirm_hash);
+
+    let events = env.events().all();
+    let event_data = events.iter().find_map(|(_contract, topics, data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                if topic == Symbol::new(&env, "delivery_success") {
+                    // data is (carrier, shipment_id, delivery_time)
+                    return <(Address, u64, u64)>::try_from_val(&env, &data).ok();
+                }
+            }
+        }
+        None
+    });
+
+    let (event_carrier, event_shipment_id, _delivery_time) =
+        event_data.expect("delivery_success event data must be present");
+    assert_eq!(
+        event_carrier, carrier,
+        "event must reference the assigned carrier"
+    );
+    assert_eq!(
+        event_shipment_id, shipment_id,
+        "event must reference the correct shipment"
+    );
+}
+
+#[test]
+fn test_carrier_breach_event_emitted_on_report_condition_breach() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let breach_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    client.report_condition_breach(
+        &carrier,
+        &shipment_id,
+        &BreachType::TemperatureHigh,
+        &breach_hash,
+    );
+
+    let events = env.events().all();
+    let found = events.iter().any(|(_contract, topics, _data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "carrier_breach");
+            }
+        }
+        false
+    });
+    assert!(
+        found,
+        "carrier_breach event must be emitted on report_condition_breach"
+    );
+}
+
+#[test]
+fn test_carrier_breach_event_emitted_alongside_condition_breach() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let breach_hash = BytesN::from_array(&env, &[3u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    client.report_condition_breach(
+        &carrier,
+        &shipment_id,
+        &BreachType::HumidityHigh,
+        &breach_hash,
+    );
+
+    let events = env.events().all();
+
+    // Both condition_breach AND carrier_breach must be emitted
+    let has_condition_breach = events.iter().any(|(_c, topics, _d)| {
+        topics
+            .get(0)
+            .and_then(|raw| Symbol::try_from_val(&env, &raw).ok())
+            == Some(Symbol::new(&env, "condition_breach"))
+    });
+    let has_carrier_breach = events.iter().any(|(_c, topics, _d)| {
+        topics
+            .get(0)
+            .and_then(|raw| Symbol::try_from_val(&env, &raw).ok())
+            == Some(Symbol::new(&env, "carrier_breach"))
+    });
+
+    assert!(
+        has_condition_breach,
+        "condition_breach event must still be emitted"
+    );
+    assert!(
+        has_carrier_breach,
+        "carrier_breach event must also be emitted"
+    );
+}
+
+#[test]
+fn test_carrier_dispute_loss_event_emitted_on_refund_to_company() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[55u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    let escrow_amount: i128 = 5000;
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    client.raise_dispute(&company, &shipment_id, &reason_hash);
+
+    client.resolve_dispute(
+        &admin,
+        &shipment_id,
+        &crate::DisputeResolution::RefundToCompany,
+    );
+
+    let events = env.events().all();
+    let found = events.iter().any(|(_contract, topics, _data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "carrier_dispute_loss");
+            }
+        }
+        false
+    });
+    assert!(
+        found,
+        "carrier_dispute_loss event must be emitted when dispute resolves with RefundToCompany"
+    );
+}
+
+#[test]
+fn test_carrier_dispute_loss_not_emitted_when_carrier_wins() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[44u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    let escrow_amount: i128 = 5000;
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    client.raise_dispute(&carrier, &shipment_id, &reason_hash);
+
+    client.resolve_dispute(
+        &admin,
+        &shipment_id,
+        &crate::DisputeResolution::ReleaseToCarrier,
+    );
+
+    let events = env.events().all();
+    let found = events.iter().any(|(_contract, topics, _data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "carrier_dispute_loss");
+            }
+        }
+        false
+    });
+    assert!(
+        !found,
+        "carrier_dispute_loss must NOT be emitted when resolution is ReleaseToCarrier"
+    );
+}
+
+#[test]
+fn test_carrier_dispute_loss_event_contains_correct_carrier() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[33u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    let escrow_amount: i128 = 5000;
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    client.raise_dispute(&receiver, &shipment_id, &reason_hash);
+
+    client.resolve_dispute(
+        &admin,
+        &shipment_id,
+        &crate::DisputeResolution::RefundToCompany,
+    );
+
+    let events = env.events().all();
+    let event_data = events.iter().find_map(|(_contract, topics, data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                if topic == Symbol::new(&env, "carrier_dispute_loss") {
+                    return <(Address, u64)>::try_from_val(&env, &data).ok();
+                }
+            }
+        }
+        None
+    });
+
+    let (event_carrier, event_shipment_id) =
+        event_data.expect("carrier_dispute_loss event data must be present");
+    assert_eq!(event_carrier, carrier, "event must name the losing carrier");
+    assert_eq!(
+        event_shipment_id, shipment_id,
+        "event must reference the correct shipment"
+    );
+}

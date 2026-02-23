@@ -74,6 +74,9 @@
                 },
                 {
                   "vec": []
+                },
+                {
+                  "u64": 3600
                 }
               ]
             }
@@ -453,6 +456,14 @@
                       },
                       "val": {
                         "bytes": "4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "deadline"
+                      },
+                      "val": {
+                        "u64": 3600
                       }
                     },
                     {
