@@ -905,6 +905,7 @@ fn test_report_geofence_zone_entry() {
     );
 
     let events = env.events().all();
+    std::println!("GEOFENCE EVENTS: {}", events.len());
     assert!(!events.is_empty());
 }
 
@@ -937,6 +938,7 @@ fn test_report_geofence_zone_exit() {
     );
 
     let events = env.events().all();
+    std::println!("GEOFENCE EVENTS: {}", events.len());
     assert!(!events.is_empty());
 }
 
@@ -969,6 +971,7 @@ fn test_report_geofence_route_deviation() {
     );
 
     let events = env.events().all();
+    std::println!("GEOFENCE EVENTS: {}", events.len());
     assert!(!events.is_empty());
 }
 
@@ -2545,6 +2548,41 @@ fn test_milestone_payment_duplicate_record_no_double_pay() {
     assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 500); // Should still be 500
 }
 // ============= Contract Upgrade Tests =============
+
+#[test]
+fn test_upgrade_success() {
+    let (env, client, admin, token_contract) = setup_env();
+
+    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
+
+    client.initialize(&admin, &token_contract);
+    assert_eq!(client.get_version(), 1);
+
+    // Drain events emitted by initialize so we can assert only on upgrade events
+    let _ = env.events().all();
+
+    client.upgrade(&admin, &new_wasm_hash);
+
+    // Capture events immediately after upgrade before any further calls flush the queue
+    let events = env.events().all();
+
+    let version: u32 = env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .get(&crate::DataKey::Version)
+            .unwrap()
+    });
+    assert_eq!(version, 2);
+    let event_found = events.iter().any(|e| {
+        if let Ok(topic) = Symbol::try_from_val(&env, &e.1.get(0).unwrap()) {
+            topic == Symbol::new(&env, "contract_upgraded")
+        } else {
+            false
+        }
+    });
+    assert!(event_found, "Contract upgraded event should be present");
+}
 
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
