@@ -2959,6 +2959,69 @@ fn test_get_contract_metadata_after_creating_shipments() {
     assert!(meta.initialized);
 }
 
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_get_version_fails_before_initialization() {
+    let (_env, client, _admin, _token_contract) = setup_env();
+
+    client.get_version();
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_get_contract_metadata_fails_before_initialization() {
+    let (_env, client, _admin, _token_contract) = setup_env();
+
+    client.get_contract_metadata();
+}
+
+#[test]
+fn test_get_version_after_upgrade() {
+    let (env, client, admin, token_contract) = setup_env();
+
+    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
+
+    client.initialize(&admin, &token_contract);
+    assert_eq!(client.get_version(), 1);
+
+    client.upgrade(&admin, &new_wasm_hash);
+
+    let version: u32 = env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .get(&crate::DataKey::Version)
+            .unwrap()
+    });
+    assert_eq!(version, 2);
+}
+
+#[test]
+fn test_get_contract_metadata_after_upgrade() {
+    let (env, client, admin, token_contract) = setup_env();
+
+    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
+
+    client.initialize(&admin, &token_contract);
+
+    let meta_before = client.get_contract_metadata();
+    assert_eq!(meta_before.version, 1);
+    assert_eq!(meta_before.admin, admin);
+    assert_eq!(meta_before.shipment_count, 0);
+    assert!(meta_before.initialized);
+
+    client.upgrade(&admin, &new_wasm_hash);
+
+    let version: u32 = env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .get(&crate::DataKey::Version)
+            .unwrap()
+    });
+    assert_eq!(version, 2);
+}
+
 // ============= Carrier Handoff Tests =============
 
 #[test]
