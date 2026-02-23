@@ -661,3 +661,173 @@ pub fn set_last_status_update(env: &Env, shipment_id: u64, timestamp: u64) {
         .persistent()
         .set(&DataKey::LastStatusUpdate(shipment_id), &timestamp);
 }
+
+// ============= Multi-Signature Storage Functions =============
+
+/// Get the list of admin addresses for multi-sig.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+///
+/// # Returns
+/// * `Option<Vec<Address>>` - The list of admin addresses if set.
+///
+/// # Examples
+/// ```rust
+/// // let admins = storage::get_admin_list(&env);
+/// ```
+pub fn get_admin_list(env: &Env) -> Option<soroban_sdk::Vec<Address>> {
+    env.storage().instance().get(&DataKey::AdminList)
+}
+
+/// Set the list of admin addresses for multi-sig.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `admins` - The list of admin addresses.
+///
+/// # Returns
+/// No return value.
+///
+/// # Examples
+/// ```rust
+/// // storage::set_admin_list(&env, &admins);
+/// ```
+pub fn set_admin_list(env: &Env, admins: &soroban_sdk::Vec<Address>) {
+    env.storage().instance().set(&DataKey::AdminList, admins);
+}
+
+/// Get the multi-sig threshold (number of approvals required).
+///
+/// # Arguments
+/// * `env` - The execution environment.
+///
+/// # Returns
+/// * `Option<u32>` - The threshold if set.
+///
+/// # Examples
+/// ```rust
+/// // let threshold = storage::get_multisig_threshold(&env);
+/// ```
+pub fn get_multisig_threshold(env: &Env) -> Option<u32> {
+    env.storage().instance().get(&DataKey::MultiSigThreshold)
+}
+
+/// Set the multi-sig threshold.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `threshold` - The number of approvals required.
+///
+/// # Returns
+/// No return value.
+///
+/// # Examples
+/// ```rust
+/// // storage::set_multisig_threshold(&env, 2);
+/// ```
+pub fn set_multisig_threshold(env: &Env, threshold: u32) {
+    env.storage()
+        .instance()
+        .set(&DataKey::MultiSigThreshold, &threshold);
+}
+
+/// Get the current proposal counter.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+///
+/// # Returns
+/// * `u64` - The number of proposals created so far. Defaults to 0.
+///
+/// # Examples
+/// ```rust
+/// // let counter = storage::get_proposal_counter(&env);
+/// ```
+pub fn get_proposal_counter(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::ProposalCounter)
+        .unwrap_or(0)
+}
+
+/// Set the proposal counter.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `counter` - The new value for the proposal count.
+///
+/// # Returns
+/// No return value.
+///
+/// # Examples
+/// ```rust
+/// // storage::set_proposal_counter(&env, 10);
+/// ```
+pub fn set_proposal_counter(env: &Env, counter: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::ProposalCounter, &counter);
+}
+
+/// Retrieve a proposal from persistent storage. Returns None if not found.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `proposal_id` - The ID of the proposal.
+///
+/// # Returns
+/// * `Option<Proposal>` - The proposal data if it exists.
+///
+/// # Examples
+/// ```rust
+/// // let proposal = storage::get_proposal(&env, 1);
+/// ```
+pub fn get_proposal(env: &Env, proposal_id: u64) -> Option<crate::types::Proposal> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Proposal(proposal_id))
+}
+
+/// Persist a proposal to persistent storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `proposal` - The proposal to save.
+///
+/// # Returns
+/// No return value.
+///
+/// # Examples
+/// ```rust
+/// // storage::set_proposal(&env, &my_proposal);
+/// ```
+pub fn set_proposal(env: &Env, proposal: &crate::types::Proposal) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Proposal(proposal.id), proposal);
+}
+
+/// Check if an address is in the admin list.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `address` - The address to check.
+///
+/// # Returns
+/// * `bool` - True if the address is in the admin list.
+///
+/// # Examples
+/// ```rust
+/// // let is_admin = storage::is_admin(&env, &address);
+/// ```
+pub fn is_admin(env: &Env, address: &Address) -> bool {
+    if let Some(admins) = get_admin_list(env) {
+        for admin in admins.iter() {
+            if admin == *address {
+                return true;
+            }
+        }
+    }
+    false
+}
