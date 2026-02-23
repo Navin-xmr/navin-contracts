@@ -49,6 +49,8 @@ pub enum Role {
     Company,
     /// A registered carrier that can transport shipments and report geofence events.
     Carrier,
+    /// No role assigned.
+    Unassigned,
 }
 
 /// Shipment status lifecycle.

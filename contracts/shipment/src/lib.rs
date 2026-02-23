@@ -99,6 +99,7 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinErr
                 Err(NavinError::Unauthorized)
             }
         }
+        Role::Unassigned => Err(NavinError::Unauthorized),
     }
 }
 
@@ -379,6 +380,28 @@ impl NavinShipment {
         require_initialized(&env)?;
 
         Ok(storage::is_carrier_whitelisted(&env, &company, &carrier))
+    }
+
+    /// Returns the role assigned to a given address.
+    /// Returns Role::Unassigned if no role is assigned.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `address` - The address to check.
+    ///
+    /// # Returns
+    /// * `Result<Role, NavinError>` - The role assigned to the address.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let role = contract.get_role(&env, &address);
+    /// ```
+    pub fn get_role(env: Env, address: Address) -> Result<Role, NavinError> {
+        require_initialized(&env)?;
+        Ok(storage::get_role(&env, &address).unwrap_or(Role::Unassigned))
     }
 
     /// Allow admin to grant Company role.
