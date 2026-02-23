@@ -9,9 +9,11 @@ mod events;
 mod storage;
 mod test;
 mod types;
+mod validation;
 
 pub use errors::*;
 pub use types::*;
+pub use validation::*;
 
 const SHIPMENT_TTL_THRESHOLD: u32 = 17_280; // ~1 day
 const SHIPMENT_TTL_EXTENSION: u32 = 518_400; // ~30 days
@@ -483,6 +485,7 @@ impl NavinShipment {
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::Unauthorized` - If caller isn't a Company.
+    /// * `NavinError::InvalidHash` - If data_hash is all zeros.
     /// * `NavinError::MilestoneSumInvalid` - If milestone percentages do not equal 100%.
     /// * `NavinError::CounterOverflow` - If total shipment count overflows max u64.
     /// * `NavinError::InvalidTimestamp` - If the deadline is not strictly in the future.
@@ -504,6 +507,7 @@ impl NavinShipment {
         sender.require_auth();
         require_role(&env, &sender, Role::Company)?;
         validate_milestones(&env, &payment_milestones)?;
+        validate_hash(&data_hash)?;
 
         let now = env.ledger().timestamp();
         if deadline <= now {
@@ -556,6 +560,7 @@ impl NavinShipment {
     /// * `NavinError::Unauthorized` - If caller isn't a Company.
     /// * `NavinError::BatchTooLarge` - If more than 10 shipments are submitted.
     /// * `NavinError::InvalidShipmentInput` - If receiver matches carrier for any shipment.
+    /// * `NavinError::InvalidHash` - If any data_hash is all zeros.
     /// * `NavinError::MilestoneSumInvalid` - If payment milestones are invalid per item.
     /// * `NavinError::InvalidTimestamp` - If the deadline is not strictly in the future.
     ///
@@ -584,6 +589,7 @@ impl NavinShipment {
                 return Err(NavinError::InvalidShipmentInput);
             }
             validate_milestones(&env, &shipment_input.payment_milestones)?;
+            validate_hash(&shipment_input.data_hash)?;
 
             if shipment_input.deadline <= now {
                 return Err(NavinError::InvalidTimestamp);
@@ -664,7 +670,7 @@ impl NavinShipment {
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::Unauthorized` - If caller isn't a Company.
-    /// * `NavinError::InsufficientFunds` - If payload specifies 0 or negative funds.
+    /// * `NavinError::InvalidAmount` - If amount is zero, negative, or exceeds the maximum.
     /// * `NavinError::ShipmentNotFound` - If shipment is untracked.
     /// * `NavinError::InvalidStatus` - If shipment is not in `Created` status.
     /// * `NavinError::EscrowLocked` - If escrow is already deposited for shipment.
@@ -683,9 +689,7 @@ impl NavinShipment {
         from.require_auth();
         require_role(&env, &from, Role::Company)?;
 
-        if amount <= 0 {
-            return Err(NavinError::InsufficientFunds);
-        }
+        validate_amount(amount).map_err(|_| NavinError::InsufficientFunds)?;
 
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
@@ -1801,6 +1805,384 @@ impl NavinShipment {
         events::emit_admin_transferred(&env, &old_admin, &new_admin);
 
         Ok(())
+    }
+
+    /// Initialize multi-signature configuration for critical admin actions.
+    /// Only the current admin can call this. Must be called after contract initialization.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Current administrator address.
+    /// * `admins` - List of admin addresses for multi-sig (2-10 addresses).
+    /// * `threshold` - Number of approvals required (must be <= admin count).
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if multi-sig is configured.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not the admin.
+    /// * `NavinError::InvalidMultiSigConfig` - If config is invalid.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let admins = vec![&env, admin1, admin2, admin3];
+    /// // contract.init_multisig(&env, &admin, &admins, 2);
+    /// ```
+    pub fn init_multisig(
+        env: Env,
+        admin: Address,
+        admins: soroban_sdk::Vec<Address>,
+        threshold: u32,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // Validate configuration
+        let admin_count = admins.len();
+        if !(2..=10).contains(&admin_count) {
+            return Err(NavinError::InvalidMultiSigConfig);
+        }
+
+        if threshold == 0 || threshold > admin_count {
+            return Err(NavinError::InvalidMultiSigConfig);
+        }
+
+        storage::set_admin_list(&env, &admins);
+        storage::set_multisig_threshold(&env, threshold);
+        storage::set_proposal_counter(&env, 0);
+
+        env.events()
+            .publish((symbol_short!("ms_init"),), (admin_count, threshold));
+
+        Ok(())
+    }
+
+    /// Propose a critical admin action that requires multi-sig approval.
+    /// Only admins in the admin list can propose actions.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `proposer` - Admin address creating the proposal.
+    /// * `action` - The action to be executed after approval.
+    ///
+    /// # Returns
+    /// * `Result<u64, NavinError>` - The proposal ID.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::NotAnAdmin` - If caller is not in the admin list.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let action = AdminAction::Upgrade(new_wasm_hash);
+    /// // let proposal_id = contract.propose_action(&env, &admin, &action);
+    /// ```
+    pub fn propose_action(
+        env: Env,
+        proposer: Address,
+        action: crate::types::AdminAction,
+    ) -> Result<u64, NavinError> {
+        require_initialized(&env)?;
+        proposer.require_auth();
+
+        // Check if proposer is in admin list
+        if !storage::is_admin(&env, &proposer) {
+            return Err(NavinError::NotAnAdmin);
+        }
+
+        let proposal_id = storage::get_proposal_counter(&env)
+            .checked_add(1)
+            .ok_or(NavinError::CounterOverflow)?;
+
+        let now = env.ledger().timestamp();
+        let expires_at = now + 604_800; // 7 days in seconds
+
+        let mut approvals = soroban_sdk::Vec::new(&env);
+        approvals.push_back(proposer.clone());
+
+        let proposal = crate::types::Proposal {
+            id: proposal_id,
+            proposer: proposer.clone(),
+            action: action.clone(),
+            approvals,
+            created_at: now,
+            expires_at,
+            executed: false,
+        };
+
+        storage::set_proposal(&env, &proposal);
+        storage::set_proposal_counter(&env, proposal_id);
+
+        env.events()
+            .publish((symbol_short!("propose"),), (proposal_id, proposer, action));
+
+        Ok(proposal_id)
+    }
+
+    /// Approve a pending proposal. Only admins in the admin list can approve.
+    /// Same admin cannot approve twice.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `approver` - Admin address approving the proposal.
+    /// * `proposal_id` - ID of the proposal to approve.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if approved successfully.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::NotAnAdmin` - If caller is not in the admin list.
+    /// * `NavinError::ProposalNotFound` - If proposal doesn't exist.
+    /// * `NavinError::ProposalExpired` - If proposal has expired.
+    /// * `NavinError::ProposalAlreadyExecuted` - If proposal was already executed.
+    /// * `NavinError::AlreadyApproved` - If admin already approved this proposal.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // contract.approve_action(&env, &admin2, 1);
+    /// ```
+    pub fn approve_action(env: Env, approver: Address, proposal_id: u64) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        approver.require_auth();
+
+        // Check if approver is in admin list
+        if !storage::is_admin(&env, &approver) {
+            return Err(NavinError::NotAnAdmin);
+        }
+
+        let mut proposal =
+            storage::get_proposal(&env, proposal_id).ok_or(NavinError::ProposalNotFound)?;
+
+        // Check if proposal has expired
+        let now = env.ledger().timestamp();
+        if now > proposal.expires_at {
+            return Err(NavinError::ProposalExpired);
+        }
+
+        // Check if already executed
+        if proposal.executed {
+            return Err(NavinError::ProposalAlreadyExecuted);
+        }
+
+        // Check if already approved by this admin
+        for existing_approver in proposal.approvals.iter() {
+            if existing_approver == approver {
+                return Err(NavinError::AlreadyApproved);
+            }
+        }
+
+        // Add approval
+        proposal.approvals.push_back(approver.clone());
+        storage::set_proposal(&env, &proposal);
+
+        env.events().publish(
+            (symbol_short!("approve"),),
+            (proposal_id, approver, proposal.approvals.len()),
+        );
+
+        // Check if threshold is met and auto-execute
+        let threshold = storage::get_multisig_threshold(&env).unwrap_or(2);
+        if proposal.approvals.len() >= threshold {
+            Self::execute_proposal_internal(env.clone(), proposal_id)?;
+        }
+
+        Ok(())
+    }
+
+    /// Execute a proposal that has met the approval threshold.
+    /// Can be called by anyone once threshold is met.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `proposal_id` - ID of the proposal to execute.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if executed successfully.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ProposalNotFound` - If proposal doesn't exist.
+    /// * `NavinError::ProposalExpired` - If proposal has expired.
+    /// * `NavinError::ProposalAlreadyExecuted` - If proposal was already executed.
+    /// * `NavinError::InsufficientApprovals` - If not enough approvals.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // contract.execute_proposal(&env, 1);
+    /// ```
+    pub fn execute_proposal(env: Env, proposal_id: u64) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        Self::execute_proposal_internal(env, proposal_id)
+    }
+
+    /// Internal function to execute a proposal.
+    fn execute_proposal_internal(env: Env, proposal_id: u64) -> Result<(), NavinError> {
+        let mut proposal =
+            storage::get_proposal(&env, proposal_id).ok_or(NavinError::ProposalNotFound)?;
+
+        // Check if proposal has expired
+        let now = env.ledger().timestamp();
+        if now > proposal.expires_at {
+            return Err(NavinError::ProposalExpired);
+        }
+
+        // Check if already executed
+        if proposal.executed {
+            return Err(NavinError::ProposalAlreadyExecuted);
+        }
+
+        // Check if threshold is met
+        let threshold = storage::get_multisig_threshold(&env).unwrap_or(2);
+        if proposal.approvals.len() < threshold {
+            return Err(NavinError::InsufficientApprovals);
+        }
+
+        // Mark as executed
+        proposal.executed = true;
+        storage::set_proposal(&env, &proposal);
+
+        // Execute the action (clone action before matching to avoid move issues)
+        let action = proposal.action.clone();
+        match action {
+            crate::types::AdminAction::Upgrade(wasm_hash) => {
+                let new_version = storage::get_version(&env)
+                    .checked_add(1)
+                    .ok_or(NavinError::CounterOverflow)?;
+
+                storage::set_version(&env, new_version);
+                events::emit_contract_upgraded(&env, &proposal.proposer, &wasm_hash, new_version);
+                env.deployer().update_current_contract_wasm(wasm_hash);
+            }
+            crate::types::AdminAction::TransferAdmin(new_admin) => {
+                let old_admin = storage::get_admin(&env);
+                storage::set_admin(&env, &new_admin);
+                storage::set_company_role(&env, &new_admin);
+                events::emit_admin_transferred(&env, &old_admin, &new_admin);
+            }
+            crate::types::AdminAction::ForceRelease(shipment_id) => {
+                let mut shipment =
+                    storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+                let escrow_amount = shipment.escrow_amount;
+                if escrow_amount > 0 {
+                    // Get token contract address
+                    if let Some(token_contract) = storage::get_token_contract(&env) {
+                        // Transfer tokens from this contract to carrier
+                        let contract_address = env.current_contract_address();
+                        let mut args: soroban_sdk::Vec<soroban_sdk::Val> =
+                            soroban_sdk::Vec::new(&env);
+                        args.push_back(contract_address.into_val(&env));
+                        args.push_back(shipment.carrier.clone().into_val(&env));
+                        args.push_back(escrow_amount.into_val(&env));
+                        env.invoke_contract::<()>(
+                            &token_contract,
+                            &symbol_short!("transfer"),
+                            args,
+                        );
+                    }
+
+                    shipment.escrow_amount = 0;
+                    shipment.updated_at = env.ledger().timestamp();
+                    storage::set_shipment(&env, &shipment);
+
+                    events::emit_escrow_released(
+                        &env,
+                        shipment_id,
+                        &shipment.carrier,
+                        escrow_amount,
+                    );
+                }
+            }
+            crate::types::AdminAction::ForceRefund(shipment_id) => {
+                let mut shipment =
+                    storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+                let escrow_amount = shipment.escrow_amount;
+                if escrow_amount > 0 {
+                    // Get token contract address
+                    if let Some(token_contract) = storage::get_token_contract(&env) {
+                        // Transfer tokens from this contract to company
+                        let contract_address = env.current_contract_address();
+                        let mut args: soroban_sdk::Vec<soroban_sdk::Val> =
+                            soroban_sdk::Vec::new(&env);
+                        args.push_back(contract_address.into_val(&env));
+                        args.push_back(shipment.sender.clone().into_val(&env));
+                        args.push_back(escrow_amount.into_val(&env));
+                        env.invoke_contract::<()>(
+                            &token_contract,
+                            &symbol_short!("transfer"),
+                            args,
+                        );
+                    }
+
+                    shipment.escrow_amount = 0;
+                    shipment.updated_at = env.ledger().timestamp();
+                    storage::set_shipment(&env, &shipment);
+
+                    events::emit_escrow_refunded(
+                        &env,
+                        shipment_id,
+                        &shipment.sender,
+                        escrow_amount,
+                    );
+                }
+            }
+        }
+
+        env.events()
+            .publish((symbol_short!("executed"),), (proposal_id, proposal.action));
+
+        Ok(())
+    }
+
+    /// Get a proposal by ID.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `proposal_id` - ID of the proposal.
+    ///
+    /// # Returns
+    /// * `Result<Proposal, NavinError>` - The proposal data.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ProposalNotFound` - If proposal doesn't exist.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let proposal = contract.get_proposal(&env, 1);
+    /// ```
+    pub fn get_proposal(env: Env, proposal_id: u64) -> Result<crate::types::Proposal, NavinError> {
+        require_initialized(&env)?;
+        storage::get_proposal(&env, proposal_id).ok_or(NavinError::ProposalNotFound)
+    }
+
+    /// Get the multi-sig configuration.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    ///
+    /// # Returns
+    /// * `Result<(Vec<Address>, u32), NavinError>` - Tuple of (admin list, threshold).
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let (admins, threshold) = contract.get_multisig_config(&env);
+    /// ```
+    pub fn get_multisig_config(env: Env) -> Result<(soroban_sdk::Vec<Address>, u32), NavinError> {
+        require_initialized(&env)?;
+        let admins = storage::get_admin_list(&env).unwrap_or(soroban_sdk::Vec::new(&env));
+        let threshold = storage::get_multisig_threshold(&env).unwrap_or(0);
+        Ok((admins, threshold))
     }
 
     /// Cancel a shipment and auto-refund escrow if its delivery deadline has passed.

@@ -56,6 +56,20 @@ pub enum NavinError {
     MetadataLimitExceeded = 20,
     /// Status update rejected because the minimum time interval has not elapsed.
     RateLimitExceeded = 21,
+    /// Proposal ID doesn't exist.
+    ProposalNotFound = 22,
+    /// Proposal has already been executed.
+    ProposalAlreadyExecuted = 23,
+    /// Proposal has expired and can no longer be approved or executed.
+    ProposalExpired = 24,
+    /// Admin has already approved this proposal.
+    AlreadyApproved = 25,
+    /// Not enough approvals to execute the proposal.
+    InsufficientApprovals = 26,
+    /// Caller is not in the admin list.
+    NotAnAdmin = 27,
+    /// Invalid multi-sig configuration (e.g., threshold > admin count).
+    InvalidMultiSigConfig = 28,
     /// Shipment deadline has not yet expired.
-    NotExpired = 22,
+    NotExpired = 29,
 }
