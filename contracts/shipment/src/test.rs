@@ -798,6 +798,33 @@ fn test_get_shipment_count_after_creating_shipments() {
     assert_eq!(client.get_shipment_count(), 3);
 }
 
+// ============= Role Tests =============
+
+#[test]
+fn test_get_role_unassigned() {
+    let (env, client, admin, token_contract) = setup_env();
+    let user = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+
+    assert_eq!(client.get_role(&user), crate::Role::Unassigned);
+}
+
+#[test]
+fn test_get_role_assigned() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+
+    client.add_company(&admin, &company);
+    assert_eq!(client.get_role(&company), crate::Role::Company);
+
+    client.add_carrier(&admin, &carrier);
+    assert_eq!(client.get_role(&carrier), crate::Role::Carrier);
+}
+
 // ============= Get Shipment Tests =============
 
 #[test]
