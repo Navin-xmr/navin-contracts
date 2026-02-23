@@ -9,9 +9,11 @@ mod events;
 mod storage;
 mod test;
 mod types;
+mod validation;
 
 pub use errors::*;
 pub use types::*;
+pub use validation::*;
 
 const SHIPMENT_TTL_THRESHOLD: u32 = 17_280; // ~1 day
 const SHIPMENT_TTL_EXTENSION: u32 = 518_400; // ~30 days
@@ -482,6 +484,7 @@ impl NavinShipment {
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::Unauthorized` - If caller isn't a Company.
+    /// * `NavinError::InvalidHash` - If data_hash is all zeros.
     /// * `NavinError::MilestoneSumInvalid` - If milestone percentages do not equal 100%.
     /// * `NavinError::CounterOverflow` - If total shipment count overflows max u64.
     ///
@@ -501,6 +504,7 @@ impl NavinShipment {
         sender.require_auth();
         require_role(&env, &sender, Role::Company)?;
         validate_milestones(&env, &payment_milestones)?;
+        validate_hash(&data_hash)?;
 
         let shipment_id = storage::get_shipment_counter(&env)
             .checked_add(1)
@@ -548,6 +552,7 @@ impl NavinShipment {
     /// * `NavinError::Unauthorized` - If caller isn't a Company.
     /// * `NavinError::BatchTooLarge` - If more than 10 shipments are submitted.
     /// * `NavinError::InvalidShipmentInput` - If receiver matches carrier for any shipment.
+    /// * `NavinError::InvalidHash` - If any data_hash is all zeros.
     /// * `NavinError::MilestoneSumInvalid` - If payment milestones are invalid per item.
     ///
     /// # Examples
@@ -575,6 +580,7 @@ impl NavinShipment {
                 return Err(NavinError::InvalidShipmentInput);
             }
             validate_milestones(&env, &shipment_input.payment_milestones)?;
+            validate_hash(&shipment_input.data_hash)?;
 
             let shipment_id = storage::get_shipment_counter(&env)
                 .checked_add(1)
@@ -650,7 +656,7 @@ impl NavinShipment {
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::Unauthorized` - If caller isn't a Company.
-    /// * `NavinError::InsufficientFunds` - If payload specifies 0 or negative funds.
+    /// * `NavinError::InvalidAmount` - If amount is zero, negative, or exceeds the maximum.
     /// * `NavinError::ShipmentNotFound` - If shipment is untracked.
     /// * `NavinError::InvalidStatus` - If shipment is not in `Created` status.
     /// * `NavinError::EscrowLocked` - If escrow is already deposited for shipment.
@@ -669,9 +675,7 @@ impl NavinShipment {
         from.require_auth();
         require_role(&env, &from, Role::Company)?;
 
-        if amount <= 0 {
-            return Err(NavinError::InsufficientFunds);
-        }
+        validate_amount(amount).map_err(|_| NavinError::InsufficientFunds)?;
 
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;

@@ -128,7 +128,7 @@ fn test_create_shipments_batch_success() {
     client.add_company(&admin, &company);
 
     let mut shipments = soroban_sdk::Vec::new(&env);
-    for i in 0..5 {
+    for i in 1..=5 {
         shipments.push_back(ShipmentInput {
             receiver: Address::generate(&env),
             carrier: Address::generate(&env),
