@@ -3289,3 +3289,80 @@ fn test_only_receiver_can_confirm_delivery() {
     let result = client.try_confirm_delivery(&outsider, &shipment_id_2, &delivery_hash);
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
 }
+
+#[test]
+fn test_unassigned_addresses_are_rejected() {
+    let (env, client, admin, token_contract) = setup_env();
+    let outsider = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+
+    // Unassigned cannot create shipment
+    let result = client.try_create_shipment(&outsider, &Address::generate(&env), &Address::generate(&env), &data_hash, &soroban_sdk::Vec::new(&env));
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+
+    // Unassigned cannot add carrier to whitelist
+    let result = client.try_add_carrier_to_whitelist(&outsider, &Address::generate(&env));
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+    
+    // Unassigned cannot report geofence event
+    let result = client.try_report_geofence_event(&outsider, &1, &GeofenceEvent::ZoneEntry, &data_hash);
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+}
+
+#[test]
+fn test_rbac_all_gated_functions_with_wrong_role() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let outsider = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env));
+
+    // set_shipment_metadata: sender or admin only
+    let result = client.try_set_shipment_metadata(&outsider, &shipment_id, &Symbol::new(&env, "key"), &Symbol::new(&env, "val"));
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+
+    // add_carrier_to_whitelist: company only
+    let result = client.try_add_carrier_to_whitelist(&carrier, &Address::generate(&env));
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+
+    // deposit_escrow: Company only
+    let result = client.try_deposit_escrow(&carrier, &shipment_id, &1000);
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+
+    // report_geofence_event: Carrier only
+    let result = client.try_report_geofence_event(&company, &shipment_id, &GeofenceEvent::ZoneEntry, &data_hash);
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+
+    // update_eta: assigned carrier only
+    let result = client.try_update_eta(&company, &shipment_id, &1000000000, &data_hash);
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+
+    // cancel_shipment: sender or admin only
+    let result = client.try_cancel_shipment(&carrier, &shipment_id, &data_hash);
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+
+    // raise_dispute: sender, receiver, or carrier only
+    let result = client.try_raise_dispute(&outsider, &shipment_id, &data_hash);
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+
+    // resolve_dispute: admin only
+    let result = client.try_resolve_dispute(&company, &shipment_id, &crate::DisputeResolution::ReleaseToCarrier);
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+
+    // handoff_shipment: current carrier only
+    let result = client.try_handoff_shipment(&company, &Address::generate(&env), &shipment_id, &data_hash);
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+
+    // update_status: carrier or admin only (Company cannot update status)
+    let result = client.try_update_status(&company, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+}
