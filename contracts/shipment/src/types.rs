@@ -33,6 +33,8 @@ pub enum DataKey {
     TokenContract,
     /// Timestamp of the last status update for a shipment (used for rate limiting).
     LastStatusUpdate(u64),
+    /// Proposed new administrator address.
+    ProposedAdmin,
 }
 
 /// Supported user roles.

@@ -53,6 +53,21 @@ pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
 }
 
+/// Returns the proposed admin address if set.
+pub fn get_proposed_admin(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::ProposedAdmin)
+}
+
+/// Store the proposed admin address in instance storage.
+pub fn set_proposed_admin(env: &Env, admin: &Address) {
+    env.storage().instance().set(&DataKey::ProposedAdmin, admin);
+}
+
+/// Clear the proposed admin address from instance storage.
+pub fn clear_proposed_admin(env: &Env) {
+    env.storage().instance().remove(&DataKey::ProposedAdmin);
+}
+
 /// Get the contract version number.
 ///
 /// # Arguments

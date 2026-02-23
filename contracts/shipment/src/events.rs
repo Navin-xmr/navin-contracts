@@ -486,3 +486,19 @@ pub fn emit_condition_breach(
         ),
     );
 }
+
+/// Emits an `admin_proposed` event when a new administrator is proposed.
+pub fn emit_admin_proposed(env: &Env, current_admin: &Address, proposed_admin: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "admin_proposed"),),
+        (current_admin.clone(), proposed_admin.clone()),
+    );
+}
+
+/// Emits an `admin_transferred` event when the administrator role is successfully transferred.
+pub fn emit_admin_transferred(env: &Env, old_admin: &Address, new_admin: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "admin_transferred"),),
+        (old_admin.clone(), new_admin.clone()),
+    );
+}

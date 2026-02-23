@@ -3513,3 +3513,59 @@ fn test_rbac_all_gated_functions_with_wrong_role() {
     );
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
 }
+
+// ============= Admin Transfer Tests =============
+
+#[test]
+fn test_successful_admin_transfer() {
+    let (env, client, admin, token_contract) = setup_env();
+    client.initialize(&admin, &token_contract);
+
+    let new_admin = Address::generate(&env);
+
+    // 1. Current admin proposes new admin
+    client.transfer_admin(&admin, &new_admin);
+
+    // 2. New admin accepts the transfer
+    client.accept_admin_transfer(&new_admin);
+
+    // Verify ownership changed
+    assert_eq!(client.get_admin(), new_admin);
+
+    // Verify old admin lost privileges
+    let company = Address::generate(&env);
+    env.mock_all_auths();
+
+    // Attempting to add a company with the old admin should now fail
+    let result = client.try_add_company(&admin, &company);
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_unauthorized_admin_transfer() {
+    let (env, client, admin, token_contract) = setup_env();
+    client.initialize(&admin, &token_contract);
+
+    let outsider = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    // Outsider tries to transfer admin - should fail
+    client.transfer_admin(&outsider, &new_admin);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_unauthorized_admin_acceptance() {
+    let (env, client, admin, token_contract) = setup_env();
+    client.initialize(&admin, &token_contract);
+
+    let new_admin = Address::generate(&env);
+    let imposter = Address::generate(&env);
+
+    // 1. Current admin proposes new admin
+    client.transfer_admin(&admin, &new_admin);
+
+    // 2. Imposter tries to accept the transfer - should fail
+    client.accept_admin_transfer(&imposter);
+}
