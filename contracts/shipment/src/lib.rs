@@ -1623,4 +1623,52 @@ impl NavinShipment {
         let stored = storage::get_confirmation_hash(&env, shipment_id);
         Ok(stored == Some(proof_hash))
     }
+
+    /// Propose a new admin for the contract. Only the current admin can call this.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Current administrator address.
+    /// * `new_admin` - Address proposed as the new administrator.
+    pub fn transfer_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::set_proposed_admin(&env, &new_admin);
+        events::emit_admin_proposed(&env, &admin, &new_admin);
+
+        Ok(())
+    }
+
+    /// Accept the admin role transfer. Only the proposed admin can call this.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `new_admin` - The proposed administrator address accepting the role.
+    pub fn accept_admin_transfer(env: Env, new_admin: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        new_admin.require_auth();
+
+        let proposed = storage::get_proposed_admin(&env).ok_or(NavinError::Unauthorized)?;
+
+        if proposed != new_admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        let old_admin = storage::get_admin(&env);
+
+        storage::set_admin(&env, &new_admin);
+        storage::clear_proposed_admin(&env);
+
+        // Also update the role for the new admin if it's not already set
+        storage::set_company_role(&env, &new_admin);
+
+        events::emit_admin_transferred(&env, &old_admin, &new_admin);
+
+        Ok(())
+    }
 }
