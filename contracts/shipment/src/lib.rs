@@ -308,6 +308,7 @@ impl NavinShipment {
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         company.require_auth();
+        require_role(&env, &company, Role::Company)?;
 
         storage::add_carrier_to_whitelist(&env, &company, &carrier);
 
@@ -344,6 +345,7 @@ impl NavinShipment {
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         company.require_auth();
+        require_role(&env, &company, Role::Company)?;
 
         storage::remove_carrier_from_whitelist(&env, &company, &carrier);
 
@@ -920,9 +922,12 @@ impl NavinShipment {
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
 
-        // Verify shipment exists
-        if storage::get_shipment(&env, shipment_id).is_none() {
-            return Err(NavinError::ShipmentNotFound);
+        // Verify shipment exists and carrier is assigned
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        if shipment.carrier != carrier {
+            return Err(NavinError::Unauthorized);
         }
 
         let timestamp = env.ledger().timestamp();
@@ -1023,9 +1028,13 @@ impl NavinShipment {
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
 
-        // Verify shipment exists and status
+        // Verify shipment exists, carrier is assigned, and status
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        if shipment.carrier != carrier {
+            return Err(NavinError::Unauthorized);
+        }
 
         if shipment.status != ShipmentStatus::InTransit {
             return Err(NavinError::InvalidStatus);
