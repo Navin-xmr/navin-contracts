@@ -23,9 +23,11 @@ pub enum DataKey {
     Shipment(u64),
     /// Carrier whitelist for a company — (company, carrier) -> bool.
     CarrierWhitelist(Address, Address),
+    /// Role assigned to an address — (address, role) -> bool.
+    UserRole(Address, Role),
     /// Escrow balance for a shipment.
     Escrow(u64),
-    /// Role assigned to an address.
+    /// Legacy single-role storage key for compatibility.
     Role(Address),
     /// Hash of proof-of-delivery data for a shipment.
     ConfirmationHash(u64),
