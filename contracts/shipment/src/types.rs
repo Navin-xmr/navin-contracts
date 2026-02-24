@@ -348,3 +348,29 @@ pub struct Proposal {
     /// Whether the proposal has been executed.
     pub executed: bool,
 }
+
+/// Notification types for backend indexing and push notifications.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::NotificationType;
+/// let notif = NotificationType::ShipmentCreated;
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum NotificationType {
+    /// Shipment was created.
+    ShipmentCreated,
+    /// Shipment status changed.
+    StatusChanged,
+    /// Delivery was confirmed.
+    DeliveryConfirmed,
+    /// Escrow was released.
+    EscrowReleased,
+    /// Dispute was raised.
+    DisputeRaised,
+    /// Dispute was resolved.
+    DisputeResolved,
+    /// Deadline is approaching.
+    DeadlineApproaching,
+}

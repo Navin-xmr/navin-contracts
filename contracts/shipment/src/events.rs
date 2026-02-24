@@ -586,3 +586,50 @@ pub fn emit_carrier_dispute_loss(env: &Env, carrier: &Address, shipment_id: u64)
         (carrier.clone(), shipment_id),
     );
 }
+
+/// Emits a `notification` event for backend indexing to trigger push notifications,
+/// emails, or in-app alerts.
+///
+/// # Event Data
+///
+/// | Field             | Type               | Description                                    |
+/// |-------------------|--------------------|------------------------------------------------|
+/// | recipient         | `Address`          | Address to receive the notification             |
+/// | notification_type | `NotificationType` | Type of notification event                      |
+/// | shipment_id       | `u64`              | Related shipment ID                             |
+/// | data_hash         | `BytesN<32>`       | SHA-256 hash of notification payload            |
+///
+/// # Listeners
+/// - **Express backend**: Triggers push notifications, emails, or in-app alerts.
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `recipient` - Address to receive the notification.
+/// * `notification_type` - Type of notification.
+/// * `shipment_id` - Related shipment ID.
+/// * `data_hash` - Hash of notification data.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_notification(&env, &receiver, NotificationType::ShipmentCreated, 1, &hash);
+/// ```
+pub fn emit_notification(
+    env: &Env,
+    recipient: &Address,
+    notification_type: crate::types::NotificationType,
+    shipment_id: u64,
+    data_hash: &BytesN<32>,
+) {
+    env.events().publish(
+        (Symbol::new(env, "notification"),),
+        (
+            recipient.clone(),
+            notification_type,
+            shipment_id,
+            data_hash.clone(),
+        ),
+    );
+}

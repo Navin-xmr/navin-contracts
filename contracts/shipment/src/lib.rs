@@ -540,6 +540,20 @@ impl NavinShipment {
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_shipment_created(&env, shipment_id, &sender, &receiver, &data_hash);
+        events::emit_notification(
+            &env,
+            &receiver,
+            NotificationType::ShipmentCreated,
+            shipment_id,
+            &data_hash,
+        );
+        events::emit_notification(
+            &env,
+            &shipment.carrier,
+            NotificationType::ShipmentCreated,
+            shipment_id,
+            &data_hash,
+        );
 
         Ok(shipment_id)
     }
@@ -625,6 +639,20 @@ impl NavinShipment {
                 shipment_id,
                 &sender,
                 &shipment_input.receiver,
+                &shipment_input.data_hash,
+            );
+            events::emit_notification(
+                &env,
+                &shipment_input.receiver,
+                NotificationType::ShipmentCreated,
+                shipment_id,
+                &shipment_input.data_hash,
+            );
+            events::emit_notification(
+                &env,
+                &shipment_input.carrier,
+                NotificationType::ShipmentCreated,
+                shipment_id,
                 &shipment_input.data_hash,
             );
             ids.push_back(shipment_id);
@@ -790,6 +818,20 @@ impl NavinShipment {
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_status_updated(&env, shipment_id, &old_status, &new_status, &data_hash);
+        events::emit_notification(
+            &env,
+            &shipment.sender,
+            NotificationType::StatusChanged,
+            shipment_id,
+            &data_hash,
+        );
+        events::emit_notification(
+            &env,
+            &shipment.receiver,
+            NotificationType::StatusChanged,
+            shipment_id,
+            &data_hash,
+        );
 
         Ok(())
     }
@@ -901,11 +943,25 @@ impl NavinShipment {
 
         env.events().publish(
             (Symbol::new(&env, "delivery_confirmed"),),
-            (shipment_id, receiver, confirmation_hash),
+            (shipment_id, receiver, confirmation_hash.clone()),
         );
 
         // Reputation: record successful delivery for the carrier
         events::emit_delivery_success(&env, &shipment.carrier, shipment_id, now);
+        events::emit_notification(
+            &env,
+            &shipment.sender,
+            NotificationType::DeliveryConfirmed,
+            shipment_id,
+            &confirmation_hash,
+        );
+        events::emit_notification(
+            &env,
+            &shipment.carrier,
+            NotificationType::DeliveryConfirmed,
+            shipment_id,
+            &confirmation_hash,
+        );
 
         Ok(())
     }
@@ -1393,6 +1449,20 @@ impl NavinShipment {
         }
 
         internal_release_escrow(&env, &mut shipment, escrow_amount);
+        events::emit_notification(
+            &env,
+            &shipment.sender,
+            NotificationType::EscrowReleased,
+            shipment_id,
+            &BytesN::from_array(&env, &[0u8; 32]),
+        );
+        events::emit_notification(
+            &env,
+            &shipment.carrier,
+            NotificationType::EscrowReleased,
+            shipment_id,
+            &BytesN::from_array(&env, &[0u8; 32]),
+        );
 
         Ok(())
     }
@@ -1519,6 +1589,27 @@ impl NavinShipment {
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_dispute_raised(&env, shipment_id, &caller, &reason_hash);
+        events::emit_notification(
+            &env,
+            &shipment.sender,
+            NotificationType::DisputeRaised,
+            shipment_id,
+            &reason_hash,
+        );
+        events::emit_notification(
+            &env,
+            &shipment.receiver,
+            NotificationType::DisputeRaised,
+            shipment_id,
+            &reason_hash,
+        );
+        events::emit_notification(
+            &env,
+            &shipment.carrier,
+            NotificationType::DisputeRaised,
+            shipment_id,
+            &reason_hash,
+        );
 
         Ok(())
     }
@@ -1599,6 +1690,28 @@ impl NavinShipment {
                 events::emit_carrier_dispute_loss(&env, &shipment.carrier, shipment_id);
             }
         }
+
+        events::emit_notification(
+            &env,
+            &shipment.sender,
+            NotificationType::DisputeResolved,
+            shipment_id,
+            &BytesN::from_array(&env, &[0u8; 32]),
+        );
+        events::emit_notification(
+            &env,
+            &shipment.receiver,
+            NotificationType::DisputeResolved,
+            shipment_id,
+            &BytesN::from_array(&env, &[0u8; 32]),
+        );
+        events::emit_notification(
+            &env,
+            &shipment.carrier,
+            NotificationType::DisputeResolved,
+            shipment_id,
+            &BytesN::from_array(&env, &[0u8; 32]),
+        );
 
         Ok(())
     }
