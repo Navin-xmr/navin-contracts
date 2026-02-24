@@ -175,63 +175,6 @@ pub fn increment_shipment_counter(env: &Env) -> u64 {
 pub fn get_shipment_count(env: &Env) -> u64 {
     get_shipment_counter(env)
 }
-use crate::types::*;
-use soroban_sdk::{Address, BytesN, Env};
-
-/// Check if the contract has been initialized (admin set).
-pub fn is_initialized(env: &Env) -> bool {
-    env.storage().instance().has(&DataKey::Admin)
-}
-
-/// Returns the stored admin address. Panics if not set.
-pub fn get_admin(env: &Env) -> Address {
-    env.storage().instance().get(&DataKey::Admin).unwrap()
-}
-
-/// Store the admin address in instance storage (config scope).
-pub fn set_admin(env: &Env, admin: &Address) {
-    env.storage().instance().set(&DataKey::Admin, admin);
-}
-
-/// Get the contract version number.
-pub fn get_version(env: &Env) -> u32 {
-    env.storage().instance().get(&DataKey::Version).unwrap_or(1)
-}
-
-/// Set the contract version number.
-pub fn set_version(env: &Env, version: u32) {
-    env.storage().instance().set(&DataKey::Version, &version);
-}
-
-/// Get the current shipment counter from instance storage.
-pub fn get_shipment_counter(env: &Env) -> u64 {
-    env.storage()
-        .instance()
-        .get(&DataKey::ShipmentCount)
-        .unwrap_or(0)
-}
-
-/// Set the shipment counter in instance storage.
-pub fn set_shipment_counter(env: &Env, counter: u64) {
-    env.storage()
-        .instance()
-        .set(&DataKey::ShipmentCount, &counter);
-}
-
-/// Increment the shipment counter by 1 and return the new value.
-#[allow(dead_code)]
-pub fn increment_shipment_counter(env: &Env) -> u64 {
-    let cur = get_shipment_counter(env);
-    let next = cur.checked_add(1).unwrap_or(cur);
-    set_shipment_counter(env, next);
-    next
-}
-
-/// Alternate name requested: returns the shipment count (wrapper).
-#[allow(dead_code)]
-pub fn get_shipment_count(env: &Env) -> u64 {
-    get_shipment_counter(env)
-}
 
 /// Alternate name requested: increment shipment count and return new value.
 ///
