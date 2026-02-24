@@ -45,6 +45,12 @@ pub enum DataKey {
     ProposalCounter,
     /// Individual proposal data keyed by ID.
     Proposal(u64),
+    /// Total escrow volume processed by the contract.
+    TotalEscrowVolume,
+    /// Total number of disputes raised.
+    TotalDisputes,
+    /// Count of shipments with a specific status.
+    StatusCount(ShipmentStatus),
 }
 
 /// Supported user roles.
@@ -373,4 +379,33 @@ pub enum NotificationType {
     DisputeResolved,
     /// Deadline is approaching.
     DeadlineApproaching,
+}
+
+/// Aggregated on-chain analytics data.
+///
+/// # Examples
+/// ```rust
+/// // Struct represents basic analytics counters for the contract.
+/// ```
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct Analytics {
+    /// Total number of shipments created.
+    pub total_shipments: u64,
+    /// Total volume of funds moved into escrow.
+    pub total_escrow_volume: i128,
+    /// Total number of disputes raised.
+    pub total_disputes: u64,
+    /// Number of shipments currently in 'Created' state.
+    pub created_count: u64,
+    /// Number of shipments currently in 'InTransit' state.
+    pub in_transit_count: u64,
+    /// Number of shipments currently in 'AtCheckpoint' state.
+    pub at_checkpoint_count: u64,
+    /// Number of shipments currently in 'Delivered' state.
+    pub delivered_count: u64,
+    /// Number of shipments currently in 'Disputed' state.
+    pub disputed_count: u64,
+    /// Number of shipments currently in 'Cancelled' state.
+    pub cancelled_count: u64,
 }

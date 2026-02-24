@@ -757,3 +757,63 @@ pub fn is_admin(env: &Env, address: &Address) -> bool {
     }
     false
 }
+
+// ============= Analytics Storage Functions =============
+
+/// Get total escrow volume processed by the contract.
+pub fn get_total_escrow_volume(env: &Env) -> i128 {
+    env.storage()
+        .instance()
+        .get(&DataKey::TotalEscrowVolume)
+        .unwrap_or(0)
+}
+
+/// Add an amount to the total escrow volume.
+pub fn add_total_escrow_volume(env: &Env, amount: i128) {
+    let current = get_total_escrow_volume(env);
+    env.storage()
+        .instance()
+        .set(&DataKey::TotalEscrowVolume, &(current + amount));
+}
+
+/// Get the total number of disputes raised.
+pub fn get_total_disputes(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::TotalDisputes)
+        .unwrap_or(0)
+}
+
+/// Increment the total disputes counter by 1.
+pub fn increment_total_disputes(env: &Env) {
+    let current = get_total_disputes(env);
+    env.storage()
+        .instance()
+        .set(&DataKey::TotalDisputes, &(current + 1));
+}
+
+/// Get the count of shipments with a specific status.
+pub fn get_status_count(env: &Env, status: &ShipmentStatus) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::StatusCount(status.clone()))
+        .unwrap_or(0)
+}
+
+/// Increment the count for a specific status by 1.
+pub fn increment_status_count(env: &Env, status: &ShipmentStatus) {
+    let current = get_status_count(env, status);
+    env.storage()
+        .instance()
+        .set(&DataKey::StatusCount(status.clone()), &(current + 1));
+}
+
+/// Decrement the count for a specific status by 1.
+pub fn decrement_status_count(env: &Env, status: &ShipmentStatus) {
+    let current = get_status_count(env, status);
+    if current > 0 {
+        env.storage()
+            .instance()
+            .set(&DataKey::StatusCount(status.clone()), &(current - 1));
+    }
+}

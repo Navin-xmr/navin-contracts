@@ -5375,3 +5375,117 @@ fn test_notification_emitted_on_dispute_resolved() {
         "Notifications should be emitted for all parties on dispute resolution"
     );
 }
+
+// ============= Analytics Tests =============
+
+#[test]
+fn test_analytics_counters() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    // Initial analytics should be zero
+    let analytics = client.get_analytics();
+    assert_eq!(analytics.total_shipments, 0);
+    assert_eq!(analytics.total_escrow_volume, 0);
+    assert_eq!(analytics.total_disputes, 0);
+    assert_eq!(analytics.created_count, 0);
+
+    // Create a shipment
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let analytics = client.get_analytics();
+    assert_eq!(analytics.total_shipments, 1);
+    assert_eq!(analytics.created_count, 1);
+
+    // Deposit escrow
+    let escrow_amount: i128 = 5000;
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    let analytics = client.get_analytics();
+    assert_eq!(analytics.total_escrow_volume, 5000);
+
+    // Update status to InTransit
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    let analytics = client.get_analytics();
+    assert_eq!(analytics.created_count, 0);
+    assert_eq!(analytics.in_transit_count, 1);
+
+    // Raise dispute
+    client.raise_dispute(&company, &shipment_id, &data_hash);
+
+    let analytics = client.get_analytics();
+    assert_eq!(analytics.in_transit_count, 0);
+    assert_eq!(analytics.disputed_count, 1);
+    assert_eq!(analytics.total_disputes, 1);
+
+    // Resolve dispute (Release to Carrier -> Delivered)
+    client.resolve_dispute(
+        &admin,
+        &shipment_id,
+        &crate::DisputeResolution::ReleaseToCarrier,
+    );
+
+    let analytics = client.get_analytics();
+    assert_eq!(analytics.disputed_count, 0);
+    assert_eq!(analytics.delivered_count, 1);
+}
+
+#[test]
+fn test_analytics_batch_and_cancel() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    // Create 3 shipments in a batch
+    let mut shipments = soroban_sdk::Vec::new(&env);
+    for i in 1..=3 {
+        shipments.push_back(ShipmentInput {
+            receiver: Address::generate(&env),
+            carrier: carrier.clone(),
+            data_hash: BytesN::from_array(&env, &[i as u8; 32]),
+            payment_milestones: soroban_sdk::Vec::new(&env),
+            deadline,
+        });
+    }
+    client.create_shipments_batch(&company, &shipments);
+
+    let analytics = client.get_analytics();
+    assert_eq!(analytics.total_shipments, 3);
+    assert_eq!(analytics.created_count, 3);
+
+    // Cancel 1 shipment
+    client.cancel_shipment(&company, &1, &BytesN::from_array(&env, &[9u8; 32]));
+
+    let analytics = client.get_analytics();
+    let created = analytics.created_count;
+    let cancelled = analytics.cancelled_count;
+    assert_eq!(created, 2, "Created count should be 2 after 1 cancellation");
+    assert_eq!(
+        cancelled, 1,
+        "Cancelled count should be 1 after 1 cancellation"
+    );
+}

@@ -285,6 +285,32 @@ impl NavinShipment {
         Ok(storage::get_shipment_counter(&env))
     }
 
+    /// Get aggregated analytics for the contract.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    ///
+    /// # Returns
+    /// * `Result<Analytics, NavinError>` - Aggregated analytics data.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn get_analytics(env: Env) -> Result<Analytics, NavinError> {
+        require_initialized(&env)?;
+
+        Ok(Analytics {
+            total_shipments: storage::get_shipment_counter(&env),
+            total_escrow_volume: storage::get_total_escrow_volume(&env),
+            total_disputes: storage::get_total_disputes(&env),
+            created_count: storage::get_status_count(&env, &ShipmentStatus::Created),
+            in_transit_count: storage::get_status_count(&env, &ShipmentStatus::InTransit),
+            at_checkpoint_count: storage::get_status_count(&env, &ShipmentStatus::AtCheckpoint),
+            delivered_count: storage::get_status_count(&env, &ShipmentStatus::Delivered),
+            disputed_count: storage::get_status_count(&env, &ShipmentStatus::Disputed),
+            cancelled_count: storage::get_status_count(&env, &ShipmentStatus::Cancelled),
+        })
+    }
+
     /// Add a carrier to a company's whitelist.
     /// Only the company can add carriers to their own whitelist.
     ///
@@ -537,6 +563,7 @@ impl NavinShipment {
 
         storage::set_shipment(&env, &shipment);
         storage::set_shipment_counter(&env, shipment_id);
+        storage::increment_status_count(&env, &ShipmentStatus::Created);
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_shipment_created(&env, shipment_id, &sender, &receiver, &data_hash);
@@ -632,6 +659,7 @@ impl NavinShipment {
 
             storage::set_shipment(&env, &shipment);
             storage::set_shipment_counter(&env, shipment_id);
+            storage::increment_status_count(&env, &ShipmentStatus::Created);
             extend_shipment_ttl(&env, shipment_id);
 
             events::emit_shipment_created(
@@ -745,6 +773,7 @@ impl NavinShipment {
         shipment.total_escrow = amount;
         shipment.updated_at = env.ledger().timestamp();
         storage::set_shipment(&env, &shipment);
+        storage::add_total_escrow_volume(&env, amount);
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_escrow_deposited(&env, shipment_id, &from, amount);
@@ -814,6 +843,13 @@ impl NavinShipment {
         shipment.updated_at = env.ledger().timestamp();
 
         storage::set_shipment(&env, &shipment);
+        storage::decrement_status_count(&env, &old_status);
+        storage::increment_status_count(&env, &shipment.status);
+
+        if shipment.status == ShipmentStatus::Disputed {
+            storage::increment_total_disputes(&env);
+        }
+
         storage::set_last_status_update(&env, shipment_id, env.ledger().timestamp());
         extend_shipment_ttl(&env, shipment_id);
 
@@ -903,7 +939,7 @@ impl NavinShipment {
     ///
     /// # Examples
     /// ```rust
-    /// // contract.confirm_delivery(&env, &receiver_addr, 1, &hash);
+    /// // contract.confirm_delivery(&env, &receiver_addr, 1, 5000000);
     /// ```
     pub fn confirm_delivery(
         env: Env,
@@ -931,10 +967,14 @@ impl NavinShipment {
         }
 
         let now = env.ledger().timestamp();
+        let old_status = shipment.status.clone();
         shipment.status = ShipmentStatus::Delivered;
         shipment.updated_at = now;
 
         storage::set_shipment(&env, &shipment);
+        storage::decrement_status_count(&env, &old_status);
+        storage::increment_status_count(&env, &ShipmentStatus::Delivered);
+
         storage::set_confirmation_hash(&env, shipment_id, &confirmation_hash);
         extend_shipment_ttl(&env, shipment_id);
 
@@ -1349,11 +1389,14 @@ impl NavinShipment {
         }
 
         let escrow_amount = shipment.escrow_amount;
+        let old_status = shipment.status.clone();
         shipment.status = ShipmentStatus::Cancelled;
         shipment.escrow_amount = 0;
         shipment.updated_at = env.ledger().timestamp();
 
         storage::set_shipment(&env, &shipment);
+        storage::decrement_status_count(&env, &old_status);
+        storage::increment_status_count(&env, &ShipmentStatus::Cancelled);
         if escrow_amount > 0 {
             storage::remove_escrow_balance(&env, shipment_id);
             events::emit_escrow_released(&env, shipment_id, &shipment.sender, escrow_amount);
@@ -1525,11 +1568,15 @@ impl NavinShipment {
         env.invoke_contract::<soroban_sdk::Val>(&token_contract, &symbol_short!("transfer"), args);
 
         shipment.escrow_amount = 0;
+        let old_status = shipment.status.clone();
         shipment.status = ShipmentStatus::Cancelled;
         shipment.updated_at = env.ledger().timestamp();
 
         storage::set_shipment(&env, &shipment);
-        storage::remove_escrow_balance(&env, shipment_id);
+        storage::decrement_status_count(&env, &old_status);
+        storage::increment_status_count(&env, &ShipmentStatus::Cancelled);
+
+        extend_shipment_ttl(&env, shipment_id);
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
@@ -1582,10 +1629,15 @@ impl NavinShipment {
             return Err(NavinError::ShipmentAlreadyCompleted);
         }
 
+        let old_status = shipment.status.clone();
         shipment.status = ShipmentStatus::Disputed;
         shipment.updated_at = env.ledger().timestamp();
 
         storage::set_shipment(&env, &shipment);
+        storage::decrement_status_count(&env, &old_status);
+        storage::increment_status_count(&env, &ShipmentStatus::Disputed);
+        storage::increment_total_disputes(&env);
+
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_dispute_raised(&env, shipment_id, &caller, &reason_hash);
@@ -1675,6 +1727,9 @@ impl NavinShipment {
                 shipment.sender.clone()
             }
         };
+
+        storage::decrement_status_count(&env, &ShipmentStatus::Disputed);
+        storage::increment_status_count(&env, &shipment.status);
 
         storage::set_shipment(&env, &shipment);
         storage::remove_escrow_balance(&env, shipment_id);
@@ -2337,11 +2392,14 @@ impl NavinShipment {
         }
 
         let escrow_amount = shipment.escrow_amount;
+        let old_status = shipment.status.clone();
         shipment.status = ShipmentStatus::Cancelled;
         shipment.escrow_amount = 0;
         shipment.updated_at = env.ledger().timestamp();
 
         storage::set_shipment(&env, &shipment);
+        storage::decrement_status_count(&env, &old_status);
+        storage::increment_status_count(&env, &ShipmentStatus::Cancelled);
 
         if escrow_amount > 0 {
             storage::remove_escrow_balance(&env, shipment_id);
@@ -2394,10 +2452,13 @@ pub fn confirm_delivery(
     }
 
     let now = env.ledger().timestamp();
+    let old_status = shipment.status.clone();
     shipment.status = ShipmentStatus::Delivered;
     shipment.updated_at = now;
 
     storage::set_shipment(&env, &shipment);
+    storage::decrement_status_count(&env, &old_status);
+    storage::increment_status_count(&env, &ShipmentStatus::Delivered);
     storage::set_confirmation_hash(&env, shipment_id, &confirmation_hash);
     extend_shipment_ttl(&env, shipment_id);
 
