@@ -5147,3 +5147,231 @@ fn test_carrier_dispute_loss_event_contains_correct_carrier() {
         "event must reference the correct shipment"
     );
 }
+
+// ============= Notification Event Tests =============
+
+#[test]
+fn test_notification_emitted_on_shipment_created() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let events = env.events().all();
+    let notification_count = events
+        .iter()
+        .filter(|(_contract, topics, _data)| {
+            topics
+                .get(0)
+                .and_then(|raw| Symbol::try_from_val(&env, &raw).ok())
+                == Some(Symbol::new(&env, "notification"))
+        })
+        .count();
+
+    assert_eq!(
+        notification_count, 2,
+        "Two notifications should be emitted: one for receiver, one for carrier"
+    );
+}
+
+#[test]
+fn test_notification_emitted_on_status_changed() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let new_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &new_hash,
+    );
+
+    let events = env.events().all();
+    let notification_count = events
+        .iter()
+        .filter(|(_contract, topics, _data)| {
+            topics
+                .get(0)
+                .and_then(|raw| Symbol::try_from_val(&env, &raw).ok())
+                == Some(Symbol::new(&env, "notification"))
+        })
+        .count();
+
+    assert!(
+        notification_count >= 2,
+        "Notifications should be emitted for sender and receiver on status change"
+    );
+}
+
+#[test]
+fn test_notification_emitted_on_delivery_confirmed() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let confirm_hash = BytesN::from_array(&env, &[99u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+    client.confirm_delivery(&receiver, &shipment_id, &confirm_hash);
+
+    let events = env.events().all();
+    let notification_count = events
+        .iter()
+        .filter(|(_contract, topics, _data)| {
+            topics
+                .get(0)
+                .and_then(|raw| Symbol::try_from_val(&env, &raw).ok())
+                == Some(Symbol::new(&env, "notification"))
+        })
+        .count();
+
+    assert!(
+        notification_count >= 2,
+        "Notifications should be emitted on delivery confirmation"
+    );
+}
+
+#[test]
+fn test_notification_emitted_on_dispute_raised() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[99u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    client.raise_dispute(&company, &shipment_id, &reason_hash);
+
+    let events = env.events().all();
+    let notification_count = events
+        .iter()
+        .filter(|(_contract, topics, _data)| {
+            topics
+                .get(0)
+                .and_then(|raw| Symbol::try_from_val(&env, &raw).ok())
+                == Some(Symbol::new(&env, "notification"))
+        })
+        .count();
+
+    assert_eq!(
+        notification_count, 3,
+        "Three notifications should be emitted: sender, receiver, and carrier"
+    );
+}
+
+#[test]
+fn test_notification_emitted_on_dispute_resolved() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[94u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    let escrow_amount: i128 = 5000;
+
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+    client.raise_dispute(&company, &shipment_id, &reason_hash);
+    client.resolve_dispute(
+        &admin,
+        &shipment_id,
+        &crate::DisputeResolution::ReleaseToCarrier,
+    );
+
+    let events = env.events().all();
+    let notification_count = events
+        .iter()
+        .filter(|(_contract, topics, _data)| {
+            topics
+                .get(0)
+                .and_then(|raw| Symbol::try_from_val(&env, &raw).ok())
+                == Some(Symbol::new(&env, "notification"))
+        })
+        .count();
+
+    assert!(
+        notification_count >= 3,
+        "Notifications should be emitted for all parties on dispute resolution"
+    );
+}
