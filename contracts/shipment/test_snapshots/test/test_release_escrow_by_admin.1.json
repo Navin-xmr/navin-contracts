@@ -417,6 +417,21 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "ActiveShipmentCount"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 1
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "Admin"
                             }
                           ]
@@ -473,6 +488,18 @@
                         },
                         "val": {
                           "u64": 1
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ShipmentLimit"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 100
                         }
                       },
                       {

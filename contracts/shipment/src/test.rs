@@ -5489,3 +5489,256 @@ fn test_analytics_batch_and_cancel() {
         "Cancelled count should be 1 after 1 cancellation"
     );
 }
+
+// ============= Shipment Limit Tests =============
+
+#[test]
+fn test_set_and_get_shipment_limit() {
+    let (_env, client, admin, token_contract) = setup_env();
+    client.initialize(&admin, &token_contract);
+
+    // Default limit should be 100 (set in initialize)
+    assert_eq!(client.get_shipment_limit(), 100);
+
+    // Admin sets new limit
+    client.set_shipment_limit(&admin, &10);
+    assert_eq!(client.get_shipment_limit(), 10);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_set_shipment_limit_unauthorized() {
+    let (env, client, admin, token_contract) = setup_env();
+    let outsider = Address::generate(&env);
+    client.initialize(&admin, &token_contract);
+
+    // Outsider tries to set limit
+    client.set_shipment_limit(&outsider, &10);
+}
+
+#[test]
+fn test_active_shipment_count_tracking() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    // Set limit to 2 for easier testing
+    client.set_shipment_limit(&admin, &2);
+
+    assert_eq!(client.get_active_shipment_count(&company), 0);
+
+    // Create 1st shipment
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert_eq!(client.get_active_shipment_count(&company), 1);
+
+    // Create 2nd shipment
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert_eq!(client.get_active_shipment_count(&company), 2);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_shipment_limit_reached() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    // Set limit to 1
+    client.set_shipment_limit(&admin, &1);
+
+    // Create 1st shipment - OK
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Create 2nd shipment - Should fail
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_batch_limit_reached() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    // Set limit to 2
+    client.set_shipment_limit(&admin, &2);
+
+    // Attempt to create 3 shipments in a batch
+    let mut shipments = soroban_sdk::Vec::new(&env);
+    for i in 1..=3 {
+        shipments.push_back(ShipmentInput {
+            receiver: Address::generate(&env),
+            carrier: Address::generate(&env),
+            data_hash: BytesN::from_array(&env, &[i as u8; 32]),
+            payment_milestones: soroban_sdk::Vec::new(&env),
+            deadline,
+        });
+    }
+
+    client.create_shipments_batch(&company, &shipments);
+}
+
+#[test]
+fn test_count_decrements_on_delivery() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert_eq!(client.get_active_shipment_count(&company), 1);
+
+    // Update to InTransit first
+    client.update_status(&carrier, &1, &ShipmentStatus::InTransit, &data_hash);
+
+    // Deliver
+    client.confirm_delivery(&receiver, &1, &data_hash);
+
+    assert_eq!(client.get_active_shipment_count(&company), 0);
+}
+
+#[test]
+fn test_count_decrements_on_cancel() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert_eq!(client.get_active_shipment_count(&company), 1);
+
+    client.cancel_shipment(&company, &1, &data_hash);
+
+    assert_eq!(client.get_active_shipment_count(&company), 0);
+}
+
+#[test]
+fn test_count_decrements_on_dispute_resolution() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &1, &1000);
+    client.update_status(&carrier, &1, &ShipmentStatus::InTransit, &data_hash);
+    client.raise_dispute(&company, &1, &data_hash);
+
+    assert_eq!(client.get_active_shipment_count(&company), 1);
+
+    // Resolve dispute
+    client.resolve_dispute(&admin, &1, &crate::DisputeResolution::RefundToCompany);
+
+    assert_eq!(client.get_active_shipment_count(&company), 0);
+}
+
+#[test]
+fn test_count_decrements_on_deadline_expiration() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert_eq!(client.get_active_shipment_count(&company), 1);
+
+    // Fast forward time
+    env.ledger().with_mut(|l| l.timestamp = deadline + 1);
+
+    client.check_deadline(&1);
+
+    assert_eq!(client.get_active_shipment_count(&company), 0);
+}

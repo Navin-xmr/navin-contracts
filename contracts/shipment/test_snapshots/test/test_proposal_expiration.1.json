@@ -371,6 +371,18 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "ShipmentLimit"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 100
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "TokenContract"
                             }
                           ]

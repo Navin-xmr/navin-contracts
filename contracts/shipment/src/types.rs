@@ -51,6 +51,10 @@ pub enum DataKey {
     TotalDisputes,
     /// Count of shipments with a specific status.
     StatusCount(ShipmentStatus),
+    /// Configurable limit on active shipments per company.
+    ShipmentLimit,
+    /// Counter for active shipments per company.
+    ActiveShipmentCount(Address),
 }
 
 /// Supported user roles.
