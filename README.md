@@ -70,6 +70,7 @@ rustup target add wasm32-unknown-unknown
 # Using Make
 make build
 ```
+
 OR
 
 ```
@@ -112,7 +113,7 @@ make fmt-check
 ```
 
 ```
-# OR 
+# OR
 cargo check --all
 ```
 
@@ -145,6 +146,23 @@ For detailed contribution guidelines, please see [CONTRIBUTING.md](CONTRIBUTING.
    make deploy-local
    ```
 
+## Deployment
+
+For deploying contracts to Stellar testnet, see the [Deployment Guide](docs/deployment.md).
+
+Quick deployment:
+
+```bash
+# Build contracts
+./scripts/build.sh
+
+# Deploy to testnet
+./scripts/deploy-testnet.sh
+
+# Initialize contracts
+./scripts/init-testnet.sh
+```
+
 ## Architecture
 
 Navin's smart contracts handle:
@@ -173,7 +191,6 @@ We welcome contributions! Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for 
 ## Security
 
 Security is paramount for Navin. If you discover a security vulnerability, please email <navinxmr@gmail.com> instead of using the issue tracker.
-
 
 ## Resources
 
