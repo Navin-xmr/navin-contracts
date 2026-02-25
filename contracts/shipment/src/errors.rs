@@ -74,4 +74,6 @@ pub enum NavinError {
     NotExpired = 29,
     /// The company has reached its active shipment limit.
     ShipmentLimitReached = 30,
+    /// Invalid configuration parameters provided.
+    InvalidConfig = 31,
 }
