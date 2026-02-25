@@ -57,6 +57,8 @@ pub enum DataKey {
     ActiveShipmentCount(Address),
     /// Contract configuration parameters.
     ContractConfig,
+    /// Event counter for a shipment (tracks number of events emitted).
+    EventCount(u64),
 }
 
 /// Supported user roles.

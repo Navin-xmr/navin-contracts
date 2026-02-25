@@ -67,6 +67,7 @@ pub fn emit_shipment_created(
             data_hash.clone(),
         ),
     );
+    crate::storage::increment_event_count(env, shipment_id);
 }
 
 /// Emits a `status_updated` event when a shipment transitions between lifecycle states.
@@ -115,6 +116,7 @@ pub fn emit_status_updated(
             data_hash.clone(),
         ),
     );
+    crate::storage::increment_event_count(env, shipment_id);
 }
 
 /// Emits a `milestone_recorded` event when a carrier reports a checkpoint.
@@ -167,6 +169,7 @@ pub fn emit_milestone_recorded(
             reporter.clone(),
         ),
     );
+    crate::storage::increment_event_count(env, shipment_id);
 }
 
 /// Emits an `escrow_deposited` event when funds are locked for a shipment.
@@ -537,6 +540,7 @@ pub fn emit_delivery_success(env: &Env, carrier: &Address, shipment_id: u64, del
         (Symbol::new(env, "delivery_success"),),
         (carrier.clone(), shipment_id, delivery_time),
     );
+    crate::storage::increment_event_count(env, shipment_id);
 }
 
 /// Emits a `carrier_breach` event when a carrier reports a condition breach.

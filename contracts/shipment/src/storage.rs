@@ -862,3 +862,46 @@ pub fn decrement_active_shipment_count(env: &Env, company: &Address) {
     let current = get_active_shipment_count(env, company);
     set_active_shipment_count(env, company, current.saturating_sub(1));
 }
+
+// ============= Event Counter Storage Functions =============
+
+/// Get the event count for a shipment.
+/// Returns 0 if no events have been emitted yet.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// * `u32` - The number of events emitted for this shipment.
+///
+/// # Examples
+/// ```rust
+/// // let count = storage::get_event_count(&env, 1);
+/// ```
+pub fn get_event_count(env: &Env, shipment_id: u64) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventCount(shipment_id))
+        .unwrap_or(0)
+}
+
+/// Increment the event count for a shipment.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// No return value.
+///
+/// # Examples
+/// ```rust
+/// // storage::increment_event_count(&env, 1);
+/// ```
+pub fn increment_event_count(env: &Env, shipment_id: u64) {
+    let current = get_event_count(env, shipment_id);
+    env.storage()
+        .persistent()
+        .set(&DataKey::EventCount(shipment_id), &current.saturating_add(1));
+}
