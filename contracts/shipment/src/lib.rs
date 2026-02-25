@@ -190,6 +190,7 @@ impl NavinShipment {
         storage::set_shipment_counter(&env, 0);
         storage::set_version(&env, 1);
         storage::set_company_role(&env, &admin);
+        storage::set_shipment_limit(&env, 100); // Set a default limit of 100
 
         env.events().publish(
             (symbol_short!("init"),),
@@ -197,6 +198,41 @@ impl NavinShipment {
         );
 
         Ok(())
+    }
+
+    /// Set the configurable limit on the number of active shipments a company can have.
+    /// Only the admin can call this.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Contract admin address.
+    /// * `limit` - The new active shipment limit.
+    pub fn set_shipment_limit(env: Env, admin: Address, limit: u32) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::set_shipment_limit(&env, limit);
+
+        env.events()
+            .publish((Symbol::new(&env, "set_limit"),), (admin, limit));
+
+        Ok(())
+    }
+
+    /// Get the current shipment limit.
+    pub fn get_shipment_limit(env: Env) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        Ok(storage::get_shipment_limit(&env))
+    }
+
+    /// Get the current active shipment count for a company.
+    pub fn get_active_shipment_count(env: Env, company: Address) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        Ok(storage::get_active_shipment_count(&env, &company))
     }
 
     /// Get the contract admin address.
@@ -541,6 +577,13 @@ impl NavinShipment {
             return Err(NavinError::InvalidTimestamp);
         }
 
+        // Check company active shipment limit
+        let current_active = storage::get_active_shipment_count(&env, &sender);
+        let limit = storage::get_shipment_limit(&env);
+        if current_active >= limit {
+            return Err(NavinError::ShipmentLimitReached);
+        }
+
         let shipment_id = storage::get_shipment_counter(&env)
             .checked_add(1)
             .ok_or(NavinError::CounterOverflow)?;
@@ -565,6 +608,7 @@ impl NavinShipment {
         storage::set_shipment(&env, &shipment);
         storage::set_shipment_counter(&env, shipment_id);
         storage::increment_status_count(&env, &ShipmentStatus::Created);
+        storage::increment_active_shipment_count(&env, &sender);
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_shipment_created(&env, shipment_id, &sender, &receiver, &data_hash);
@@ -626,6 +670,13 @@ impl NavinShipment {
         let mut ids = Vec::new(&env);
         let now = env.ledger().timestamp();
 
+        // Check batch size against limit
+        let current_active = storage::get_active_shipment_count(&env, &sender);
+        let limit = storage::get_shipment_limit(&env);
+        if current_active.saturating_add(shipments.len()) > limit {
+            return Err(NavinError::ShipmentLimitReached);
+        }
+
         for shipment_input in shipments.iter() {
             if shipment_input.receiver == shipment_input.carrier {
                 return Err(NavinError::InvalidShipmentInput);
@@ -661,6 +712,7 @@ impl NavinShipment {
             storage::set_shipment(&env, &shipment);
             storage::set_shipment_counter(&env, shipment_id);
             storage::increment_status_count(&env, &ShipmentStatus::Created);
+            storage::increment_active_shipment_count(&env, &sender);
             extend_shipment_ttl(&env, shipment_id);
 
             events::emit_shipment_created(
@@ -977,6 +1029,7 @@ impl NavinShipment {
         storage::increment_status_count(&env, &ShipmentStatus::Delivered);
 
         storage::set_confirmation_hash(&env, shipment_id, &confirmation_hash);
+        storage::decrement_active_shipment_count(&env, &shipment.sender);
         extend_shipment_ttl(&env, shipment_id);
 
         let remaining_escrow = shipment.escrow_amount;
@@ -1398,6 +1451,12 @@ impl NavinShipment {
         storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
         storage::increment_status_count(&env, &ShipmentStatus::Cancelled);
+
+        // Decrement active shipment count if it was not already cancelled
+        if old_status != ShipmentStatus::Cancelled {
+            storage::decrement_active_shipment_count(&env, &shipment.sender);
+        }
+
         if escrow_amount > 0 {
             storage::remove_escrow_balance(&env, shipment_id);
             events::emit_escrow_released(&env, shipment_id, &shipment.sender, escrow_amount);
@@ -1577,6 +1636,11 @@ impl NavinShipment {
         storage::decrement_status_count(&env, &old_status);
         storage::increment_status_count(&env, &ShipmentStatus::Cancelled);
 
+        // Decrement active shipment count if it was not already cancelled
+        if old_status != ShipmentStatus::Cancelled {
+            storage::decrement_active_shipment_count(&env, &shipment.sender);
+        }
+
         extend_shipment_ttl(&env, shipment_id);
         extend_shipment_ttl(&env, shipment_id);
 
@@ -1731,6 +1795,7 @@ impl NavinShipment {
 
         storage::decrement_status_count(&env, &ShipmentStatus::Disputed);
         storage::increment_status_count(&env, &shipment.status);
+        storage::decrement_active_shipment_count(&env, &shipment.sender);
 
         storage::set_shipment(&env, &shipment);
         storage::remove_escrow_balance(&env, shipment_id);
@@ -2401,6 +2466,7 @@ impl NavinShipment {
         storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
         storage::increment_status_count(&env, &ShipmentStatus::Cancelled);
+        storage::decrement_active_shipment_count(&env, &shipment.sender);
 
         if escrow_amount > 0 {
             storage::remove_escrow_balance(&env, shipment_id);
@@ -2418,7 +2484,6 @@ impl NavinShipment {
                 &symbol_short!("transfer"),
                 args,
             );
-
             events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
         }
 
@@ -2427,77 +2492,4 @@ impl NavinShipment {
 
         Ok(())
     }
-}
-
-pub fn confirm_delivery(
-    env: Env,
-    receiver: Address,
-    shipment_id: u64,
-    confirmation_hash: BytesN<32>,
-) -> Result<(), NavinError> {
-    require_initialized(&env)?;
-    receiver.require_auth();
-
-    let mut shipment =
-        storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
-
-    if shipment.receiver != receiver {
-        return Err(NavinError::Unauthorized);
-    }
-
-    if !shipment
-        .status
-        .is_valid_transition(&ShipmentStatus::Delivered)
-    {
-        return Err(NavinError::InvalidStatus);
-    }
-
-    let now = env.ledger().timestamp();
-    let old_status = shipment.status.clone();
-    shipment.status = ShipmentStatus::Delivered;
-    shipment.updated_at = now;
-
-    storage::set_shipment(&env, &shipment);
-    storage::decrement_status_count(&env, &old_status);
-    storage::increment_status_count(&env, &ShipmentStatus::Delivered);
-    storage::set_confirmation_hash(&env, shipment_id, &confirmation_hash);
-    extend_shipment_ttl(&env, shipment_id);
-
-    let remaining_escrow = shipment.escrow_amount;
-    internal_release_escrow(&env, &mut shipment, remaining_escrow);
-
-    env.events().publish(
-        (Symbol::new(&env, "delivery_confirmed"),),
-        (shipment_id, receiver, confirmation_hash),
-    );
-
-    // Reputation: record successful delivery for the carrier
-    events::emit_delivery_success(&env, &shipment.carrier, shipment_id, now);
-
-    Ok(())
-}
-
-pub fn report_condition_breach(
-    env: Env,
-    carrier: Address,
-    shipment_id: u64,
-    breach_type: BreachType,
-    data_hash: BytesN<32>,
-) -> Result<(), NavinError> {
-    require_initialized(&env)?;
-    carrier.require_auth();
-    require_role(&env, &carrier, Role::Carrier)?;
-
-    let shipment = storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
-
-    if shipment.carrier != carrier {
-        return Err(NavinError::Unauthorized);
-    }
-
-    events::emit_condition_breach(&env, shipment_id, &carrier, &breach_type, &data_hash);
-
-    // Reputation: record breach against carrier
-    events::emit_carrier_breach(&env, &carrier, shipment_id, &breach_type);
-
-    Ok(())
 }

@@ -72,4 +72,6 @@ pub enum NavinError {
     InvalidMultiSigConfig = 28,
     /// Shipment deadline has not yet expired.
     NotExpired = 29,
+    /// The company has reached its active shipment limit.
+    ShipmentLimitReached = 30,
 }

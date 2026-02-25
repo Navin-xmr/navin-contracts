@@ -800,7 +800,7 @@ pub fn get_status_count(env: &Env, status: &ShipmentStatus) -> u64 {
         .unwrap_or(0)
 }
 
-/// Increment the count for a specific status by 1.
+/// Increment the count of shipments with a specific status.
 pub fn increment_status_count(env: &Env, status: &ShipmentStatus) {
     let current = get_status_count(env, status);
     env.storage()
@@ -808,7 +808,7 @@ pub fn increment_status_count(env: &Env, status: &ShipmentStatus) {
         .set(&DataKey::StatusCount(status.clone()), &(current + 1));
 }
 
-/// Decrement the count for a specific status by 1.
+/// Decrement the count of shipments with a specific status.
 pub fn decrement_status_count(env: &Env, status: &ShipmentStatus) {
     let current = get_status_count(env, status);
     if current > 0 {
@@ -816,4 +816,49 @@ pub fn decrement_status_count(env: &Env, status: &ShipmentStatus) {
             .instance()
             .set(&DataKey::StatusCount(status.clone()), &(current - 1));
     }
+}
+
+// ============= Shipment Limit Storage Functions =============
+
+/// Get the configurable limit on active shipments per company.
+/// Defaults to 100 if not set.
+pub fn get_shipment_limit(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::ShipmentLimit)
+        .unwrap_or(100)
+}
+
+/// Set the configurable limit on active shipments.
+pub fn set_shipment_limit(env: &Env, limit: u32) {
+    env.storage()
+        .instance()
+        .set(&DataKey::ShipmentLimit, &limit);
+}
+
+/// Get the current active shipment count for a company.
+pub fn get_active_shipment_count(env: &Env, company: &Address) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::ActiveShipmentCount(company.clone()))
+        .unwrap_or(0)
+}
+
+/// Set the active shipment count for a company.
+pub fn set_active_shipment_count(env: &Env, company: &Address, count: u32) {
+    env.storage()
+        .instance()
+        .set(&DataKey::ActiveShipmentCount(company.clone()), &count);
+}
+
+/// Increment the active shipment count for a company.
+pub fn increment_active_shipment_count(env: &Env, company: &Address) {
+    let current = get_active_shipment_count(env, company);
+    set_active_shipment_count(env, company, current.saturating_add(1));
+}
+
+/// Decrement the active shipment count for a company.
+pub fn decrement_active_shipment_count(env: &Env, company: &Address) {
+    let current = get_active_shipment_count(env, company);
+    set_active_shipment_count(env, company, current.saturating_sub(1));
 }
