@@ -55,6 +55,8 @@ pub enum DataKey {
     ShipmentLimit,
     /// Counter for active shipments per company.
     ActiveShipmentCount(Address),
+    /// Contract configuration parameters.
+    ContractConfig,
 }
 
 /// Supported user roles.

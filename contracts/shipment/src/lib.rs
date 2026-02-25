@@ -4,6 +4,7 @@ use soroban_sdk::{
     contract, contractimpl, symbol_short, Address, BytesN, Env, IntoVal, Map, Symbol, Vec,
 };
 
+mod config;
 mod errors;
 mod events;
 mod storage;
@@ -12,22 +13,18 @@ mod test;
 mod types;
 mod validation;
 
+pub use config::*;
 pub use errors::*;
 pub use types::*;
 pub use validation::*;
 
-const SHIPMENT_TTL_THRESHOLD: u32 = 17_280; // ~1 day
-const SHIPMENT_TTL_EXTENSION: u32 = 518_400; // ~30 days
-/// Minimum seconds that must pass between status updates on the same shipment.
-/// Admin is exempt from this restriction.
-const MIN_STATUS_UPDATE_INTERVAL: u64 = 60; // 60 seconds / ~10 ledgers
-
 fn extend_shipment_ttl(env: &Env, shipment_id: u64) {
+    let config = config::get_config(env);
     storage::extend_shipment_ttl(
         env,
         shipment_id,
-        SHIPMENT_TTL_THRESHOLD,
-        SHIPMENT_TTL_EXTENSION,
+        config.shipment_ttl_threshold,
+        config.shipment_ttl_extension,
     );
 }
 
@@ -152,8 +149,9 @@ impl NavinShipment {
         }
         // Initialize metadata map if not present
         let mut metadata = shipment.metadata.unwrap_or(Map::new(&env));
-        // Enforce max 5 keys
-        if !metadata.contains_key(key.clone()) && metadata.len() >= 5 {
+        // Enforce max metadata entries from config
+        let config = config::get_config(&env);
+        if !metadata.contains_key(key.clone()) && metadata.len() >= config.max_metadata_entries {
             return Err(NavinError::MetadataLimitExceeded);
         }
         metadata.set(key.clone(), value.clone());
@@ -190,7 +188,11 @@ impl NavinShipment {
         storage::set_shipment_counter(&env, 0);
         storage::set_version(&env, 1);
         storage::set_company_role(&env, &admin);
-        storage::set_shipment_limit(&env, 100); // Set a default limit of 100
+
+        // Initialize with default configuration
+        let default_config = ContractConfig::default();
+        config::set_config(&env, &default_config);
+        storage::set_shipment_limit(&env, default_config.default_shipment_limit);
 
         env.events().publish(
             (symbol_short!("init"),),
@@ -663,7 +665,8 @@ impl NavinShipment {
         sender.require_auth();
         require_role(&env, &sender, Role::Company)?;
 
-        if shipments.len() > 10 {
+        let config = config::get_config(&env);
+        if shipments.len() > config.batch_operation_limit {
             return Err(NavinError::BatchTooLarge);
         }
 
@@ -880,7 +883,8 @@ impl NavinShipment {
         if caller != admin {
             if let Some(last) = storage::get_last_status_update(&env, shipment_id) {
                 let now = env.ledger().timestamp();
-                if now.saturating_sub(last) < MIN_STATUS_UPDATE_INTERVAL {
+                let config = config::get_config(&env);
+                if now.saturating_sub(last) < config.min_status_update_interval {
                     return Err(NavinError::RateLimitExceeded);
                 }
             }
@@ -1294,7 +1298,8 @@ impl NavinShipment {
         require_role(&env, &carrier, Role::Carrier)?;
 
         // Validate batch size
-        if milestones.len() > 10 {
+        let config = config::get_config(&env);
+        if milestones.len() > config.batch_operation_limit {
             return Err(NavinError::BatchTooLarge);
         }
 
@@ -2085,8 +2090,9 @@ impl NavinShipment {
         }
 
         // Validate configuration
+        let config = config::get_config(&env);
         let admin_count = admins.len();
-        if !(2..=10).contains(&admin_count) {
+        if admin_count < config.multisig_min_admins || admin_count > config.multisig_max_admins {
             return Err(NavinError::InvalidMultiSigConfig);
         }
 
@@ -2142,7 +2148,8 @@ impl NavinShipment {
             .ok_or(NavinError::CounterOverflow)?;
 
         let now = env.ledger().timestamp();
-        let expires_at = now + 604_800; // 7 days in seconds
+        let config = config::get_config(&env);
+        let expires_at = now + config.proposal_expiry_seconds;
 
         let mut approvals = soroban_sdk::Vec::new(&env);
         approvals.push_back(proposer.clone());
@@ -2425,6 +2432,74 @@ impl NavinShipment {
         let admins = storage::get_admin_list(&env).unwrap_or(soroban_sdk::Vec::new(&env));
         let threshold = storage::get_multisig_threshold(&env).unwrap_or(0);
         Ok((admins, threshold))
+    }
+
+    /// Update the contract configuration.
+    /// Only the admin can update the configuration.
+    /// Emits a `config_updated` event on success.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Contract admin address.
+    /// * `new_config` - The new configuration to apply.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if successfully updated.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not the admin.
+    /// * `NavinError::InvalidConfig` - If the configuration is invalid.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let mut config = ContractConfig::default();
+    /// // config.batch_operation_limit = 20;
+    /// // contract.update_config(&env, &admin, config);
+    /// ```
+    pub fn update_config(
+        env: Env,
+        admin: Address,
+        new_config: ContractConfig,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // Validate the new configuration
+        config::validate_config(&new_config).map_err(|_| NavinError::InvalidConfig)?;
+
+        // Store the new configuration
+        config::set_config(&env, &new_config);
+
+        // Emit config_updated event
+        env.events()
+            .publish((Symbol::new(&env, "config_updated"),), (admin, new_config));
+
+        Ok(())
+    }
+
+    /// Get the current contract configuration.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    ///
+    /// # Returns
+    /// * `Result<ContractConfig, NavinError>` - The current configuration.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let config = contract.get_config(&env);
+    /// ```
+    pub fn get_contract_config(env: Env) -> Result<ContractConfig, NavinError> {
+        require_initialized(&env)?;
+        Ok(config::get_config(&env))
     }
 
     /// Cancel a shipment and auto-refund escrow if its delivery deadline has passed.

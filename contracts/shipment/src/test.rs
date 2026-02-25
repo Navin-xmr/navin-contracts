@@ -6980,3 +6980,261 @@ fn test_deposit_escrow_returns_invalid_status() {
 //
 //     client.raise_dispute(&company, &shipment_id, &reason_hash);
 // }
+
+// ============= Configuration Tests =============
+
+#[test]
+fn test_get_default_config() {
+    let (_env, client, admin, token_contract) = setup_env();
+    client.initialize(&admin, &token_contract);
+
+    let config = client.get_contract_config();
+
+    // Verify default values
+    assert_eq!(config.shipment_ttl_threshold, 17_280);
+    assert_eq!(config.shipment_ttl_extension, 518_400);
+    assert_eq!(config.min_status_update_interval, 60);
+    assert_eq!(config.batch_operation_limit, 10);
+    assert_eq!(config.max_metadata_entries, 5);
+    assert_eq!(config.default_shipment_limit, 100);
+    assert_eq!(config.multisig_min_admins, 2);
+    assert_eq!(config.multisig_max_admins, 10);
+    assert_eq!(config.proposal_expiry_seconds, 604_800);
+}
+
+#[test]
+fn test_update_config_success() {
+    let (_env, client, admin, token_contract) = setup_env();
+    client.initialize(&admin, &token_contract);
+
+    let new_config = crate::ContractConfig {
+        batch_operation_limit: 20,
+        max_metadata_entries: 10,
+        min_status_update_interval: 120,
+        ..Default::default()
+    };
+
+    client.update_config(&admin, &new_config);
+
+    let stored_config = client.get_contract_config();
+    assert_eq!(stored_config.batch_operation_limit, 20);
+    assert_eq!(stored_config.max_metadata_entries, 10);
+    assert_eq!(stored_config.min_status_update_interval, 120);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_update_config_unauthorized() {
+    let (env, client, admin, token_contract) = setup_env();
+    client.initialize(&admin, &token_contract);
+
+    let non_admin = Address::generate(&env);
+    let new_config = crate::ContractConfig::default();
+
+    client.update_config(&non_admin, &new_config);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #31)")]
+fn test_update_config_invalid_batch_limit() {
+    let (_env, client, admin, token_contract) = setup_env();
+    client.initialize(&admin, &token_contract);
+
+    let new_config = crate::ContractConfig {
+        batch_operation_limit: 0, // Invalid: must be >= 1
+        ..Default::default()
+    };
+
+    client.update_config(&admin, &new_config);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #31)")]
+fn test_update_config_invalid_ttl_threshold() {
+    let (_env, client, admin, token_contract) = setup_env();
+    client.initialize(&admin, &token_contract);
+
+    let new_config = crate::ContractConfig {
+        shipment_ttl_threshold: 0, // Invalid: must be > 0
+        ..Default::default()
+    };
+
+    client.update_config(&admin, &new_config);
+}
+
+#[test]
+fn test_batch_limit_enforced_from_config() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Update config to allow only 3 items per batch
+    let new_config = crate::ContractConfig {
+        batch_operation_limit: 3,
+        ..Default::default()
+    };
+    client.update_config(&admin, &new_config);
+
+    // Try to create 4 shipments (should fail)
+    let mut shipments = soroban_sdk::Vec::new(&env);
+    for _ in 0..4 {
+        shipments.push_back(ShipmentInput {
+            receiver: receiver.clone(),
+            carrier: carrier.clone(),
+            data_hash: data_hash.clone(),
+            payment_milestones: soroban_sdk::Vec::new(&env),
+            deadline,
+        });
+    }
+
+    // This should panic with BatchTooLarge error
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.create_shipments_batch(&company, &shipments);
+    }));
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_metadata_limit_enforced_from_config() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Update config to allow only 2 metadata entries
+    let new_config = crate::ContractConfig {
+        max_metadata_entries: 2,
+        ..Default::default()
+    };
+    client.update_config(&admin, &new_config);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Add 2 metadata entries (should succeed)
+    client.set_shipment_metadata(
+        &company,
+        &shipment_id,
+        &Symbol::new(&env, "key1"),
+        &Symbol::new(&env, "value1"),
+    );
+    client.set_shipment_metadata(
+        &company,
+        &shipment_id,
+        &Symbol::new(&env, "key2"),
+        &Symbol::new(&env, "value2"),
+    );
+
+    // Try to add a 3rd entry (should fail)
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.set_shipment_metadata(
+            &company,
+            &shipment_id,
+            &Symbol::new(&env, "key3"),
+            &Symbol::new(&env, "value3"),
+        );
+    }));
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_rate_limit_enforced_from_config() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Update config to require 300 seconds between updates
+    let new_config = crate::ContractConfig {
+        min_status_update_interval: 300,
+        ..Default::default()
+    };
+    client.update_config(&admin, &new_config);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // First update should succeed
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    // Advance time by 200 seconds (less than 300)
+    env.ledger().with_mut(|l| l.timestamp += 200);
+
+    // Second update should fail due to rate limit
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::AtCheckpoint,
+            &data_hash,
+        );
+    }));
+
+    assert!(result.is_err());
+
+    // Advance time by another 150 seconds (total 350 > 300)
+    env.ledger().with_mut(|l| l.timestamp += 150);
+
+    // Now the update should succeed
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &data_hash,
+    );
+}
+
+#[test]
+fn test_config_updated_event_emitted() {
+    let (env, client, admin, token_contract) = setup_env();
+    client.initialize(&admin, &token_contract);
+
+    let new_config = crate::ContractConfig {
+        batch_operation_limit: 15,
+        ..Default::default()
+    };
+
+    client.update_config(&admin, &new_config);
+
+    // Verify event was emitted - just check that events were published
+    let events = env.events().all();
+    assert!(!events.is_empty());
+}
