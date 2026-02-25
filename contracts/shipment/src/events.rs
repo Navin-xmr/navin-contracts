@@ -515,6 +515,48 @@ pub fn emit_shipment_expired(env: &Env, shipment_id: u64) {
         .publish((Symbol::new(env, "shipment_expired"),), (shipment_id,));
 }
 
+/// Emits a `contract_paused` event when the contract is paused by an admin.
+///
+/// # Event Data
+///
+/// | Field   | Type      | Description               |
+/// |---------|-----------|---------------------------|
+/// | `admin` | `Address` | Admin who paused it       |
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_contract_paused(&env, &admin);
+/// ```
+pub fn emit_contract_paused(env: &Env, admin: &Address) {
+    let payload = admin.clone();
+    env.events()
+        .publish((Symbol::new(env, "contract_paused"),), payload);
+}
+
+/// Emits a `contract_unpaused` event when the contract is unpaused by an admin.
+///
+/// # Event Data
+///
+/// | Field   | Type      | Description               |
+/// |---------|-----------|---------------------------|
+/// | `admin` | `Address` | Admin who unpaused it     |
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_contract_unpaused(&env, &admin);
+/// ```
+pub fn emit_contract_unpaused(env: &Env, admin: &Address) {
+    let payload = admin.clone();
+    env.events()
+        .publish((Symbol::new(env, "contract_unpaused"),), payload);
+}
+
 // ─── Paste these three functions at the BOTTOM of src/events.rs ──────────────
 
 /// Emits a `delivery_success` event when a shipment is successfully delivered.

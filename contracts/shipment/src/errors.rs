@@ -76,4 +76,6 @@ pub enum NavinError {
     ShipmentLimitReached = 30,
     /// Invalid configuration parameters provided.
     InvalidConfig = 31,
+    /// Contract is currently paused and rejects state-changing operations.
+    ContractPaused = 32,
 }

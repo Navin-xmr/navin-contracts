@@ -57,6 +57,8 @@ pub enum DataKey {
     ActiveShipmentCount(Address),
     /// Contract configuration parameters.
     ContractConfig,
+    /// Boolean flag indicating if contract operations are paused.
+    IsPaused,
 }
 
 /// Supported user roles.
