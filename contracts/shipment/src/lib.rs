@@ -7,6 +7,7 @@ use soroban_sdk::{
 mod errors;
 mod events;
 mod storage;
+mod stress_test;
 mod test;
 mod types;
 mod validation;
