@@ -7281,7 +7281,12 @@ fn test_event_count_after_milestone() {
 
     // Update status to InTransit
     let status_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &status_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &status_hash,
+    );
 
     // Record a milestone
     let milestone_hash = BytesN::from_array(&env, &[3u8; 32]);
@@ -7321,16 +7326,26 @@ fn test_event_count_after_status_updates() {
 
     // Update status to InTransit
     let status_hash1 = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &status_hash1);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &status_hash1,
+    );
 
     // Advance ledger timestamp to avoid rate limit
     env.ledger().with_mut(|li| {
-        li.timestamp = li.timestamp + 61; // Advance by 61 seconds (default min interval is 60)
+        li.timestamp += 61; // Advance by 61 seconds (default min interval is 60)
     });
 
     // Update status to AtCheckpoint
     let status_hash2 = BytesN::from_array(&env, &[3u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &status_hash2);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &status_hash2,
+    );
 
     // Should have 3 events: shipment_created, status_updated (x2)
     let count = client.get_event_count(&shipment_id);
@@ -7361,7 +7376,12 @@ fn test_event_count_after_delivery() {
 
     // Update status to InTransit
     let status_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &status_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &status_hash,
+    );
 
     // Confirm delivery
     let confirmation_hash = BytesN::from_array(&env, &[3u8; 32]);
@@ -7434,7 +7454,12 @@ fn test_event_count_with_multiple_milestones() {
 
     // Update status to InTransit
     let status_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &status_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &status_hash,
+    );
 
     // Record multiple milestones
     let milestone_hash1 = BytesN::from_array(&env, &[3u8; 32]);
@@ -7464,4 +7489,230 @@ fn test_event_count_with_multiple_milestones() {
     // Should have 5 events: shipment_created, status_updated, milestone_recorded (x3)
     let count = client.get_event_count(&shipment_id);
     assert_eq!(count, 5, "Expected 5 events after recording 3 milestones");
+}
+
+// ============= Shipment Archival Tests =============
+
+#[test]
+fn test_archive_delivered_shipment() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::vec![&env],
+        &deadline,
+    );
+
+    // Update to InTransit and confirm delivery
+    let status_hash = BytesN::from_array(&env, &[2u8; 32]);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &status_hash,
+    );
+
+    let confirmation_hash = BytesN::from_array(&env, &[3u8; 32]);
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    // Archive the delivered shipment
+    client.archive_shipment(&admin, &shipment_id);
+
+    // Verify shipment is still readable (from temporary storage)
+    let archived_shipment = client.get_shipment(&shipment_id);
+    assert_eq!(archived_shipment.status, ShipmentStatus::Delivered);
+    assert_eq!(archived_shipment.id, shipment_id);
+}
+
+#[test]
+fn test_archive_cancelled_shipment() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::vec![&env],
+        &deadline,
+    );
+
+    // Cancel the shipment
+    let reason_hash = BytesN::from_array(&env, &[2u8; 32]);
+    client.cancel_shipment(&company, &shipment_id, &reason_hash);
+
+    // Archive the cancelled shipment
+    client.archive_shipment(&admin, &shipment_id);
+
+    // Verify shipment is still readable (from temporary storage)
+    let archived_shipment = client.get_shipment(&shipment_id);
+    assert_eq!(archived_shipment.status, ShipmentStatus::Cancelled);
+    assert_eq!(archived_shipment.id, shipment_id);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #5)")]
+fn test_archive_active_shipment_fails() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::vec![&env],
+        &deadline,
+    );
+
+    // Try to archive an active shipment (should fail with InvalidStatus)
+    client.archive_shipment(&admin, &shipment_id);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")]
+fn test_archive_nonexistent_shipment_fails() {
+    let (_env, client, admin, token_contract) = setup_env();
+
+    client.initialize(&admin, &token_contract);
+
+    // Try to archive a non-existent shipment (should fail with ShipmentNotFound)
+    client.archive_shipment(&admin, &999);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_archive_shipment_unauthorized() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+    let non_admin = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::vec![&env],
+        &deadline,
+    );
+
+    // Cancel the shipment
+    let reason_hash = BytesN::from_array(&env, &[2u8; 32]);
+    client.cancel_shipment(&company, &shipment_id, &reason_hash);
+
+    // Try to archive as non-admin (should fail with Unauthorized)
+    client.archive_shipment(&non_admin, &shipment_id);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #5)")]
+fn test_archive_in_transit_shipment_fails() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::vec![&env],
+        &deadline,
+    );
+
+    // Update to InTransit
+    let status_hash = BytesN::from_array(&env, &[2u8; 32]);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &status_hash,
+    );
+
+    // Try to archive an in-transit shipment (should fail with InvalidStatus)
+    client.archive_shipment(&admin, &shipment_id);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #5)")]
+fn test_archive_disputed_shipment_fails() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::vec![&env],
+        &deadline,
+    );
+
+    // Update to InTransit
+    let status_hash = BytesN::from_array(&env, &[2u8; 32]);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &status_hash,
+    );
+
+    // Raise a dispute
+    let reason_hash = BytesN::from_array(&env, &[3u8; 32]);
+    client.raise_dispute(&carrier, &shipment_id, &reason_hash);
+
+    // Try to archive a disputed shipment (should fail with InvalidStatus)
+    client.archive_shipment(&admin, &shipment_id);
 }

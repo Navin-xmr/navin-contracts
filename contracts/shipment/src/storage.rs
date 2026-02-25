@@ -297,9 +297,19 @@ pub fn has_carrier_role(env: &Env, address: &Address) -> bool {
 
 /// Get shipment by ID
 pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
-    env.storage()
+    // First check persistent storage
+    if let Some(shipment) = env
+        .storage()
         .persistent()
         .get(&DataKey::Shipment(shipment_id))
+    {
+        return Some(shipment);
+    }
+
+    // If not in persistent, check temporary (archived) storage
+    env.storage()
+        .temporary()
+        .get(&DataKey::ArchivedShipment(shipment_id))
 }
 
 /// Persist a shipment to persistent storage (survives TTL extension).
@@ -901,7 +911,77 @@ pub fn get_event_count(env: &Env, shipment_id: u64) -> u32 {
 /// ```
 pub fn increment_event_count(env: &Env, shipment_id: u64) {
     let current = get_event_count(env, shipment_id);
+    env.storage().persistent().set(
+        &DataKey::EventCount(shipment_id),
+        &current.saturating_add(1),
+    );
+}
+
+// ============= Shipment Archival Storage Functions =============
+
+/// Archive a shipment by moving it from persistent to temporary storage.
+/// This reduces state rent costs for completed shipments.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment to archive.
+/// * `shipment` - The shipment data to archive.
+///
+/// # Returns
+/// No return value.
+///
+/// # Examples
+/// ```rust
+/// // storage::archive_shipment(&env, 1, &shipment);
+/// ```
+pub fn archive_shipment(env: &Env, shipment_id: u64, shipment: &Shipment) {
+    // Store in temporary storage (cheaper, shorter TTL)
+    env.storage()
+        .temporary()
+        .set(&DataKey::ArchivedShipment(shipment_id), shipment);
+
+    // Remove from persistent storage
     env.storage()
         .persistent()
-        .set(&DataKey::EventCount(shipment_id), &current.saturating_add(1));
+        .remove(&DataKey::Shipment(shipment_id));
+}
+
+/// Get an archived shipment from temporary storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the archived shipment.
+///
+/// # Returns
+/// * `Option<Shipment>` - The archived shipment if it exists.
+///
+/// # Examples
+/// ```rust
+/// // let shipment = storage::get_archived_shipment(&env, 1);
+/// ```
+#[allow(dead_code)]
+pub fn get_archived_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
+    env.storage()
+        .temporary()
+        .get(&DataKey::ArchivedShipment(shipment_id))
+}
+
+/// Check if a shipment is archived.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// * `bool` - True if the shipment is archived.
+///
+/// # Examples
+/// ```rust
+/// // let is_archived = storage::is_shipment_archived(&env, 1);
+/// ```
+#[allow(dead_code)]
+pub fn is_shipment_archived(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .temporary()
+        .has(&DataKey::ArchivedShipment(shipment_id))
 }

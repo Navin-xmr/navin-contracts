@@ -59,6 +59,8 @@ pub enum DataKey {
     ContractConfig,
     /// Event counter for a shipment (tracks number of events emitted).
     EventCount(u64),
+    /// Archived shipment data in temporary storage (for terminal state shipments).
+    ArchivedShipment(u64),
 }
 
 /// Supported user roles.

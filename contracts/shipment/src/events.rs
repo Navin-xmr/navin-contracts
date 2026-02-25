@@ -637,3 +637,34 @@ pub fn emit_notification(
         ),
     );
 }
+
+/// Emits a `shipment_archived` event when a shipment is moved to temporary storage.
+///
+/// # Event Data
+///
+/// | Field       | Type   | Description                                     |
+/// |-------------|--------|-------------------------------------------------|
+/// | shipment_id | `u64`  | ID of the archived shipment                     |
+/// | timestamp   | `u64`  | Ledger timestamp when archival occurred         |
+///
+/// # Listeners
+/// - **Express backend**: Updates shipment status to archived in the database.
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `shipment_id` - ID of the archived shipment.
+/// * `timestamp` - Timestamp of archival.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_shipment_archived(&env, 1, 1234567890);
+/// ```
+pub fn emit_shipment_archived(env: &Env, shipment_id: u64, timestamp: u64) {
+    env.events().publish(
+        (Symbol::new(env, "shipment_archived"),),
+        (shipment_id, timestamp),
+    );
+}

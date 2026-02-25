@@ -1001,6 +1001,55 @@ impl NavinShipment {
         Ok(storage::get_event_count(&env, shipment_id))
     }
 
+    /// Archive a shipment by moving it from persistent to temporary storage.
+    /// This reduces state rent costs for completed shipments.
+    /// Only admin can archive, and shipment must be in a terminal state (Delivered or Cancelled).
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Admin address performing the archival.
+    /// * `shipment_id` - ID of the shipment to archive.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if successfully archived.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not the admin.
+    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
+    /// * `NavinError::InvalidStatus` - If shipment is not in a terminal state (Delivered or Cancelled).
+    ///
+    /// # Examples
+    /// ```rust
+    /// // contract.archive_shipment(&env, &admin, 1);
+    /// ```
+    pub fn archive_shipment(env: Env, admin: Address, shipment_id: u64) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        // Only allow archiving terminal state shipments
+        if shipment.status != ShipmentStatus::Delivered
+            && shipment.status != ShipmentStatus::Cancelled
+        {
+            return Err(NavinError::InvalidStatus);
+        }
+
+        // Archive the shipment (move from persistent to temporary storage)
+        storage::archive_shipment(&env, shipment_id, &shipment);
+
+        let timestamp = env.ledger().timestamp();
+        events::emit_shipment_archived(&env, shipment_id, timestamp);
+
+        Ok(())
+    }
+
     /// Confirm delivery of a shipment.
     /// Only the designated receiver can call this function.
     /// Shipment must be in InTransit or AtCheckpoint status.
