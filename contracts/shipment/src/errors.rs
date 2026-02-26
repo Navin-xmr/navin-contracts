@@ -76,4 +76,6 @@ pub enum NavinError {
     ShipmentLimitReached = 30,
     /// Invalid configuration parameters provided.
     InvalidConfig = 31,
+    /// Admin cannot revoke their own role; use `transfer_admin` instead.
+    CannotSelfRevoke = 32,
 }

@@ -7902,3 +7902,107 @@ fn test_carrier_late_delivery_event_and_milestones() {
         "carrier_milestone_rate event not found"
     );
 }
+
+// ============= Role Revocation Tests =============
+
+#[test]
+fn test_revoke_role_company() {
+    let (env, client, admin, token_contract) = setup_env();
+    client.initialize(&admin, &token_contract);
+
+    let company = Address::generate(&env);
+    client.add_company(&admin, &company);
+    assert_eq!(client.get_role(&company), crate::types::Role::Company);
+
+    client.revoke_role(&admin, &company);
+    assert_eq!(client.get_role(&company), crate::types::Role::Unassigned);
+}
+
+#[test]
+fn test_revoke_role_carrier() {
+    let (env, client, admin, token_contract) = setup_env();
+    client.initialize(&admin, &token_contract);
+
+    let carrier = Address::generate(&env);
+    client.add_carrier(&admin, &carrier);
+    assert_eq!(client.get_role(&carrier), crate::types::Role::Carrier);
+
+    client.revoke_role(&admin, &carrier);
+    assert_eq!(client.get_role(&carrier), crate::types::Role::Unassigned);
+}
+
+#[test]
+fn test_revoke_role_then_create_shipment_fails() {
+    let (env, client, admin, token_contract) = setup_env();
+    client.initialize(&admin, &token_contract);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let hash = BytesN::from_array(&env, &[1u8; 32]);
+    let milestones = soroban_sdk::vec![&env, (Symbol::new(&env, "delivery"), 100u32)];
+    let deadline = env.ledger().timestamp() + 86400;
+
+    // Company can create a shipment
+    let _id = client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+
+    // Revoke company role
+    client.revoke_role(&admin, &company);
+
+    // Now creating a shipment should fail with Unauthorized
+    let result =
+        client.try_create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+    assert!(result.is_err());
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #32)")]
+fn test_revoke_role_self_revoke_fails() {
+    let (_env, client, admin, token_contract) = setup_env();
+    client.initialize(&admin, &token_contract);
+
+    // Admin cannot self-revoke (error code 32 = CannotSelfRevoke)
+    client.revoke_role(&admin, &admin);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_revoke_role_unauthorized() {
+    let (env, client, admin, token_contract) = setup_env();
+    client.initialize(&admin, &token_contract);
+
+    let non_admin = Address::generate(&env);
+    let target = Address::generate(&env);
+    client.add_company(&admin, &target);
+
+    // Non-admin cannot revoke roles (error code 3 = Unauthorized)
+    client.revoke_role(&non_admin, &target);
+}
+
+#[test]
+fn test_revoke_role_emits_event() {
+    let (env, client, admin, token_contract) = setup_env();
+    client.initialize(&admin, &token_contract);
+
+    let company = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.revoke_role(&admin, &company);
+
+    let events = env.events().all();
+    let mut found = false;
+    for event in events.iter() {
+        if event.0 == client.address {
+            if let Some(first_val) = event.1.get(0) {
+                if let Ok(topic) = Symbol::try_from_val(&env, &first_val) {
+                    if topic == Symbol::new(&env, "role_revoked") {
+                        found = true;
+                    }
+                }
+            }
+        }
+    }
+    assert!(found, "role_revoked event not found");
+}
