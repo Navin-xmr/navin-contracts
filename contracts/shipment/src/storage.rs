@@ -985,3 +985,51 @@ pub fn is_shipment_archived(env: &Env, shipment_id: u64) -> bool {
         .temporary()
         .has(&DataKey::ArchivedShipment(shipment_id))
 }
+
+// ============= Governance / Snapshot Voting Storage =============
+
+/// Get snapshot balance for an address for a proposal. Returns None if not set.
+pub fn get_snapshot_balance(env: &Env, proposal_id: u64, address: &Address) -> Option<i128> {
+    let key = DataKey::SnapshotBalance(proposal_id, address.clone());
+    env.storage().instance().get(&key)
+}
+
+/// Set snapshot balance for an address for a proposal.
+pub fn set_snapshot_balance(env: &Env, proposal_id: u64, address: &Address, amount: i128) {
+    let key = DataKey::SnapshotBalance(proposal_id, address.clone());
+    env.storage().instance().set(&key, &amount);
+}
+
+/// Get delegator for a delegatee. Returns None if no delegation is set.
+pub fn get_delegation(env: &Env, delegatee: &Address) -> Option<Address> {
+    env.storage()
+        .instance()
+        .get(&DataKey::Delegation(delegatee.clone()))
+}
+
+/// Set delegation: delegatee -> delegator.
+pub fn set_delegation(env: &Env, delegatee: &Address, delegator: &Address) {
+    env.storage()
+        .instance()
+        .set(&DataKey::Delegation(delegatee.clone()), delegator);
+}
+
+/// Get vote lock until ledger for (address, proposal_id). Returns None if not locked.
+pub fn get_vote_lock(env: &Env, address: &Address, proposal_id: u64) -> Option<u32> {
+    env.storage()
+        .instance()
+        .get(&DataKey::VoteLock(address.clone(), proposal_id))
+}
+
+/// Set vote lock: lock until the given ledger.
+pub fn set_vote_lock(env: &Env, address: &Address, proposal_id: u64, until_ledger: u32) {
+    env.storage().instance().set(
+        &DataKey::VoteLock(address.clone(), proposal_id),
+        &until_ledger,
+    );
+}
+
+/// Get voting power at snapshot for a proposal and address. Returns snapshot balance if set, else 0.
+pub fn get_voting_power_at_snapshot(env: &Env, proposal_id: u64, address: &Address) -> i128 {
+    get_snapshot_balance(env, proposal_id, address).unwrap_or(0)
+}

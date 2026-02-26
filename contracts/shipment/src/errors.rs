@@ -76,4 +76,10 @@ pub enum NavinError {
     ShipmentLimitReached = 30,
     /// Invalid configuration parameters provided.
     InvalidConfig = 31,
+    /// Proposer's token balance (or delegated balance) is below min_proposal_tokens.
+    InsufficientProposalTokens = 32,
+    /// Approver cannot vote because their tokens are locked from a prior approval.
+    VoteLockActive = 33,
+    /// Approver had no voting power at the proposal's snapshot.
+    NoVotingPowerAtSnapshot = 34,
 }

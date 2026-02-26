@@ -82,6 +82,22 @@ fn require_initialized(env: &Env) -> Result<(), NavinError> {
     Ok(())
 }
 
+/// Returns the governance token balance for an address via token contract invoke (balance(id)).
+fn get_governance_balance(env: &Env, token: &Address, address: &Address) -> i128 {
+    let mut args = Vec::new(env);
+    args.push_back(address.clone().into_val(env));
+    env.invoke_contract::<i128>(token, &symbol_short!("balance"), args)
+}
+
+/// Effective voting power for an address: own balance, or delegator's balance if address is a delegatee.
+fn get_effective_governance_balance(env: &Env, token: &Address, address: &Address) -> i128 {
+    if let Some(delegator) = storage::get_delegation(env, address) {
+        get_governance_balance(env, token, &delegator)
+    } else {
+        get_governance_balance(env, token, address)
+    }
+}
+
 fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinError> {
     require_initialized(env)?;
 
@@ -2247,13 +2263,22 @@ impl NavinShipment {
             return Err(NavinError::NotAnAdmin);
         }
 
+        let config = config::get_config(&env);
+        // If governance token is configured: require proposer balance (or delegated-to-proposer) >= min_proposal_tokens
+        if let Some(ref gov_token) = config.governance_token {
+            let effective = get_effective_governance_balance(&env, gov_token, &proposer);
+            if effective < config.min_proposal_tokens {
+                return Err(NavinError::InsufficientProposalTokens);
+            }
+        }
+
         let proposal_id = storage::get_proposal_counter(&env)
             .checked_add(1)
             .ok_or(NavinError::CounterOverflow)?;
 
         let now = env.ledger().timestamp();
-        let config = config::get_config(&env);
         let expires_at = now + config.proposal_expiry_seconds;
+        let snapshot_ledger = env.ledger().sequence();
 
         let mut approvals = soroban_sdk::Vec::new(&env);
         approvals.push_back(proposer.clone());
@@ -2266,10 +2291,26 @@ impl NavinShipment {
             created_at: now,
             expires_at,
             executed: false,
+            snapshot_ledger,
         };
 
         storage::set_proposal(&env, &proposal);
         storage::set_proposal_counter(&env, proposal_id);
+        // Snapshot proposer (and optionally all admins) balance for this proposal when governance token is set
+        if let Some(ref gov_token) = config.governance_token {
+            let proposer_balance =
+                get_effective_governance_balance(&env, gov_token, &proposer);
+            storage::set_snapshot_balance(&env, proposal_id, &proposer, proposer_balance);
+            if let Some(admins) = storage::get_admin_list(&env) {
+                for admin in admins.iter() {
+                    if admin != proposer {
+                        let bal =
+                            get_effective_governance_balance(&env, gov_token, &admin);
+                        storage::set_snapshot_balance(&env, proposal_id, &admin, bal);
+                    }
+                }
+            }
+        }
 
         env.events()
             .publish((symbol_short!("propose"),), (proposal_id, proposer, action));
@@ -2327,6 +2368,24 @@ impl NavinShipment {
         for existing_approver in proposal.approvals.iter() {
             if existing_approver == approver {
                 return Err(NavinError::AlreadyApproved);
+            }
+        }
+
+        let config = config::get_config(&env);
+        if let Some(ref _gov_token) = config.governance_token {
+            let current_ledger = env.ledger().sequence();
+            if let Some(lock_until) = storage::get_vote_lock(&env, &approver, proposal_id) {
+                if current_ledger < lock_until {
+                    return Err(NavinError::VoteLockActive);
+                }
+            }
+            let power = storage::get_voting_power_at_snapshot(&env, proposal_id, &approver);
+            if power <= 0 {
+                return Err(NavinError::NoVotingPowerAtSnapshot);
+            }
+            if config.vote_lock_ledgers > 0 {
+                let lock_until = current_ledger.saturating_add(config.vote_lock_ledgers);
+                storage::set_vote_lock(&env, &approver, proposal_id, lock_until);
             }
         }
 
@@ -2390,7 +2449,9 @@ impl NavinShipment {
             return Err(NavinError::ProposalAlreadyExecuted);
         }
 
-        // Check if threshold is met
+        // Execution threshold: existing N-of-M admin approvals are required.
+        // Optionally a quorum could be enforced by requiring total snapshot voting power of
+        // approvers >= some minimum (sum storage::get_voting_power_at_snapshot for each approver).
         let threshold = storage::get_multisig_threshold(&env).unwrap_or(2);
         if proposal.approvals.len() < threshold {
             return Err(NavinError::InsufficientApprovals);
@@ -2514,6 +2575,45 @@ impl NavinShipment {
     pub fn get_proposal(env: Env, proposal_id: u64) -> Result<crate::types::Proposal, NavinError> {
         require_initialized(&env)?;
         storage::get_proposal(&env, proposal_id).ok_or(NavinError::ProposalNotFound)
+    }
+
+    /// Get the snapshot ledger for a proposal (ledger sequence at which voting power was captured).
+    pub fn get_proposal_snapshot_ledger(
+        env: Env,
+        proposal_id: u64,
+    ) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        let proposal =
+            storage::get_proposal(&env, proposal_id).ok_or(NavinError::ProposalNotFound)?;
+        Ok(proposal.snapshot_ledger)
+    }
+
+    /// Set delegation: delegatee's voting power will use delegator's token balance. Requires auth from delegator.
+    pub fn set_delegation(
+        env: Env,
+        delegator: Address,
+        delegatee: Address,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        delegator.require_auth();
+        storage::set_delegation(&env, &delegatee, &delegator);
+        Ok(())
+    }
+
+    /// Get the delegator for a delegatee (read-only). Returns None if no delegation is set.
+    pub fn get_delegation(env: Env, delegatee: Address) -> Result<Option<Address>, NavinError> {
+        require_initialized(&env)?;
+        Ok(storage::get_delegation(&env, &delegatee))
+    }
+
+    /// Get vote lock until ledger for (address, proposal_id). Returns None if not locked.
+    pub fn get_vote_lock(
+        env: Env,
+        address: Address,
+        proposal_id: u64,
+    ) -> Result<Option<u32>, NavinError> {
+        require_initialized(&env)?;
+        Ok(storage::get_vote_lock(&env, &address, proposal_id))
     }
 
     /// Get the multi-sig configuration.
