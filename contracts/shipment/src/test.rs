@@ -7716,3 +7716,189 @@ fn test_archive_disputed_shipment_fails() {
     // Try to archive a disputed shipment (should fail with InvalidStatus)
     client.archive_shipment(&admin, &shipment_id);
 }
+
+// ============= Analytics Event Tests =============
+
+#[test]
+fn test_carrier_handoff_completed_event() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let current_carrier = Address::generate(&env);
+    let new_carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let handoff_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &current_carrier);
+    client.add_carrier(&admin, &new_carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &current_carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    client.handoff_shipment(&current_carrier, &new_carrier, &shipment_id, &handoff_hash);
+
+    let events = env.events().all();
+    let mut found = false;
+    for event in events.iter() {
+        if event.0 == client.address {
+            if let Some(first_val) = event.1.get(0) {
+                if let Ok(topic) = Symbol::try_from_val(&env, &first_val) {
+                    if topic == Symbol::new(&env, "carrier_handoff_completed") {
+                        found = true;
+                        let event_data =
+                            <(Address, Address, u64)>::try_from_val(&env, &event.2).unwrap();
+                        assert_eq!(
+                            event_data,
+                            (current_carrier.clone(), new_carrier.clone(), shipment_id)
+                        );
+                    }
+                }
+            }
+        }
+    }
+    assert!(found, "carrier_handoff_completed event not found");
+}
+
+#[test]
+fn test_carrier_on_time_delivery_event() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let confirmation_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    client.deposit_escrow(&company, &shipment_id, &1000);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    let events = env.events().all();
+    let mut found = false;
+    for event in events.iter() {
+        if event.0 == client.address {
+            if let Some(first_val) = event.1.get(0) {
+                if let Ok(topic) = Symbol::try_from_val(&env, &first_val) {
+                    if topic == Symbol::new(&env, "carrier_on_time_delivery") {
+                        found = true;
+                        let event_data = <(Address, u64)>::try_from_val(&env, &event.2).unwrap();
+                        assert_eq!(event_data, (carrier.clone(), shipment_id));
+                    }
+                }
+            }
+        }
+    }
+    assert!(found, "carrier_on_time_delivery event not found");
+}
+
+#[test]
+fn test_carrier_late_delivery_event_and_milestones() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let confirmation_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    // Set a future deadline
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "warehouse"), 50));
+    milestones.push_back((Symbol::new(&env, "port"), 50));
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    client.deposit_escrow(&company, &shipment_id, &1000);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    // Hit one milestone
+    client.record_milestone(
+        &carrier,
+        &shipment_id,
+        &Symbol::new(&env, "warehouse"),
+        &BytesN::from_array(&env, &[3u8; 32]),
+    );
+
+    // Advance time past the deadline to trigger a late delivery
+    env.ledger().with_mut(|l| l.timestamp = deadline + 100);
+
+    // Delivery
+    let actual_time = env.ledger().timestamp();
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    let events = env.events().all();
+    let mut found_late = false;
+    let mut found_milestone_rate = false;
+
+    for event in events.iter() {
+        if event.0 == client.address {
+            if let Some(first_val) = event.1.get(0) {
+                if let Ok(topic) = Symbol::try_from_val(&env, &first_val) {
+                    if topic == Symbol::new(&env, "carrier_late_delivery") {
+                        found_late = true;
+                        let event_data =
+                            <(Address, u64, u64, u64)>::try_from_val(&env, &event.2).unwrap();
+                        assert_eq!(
+                            event_data,
+                            (carrier.clone(), shipment_id, deadline, actual_time)
+                        );
+                    } else if topic == Symbol::new(&env, "carrier_milestone_rate") {
+                        found_milestone_rate = true;
+                        let event_data =
+                            <(Address, u64, u32, u32)>::try_from_val(&env, &event.2).unwrap();
+                        assert_eq!(event_data, (carrier.clone(), shipment_id, 1, 2));
+                    }
+                }
+            }
+        }
+    }
+    assert!(found_late, "carrier_late_delivery event not found");
+    assert!(
+        found_milestone_rate,
+        "carrier_milestone_rate event not found"
+    );
+}

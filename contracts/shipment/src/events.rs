@@ -668,3 +668,57 @@ pub fn emit_shipment_archived(env: &Env, shipment_id: u64, timestamp: u64) {
         (shipment_id, timestamp),
     );
 }
+
+/// Emits a `carrier_late_delivery` event when a carrier completes delivery after the deadline.
+pub fn emit_carrier_late_delivery(
+    env: &Env,
+    carrier: &Address,
+    shipment_id: u64,
+    deadline: u64,
+    actual_delivery_time: u64,
+) {
+    env.events().publish(
+        (Symbol::new(env, "carrier_late_delivery"),),
+        (carrier.clone(), shipment_id, deadline, actual_delivery_time),
+    );
+}
+
+/// Emits a `carrier_on_time_delivery` event when a carrier completes delivery on or before the deadline.
+pub fn emit_carrier_on_time_delivery(env: &Env, carrier: &Address, shipment_id: u64) {
+    env.events().publish(
+        (Symbol::new(env, "carrier_on_time_delivery"),),
+        (carrier.clone(), shipment_id),
+    );
+}
+
+/// Emits a `carrier_handoff_completed` event when a shipment is transferred between carriers.
+pub fn emit_carrier_handoff_completed(
+    env: &Env,
+    from_carrier: &Address,
+    to_carrier: &Address,
+    shipment_id: u64,
+) {
+    env.events().publish(
+        (Symbol::new(env, "carrier_handoff_completed"),),
+        (from_carrier.clone(), to_carrier.clone(), shipment_id),
+    );
+}
+
+/// Emits a `carrier_milestone_rate` event to track completeness of checkpoint reporting.
+pub fn emit_carrier_milestone_rate(
+    env: &Env,
+    carrier: &Address,
+    shipment_id: u64,
+    milestones_hit: u32,
+    total_milestones: u32,
+) {
+    env.events().publish(
+        (Symbol::new(env, "carrier_milestone_rate"),),
+        (
+            carrier.clone(),
+            shipment_id,
+            milestones_hit,
+            total_milestones,
+        ),
+    );
+}
