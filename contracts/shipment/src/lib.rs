@@ -5,6 +5,7 @@ use soroban_sdk::{
 };
 
 mod config;
+mod e2e_test;
 mod errors;
 mod events;
 mod storage;
