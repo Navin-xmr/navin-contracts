@@ -67,6 +67,7 @@ pub fn emit_shipment_created(
             data_hash.clone(),
         ),
     );
+    crate::storage::increment_event_count(env, shipment_id);
 }
 
 /// Emits a `status_updated` event when a shipment transitions between lifecycle states.
@@ -115,6 +116,7 @@ pub fn emit_status_updated(
             data_hash.clone(),
         ),
     );
+    crate::storage::increment_event_count(env, shipment_id);
 }
 
 /// Emits a `milestone_recorded` event when a carrier reports a checkpoint.
@@ -167,6 +169,7 @@ pub fn emit_milestone_recorded(
             reporter.clone(),
         ),
     );
+    crate::storage::increment_event_count(env, shipment_id);
 }
 
 /// Emits an `escrow_deposited` event when funds are locked for a shipment.
@@ -579,6 +582,7 @@ pub fn emit_delivery_success(env: &Env, carrier: &Address, shipment_id: u64, del
         (Symbol::new(env, "delivery_success"),),
         (carrier.clone(), shipment_id, delivery_time),
     );
+    crate::storage::increment_event_count(env, shipment_id);
 }
 
 /// Emits a `carrier_breach` event when a carrier reports a condition breach.
@@ -672,6 +676,91 @@ pub fn emit_notification(
             notification_type,
             shipment_id,
             data_hash.clone(),
+        ),
+    );
+}
+
+/// Emits a `shipment_archived` event when a shipment is moved to temporary storage.
+///
+/// # Event Data
+///
+/// | Field       | Type   | Description                                     |
+/// |-------------|--------|-------------------------------------------------|
+/// | shipment_id | `u64`  | ID of the archived shipment                     |
+/// | timestamp   | `u64`  | Ledger timestamp when archival occurred         |
+///
+/// # Listeners
+/// - **Express backend**: Updates shipment status to archived in the database.
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `shipment_id` - ID of the archived shipment.
+/// * `timestamp` - Timestamp of archival.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_shipment_archived(&env, 1, 1234567890);
+/// ```
+pub fn emit_shipment_archived(env: &Env, shipment_id: u64, timestamp: u64) {
+    env.events().publish(
+        (Symbol::new(env, "shipment_archived"),),
+        (shipment_id, timestamp),
+    );
+}
+
+/// Emits a `carrier_late_delivery` event when a carrier completes delivery after the deadline.
+pub fn emit_carrier_late_delivery(
+    env: &Env,
+    carrier: &Address,
+    shipment_id: u64,
+    deadline: u64,
+    actual_delivery_time: u64,
+) {
+    env.events().publish(
+        (Symbol::new(env, "carrier_late_delivery"),),
+        (carrier.clone(), shipment_id, deadline, actual_delivery_time),
+    );
+}
+
+/// Emits a `carrier_on_time_delivery` event when a carrier completes delivery on or before the deadline.
+pub fn emit_carrier_on_time_delivery(env: &Env, carrier: &Address, shipment_id: u64) {
+    env.events().publish(
+        (Symbol::new(env, "carrier_on_time_delivery"),),
+        (carrier.clone(), shipment_id),
+    );
+}
+
+/// Emits a `carrier_handoff_completed` event when a shipment is transferred between carriers.
+pub fn emit_carrier_handoff_completed(
+    env: &Env,
+    from_carrier: &Address,
+    to_carrier: &Address,
+    shipment_id: u64,
+) {
+    env.events().publish(
+        (Symbol::new(env, "carrier_handoff_completed"),),
+        (from_carrier.clone(), to_carrier.clone(), shipment_id),
+    );
+}
+
+/// Emits a `carrier_milestone_rate` event to track completeness of checkpoint reporting.
+pub fn emit_carrier_milestone_rate(
+    env: &Env,
+    carrier: &Address,
+    shipment_id: u64,
+    milestones_hit: u32,
+    total_milestones: u32,
+) {
+    env.events().publish(
+        (Symbol::new(env, "carrier_milestone_rate"),),
+        (
+            carrier.clone(),
+            shipment_id,
+            milestones_hit,
+            total_milestones,
         ),
     );
 }
