@@ -534,6 +534,53 @@ impl NavinShipment {
         Ok(())
     }
 
+    /// Revoke a previously assigned role from an address.
+    ///
+    /// Only the admin can revoke roles. The admin cannot revoke their own role;
+    /// use `transfer_admin` instead.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Contract admin executing the revocation.
+    /// * `target` - The address whose role is being revoked.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok on successful role revocation.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If called by a non-admin.
+    /// * `NavinError::CannotSelfRevoke` - If admin tries to revoke their own role.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // contract.revoke_role(&env, &admin, &target_addr);
+    /// ```
+    pub fn revoke_role(env: Env, admin: Address, target: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        if admin == target {
+            return Err(NavinError::CannotSelfRevoke);
+        }
+
+        let current_role = storage::get_role(&env, &target).unwrap_or(Role::Unassigned);
+
+        match current_role {
+            Role::Company => storage::revoke_role(&env, &target, &Role::Company),
+            Role::Carrier => storage::revoke_role(&env, &target, &Role::Carrier),
+            Role::Unassigned => {}
+        }
+
+        events::emit_role_revoked(&env, &admin, &target, &current_role);
+
+        Ok(())
+    }
+
     /// Create a shipment and emit the shipment_created event.
     ///
     /// # Arguments

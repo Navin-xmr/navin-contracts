@@ -283,6 +283,29 @@ pub fn set_carrier_role(env: &Env, carrier: &Address) {
     set_role(env, carrier, &Role::Carrier);
 }
 
+/// Revoke a role from an address in instance storage.
+///
+/// Removes the `UserRole(address, role)` key and resets the legacy
+/// `Role(address)` key to `Unassigned`.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `address` - The address whose role is being revoked.
+/// * `role` - The role to revoke.
+///
+/// # Examples
+/// ```rust
+/// // storage::revoke_role(&env, &user_addr, &Role::Company);
+/// ```
+pub fn revoke_role(env: &Env, address: &Address, role: &Role) {
+    let key = DataKey::UserRole(address.clone(), role.clone());
+    env.storage().instance().remove(&key);
+    // Reset legacy single-role slot to Unassigned
+    env.storage()
+        .instance()
+        .set(&DataKey::Role(address.clone()), &Role::Unassigned);
+}
+
 /// Check whether an address has Company role (legacy compatibility)
 #[allow(dead_code)]
 pub fn has_company_role(env: &Env, address: &Address) -> bool {

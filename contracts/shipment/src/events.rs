@@ -704,6 +704,36 @@ pub fn emit_carrier_handoff_completed(
     );
 }
 
+/// Emits a `role_revoked` event when an admin revokes a role from an address.
+///
+/// # Event Data
+///
+/// | Field   | Type      | Description                                |
+/// |---------|-----------|--------------------------------------------|
+/// | admin   | `Address` | Admin that performed the revocation         |
+/// | target  | `Address` | Address whose role was revoked              |
+/// | role    | `Role`    | The role that was revoked                   |
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `admin` - The admin who revoked the role.
+/// * `target` - The address whose role was revoked.
+/// * `role` - The role that was revoked.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_role_revoked(&env, &admin, &target, &Role::Company);
+/// ```
+pub fn emit_role_revoked(env: &Env, admin: &Address, target: &Address, role: &crate::types::Role) {
+    env.events().publish(
+        (Symbol::new(env, "role_revoked"),),
+        (admin.clone(), target.clone(), role.clone()),
+    );
+}
+
 /// Emits a `carrier_milestone_rate` event to track completeness of checkpoint reporting.
 pub fn emit_carrier_milestone_rate(
     env: &Env,
