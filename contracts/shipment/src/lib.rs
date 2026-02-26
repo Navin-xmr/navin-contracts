@@ -1123,6 +1123,29 @@ impl NavinShipment {
 
         // Reputation: record successful delivery for the carrier
         events::emit_delivery_success(&env, &shipment.carrier, shipment_id, now);
+
+        let total_milestones = shipment.payment_milestones.len();
+        let milestones_hit = shipment.paid_milestones.len();
+        events::emit_carrier_milestone_rate(
+            &env,
+            &shipment.carrier,
+            shipment_id,
+            milestones_hit,
+            total_milestones,
+        );
+
+        if now > shipment.deadline {
+            events::emit_carrier_late_delivery(
+                &env,
+                &shipment.carrier,
+                shipment_id,
+                shipment.deadline,
+                now,
+            );
+        } else {
+            events::emit_carrier_on_time_delivery(&env, &shipment.carrier, shipment_id);
+        }
+
         events::emit_notification(
             &env,
             &shipment.sender,
@@ -1981,6 +2004,9 @@ impl NavinShipment {
 
         // Emit carrier_handoff event
         events::emit_carrier_handoff(&env, shipment_id, &old_carrier, &new_carrier, &handoff_hash);
+
+        // Emit carrier_handoff_completed event
+        events::emit_carrier_handoff_completed(&env, &old_carrier, &new_carrier, shipment_id);
 
         // Record a milestone for the handoff
         events::emit_milestone_recorded(
