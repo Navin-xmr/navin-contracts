@@ -10,7 +10,7 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
-navin-token = { path = "../token" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+navin-token = { path = "../token", features = ["testutils"] }
