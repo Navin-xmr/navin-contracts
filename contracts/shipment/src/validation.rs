@@ -100,6 +100,15 @@ pub fn validate_shipment_exists(env: &Env, id: u64) -> Result<Shipment, NavinErr
     storage::get_shipment(env, id).ok_or(NavinError::ShipmentNotFound)
 }
 
+/// Ensure the contract is not paused.
+/// Returns `Err(NavinError::ContractPaused)` if it is.
+pub fn require_not_paused(env: &Env) -> Result<(), NavinError> {
+    if storage::is_paused(env) {
+        return Err(NavinError::ContractPaused);
+    }
+    Ok(())
+}
+
 // Tests
 #[cfg(test)]
 mod tests {

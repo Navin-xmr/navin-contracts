@@ -802,6 +802,21 @@ pub fn increment_total_disputes(env: &Env) {
         .set(&DataKey::TotalDisputes, &(current + 1));
 }
 
+// ============= Pause / Unpause Storage Functions =============
+
+/// Check if the contract is paused.
+pub fn is_paused(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::IsPaused)
+        .unwrap_or(false)
+}
+
+/// Set the paused state of the contract.
+pub fn set_paused(env: &Env, paused: bool) {
+    env.storage().instance().set(&DataKey::IsPaused, &paused);
+}
+
 /// Get the count of shipments with a specific status.
 pub fn get_status_count(env: &Env, status: &ShipmentStatus) -> u64 {
     env.storage()

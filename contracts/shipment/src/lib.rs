@@ -109,6 +109,41 @@ pub struct NavinShipment;
 
 #[contractimpl]
 impl NavinShipment {
+    /// Pause the contract. Only admin can call.
+    /// Rejects all state-changing operations when paused.
+    pub fn pause(env: Env, admin: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+
+        // Verify the caller is the admin
+        admin.require_auth();
+        let current_admin = storage::get_admin(&env);
+        if current_admin != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::set_paused(&env, true);
+        events::emit_contract_paused(&env, &admin);
+
+        Ok(())
+    }
+
+    /// Unpause the contract. Only admin can call.
+    /// Resumes normal operations.
+    pub fn unpause(env: Env, admin: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+
+        // Verify the caller is the admin
+        admin.require_auth();
+        let current_admin = storage::get_admin(&env);
+        if current_admin != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::set_paused(&env, false);
+        events::emit_contract_unpaused(&env, &admin);
+
+        Ok(())
+    }
     /// Set metadata key-value pair for a shipment. Only Company (sender) or Admin can set.
     /// Max 5 metadata entries allowed.
     ///
@@ -140,6 +175,7 @@ impl NavinShipment {
         value: Symbol,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         caller.require_auth();
         let admin = storage::get_admin(&env);
         let mut shipment =
@@ -183,6 +219,7 @@ impl NavinShipment {
         if storage::is_initialized(&env) {
             return Err(NavinError::AlreadyInitialized);
         }
+        require_not_paused(&env)?;
 
         storage::set_admin(&env, &admin);
         storage::set_token_contract(&env, &token_contract);
@@ -212,6 +249,7 @@ impl NavinShipment {
     /// * `limit` - The new active shipment limit.
     pub fn set_shipment_limit(env: Env, admin: Address, limit: u32) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -375,6 +413,7 @@ impl NavinShipment {
         carrier: Address,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         company.require_auth();
         require_role(&env, &company, Role::Company)?;
 
@@ -412,6 +451,7 @@ impl NavinShipment {
         carrier: Address,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         company.require_auth();
         require_role(&env, &company, Role::Company)?;
 
@@ -494,6 +534,7 @@ impl NavinShipment {
     /// ```
     pub fn add_company(env: Env, admin: Address, company: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -524,6 +565,7 @@ impl NavinShipment {
     /// ```
     pub fn add_carrier(env: Env, admin: Address, carrier: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -570,6 +612,7 @@ impl NavinShipment {
         deadline: u64,
     ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         sender.require_auth();
         require_role(&env, &sender, Role::Company)?;
         validate_milestones(&env, &payment_milestones)?;
@@ -663,6 +706,7 @@ impl NavinShipment {
         shipments: Vec<ShipmentInput>,
     ) -> Result<Vec<u64>, NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         sender.require_auth();
         require_role(&env, &sender, Role::Company)?;
 
@@ -799,6 +843,7 @@ impl NavinShipment {
         amount: i128,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         from.require_auth();
         require_role(&env, &from, Role::Company)?;
 
@@ -870,6 +915,7 @@ impl NavinShipment {
         data_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         caller.require_auth();
 
         let admin = storage::get_admin(&env);
@@ -1083,6 +1129,7 @@ impl NavinShipment {
         confirmation_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         receiver.require_auth();
 
         let mut shipment =
@@ -1195,6 +1242,7 @@ impl NavinShipment {
         data_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
 
@@ -1248,6 +1296,7 @@ impl NavinShipment {
         data_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
 
@@ -1301,6 +1350,7 @@ impl NavinShipment {
         data_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
 
@@ -1395,6 +1445,7 @@ impl NavinShipment {
         milestones: Vec<(Symbol, BytesN<32>)>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
 
@@ -1496,6 +1547,7 @@ impl NavinShipment {
     /// ```
     pub fn extend_shipment_ttl(env: Env, shipment_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         extend_shipment_ttl(&env, shipment_id);
         Ok(())
     }
@@ -1517,7 +1569,7 @@ impl NavinShipment {
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::ShipmentNotFound` - If tracking context is invalid list element.
-    /// * `NavinError::Unauthorized` - If called by unauthorized accounts.
+    /// * `NavinError::Unauthorized` - If called by unassigned identity.
     /// * `NavinError::ShipmentAlreadyCompleted` - If tracking context specified reached terminal states.
     ///
     /// # Examples
@@ -1531,6 +1583,7 @@ impl NavinShipment {
         reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         caller.require_auth();
 
         let admin = storage::get_admin(&env);
@@ -1596,6 +1649,7 @@ impl NavinShipment {
     /// ```
     pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -1638,6 +1692,7 @@ impl NavinShipment {
     /// ```
     pub fn release_escrow(env: Env, caller: Address, shipment_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         caller.require_auth();
 
         let admin = storage::get_admin(&env);
@@ -1701,6 +1756,7 @@ impl NavinShipment {
     /// ```
     pub fn refund_escrow(env: Env, caller: Address, shipment_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         caller.require_auth();
 
         let admin = storage::get_admin(&env);
@@ -1785,6 +1841,7 @@ impl NavinShipment {
         reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         caller.require_auth();
 
         let mut shipment =
@@ -1867,6 +1924,7 @@ impl NavinShipment {
         resolution: DisputeResolution,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -1975,6 +2033,7 @@ impl NavinShipment {
         handoff_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         current_carrier.require_auth();
         require_role(&env, &current_carrier, Role::Carrier)?;
         require_role(&env, &new_carrier, Role::Carrier)?;
@@ -2054,6 +2113,7 @@ impl NavinShipment {
         data_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
 
@@ -2100,6 +2160,7 @@ impl NavinShipment {
         proof_hash: BytesN<32>,
     ) -> Result<bool, NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
 
         // Ensure the shipment exists
         if storage::get_shipment(&env, shipment_id).is_none() {
@@ -2118,6 +2179,7 @@ impl NavinShipment {
     /// * `new_admin` - Address proposed as the new administrator.
     pub fn transfer_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -2137,6 +2199,7 @@ impl NavinShipment {
     /// * `new_admin` - The proposed administrator address accepting the role.
     pub fn accept_admin_transfer(env: Env, new_admin: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         new_admin.require_auth();
 
         let proposed = storage::get_proposed_admin(&env).ok_or(NavinError::Unauthorized)?;
@@ -2187,6 +2250,7 @@ impl NavinShipment {
         threshold: u32,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -2240,6 +2304,7 @@ impl NavinShipment {
         action: crate::types::AdminAction,
     ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         proposer.require_auth();
 
         // Check if proposer is in admin list
@@ -2302,6 +2367,7 @@ impl NavinShipment {
     /// ```
     pub fn approve_action(env: Env, approver: Address, proposal_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         approver.require_auth();
 
         // Check if approver is in admin list
@@ -2371,6 +2437,7 @@ impl NavinShipment {
     /// ```
     pub fn execute_proposal(env: Env, proposal_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         Self::execute_proposal_internal(env, proposal_id)
     }
 
@@ -2513,6 +2580,7 @@ impl NavinShipment {
     /// ```
     pub fn get_proposal(env: Env, proposal_id: u64) -> Result<crate::types::Proposal, NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         storage::get_proposal(&env, proposal_id).ok_or(NavinError::ProposalNotFound)
     }
 
@@ -2533,6 +2601,7 @@ impl NavinShipment {
     /// ```
     pub fn get_multisig_config(env: Env) -> Result<(soroban_sdk::Vec<Address>, u32), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         let admins = storage::get_admin_list(&env).unwrap_or(soroban_sdk::Vec::new(&env));
         let threshold = storage::get_multisig_threshold(&env).unwrap_or(0);
         Ok((admins, threshold))
@@ -2567,6 +2636,7 @@ impl NavinShipment {
         new_config: ContractConfig,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -2603,6 +2673,7 @@ impl NavinShipment {
     /// ```
     pub fn get_contract_config(env: Env) -> Result<ContractConfig, NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         Ok(config::get_config(&env))
     }
 
@@ -2621,6 +2692,7 @@ impl NavinShipment {
     /// * `NavinError::ShipmentAlreadyCompleted` - If the shipment is already in a terminal state.
     pub fn check_deadline(env: Env, shipment_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
 
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
