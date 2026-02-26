@@ -53,17 +53,45 @@ pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::Admin, admin);
 }
 
-/// Returns the proposed admin address if set.
+/// Returns the proposed admin address from instance storage, if set.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+///
+/// # Returns
+/// * `Option<Address>` - The proposed admin address, or `None`.
+///
+/// # Examples
+/// ```rust
+/// // let proposed = storage::get_proposed_admin(&env);
+/// ```
 pub fn get_proposed_admin(env: &Env) -> Option<Address> {
     env.storage().instance().get(&DataKey::ProposedAdmin)
 }
 
 /// Store the proposed admin address in instance storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `admin` - The address being proposed as the new admin.
+///
+/// # Examples
+/// ```rust
+/// // storage::set_proposed_admin(&env, &new_admin_addr);
+/// ```
 pub fn set_proposed_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&DataKey::ProposedAdmin, admin);
 }
 
 /// Clear the proposed admin address from instance storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+///
+/// # Examples
+/// ```rust
+/// // storage::clear_proposed_admin(&env);
+/// ```
 pub fn clear_proposed_admin(env: &Env) {
     env.storage().instance().remove(&DataKey::ProposedAdmin);
 }
@@ -250,7 +278,20 @@ pub fn is_carrier_whitelisted(env: &Env, company: &Address, carrier: &Address) -
     env.storage().instance().get(&key).unwrap_or(false)
 }
 
-/// Assign a role to an address (supports multiple roles per address)
+/// Assign a role to an address in instance storage.
+///
+/// Supports multiple roles per address via `UserRole(address, role)` keys
+/// and also sets the legacy `Role(address)` key for backward compatibility.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `address` - The address to assign the role to.
+/// * `role` - The role to assign.
+///
+/// # Examples
+/// ```rust
+/// // storage::set_role(&env, &user_addr, &Role::Company);
+/// ```
 pub fn set_role(env: &Env, address: &Address, role: &Role) {
     let key = DataKey::UserRole(address.clone(), role.clone());
     env.storage().instance().set(&key, &true);
@@ -260,42 +301,124 @@ pub fn set_role(env: &Env, address: &Address, role: &Role) {
         .set(&DataKey::Role(address.clone()), role);
 }
 
-/// Check if an address has a specific role
+/// Check if an address has a specific role in instance storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `address` - The address to check.
+/// * `role` - The role to check for.
+///
+/// # Returns
+/// * `bool` - True if the address has the specified role.
+///
+/// # Examples
+/// ```rust
+/// // let is_company = storage::has_role(&env, &user_addr, &Role::Company);
+/// ```
 pub fn has_role(env: &Env, address: &Address, role: &Role) -> bool {
     let key = DataKey::UserRole(address.clone(), role.clone());
     env.storage().instance().get(&key).unwrap_or(false)
 }
 
-/// Retrieve the role assigned to an address (legacy compatibility). Returns None if not set.
+/// Retrieve the primary role assigned to an address from instance storage.
+///
+/// Uses the legacy `Role(address)` key for backward compatibility.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `address` - The address to look up.
+///
+/// # Returns
+/// * `Option<Role>` - The role if assigned, or `None`.
+///
+/// # Examples
+/// ```rust
+/// // let role = storage::get_role(&env, &user_addr);
+/// ```
 pub fn get_role(env: &Env, address: &Address) -> Option<Role> {
     env.storage()
         .instance()
         .get(&DataKey::Role(address.clone()))
 }
 
-/// Grant Company role to an address (legacy compatibility)
+/// Grant the `Company` role to an address.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `company` - The address to grant the Company role to.
+///
+/// # Examples
+/// ```rust
+/// // storage::set_company_role(&env, &company_addr);
+/// ```
 pub fn set_company_role(env: &Env, company: &Address) {
     set_role(env, company, &Role::Company);
 }
 
-/// Backwards-compatible: grant Carrier role to an address.
+/// Grant the `Carrier` role to an address.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `carrier` - The address to grant the Carrier role to.
+///
+/// # Examples
+/// ```rust
+/// // storage::set_carrier_role(&env, &carrier_addr);
+/// ```
 pub fn set_carrier_role(env: &Env, carrier: &Address) {
     set_role(env, carrier, &Role::Carrier);
 }
 
-/// Check whether an address has Company role (legacy compatibility)
+/// Check whether an address has the `Company` role.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `address` - The address to check.
+///
+/// # Returns
+/// * `bool` - True if the address has the Company role.
+///
+/// # Examples
+/// ```rust
+/// // let is_company = storage::has_company_role(&env, &addr);
+/// ```
 #[allow(dead_code)]
 pub fn has_company_role(env: &Env, address: &Address) -> bool {
     has_role(env, address, &Role::Company)
 }
 
-/// Check whether an address has Carrier role (legacy compatibility)
+/// Check whether an address has the `Carrier` role.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `address` - The address to check.
+///
+/// # Returns
+/// * `bool` - True if the address has the Carrier role.
+///
+/// # Examples
+/// ```rust
+/// // let is_carrier = storage::has_carrier_role(&env, &addr);
+/// ```
 #[allow(dead_code)]
 pub fn has_carrier_role(env: &Env, address: &Address) -> bool {
     has_role(env, address, &Role::Carrier)
 }
 
-/// Get shipment by ID
+/// Retrieve a shipment by ID, checking persistent storage first,
+/// then falling back to temporary (archived) storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment to retrieve.
+///
+/// # Returns
+/// * `Option<Shipment>` - The shipment if found in either storage tier.
+///
+/// # Examples
+/// ```rust
+/// // let shipment = storage::get_shipment(&env, 1);
+/// ```
 pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
     // First check persistent storage
     if let Some(shipment) = env
@@ -446,7 +569,6 @@ pub fn remove_escrow_balance(env: &Env, shipment_id: u64) {
 pub fn set_confirmation_hash(env: &Env, shipment_id: u64, hash: &BytesN<32>) {
     let key = DataKey::ConfirmationHash(shipment_id);
     env.storage().persistent().set(&key, hash);
-    env.storage().persistent().set(&key, hash); // Redundant identical set, keeping original logic
 }
 
 /// Retrieve confirmation hash for a shipment from persistent storage.
@@ -770,7 +892,18 @@ pub fn is_admin(env: &Env, address: &Address) -> bool {
 
 // ============= Analytics Storage Functions =============
 
-/// Get total escrow volume processed by the contract.
+/// Get the total escrow volume processed by the contract from instance storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+///
+/// # Returns
+/// * `i128` - The cumulative escrow volume. Defaults to 0.
+///
+/// # Examples
+/// ```rust
+/// // let volume = storage::get_total_escrow_volume(&env);
+/// ```
 pub fn get_total_escrow_volume(env: &Env) -> i128 {
     env.storage()
         .instance()
@@ -778,7 +911,16 @@ pub fn get_total_escrow_volume(env: &Env) -> i128 {
         .unwrap_or(0)
 }
 
-/// Add an amount to the total escrow volume.
+/// Add an amount to the total escrow volume in instance storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `amount` - The escrow amount to add to the running total.
+///
+/// # Examples
+/// ```rust
+/// // storage::add_total_escrow_volume(&env, 5000);
+/// ```
 pub fn add_total_escrow_volume(env: &Env, amount: i128) {
     let current = get_total_escrow_volume(env);
     env.storage()
@@ -786,7 +928,18 @@ pub fn add_total_escrow_volume(env: &Env, amount: i128) {
         .set(&DataKey::TotalEscrowVolume, &(current + amount));
 }
 
-/// Get the total number of disputes raised.
+/// Get the total number of disputes raised from instance storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+///
+/// # Returns
+/// * `u64` - The total dispute count. Defaults to 0.
+///
+/// # Examples
+/// ```rust
+/// // let disputes = storage::get_total_disputes(&env);
+/// ```
 pub fn get_total_disputes(env: &Env) -> u64 {
     env.storage()
         .instance()
@@ -794,7 +947,15 @@ pub fn get_total_disputes(env: &Env) -> u64 {
         .unwrap_or(0)
 }
 
-/// Increment the total disputes counter by 1.
+/// Increment the total disputes counter by 1 in instance storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+///
+/// # Examples
+/// ```rust
+/// // storage::increment_total_disputes(&env);
+/// ```
 pub fn increment_total_disputes(env: &Env) {
     let current = get_total_disputes(env);
     env.storage()
@@ -802,7 +963,19 @@ pub fn increment_total_disputes(env: &Env) {
         .set(&DataKey::TotalDisputes, &(current + 1));
 }
 
-/// Get the count of shipments with a specific status.
+/// Get the count of shipments with a specific status from instance storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `status` - The shipment status to query.
+///
+/// # Returns
+/// * `u64` - The count of shipments with the given status. Defaults to 0.
+///
+/// # Examples
+/// ```rust
+/// // let created_count = storage::get_status_count(&env, &ShipmentStatus::Created);
+/// ```
 pub fn get_status_count(env: &Env, status: &ShipmentStatus) -> u64 {
     env.storage()
         .instance()
@@ -810,7 +983,16 @@ pub fn get_status_count(env: &Env, status: &ShipmentStatus) -> u64 {
         .unwrap_or(0)
 }
 
-/// Increment the count of shipments with a specific status.
+/// Increment the count of shipments with a specific status in instance storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `status` - The shipment status to increment.
+///
+/// # Examples
+/// ```rust
+/// // storage::increment_status_count(&env, &ShipmentStatus::Created);
+/// ```
 pub fn increment_status_count(env: &Env, status: &ShipmentStatus) {
     let current = get_status_count(env, status);
     env.storage()
@@ -818,7 +1000,18 @@ pub fn increment_status_count(env: &Env, status: &ShipmentStatus) {
         .set(&DataKey::StatusCount(status.clone()), &(current + 1));
 }
 
-/// Decrement the count of shipments with a specific status.
+/// Decrement the count of shipments with a specific status in instance storage.
+///
+/// Saturates at 0 — will not underflow.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `status` - The shipment status to decrement.
+///
+/// # Examples
+/// ```rust
+/// // storage::decrement_status_count(&env, &ShipmentStatus::Delivered);
+/// ```
 pub fn decrement_status_count(env: &Env, status: &ShipmentStatus) {
     let current = get_status_count(env, status);
     if current > 0 {
@@ -830,8 +1023,18 @@ pub fn decrement_status_count(env: &Env, status: &ShipmentStatus) {
 
 // ============= Shipment Limit Storage Functions =============
 
-/// Get the configurable limit on active shipments per company.
-/// Defaults to 100 if not set.
+/// Get the configurable limit on active shipments per company from instance storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+///
+/// # Returns
+/// * `u32` - The maximum active shipments per company. Defaults to 100.
+///
+/// # Examples
+/// ```rust
+/// // let limit = storage::get_shipment_limit(&env);
+/// ```
 pub fn get_shipment_limit(env: &Env) -> u32 {
     env.storage()
         .instance()
@@ -839,14 +1042,35 @@ pub fn get_shipment_limit(env: &Env) -> u32 {
         .unwrap_or(100)
 }
 
-/// Set the configurable limit on active shipments.
+/// Set the configurable limit on active shipments in instance storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `limit` - The maximum number of active shipments allowed per company.
+///
+/// # Examples
+/// ```rust
+/// // storage::set_shipment_limit(&env, 200);
+/// ```
 pub fn set_shipment_limit(env: &Env, limit: u32) {
     env.storage()
         .instance()
         .set(&DataKey::ShipmentLimit, &limit);
 }
 
-/// Get the current active shipment count for a company.
+/// Get the current active shipment count for a company from instance storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `company` - The company address to query.
+///
+/// # Returns
+/// * `u32` - The number of active shipments for the company. Defaults to 0.
+///
+/// # Examples
+/// ```rust
+/// // let count = storage::get_active_shipment_count(&env, &company_addr);
+/// ```
 pub fn get_active_shipment_count(env: &Env, company: &Address) -> u32 {
     env.storage()
         .instance()
@@ -854,20 +1078,52 @@ pub fn get_active_shipment_count(env: &Env, company: &Address) -> u32 {
         .unwrap_or(0)
 }
 
-/// Set the active shipment count for a company.
+/// Set the active shipment count for a company in instance storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `company` - The company address.
+/// * `count` - The new active shipment count.
+///
+/// # Examples
+/// ```rust
+/// // storage::set_active_shipment_count(&env, &company_addr, 5);
+/// ```
 pub fn set_active_shipment_count(env: &Env, company: &Address, count: u32) {
     env.storage()
         .instance()
         .set(&DataKey::ActiveShipmentCount(company.clone()), &count);
 }
 
-/// Increment the active shipment count for a company.
+/// Increment the active shipment count for a company in instance storage.
+///
+/// Uses saturating addition to prevent overflow.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `company` - The company address.
+///
+/// # Examples
+/// ```rust
+/// // storage::increment_active_shipment_count(&env, &company_addr);
+/// ```
 pub fn increment_active_shipment_count(env: &Env, company: &Address) {
     let current = get_active_shipment_count(env, company);
     set_active_shipment_count(env, company, current.saturating_add(1));
 }
 
-/// Decrement the active shipment count for a company.
+/// Decrement the active shipment count for a company in instance storage.
+///
+/// Uses saturating subtraction to prevent underflow.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `company` - The company address.
+///
+/// # Examples
+/// ```rust
+/// // storage::decrement_active_shipment_count(&env, &company_addr);
+/// ```
 pub fn decrement_active_shipment_count(env: &Env, company: &Address) {
     let current = get_active_shipment_count(env, company);
     set_active_shipment_count(env, company, current.saturating_sub(1));
