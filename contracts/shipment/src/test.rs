@@ -1,4 +1,4 @@
-﻿#![cfg(test)]
+#![cfg(test)]
 
 extern crate std;
 
@@ -7680,7 +7680,6 @@ fn test_full_shipment_lifecycle_integration() {
     // ✓ Role-based access control enforced throughout
 }
 
-
 // ============= Pause / Unpause Tests =============
 
 #[test]
@@ -7763,6 +7762,7 @@ fn test_read_queries_work_when_paused() {
 
     let version = client.get_version();
     assert_eq!(version, 1);
+}
 
 // ============= Event Counter Tests =============
 
@@ -8437,5 +8437,4 @@ fn test_carrier_late_delivery_event_and_milestones() {
         found_milestone_rate,
         "carrier_milestone_rate event not found"
     );
-
 }
