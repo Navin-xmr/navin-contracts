@@ -7697,7 +7697,14 @@ fn test_pause_and_unpause_success() {
     };
 
     // Unpaused: State-changing operations should work
-    let shipment_id = client.create_shipment(&company, &input);
+    let shipment_id = client.create_shipment(
+        &company,
+        &input.receiver,
+        &input.carrier,
+        &input.data_hash,
+        &input.payment_milestones,
+        &input.deadline,
+    );
     assert_eq!(shipment_id, 1);
 
     // Pause the contract
@@ -7712,20 +7719,34 @@ fn test_pause_and_unpause_success() {
         deadline: env.ledger().timestamp() + 86400,
     };
 
-    let res = client.try_create_shipment(&company, &input2);
+    let res = client.try_create_shipment(
+        &company,
+        &input2.receiver,
+        &input2.carrier,
+        &input2.data_hash,
+        &input2.payment_milestones,
+        &input2.deadline,
+    );
     assert_eq!(res.unwrap_err().unwrap(), crate::NavinError::ContractPaused);
 
     // Unpause the contract
     client.unpause(&admin);
 
     // Unpaused: State-changing operations should work again
-    let shipment_id2 = client.create_shipment(&company, &input2);
+    let shipment_id2 = client.create_shipment(
+        &company,
+        &input2.receiver,
+        &input2.carrier,
+        &input2.data_hash,
+        &input2.payment_milestones,
+        &input2.deadline,
+    );
     assert_eq!(shipment_id2, 2);
 }
 
 #[test]
 fn test_pause_and_unpause_unauthorized() {
-    let (env, client, _admin, _company) = setup_env();
+    let (_, client, _admin, _company) = setup_env();
     let fake_admin = Address::generate(&env);
 
     let res = client.try_pause(&fake_admin);
@@ -7748,7 +7769,14 @@ fn test_read_queries_work_when_paused() {
         deadline: env.ledger().timestamp() + 86400,
     };
 
-    let shipment_id = client.create_shipment(&company, &input);
+    let shipment_id = client.create_shipment(
+        &company,
+        &input.receiver,
+        &input.carrier,
+        &input.data_hash,
+        &input.payment_milestones,
+        &input.deadline,
+    );
 
     // Pause the contract
     client.pause(&admin);
