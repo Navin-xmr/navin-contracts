@@ -5,10 +5,11 @@ extern crate std;
 use crate::{
     BreachType, GeofenceEvent, NavinShipment, NavinShipmentClient, ShipmentInput, ShipmentStatus,
 };
+use navin_token::{NavinToken, NavinTokenClient};
 use soroban_sdk::{
     contract, contractimpl,
     testutils::{storage::Persistent, Address as _, Events, Ledger as _},
-    Address, BytesN, Env, Symbol, TryFromVal,
+    Address, BytesN, Env, String as SorobanString, Symbol, TryFromVal,
 };
 
 #[contract]
@@ -6414,6 +6415,182 @@ fn test_approve_action_returns_not_an_admin() {
 
     // Outsider tries to approve
     client.approve_action(&outsider, &proposal_id);
+}
+
+// ============= Governance token and snapshot voting tests =============
+
+/// Setup env with governance token: payment token (MockToken), gov token (NavinToken), shipment client.
+/// Returns (env, shipment_client, initial_admin, payment_token, gov_token_client, gov_token_address).
+fn setup_with_governance_token(
+) -> (Env, NavinShipmentClient<'static>, Address, Address, NavinTokenClient<'static>, Address) {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let payment_token = env.register(MockToken {}, ());
+    let gov_token_id = env.register(NavinToken, ());
+    let gov_token_client = NavinTokenClient::new(&env, &gov_token_id);
+    let name = SorobanString::from_str(&env, "GovToken");
+    let symbol = SorobanString::from_str(&env, "GOV");
+    gov_token_client.initialize(&admin, &name, &symbol, &1_000_000);
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    client.initialize(&admin, &payment_token);
+    (
+        env,
+        client,
+        admin,
+        payment_token,
+        gov_token_client,
+        gov_token_id,
+    )
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #32)")]
+fn test_governance_propose_fails_below_min_proposal_tokens() {
+    let (env, client, admin, _payment, gov_token, gov_token_id) = setup_with_governance_token();
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2);
+    gov_token.mint(&admin, &admin1, &50);
+    client.init_multisig(&admin, &admins, &2);
+    let mut config = client.get_contract_config();
+    config.governance_token = Some(gov_token_id);
+    config.min_proposal_tokens = 100;
+    client.update_config(&admin, &config);
+
+    let action = crate::AdminAction::TransferAdmin(Address::generate(&env));
+    client.propose_action(&admin1, &action);
+}
+
+#[test]
+fn test_governance_propose_succeeds_with_min_proposal_tokens_and_snapshot_ledger() {
+    let (env, client, admin, _payment, gov_token, gov_token_id) = setup_with_governance_token();
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    gov_token.mint(&admin, &admin1, &200);
+    gov_token.mint(&admin, &admin2, &200);
+    client.init_multisig(&admin, &admins, &2);
+    let mut config = client.get_contract_config();
+    config.governance_token = Some(gov_token_id);
+    config.min_proposal_tokens = 100;
+    client.update_config(&admin, &config);
+
+    let new_admin = Address::generate(&env);
+    let action = crate::AdminAction::TransferAdmin(new_admin);
+    let proposal_id = client.propose_action(&admin1, &action);
+    assert_eq!(proposal_id, 1);
+
+    let proposal = client.get_proposal(&proposal_id);
+    assert_eq!(proposal.snapshot_ledger, env.ledger().sequence());
+}
+
+#[test]
+fn test_governance_snapshot_voting_power_unchanged_after_transfer() {
+    let (env, client, admin, _payment, gov_token, gov_token_id) = setup_with_governance_token();
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let other = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    gov_token.mint(&admin, &admin1, &100);
+    gov_token.mint(&admin, &admin2, &100);
+    client.init_multisig(&admin, &admins, &2);
+    let mut config = client.get_contract_config();
+    config.governance_token = Some(gov_token_id);
+    config.min_proposal_tokens = 10;
+    client.update_config(&admin, &config);
+
+    let new_admin = Address::generate(&env);
+    let action = crate::AdminAction::TransferAdmin(new_admin);
+    let proposal_id = client.propose_action(&admin1, &action);
+    gov_token.transfer(&admin2, &other, &100);
+    assert_eq!(gov_token.balance(&admin2), 0);
+    client.approve_action(&admin2, &proposal_id);
+    let proposal = client.get_proposal(&proposal_id);
+    assert_eq!(proposal.approvals.len(), 2);
+}
+
+#[test]
+fn test_governance_vote_lock_set_after_approve() {
+    let (env, client, admin, _payment, gov_token, gov_token_id) = setup_with_governance_token();
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    gov_token.mint(&admin, &admin1, &100);
+    gov_token.mint(&admin, &admin2, &100);
+    client.init_multisig(&admin, &admins, &2);
+    let mut config = client.get_contract_config();
+    config.governance_token = Some(gov_token_id);
+    config.min_proposal_tokens = 10;
+    config.vote_lock_ledgers = 100;
+    client.update_config(&admin, &config);
+
+    let new_admin = Address::generate(&env);
+    let action = crate::AdminAction::TransferAdmin(new_admin);
+    let proposal_id = client.propose_action(&admin1, &action);
+    client.approve_action(&admin2, &proposal_id);
+
+    let lock_opt = client.get_vote_lock(&admin2, &proposal_id);
+    assert!(lock_opt.is_some());
+    let until_ledger = lock_opt.unwrap();
+    assert!(until_ledger >= env.ledger().sequence());
+}
+
+#[test]
+fn test_governance_delegation_delegatee_has_delegator_balance_at_snapshot() {
+    let (env, client, admin, _payment, gov_token, gov_token_id) = setup_with_governance_token();
+    let delegator = Address::generate(&env);
+    let delegatee = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(delegator.clone());
+    admins.push_back(delegatee.clone());
+    gov_token.mint(&admin, &delegator, &500);
+    client.init_multisig(&admin, &admins, &2);
+    let mut config = client.get_contract_config();
+    config.governance_token = Some(gov_token_id);
+    config.min_proposal_tokens = 50;
+    client.update_config(&admin, &config);
+
+    client.set_delegation(&delegator, &delegatee);
+    assert_eq!(client.get_delegation(&delegatee), Some(delegator.clone()));
+    let new_admin = Address::generate(&env);
+    let action = crate::AdminAction::TransferAdmin(new_admin);
+    let proposal_id = client.propose_action(&delegatee, &action);
+    let proposal = client.get_proposal(&proposal_id);
+    assert_eq!(proposal.proposer, delegatee);
+    assert_eq!(proposal.snapshot_ledger, env.ledger().sequence());
+}
+
+#[test]
+fn test_governance_get_proposal_snapshot_ledger_returns_ledger_at_creation() {
+    let (env, client, admin, _payment, gov_token, gov_token_id) = setup_with_governance_token();
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    gov_token.mint(&admin, &admin1, &100);
+    gov_token.mint(&admin, &admin2, &100);
+    client.init_multisig(&admin, &admins, &2);
+    let mut config = client.get_contract_config();
+    config.governance_token = Some(gov_token_id);
+    config.min_proposal_tokens = 10;
+    client.update_config(&admin, &config);
+
+    let new_admin = Address::generate(&env);
+    let action = crate::AdminAction::TransferAdmin(new_admin);
+    let proposal_id = client.propose_action(&admin1, &action);
+    let snapshot_ledger = client.get_proposal_snapshot_ledger(&proposal_id);
+    let proposal = client.get_proposal(&proposal_id);
+    assert_eq!(snapshot_ledger, proposal.snapshot_ledger);
 }
 
 // ============= Error #28: InvalidMultiSigConfig Tests =============

@@ -57,6 +57,12 @@ pub enum DataKey {
     ActiveShipmentCount(Address),
     /// Contract configuration parameters.
     ContractConfig,
+    /// Vote lock: (address, proposal_id) -> lock until ledger.
+    VoteLock(Address, u64),
+    /// Delegation: delegatee -> delegator address (delegatee's voting power includes delegator's balance).
+    Delegation(Address),
+    /// Snapshot balance for a proposal: (proposal_id, address) -> i128 balance at snapshot.
+    SnapshotBalance(u64, Address),
     /// Event counter for a shipment (tracks number of events emitted).
     EventCount(u64),
     /// Archived shipment data in temporary storage (for terminal state shipments).
@@ -363,6 +369,8 @@ pub struct Proposal {
     pub expires_at: u64,
     /// Whether the proposal has been executed.
     pub executed: bool,
+    /// Ledger at which voting power was snapshotted for this proposal (0 = legacy/no snapshot).
+    pub snapshot_ledger: u32,
 }
 
 /// Notification types for backend indexing and push notifications.

@@ -25,7 +25,7 @@
 //! | proposal_expiry_seconds      | 604,800 | Proposal expiry time (7 days)                  |
 
 use crate::types::DataKey;
-use soroban_sdk::{contracttype, Env};
+use soroban_sdk::{contracttype, Address, Env};
 
 /// Contract configuration parameters stored in instance storage.
 ///
@@ -77,6 +77,15 @@ pub struct ContractConfig {
     /// Number of seconds before a multi-sig proposal expires.
     /// Default: 604,800 seconds (7 days).
     pub proposal_expiry_seconds: u64,
+
+    /// Optional governance token for token-weighted voting. When None, governance checks are disabled.
+    pub governance_token: Option<Address>,
+
+    /// Minimum token balance required to create a proposal. Ignored when governance_token is None. Default: 0.
+    pub min_proposal_tokens: i128,
+
+    /// Number of ledgers to lock voting power after an admin approves a proposal. Default: 0 (no lock).
+    pub vote_lock_ledgers: u32,
 }
 
 impl Default for ContractConfig {
@@ -98,6 +107,9 @@ impl Default for ContractConfig {
             multisig_min_admins: 2,           // 2 admins
             multisig_max_admins: 10,          // 10 admins
             proposal_expiry_seconds: 604_800, // 7 days
+            governance_token: None,
+            min_proposal_tokens: 0,
+            vote_lock_ledgers: 0,
         }
     }
 }
@@ -214,6 +226,14 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
     // Validate proposal expiry
     if config.proposal_expiry_seconds < 3_600 || config.proposal_expiry_seconds > 2_592_000 {
         return Err("proposal_expiry_seconds must be >= 3,600 and <= 2,592,000");
+    }
+
+    // Governance token is optional (None allowed).
+    if config.min_proposal_tokens < 0 {
+        return Err("min_proposal_tokens must be >= 0");
+    }
+    if config.vote_lock_ledgers > 10_000_000 {
+        return Err("vote_lock_ledgers must be <= 10,000,000");
     }
 
     Ok(())

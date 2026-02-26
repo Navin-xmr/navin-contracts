@@ -507,10 +507,27 @@
                             },
                             {
                               "key": {
+                                "symbol": "governance_token"
+                              },
+                              "val": "void"
+                            },
+                            {
+                              "key": {
                                 "symbol": "max_metadata_entries"
                               },
                               "val": {
                                 "u32": 5
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "min_proposal_tokens"
+                              },
+                              "val": {
+                                "i128": {
+                                  "hi": 0,
+                                  "lo": 0
+                                }
                               }
                             },
                             {
@@ -559,6 +576,14 @@
                               },
                               "val": {
                                 "u32": 17280
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "vote_lock_ledgers"
+                              },
+                              "val": {
+                                "u32": 0
                               }
                             }
                           ]
