@@ -318,6 +318,28 @@ pub fn has_carrier_role(env: &Env, address: &Address) -> bool {
     has_role(env, address, &Role::Carrier)
 }
 
+/// Mark a carrier as suspended in instance storage.
+pub fn suspend_carrier(env: &Env, carrier: &Address) {
+    env.storage()
+        .instance()
+        .set(&DataKey::CarrierSuspended(carrier.clone()), &true);
+}
+
+/// Remove a carrier suspension flag from instance storage.
+pub fn reactivate_carrier(env: &Env, carrier: &Address) {
+    env.storage()
+        .instance()
+        .remove(&DataKey::CarrierSuspended(carrier.clone()));
+}
+
+/// Returns true when the carrier has an active suspension flag.
+pub fn is_carrier_suspended(env: &Env, carrier: &Address) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::CarrierSuspended(carrier.clone()))
+        .unwrap_or(false)
+}
+
 /// Get shipment by ID
 pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
     // First check persistent storage

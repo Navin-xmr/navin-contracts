@@ -641,6 +641,72 @@ fn test_update_status_nonexistent_shipment() {
     client.update_status(&carrier, &999, &ShipmentStatus::InTransit, &new_data_hash);
 }
 
+#[test]
+fn test_suspend_and_reactivate_carrier_for_status_updates() {
+    use crate::ShipmentStatus;
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let update_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Move to InTransit as admin so carrier can attempt the next transition.
+    client.update_status(
+        &admin,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &update_hash,
+    );
+
+    client.suspend_carrier(&admin, &carrier);
+    assert!(client.is_carrier_suspended(&carrier));
+
+    let res = client.try_update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &update_hash,
+    );
+    assert_eq!(res, Err(Ok(crate::NavinError::CarrierSuspended)));
+
+    client.reactivate_carrier(&admin, &carrier);
+    assert!(!client.is_carrier_suspended(&carrier));
+
+    env.ledger().with_mut(|l| l.timestamp += 61);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &update_hash,
+    );
+}
+
+#[test]
+fn test_suspend_carrier_requires_admin() {
+    let (env, client, admin, token_contract) = setup_env();
+    let outsider = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    let res = client.try_suspend_carrier(&outsider, &carrier);
+    assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
+}
+
 // ============= Get Escrow Balance Tests =============
 
 #[test]
@@ -2060,6 +2126,46 @@ fn test_record_milestone_unauthorized() {
 
     // Attempt to record with outsider should fail with CarrierNotAuthorized = 7
     client.record_milestone(&outsider, &shipment_id, &checkpoint, &data_hash);
+}
+
+#[test]
+fn test_suspended_carrier_blocked_from_milestone_handlers() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[12u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::types::ShipmentStatus::InTransit;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+
+    client.suspend_carrier(&admin, &carrier);
+
+    let checkpoint = Symbol::new(&env, "port_arrival");
+    let single_res = client.try_record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
+    assert_eq!(single_res, Err(Ok(crate::NavinError::CarrierSuspended)));
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((checkpoint, BytesN::from_array(&env, &[22u8; 32])));
+    let batch_res = client.try_record_milestones_batch(&carrier, &shipment_id, &milestones);
+    assert_eq!(batch_res, Err(Ok(crate::NavinError::CarrierSuspended)));
 }
 
 // ============= Batch Milestone Recording Tests =============
