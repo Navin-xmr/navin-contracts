@@ -6,7 +6,7 @@
 
 use soroban_sdk::{
     testutils::{Address as _, Ledger as _},
-    Address, Env, Vec,
+    Address, Env,
 };
 
 /// Default protocol version for tests
@@ -50,47 +50,6 @@ pub fn setup_env() -> (Env, Address) {
     env.mock_all_auths();
 
     (env, admin)
-}
-
-/// Sets up a test environment and generates an additional address.
-///
-/// # Returns
-/// A tuple containing:
-/// - `Env` - The configured Soroban environment
-/// - `Address` - A generated admin address
-/// - `Address` - A generated secondary address
-///
-/// # Example
-/// ```rust
-/// let (env, admin, user) = test_utils::setup_env_with_address();
-/// ```
-pub fn setup_env_with_address() -> (Env, Address, Address) {
-    let (env, admin) = setup_env();
-    let user = Address::generate(&env);
-    (env, admin, user)
-}
-
-/// Sets up a test environment and generates multiple addresses.
-///
-/// # Arguments
-/// * `count` - Number of additional addresses to generate
-///
-/// # Returns
-/// A tuple containing:
-/// - `Env` - The configured Soroban environment
-/// - `Address` - A generated admin address
-/// - `Vec<Address>` - Vector of generated addresses
-///
-/// # Example
-/// ```rust
-/// let (env, admin, addresses) = test_utils::setup_env_with_addresses(5);
-/// ```
-pub fn setup_env_with_addresses(env: &Env, _admin: &Address, count: usize) -> Vec<Address> {
-    let mut addresses = Vec::new(env);
-    for _ in 0..count {
-        addresses.push_back(Address::generate(env));
-    }
-    addresses
 }
 
 #[cfg(test)]
