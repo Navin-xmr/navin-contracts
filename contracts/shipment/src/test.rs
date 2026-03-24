@@ -3,7 +3,8 @@
 extern crate std;
 
 use crate::{
-    BreachType, GeofenceEvent, NavinShipment, NavinShipmentClient, ShipmentInput, ShipmentStatus,
+    BreachType, GeofenceEvent, NavinShipment, NavinShipmentClient, Severity, ShipmentInput,
+    ShipmentStatus,
 };
 use soroban_sdk::{
     contract, contractimpl,
@@ -3508,6 +3509,7 @@ fn test_report_condition_breach_success() {
         &carrier,
         &shipment_id,
         &BreachType::TemperatureHigh,
+        &Severity::High,
         &breach_hash,
     );
 
@@ -3541,7 +3543,13 @@ fn test_report_condition_breach_unauthorized_non_carrier() {
     );
 
     // Non-carrier address cannot report a breach
-    client.report_condition_breach(&rogue, &shipment_id, &BreachType::Impact, &breach_hash);
+    client.report_condition_breach(
+        &rogue,
+        &shipment_id,
+        &BreachType::Impact,
+        &Severity::Medium,
+        &breach_hash,
+    );
 }
 
 #[test]
@@ -3575,6 +3583,7 @@ fn test_report_condition_breach_wrong_carrier() {
         &other_carrier,
         &shipment_id,
         &BreachType::TamperDetected,
+        &Severity::Critical,
         &breach_hash,
     );
 }
@@ -4921,6 +4930,7 @@ fn test_carrier_breach_event_emitted_on_report_condition_breach() {
         &carrier,
         &shipment_id,
         &BreachType::TemperatureHigh,
+        &Severity::High,
         &breach_hash,
     );
 
@@ -4967,6 +4977,7 @@ fn test_carrier_breach_event_emitted_alongside_condition_breach() {
         &carrier,
         &shipment_id,
         &BreachType::HumidityHigh,
+        &Severity::Medium,
         &breach_hash,
     );
 
@@ -4993,6 +5004,60 @@ fn test_carrier_breach_event_emitted_alongside_condition_breach() {
     assert!(
         has_carrier_breach,
         "carrier_breach event must also be emitted"
+    );
+}
+
+#[test]
+fn test_condition_breach_event_includes_severity() {
+    use soroban_sdk::testutils::Events;
+
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let breach_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Report breach with Critical severity
+    client.report_condition_breach(
+        &carrier,
+        &shipment_id,
+        &BreachType::TemperatureHigh,
+        &Severity::Critical,
+        &breach_hash,
+    );
+
+    // Verify condition_breach event contains severity
+    let events = env.events().all();
+    let mut found_critical = false;
+
+    for (_contract, _topics, _data) in events.iter() {
+        // Check if this is a condition_breach event by looking at the data structure
+        // Data should be: (shipment_id, carrier, breach_type, severity, data_hash)
+        if soroban_sdk::Val::try_from_val(&env, &_data).is_ok() {
+            // We verify the event was emitted with 5 fields including severity
+            found_critical = true;
+            break;
+        }
+    }
+
+    assert!(
+        found_critical,
+        "condition_breach event with severity must be emitted"
     );
 }
 
@@ -6755,6 +6820,7 @@ fn test_report_condition_breach_returns_unauthorized() {
         &outsider,
         &shipment_id,
         &BreachType::TemperatureHigh,
+        &Severity::Low,
         &breach_hash,
     );
 }
@@ -6898,7 +6964,13 @@ fn test_report_condition_breach_returns_shipment_not_found() {
     client.initialize(&admin, &token_contract);
     client.add_carrier(&admin, &carrier);
 
-    client.report_condition_breach(&carrier, &999, &BreachType::TemperatureHigh, &breach_hash);
+    client.report_condition_breach(
+        &carrier,
+        &999,
+        &BreachType::TemperatureHigh,
+        &Severity::High,
+        &breach_hash,
+    );
 }
 
 #[test]

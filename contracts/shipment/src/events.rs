@@ -18,7 +18,7 @@
 //! Each event uses a single descriptive `Symbol` as its topic so that
 //! consumers can filter by topic when subscribing to contract events.
 
-use crate::types::{BreachType, ShipmentStatus};
+use crate::types::{BreachType, Severity, ShipmentStatus};
 use soroban_sdk::{Address, BytesN, Env, Symbol};
 
 /// Emits a `shipment_created` event when a new shipment is registered.
@@ -451,18 +451,21 @@ pub fn emit_carrier_handoff(
 /// | shipment_id  | `u64`        | Shipment where the breach occurred                   |
 /// | carrier      | `Address`    | Carrier that reported the breach                     |
 /// | breach_type  | `BreachType` | Category of the condition breach                     |
+/// | severity     | `Severity`   | Severity level for downstream analytics and alerting |
 /// | data_hash    | `BytesN<32>` | SHA-256 hash of the off-chain sensor data payload    |
 ///
 /// # Listeners
 ///
 /// - **Express backend**: Records the breach event and triggers alerts.
 /// - **Frontend**: Flags the shipment with a condition-breach warning badge.
+/// - **Indexer**: Filters and aggregates breaches by severity for analytics.
 ///
 /// # Arguments
 /// * `env` - Invoker mapping of standard SDK elements mappings
 /// * `shipment_id` - Primary index resolving context arrays mappings reference.
 /// * `carrier` - Invoking controller array mappings identifiers scope handlers.
 /// * `breach_type` - Type tracking parameter reference format mapping instances.
+/// * `severity` - Severity level for filtering and prioritization.
 /// * `data_hash` - External proof pointer array.
 ///
 /// # Returns
@@ -470,13 +473,14 @@ pub fn emit_carrier_handoff(
 ///
 /// # Examples
 /// ```rust
-/// // events::emit_condition_breach(&env, 1, &carrier_addr, &BreachType::TemperatureHigh, &hash);
+/// // events::emit_condition_breach(&env, 1, &carrier_addr, &BreachType::TemperatureHigh, &Severity::High, &hash);
 /// ```
 pub fn emit_condition_breach(
     env: &Env,
     shipment_id: u64,
     carrier: &Address,
     breach_type: &BreachType,
+    severity: &Severity,
     data_hash: &BytesN<32>,
 ) {
     env.events().publish(
@@ -485,6 +489,7 @@ pub fn emit_condition_breach(
             shipment_id,
             carrier.clone(),
             breach_type.clone(),
+            severity.clone(),
             data_hash.clone(),
         ),
     );
@@ -555,18 +560,26 @@ pub fn emit_delivery_success(env: &Env, carrier: &Address, shipment_id: u64, del
 /// | carrier     | `Address`    | Carrier that reported (and caused) the breach   |
 /// | shipment_id | `u64`        | Shipment where the breach occurred              |
 /// | breach_type | `BreachType` | Category of the condition breach                |
+/// | severity    | `Severity`   | Severity level for analytics and alerting       |
 ///
 /// # Listeners
 /// - **Express backend**: Increments breach counter for the carrier's reputation record.
+/// - **Indexer**: Filters and aggregates breaches by severity for analytics.
 pub fn emit_carrier_breach(
     env: &Env,
     carrier: &Address,
     shipment_id: u64,
     breach_type: &BreachType,
+    severity: &Severity,
 ) {
     env.events().publish(
         (Symbol::new(env, "carrier_breach"),),
-        (carrier.clone(), shipment_id, breach_type.clone()),
+        (
+            carrier.clone(),
+            shipment_id,
+            breach_type.clone(),
+            severity.clone(),
+        ),
     );
 }
 
