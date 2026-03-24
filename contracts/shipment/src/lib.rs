@@ -15,6 +15,9 @@ mod test;
 mod types;
 mod validation;
 
+#[cfg(test)]
+mod test_utils;
+
 pub use config::*;
 pub use errors::*;
 pub use types::*;

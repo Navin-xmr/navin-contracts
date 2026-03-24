@@ -21,19 +21,17 @@ impl MockToken {
     }
 }
 
-fn setup_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
-    let env = Env::default();
-    let admin = Address::generate(&env);
+fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
+    let (env, admin) = super::test_utils::setup_env();
     let token_contract = env.register(MockToken {}, ());
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
-    env.mock_all_auths();
 
     (env, client, admin, token_contract)
 }
 
 #[test]
 fn test_successful_initialization() {
-    let (_env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -45,7 +43,7 @@ fn test_successful_initialization() {
 #[test]
 #[should_panic(expected = "Error(Contract, #1)")]
 fn test_re_initialization_fails() {
-    let (_env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
     // Second call must fail with AlreadyInitialized (error code 1)
@@ -55,7 +53,7 @@ fn test_re_initialization_fails() {
 #[test]
 #[should_panic(expected = "Error(Contract, #1)")]
 fn test_re_initialization_with_different_admin_fails() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -66,7 +64,7 @@ fn test_re_initialization_with_different_admin_fails() {
 
 #[test]
 fn test_shipment_counter_starts_at_zero() {
-    let (_env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -75,7 +73,7 @@ fn test_shipment_counter_starts_at_zero() {
 
 #[test]
 fn test_admin_is_stored_correctly() {
-    let (env, client, _admin, token_contract) = setup_env();
+    let (env, client, _admin, token_contract) = setup_shipment_env();
 
     let specific_admin = Address::generate(&env);
     client.initialize(&specific_admin, &token_contract);
@@ -92,7 +90,7 @@ fn test_scaffold() {
 
 #[test]
 fn test_create_shipment_success() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -123,7 +121,7 @@ fn test_create_shipment_success() {
 
 #[test]
 fn test_create_shipments_batch_success() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
 
     client.initialize(&admin, &token_contract);
@@ -152,7 +150,7 @@ fn test_create_shipments_batch_success() {
 #[test]
 #[should_panic(expected = "Error(Contract, #16)")]
 fn test_create_shipments_batch_oversized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
 
     client.initialize(&admin, &token_contract);
@@ -176,7 +174,7 @@ fn test_create_shipments_batch_oversized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #17)")]
 fn test_create_shipments_batch_invalid_input() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
 
     client.initialize(&admin, &token_contract);
@@ -206,7 +204,7 @@ fn test_create_shipments_batch_invalid_input() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_create_shipment_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let outsider = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -226,7 +224,7 @@ fn test_create_shipment_unauthorized() {
 
 #[test]
 fn test_multiple_shipments_have_unique_ids() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -273,7 +271,7 @@ fn test_multiple_shipments_have_unique_ids() {
 
 #[test]
 fn test_add_carrier_to_whitelist() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
     let company = Address::generate(&env);
@@ -287,7 +285,7 @@ fn test_add_carrier_to_whitelist() {
 
 #[test]
 fn test_remove_carrier_from_whitelist() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
     let company = Address::generate(&env);
@@ -304,7 +302,7 @@ fn test_remove_carrier_from_whitelist() {
 
 #[test]
 fn test_is_carrier_whitelisted_returns_false_for_non_whitelisted() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
     let company = Address::generate(&env);
@@ -315,7 +313,7 @@ fn test_is_carrier_whitelisted_returns_false_for_non_whitelisted() {
 
 #[test]
 fn test_multiple_carriers_whitelist() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
     let company = Address::generate(&env);
@@ -339,7 +337,7 @@ fn test_multiple_carriers_whitelist() {
 
 #[test]
 fn test_whitelist_per_company() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
     let company1 = Address::generate(&env);
@@ -362,7 +360,7 @@ fn test_whitelist_per_company() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_whitelist_functions_fail_before_initialization() {
-    let (env, client, _admin, _token_contract) = setup_env();
+    let (env, client, _admin, _token_contract) = setup_shipment_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -373,7 +371,7 @@ fn test_whitelist_functions_fail_before_initialization() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_add_whitelist_fails_before_initialization() {
-    let (env, client, _admin, _token_contract) = setup_env();
+    let (env, client, _admin, _token_contract) = setup_shipment_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -385,7 +383,7 @@ fn test_add_whitelist_fails_before_initialization() {
 
 #[test]
 fn test_deposit_escrow_success() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -416,7 +414,7 @@ fn test_deposit_escrow_success() {
 #[test]
 fn test_update_status_valid_transition_by_carrier() {
     use crate::ShipmentStatus;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -454,7 +452,7 @@ fn test_update_status_valid_transition_by_carrier() {
 #[test]
 fn test_update_status_valid_transition_by_admin() {
     use crate::ShipmentStatus;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -490,7 +488,7 @@ fn test_update_status_valid_transition_by_admin() {
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_update_status_invalid_transition() {
     use crate::ShipmentStatus;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -539,7 +537,7 @@ fn test_update_status_invalid_transition() {
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_update_status_unauthorized() {
     use crate::ShipmentStatus;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -572,7 +570,7 @@ fn test_update_status_unauthorized() {
 #[test]
 fn test_update_status_multiple_valid_transitions() {
     use crate::ShipmentStatus;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -631,7 +629,7 @@ fn test_update_status_multiple_valid_transitions() {
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_update_status_nonexistent_shipment() {
     use crate::ShipmentStatus;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let carrier = Address::generate(&env);
     let new_data_hash = BytesN::from_array(&env, &[2u8; 32]);
 
@@ -645,7 +643,7 @@ fn test_update_status_nonexistent_shipment() {
 
 #[test]
 fn test_get_escrow_balance_returns_zero_without_deposit() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -674,7 +672,7 @@ fn test_get_escrow_balance_returns_zero_without_deposit() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_deposit_escrow_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let non_company = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -702,7 +700,7 @@ fn test_deposit_escrow_unauthorized() {
 
 #[test]
 fn test_get_escrow_balance_after_deposit() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -730,7 +728,7 @@ fn test_get_escrow_balance_after_deposit() {
 
 #[test]
 fn test_get_escrow_balance_after_release() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -764,7 +762,7 @@ fn test_get_escrow_balance_after_release() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_get_escrow_balance_shipment_not_found() {
-    let (_env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -774,7 +772,7 @@ fn test_get_escrow_balance_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_get_escrow_balance_fails_before_initialization() {
-    let (_env, _client, _admin, _token_contract) = setup_env();
+    let (_env, _client, _admin, _token_contract) = setup_shipment_env();
 
     _client.get_escrow_balance(&1);
 }
@@ -783,14 +781,14 @@ fn test_get_escrow_balance_fails_before_initialization() {
 
 #[test]
 fn test_get_shipment_count_returns_zero_on_fresh_contract() {
-    let (_env, client, _admin, _token_contract) = setup_env();
+    let (_env, client, _admin, _token_contract) = setup_shipment_env();
 
     assert_eq!(client.get_shipment_count(), 0);
 }
 
 #[test]
 fn test_get_shipment_count_returns_zero_after_initialization() {
-    let (_env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -799,7 +797,7 @@ fn test_get_shipment_count_returns_zero_after_initialization() {
 
 #[test]
 fn test_get_shipment_count_after_creating_shipments() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -846,7 +844,7 @@ fn test_get_shipment_count_after_creating_shipments() {
 
 #[test]
 fn test_get_role_unassigned() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let user = Address::generate(&env);
 
     client.initialize(&admin, &token_contract);
@@ -856,7 +854,7 @@ fn test_get_role_unassigned() {
 
 #[test]
 fn test_get_role_assigned() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
 
@@ -873,7 +871,7 @@ fn test_get_role_assigned() {
 
 #[test]
 fn test_get_shipment_returns_correct_data() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -906,7 +904,7 @@ fn test_get_shipment_returns_correct_data() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_get_shipment_not_found() {
-    let (_env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -916,7 +914,7 @@ fn test_get_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_get_shipment_fails_before_initialization() {
-    let (_env, client, _admin, _token_contract) = setup_env();
+    let (_env, client, _admin, _token_contract) = setup_shipment_env();
 
     client.get_shipment(&1);
 }
@@ -925,7 +923,7 @@ fn test_get_shipment_fails_before_initialization() {
 
 #[test]
 fn test_report_geofence_zone_entry() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -960,7 +958,7 @@ fn test_report_geofence_zone_entry() {
 
 #[test]
 fn test_report_geofence_zone_exit() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -995,7 +993,7 @@ fn test_report_geofence_zone_exit() {
 
 #[test]
 fn test_report_geofence_route_deviation() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1031,7 +1029,7 @@ fn test_report_geofence_route_deviation() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_report_geofence_event_unauthorized_role() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1064,7 +1062,7 @@ fn test_report_geofence_event_unauthorized_role() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_deposit_escrow_shipment_not_found() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
 
     client.initialize(&admin, &token_contract);
@@ -1078,7 +1076,7 @@ fn test_deposit_escrow_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_report_geofence_event_non_existent_shipment() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let carrier = Address::generate(&env);
     let event_hash = BytesN::from_array(&env, &[2u8; 32]);
 
@@ -1092,7 +1090,7 @@ fn test_report_geofence_event_non_existent_shipment() {
 
 #[test]
 fn test_update_eta_valid_emits_event() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1131,7 +1129,7 @@ fn test_update_eta_valid_emits_event() {
 #[test]
 #[should_panic(expected = "Error(Contract, #10)")]
 fn test_update_eta_rejects_past_timestamp() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1159,7 +1157,7 @@ fn test_update_eta_rejects_past_timestamp() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_update_eta_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1225,7 +1223,7 @@ fn setup_shipment_with_status(
 
 #[test]
 fn test_confirm_delivery_success_in_transit() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let confirmation_hash = BytesN::from_array(&env, &[99u8; 32]);
 
     let (receiver, _carrier, shipment_id) = setup_shipment_with_status(
@@ -1250,7 +1248,7 @@ fn test_confirm_delivery_success_in_transit() {
 
 #[test]
 fn test_confirm_delivery_success_at_checkpoint() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let confirmation_hash = BytesN::from_array(&env, &[88u8; 32]);
 
     let (receiver, _carrier, shipment_id) = setup_shipment_with_status(
@@ -1270,7 +1268,7 @@ fn test_confirm_delivery_success_at_checkpoint() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_confirm_delivery_wrong_receiver() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let confirmation_hash = BytesN::from_array(&env, &[77u8; 32]);
     let imposter = Address::generate(&env);
 
@@ -1289,7 +1287,7 @@ fn test_confirm_delivery_wrong_receiver() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_confirm_delivery_wrong_status() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let confirmation_hash = BytesN::from_array(&env, &[66u8; 32]);
 
     // Shipment starts in Created status, which is invalid for confirmation
@@ -1309,7 +1307,7 @@ fn test_confirm_delivery_wrong_status() {
 
 #[test]
 fn test_release_escrow_success() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1346,7 +1344,7 @@ fn test_release_escrow_success() {
 #[test]
 #[should_panic(expected = "Error(Contract, #8)")]
 fn test_release_escrow_double_release() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1381,7 +1379,7 @@ fn test_release_escrow_double_release() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_release_escrow_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1416,7 +1414,7 @@ fn test_release_escrow_unauthorized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_release_escrow_wrong_status() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1443,7 +1441,7 @@ fn test_release_escrow_wrong_status() {
 
 #[test]
 fn test_release_escrow_by_admin() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1481,7 +1479,7 @@ fn test_release_escrow_by_admin() {
 
 #[test]
 fn test_refund_escrow_success() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1513,7 +1511,7 @@ fn test_refund_escrow_success() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_refund_escrow_on_delivered_shipment() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1547,7 +1545,7 @@ fn test_refund_escrow_on_delivered_shipment() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_refund_escrow_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1575,7 +1573,7 @@ fn test_refund_escrow_unauthorized() {
 
 #[test]
 fn test_refund_escrow_by_admin() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1607,7 +1605,7 @@ fn test_refund_escrow_by_admin() {
 #[test]
 #[should_panic(expected = "Error(Contract, #8)")]
 fn test_refund_escrow_double_refund() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1637,7 +1635,7 @@ fn test_refund_escrow_double_refund() {
 
 #[test]
 fn test_raise_dispute_by_sender() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1674,7 +1672,7 @@ fn test_raise_dispute_by_sender() {
 
 #[test]
 fn test_raise_dispute_by_receiver() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1702,7 +1700,7 @@ fn test_raise_dispute_by_receiver() {
 
 #[test]
 fn test_raise_dispute_by_carrier() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1731,7 +1729,7 @@ fn test_raise_dispute_by_carrier() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_raise_dispute_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1758,7 +1756,7 @@ fn test_raise_dispute_unauthorized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #9)")]
 fn test_raise_dispute_on_cancelled_shipment() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1789,7 +1787,7 @@ fn test_raise_dispute_on_cancelled_shipment() {
 
 #[test]
 fn test_resolve_dispute_release_to_carrier() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1826,7 +1824,7 @@ fn test_resolve_dispute_release_to_carrier() {
 
 #[test]
 fn test_resolve_dispute_refund_to_company() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1864,7 +1862,7 @@ fn test_resolve_dispute_refund_to_company() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_resolve_dispute_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1899,7 +1897,7 @@ fn test_resolve_dispute_unauthorized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_resolve_dispute_not_disputed() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1932,7 +1930,7 @@ fn test_resolve_dispute_not_disputed() {
 
 #[test]
 fn test_record_milestone_success() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1973,7 +1971,7 @@ fn test_record_milestone_success() {
 #[test]
 #[should_panic(expected = "Error(Contract, #8)")]
 fn test_deposit_escrow_invalid_amount() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2000,7 +1998,7 @@ fn test_deposit_escrow_invalid_amount() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_record_milestone_wrong_status() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2028,7 +2026,7 @@ fn test_record_milestone_wrong_status() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_record_milestone_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2066,7 +2064,7 @@ fn test_record_milestone_unauthorized() {
 
 #[test]
 fn test_record_milestones_batch_success() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2122,7 +2120,7 @@ fn test_record_milestones_batch_success() {
 
 #[test]
 fn test_record_milestones_batch_single_milestone() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2165,7 +2163,7 @@ fn test_record_milestones_batch_single_milestone() {
 
 #[test]
 fn test_record_milestones_batch_max_size() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2216,7 +2214,7 @@ fn test_record_milestones_batch_max_size() {
 #[test]
 #[should_panic(expected = "Error(Contract, #16)")]
 fn test_record_milestones_batch_oversized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2259,7 +2257,7 @@ fn test_record_milestones_batch_oversized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_record_milestones_batch_invalid_status() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2293,7 +2291,7 @@ fn test_record_milestones_batch_invalid_status() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_record_milestones_batch_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2333,7 +2331,7 @@ fn test_record_milestones_batch_unauthorized() {
 
 #[test]
 fn test_record_milestones_batch_with_payment_milestones() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2391,7 +2389,7 @@ fn test_record_milestones_batch_with_payment_milestones() {
 
 #[test]
 fn test_ttl_extension_on_shipment_creation() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2420,7 +2418,7 @@ fn test_ttl_extension_on_shipment_creation() {
 
 #[test]
 fn test_manual_ttl_extension() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2454,7 +2452,7 @@ fn test_manual_ttl_extension() {
 
 #[test]
 fn test_cancel_shipment_with_escrow() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2485,7 +2483,7 @@ fn test_cancel_shipment_with_escrow() {
 
 #[test]
 fn test_cancel_shipment_without_escrow() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2513,7 +2511,7 @@ fn test_cancel_shipment_without_escrow() {
 
 #[test]
 fn test_cancel_shipment_by_admin() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2541,7 +2539,7 @@ fn test_cancel_shipment_by_admin() {
 #[test]
 #[should_panic(expected = "Error(Contract, #9)")]
 fn test_cancel_shipment_delivered_should_fail() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let reason_hash = BytesN::from_array(&env, &[77u8; 32]);
 
     let (_receiver, _carrier, shipment_id) = setup_shipment_with_status(
@@ -2561,7 +2559,7 @@ fn test_cancel_shipment_delivered_should_fail() {
 #[test]
 #[should_panic(expected = "Error(Contract, #9)")]
 fn test_cancel_shipment_disputed_should_fail() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let reason_hash = BytesN::from_array(&env, &[55u8; 32]);
 
     let (_receiver, _carrier, shipment_id) = setup_shipment_with_status(
@@ -2583,7 +2581,7 @@ fn test_cancel_shipment_disputed_should_fail() {
 #[test]
 fn test_escrow_happy_path_create_deposit_transit_deliver_confirm() {
     use crate::ShipmentStatus;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2625,7 +2623,7 @@ fn test_escrow_happy_path_create_deposit_transit_deliver_confirm() {
 
 #[test]
 fn test_escrow_cancel_path_create_deposit_cancel_refund() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2657,7 +2655,7 @@ fn test_escrow_cancel_path_create_deposit_cancel_refund() {
 #[test]
 fn test_escrow_dispute_resolve_to_delivered() {
     use crate::ShipmentStatus;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2692,7 +2690,7 @@ fn test_escrow_dispute_resolve_to_delivered() {
 #[test]
 fn test_escrow_dispute_resolve_to_cancelled() {
     use crate::ShipmentStatus;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2732,7 +2730,7 @@ fn test_escrow_dispute_resolve_to_cancelled() {
 #[test]
 #[should_panic(expected = "Error(Contract, #7)")]
 fn test_escrow_double_deposit_prevention() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2758,7 +2756,7 @@ fn test_escrow_double_deposit_prevention() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_escrow_release_without_delivery_confirm_from_created_fails() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2786,7 +2784,7 @@ fn test_escrow_release_without_delivery_confirm_from_created_fails() {
 #[test]
 #[should_panic(expected = "Error(Contract, #9)")]
 fn test_escrow_refund_after_delivery_fails() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2825,7 +2823,7 @@ fn test_escrow_refund_after_delivery_fails() {
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_escrow_deposit_after_status_change_fails() {
     use crate::ShipmentStatus;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2853,7 +2851,7 @@ fn test_escrow_deposit_after_status_change_fails() {
 
 #[test]
 fn test_milestone_payment_success() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2918,7 +2916,7 @@ fn test_milestone_payment_success() {
 
 #[test]
 fn test_milestone_payment_delivery_releases_remaining() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2969,7 +2967,7 @@ fn test_milestone_payment_delivery_releases_remaining() {
 #[test]
 #[should_panic(expected = "Error(Contract, #18)")]
 fn test_milestone_payment_invalid_sum_fails() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -2995,7 +2993,7 @@ fn test_milestone_payment_invalid_sum_fails() {
 
 #[test]
 fn test_milestone_payment_duplicate_record_no_double_pay() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -3040,7 +3038,7 @@ fn test_milestone_payment_duplicate_record_no_double_pay() {
 
 #[test]
 fn test_upgrade_success() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
     let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
@@ -3076,7 +3074,7 @@ fn test_upgrade_success() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_upgrade_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let non_admin = Address::generate(&env);
     let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
 
@@ -3089,7 +3087,7 @@ fn test_upgrade_unauthorized() {
 
 #[test]
 fn test_get_contract_metadata_after_init() {
-    let (_env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -3102,7 +3100,7 @@ fn test_get_contract_metadata_after_init() {
 
 #[test]
 fn test_get_contract_metadata_after_creating_shipments() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -3138,7 +3136,7 @@ fn test_get_contract_metadata_after_creating_shipments() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_get_version_fails_before_initialization() {
-    let (_env, client, _admin, _token_contract) = setup_env();
+    let (_env, client, _admin, _token_contract) = setup_shipment_env();
 
     client.get_version();
 }
@@ -3146,14 +3144,14 @@ fn test_get_version_fails_before_initialization() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_get_contract_metadata_fails_before_initialization() {
-    let (_env, client, _admin, _token_contract) = setup_env();
+    let (_env, client, _admin, _token_contract) = setup_shipment_env();
 
     client.get_contract_metadata();
 }
 
 #[test]
 fn test_get_version_after_upgrade() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
     let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
@@ -3174,7 +3172,7 @@ fn test_get_version_after_upgrade() {
 
 #[test]
 fn test_get_contract_metadata_after_upgrade() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
     let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
@@ -3202,7 +3200,7 @@ fn test_get_contract_metadata_after_upgrade() {
 
 #[test]
 fn test_successful_handoff() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let current_carrier = Address::generate(&env);
@@ -3244,7 +3242,7 @@ fn test_successful_handoff() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_handoff_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let current_carrier = Address::generate(&env);
@@ -3288,7 +3286,7 @@ fn test_handoff_unauthorized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_handoff_wrong_current_carrier() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let current_carrier = Address::generate(&env);
@@ -3327,7 +3325,7 @@ fn test_handoff_wrong_current_carrier() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_handoff_invalid_new_carrier() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let current_carrier = Address::generate(&env);
@@ -3369,7 +3367,7 @@ fn test_handoff_invalid_new_carrier() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_handoff_delivered_shipment() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let current_carrier = Address::generate(&env);
@@ -3407,7 +3405,7 @@ fn test_handoff_delivered_shipment() {
 #[test]
 #[should_panic(expected = "Error(Contract, #9)")]
 fn test_handoff_cancelled_shipment() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let current_carrier = Address::generate(&env);
@@ -3440,7 +3438,7 @@ fn test_handoff_cancelled_shipment() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_handoff_nonexistent_shipment() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let current_carrier = Address::generate(&env);
     let new_carrier = Address::generate(&env);
     let handoff_hash = BytesN::from_array(&env, &[2u8; 32]);
@@ -3462,7 +3460,7 @@ fn test_handoff_nonexistent_shipment() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_create_shipment_fails_before_initialization() {
-    let (env, client, _admin, _token_contract) = setup_env();
+    let (env, client, _admin, _token_contract) = setup_shipment_env();
     let sender = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -3484,7 +3482,7 @@ fn test_create_shipment_fails_before_initialization() {
 
 #[test]
 fn test_report_condition_breach_success() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -3520,7 +3518,7 @@ fn test_report_condition_breach_success() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_report_condition_breach_unauthorized_non_carrier() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -3549,7 +3547,7 @@ fn test_report_condition_breach_unauthorized_non_carrier() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_report_condition_breach_wrong_carrier() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -3585,7 +3583,7 @@ fn test_report_condition_breach_wrong_carrier() {
 
 #[test]
 fn test_verify_delivery_proof_match() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -3622,7 +3620,7 @@ fn test_verify_delivery_proof_match() {
 
 #[test]
 fn test_verify_delivery_proof_mismatch() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -3659,7 +3657,7 @@ fn test_verify_delivery_proof_mismatch() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_verify_delivery_proof_nonexistent_shipment() {
-    let (_env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -3671,7 +3669,7 @@ fn test_verify_delivery_proof_nonexistent_shipment() {
 #[test]
 #[should_panic(expected = "Error(Contract, #21)")]
 fn test_rate_limit_rapid_update_fails() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -3708,7 +3706,7 @@ fn test_rate_limit_rapid_update_fails() {
 
 #[test]
 fn test_rate_limit_admin_bypasses() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -3743,7 +3741,7 @@ fn test_rate_limit_admin_bypasses() {
 
 #[test]
 fn test_rate_limit_update_after_interval_succeeds() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -3790,7 +3788,7 @@ fn test_rate_limit_update_after_interval_succeeds() {
 
 #[test]
 fn test_only_admin_can_assign_roles() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
     let company = Address::generate(&env);
@@ -3814,7 +3812,7 @@ fn test_only_admin_can_assign_roles() {
 
 #[test]
 fn test_only_company_can_create_shipments() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -3863,7 +3861,7 @@ fn test_only_company_can_create_shipments() {
 
 #[test]
 fn test_only_carrier_can_update_status_and_record_milestones() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let other_carrier = Address::generate(&env);
@@ -3931,7 +3929,7 @@ fn test_only_carrier_can_update_status_and_record_milestones() {
 
 #[test]
 fn test_only_receiver_can_confirm_delivery() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -3995,7 +3993,7 @@ fn test_only_receiver_can_confirm_delivery() {
 
 #[test]
 fn test_unassigned_addresses_are_rejected() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let outsider = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
@@ -4025,7 +4023,7 @@ fn test_unassigned_addresses_are_rejected() {
 
 #[test]
 fn test_rbac_all_gated_functions_with_wrong_role() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -4111,7 +4109,7 @@ fn test_rbac_all_gated_functions_with_wrong_role() {
 
 #[test]
 fn test_successful_admin_transfer() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
     let new_admin = Address::generate(&env);
@@ -4137,7 +4135,7 @@ fn test_successful_admin_transfer() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_unauthorized_admin_transfer() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
     let outsider = Address::generate(&env);
@@ -4150,7 +4148,7 @@ fn test_unauthorized_admin_transfer() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_unauthorized_admin_acceptance() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
     let new_admin = Address::generate(&env);
@@ -4167,7 +4165,7 @@ fn test_unauthorized_admin_acceptance() {
 
 #[test]
 fn test_init_multisig_success() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -4190,7 +4188,7 @@ fn test_init_multisig_success() {
 #[test]
 #[should_panic(expected = "Error(Contract, #28)")]
 fn test_init_multisig_invalid_threshold_too_high() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -4208,7 +4206,7 @@ fn test_init_multisig_invalid_threshold_too_high() {
 #[test]
 #[should_panic(expected = "Error(Contract, #28)")]
 fn test_init_multisig_invalid_threshold_zero() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -4226,7 +4224,7 @@ fn test_init_multisig_invalid_threshold_zero() {
 #[test]
 #[should_panic(expected = "Error(Contract, #28)")]
 fn test_init_multisig_too_few_admins() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -4241,7 +4239,7 @@ fn test_init_multisig_too_few_admins() {
 
 #[test]
 fn test_propose_action_upgrade() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -4272,7 +4270,7 @@ fn test_propose_action_upgrade() {
 #[test]
 #[should_panic(expected = "Error(Contract, #27)")]
 fn test_propose_action_not_admin() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -4295,7 +4293,7 @@ fn test_propose_action_not_admin() {
 
 #[test]
 fn test_approve_action_success() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -4327,7 +4325,7 @@ fn test_approve_action_success() {
 #[test]
 #[should_panic(expected = "Error(Contract, #25)")]
 fn test_approve_action_already_approved() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -4352,7 +4350,7 @@ fn test_approve_action_already_approved() {
 #[test]
 #[should_panic(expected = "Error(Contract, #27)")]
 fn test_approve_action_not_admin() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -4377,7 +4375,7 @@ fn test_approve_action_not_admin() {
 
 #[test]
 fn test_execute_proposal_auto_on_threshold() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
     let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
@@ -4417,7 +4415,7 @@ fn test_execute_proposal_auto_on_threshold() {
 #[test]
 #[should_panic(expected = "Error(Contract, #23)")]
 fn test_execute_proposal_already_executed() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -4443,7 +4441,7 @@ fn test_execute_proposal_already_executed() {
 
 #[test]
 fn test_proposal_expiration() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -4474,7 +4472,7 @@ fn test_proposal_expiration() {
 
 #[test]
 fn test_force_release_action() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -4522,7 +4520,7 @@ fn test_force_release_action() {
 
 #[test]
 fn test_force_refund_action() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -4570,7 +4568,7 @@ fn test_force_refund_action() {
 
 #[test]
 fn test_transfer_admin_action() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -4598,7 +4596,7 @@ fn test_transfer_admin_action() {
 
 #[test]
 fn test_three_of_five_multisig() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
     let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
@@ -4653,7 +4651,7 @@ fn test_three_of_five_multisig() {
 #[test]
 #[should_panic(expected = "Error(Contract, #26)")]
 fn test_execute_proposal_insufficient_approvals() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -4681,7 +4679,7 @@ fn test_execute_proposal_insufficient_approvals() {
 
 #[test]
 fn test_check_deadline_success_auto_cancels_and_refunds() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -4719,7 +4717,7 @@ fn test_check_deadline_success_auto_cancels_and_refunds() {
 #[test]
 #[should_panic(expected = "Error(Contract, #29)")]
 fn test_check_deadline_fails_if_not_expired() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -4747,7 +4745,7 @@ fn test_check_deadline_fails_if_not_expired() {
 #[test]
 fn test_delivery_before_deadline() {
     use crate::ShipmentStatus;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -4792,7 +4790,7 @@ fn test_delivery_before_deadline() {
 #[test]
 fn test_delivery_success_event_emitted_on_confirm_delivery() {
     use soroban_sdk::TryFromVal;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -4840,7 +4838,7 @@ fn test_delivery_success_event_emitted_on_confirm_delivery() {
 #[test]
 fn test_delivery_success_event_contains_correct_carrier() {
     use soroban_sdk::TryFromVal;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -4898,7 +4896,7 @@ fn test_delivery_success_event_contains_correct_carrier() {
 #[test]
 fn test_carrier_breach_event_emitted_on_report_condition_breach() {
     use soroban_sdk::TryFromVal;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -4944,7 +4942,7 @@ fn test_carrier_breach_event_emitted_on_report_condition_breach() {
 #[test]
 fn test_carrier_breach_event_emitted_alongside_condition_breach() {
     use soroban_sdk::TryFromVal;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5001,7 +4999,7 @@ fn test_carrier_breach_event_emitted_alongside_condition_breach() {
 #[test]
 fn test_carrier_dispute_loss_event_emitted_on_refund_to_company() {
     use soroban_sdk::TryFromVal;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5049,7 +5047,7 @@ fn test_carrier_dispute_loss_event_emitted_on_refund_to_company() {
 #[test]
 fn test_carrier_dispute_loss_not_emitted_when_carrier_wins() {
     use soroban_sdk::TryFromVal;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5097,7 +5095,7 @@ fn test_carrier_dispute_loss_not_emitted_when_carrier_wins() {
 #[test]
 fn test_carrier_dispute_loss_event_contains_correct_carrier() {
     use soroban_sdk::TryFromVal;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5153,7 +5151,7 @@ fn test_carrier_dispute_loss_event_contains_correct_carrier() {
 #[test]
 fn test_notification_emitted_on_shipment_created() {
     use soroban_sdk::TryFromVal;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5192,7 +5190,7 @@ fn test_notification_emitted_on_shipment_created() {
 #[test]
 fn test_notification_emitted_on_status_changed() {
     use soroban_sdk::TryFromVal;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5239,7 +5237,7 @@ fn test_notification_emitted_on_status_changed() {
 #[test]
 fn test_notification_emitted_on_delivery_confirmed() {
     use soroban_sdk::TryFromVal;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5288,7 +5286,7 @@ fn test_notification_emitted_on_delivery_confirmed() {
 #[test]
 fn test_notification_emitted_on_dispute_raised() {
     use soroban_sdk::TryFromVal;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5330,7 +5328,7 @@ fn test_notification_emitted_on_dispute_raised() {
 #[test]
 fn test_notification_emitted_on_dispute_resolved() {
     use soroban_sdk::TryFromVal;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5380,7 +5378,7 @@ fn test_notification_emitted_on_dispute_resolved() {
 
 #[test]
 fn test_analytics_counters() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5452,7 +5450,7 @@ fn test_analytics_counters() {
 
 #[test]
 fn test_analytics_batch_and_cancel() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 3600;
@@ -5494,7 +5492,7 @@ fn test_analytics_batch_and_cancel() {
 
 #[test]
 fn test_set_and_get_shipment_limit() {
-    let (_env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
     // Default limit should be 100 (set in initialize)
@@ -5508,7 +5506,7 @@ fn test_set_and_get_shipment_limit() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_set_shipment_limit_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let outsider = Address::generate(&env);
     client.initialize(&admin, &token_contract);
 
@@ -5518,7 +5516,7 @@ fn test_set_shipment_limit_unauthorized() {
 
 #[test]
 fn test_active_shipment_count_tracking() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5559,7 +5557,7 @@ fn test_active_shipment_count_tracking() {
 #[test]
 #[should_panic(expected = "Error(Contract, #30)")]
 fn test_shipment_limit_reached() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5596,7 +5594,7 @@ fn test_shipment_limit_reached() {
 #[test]
 #[should_panic(expected = "Error(Contract, #30)")]
 fn test_batch_limit_reached() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 3600;
 
@@ -5623,7 +5621,7 @@ fn test_batch_limit_reached() {
 
 #[test]
 fn test_count_decrements_on_delivery() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5655,7 +5653,7 @@ fn test_count_decrements_on_delivery() {
 
 #[test]
 fn test_count_decrements_on_cancel() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5682,7 +5680,7 @@ fn test_count_decrements_on_cancel() {
 
 #[test]
 fn test_count_decrements_on_dispute_resolution() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5715,7 +5713,7 @@ fn test_count_decrements_on_dispute_resolution() {
 
 #[test]
 fn test_count_decrements_on_deadline_expiration() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5755,7 +5753,7 @@ fn test_count_decrements_on_deadline_expiration() {
 #[test]
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_create_shipment_returns_invalid_hash() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5779,7 +5777,7 @@ fn test_create_shipment_returns_invalid_hash() {
 // #[test]
 // #[should_panic(expected = "Error(Contract, #6)")]
 // fn test_update_status_returns_invalid_hash() {
-//     let (env, client, admin, token_contract) = setup_env();
+//     let (env, client, admin, token_contract) = setup_shipment_env();
 //     let company = Address::generate(&env);
 //     let receiver = Address::generate(&env);
 //     let carrier = Address::generate(&env);
@@ -5806,7 +5804,7 @@ fn test_create_shipment_returns_invalid_hash() {
 // #[test]
 // #[should_panic(expected = "Error(Contract, #6)")]
 // fn test_confirm_delivery_returns_invalid_hash() {
-//     let (env, client, admin, token_contract) = setup_env();
+//     let (env, client, admin, token_contract) = setup_shipment_env();
 //     let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
 //
 //     let (receiver, _carrier, shipment_id) = setup_shipment_with_status(
@@ -5825,7 +5823,7 @@ fn test_create_shipment_returns_invalid_hash() {
 #[test]
 #[should_panic(expected = "Error(Contract, #11)")]
 fn test_create_shipment_returns_counter_overflow() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5856,7 +5854,7 @@ fn test_create_shipment_returns_counter_overflow() {
 // #[test]
 // #[should_panic(expected = "Error(Contract, #12)")]
 // fn test_create_shipment_returns_carrier_not_whitelisted() {
-//     let (env, client, admin, token_contract) = setup_env();
+//     let (env, client, admin, token_contract) = setup_shipment_env();
 //     let company = Address::generate(&env);
 //     let receiver = Address::generate(&env);
 //     let carrier = Address::generate(&env);
@@ -5886,7 +5884,7 @@ fn test_create_shipment_returns_counter_overflow() {
 // #[test]
 // #[should_panic(expected = "Error(Contract, #13)")]
 // fn test_handoff_shipment_returns_carrier_not_authorized() {
-//     let (env, client, admin, token_contract) = setup_env();
+//     let (env, client, admin, token_contract) = setup_shipment_env();
 //     let company = Address::generate(&env);
 //     let receiver = Address::generate(&env);
 //     let carrier = Address::generate(&env);
@@ -5917,7 +5915,7 @@ fn test_create_shipment_returns_counter_overflow() {
 #[test]
 #[should_panic(expected = "Error(Contract, #8)")]
 fn test_deposit_escrow_returns_invalid_amount_zero() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5942,7 +5940,7 @@ fn test_deposit_escrow_returns_invalid_amount_zero() {
 #[test]
 #[should_panic(expected = "Error(Contract, #8)")]
 fn test_deposit_escrow_returns_invalid_amount_negative() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5969,7 +5967,7 @@ fn test_deposit_escrow_returns_invalid_amount_negative() {
 #[test]
 #[should_panic(expected = "Error(Contract, #7)")]
 fn test_deposit_escrow_returns_escrow_already_deposited() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -5999,7 +5997,7 @@ fn test_deposit_escrow_returns_escrow_already_deposited() {
 // #[test]
 // #[should_panic(expected = "Error(Contract, #19)")]
 // fn test_record_milestone_returns_milestone_already_paid() {
-//     let (env, client, admin, token_contract) = setup_env();
+//     let (env, client, admin, token_contract) = setup_shipment_env();
 //     let company = Address::generate(&env);
 //     let receiver = Address::generate(&env);
 //     let carrier = Address::generate(&env);
@@ -6042,7 +6040,7 @@ fn test_deposit_escrow_returns_escrow_already_deposited() {
 // #[test]
 // #[should_panic(expected = "Error(Contract, #20)")]
 // fn test_set_shipment_metadata_returns_metadata_limit_exceeded() {
-//     let (env, client, admin, token_contract) = setup_env();
+//     let (env, client, admin, token_contract) = setup_shipment_env();
 //     let company = Address::generate(&env);
 //     let receiver = Address::generate(&env);
 //     let carrier = Address::generate(&env);
@@ -6079,7 +6077,7 @@ fn test_deposit_escrow_returns_escrow_already_deposited() {
 #[test]
 #[should_panic(expected = "Error(Contract, #21)")]
 fn test_update_status_returns_rate_limit_exceeded() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -6114,7 +6112,7 @@ fn test_update_status_returns_rate_limit_exceeded() {
 #[test]
 #[should_panic(expected = "Error(Contract, #22)")]
 fn test_get_proposal_returns_proposal_not_found() {
-    let (_env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -6124,7 +6122,7 @@ fn test_get_proposal_returns_proposal_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #22)")]
 fn test_approve_action_returns_proposal_not_found() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let admin2 = Address::generate(&env);
 
     let mut admins = soroban_sdk::Vec::new(&env);
@@ -6140,7 +6138,7 @@ fn test_approve_action_returns_proposal_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #22)")]
 fn test_execute_proposal_returns_proposal_not_found() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let admin2 = Address::generate(&env);
 
     let mut admins = soroban_sdk::Vec::new(&env);
@@ -6158,7 +6156,7 @@ fn test_execute_proposal_returns_proposal_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #23)")]
 fn test_execute_proposal_returns_proposal_already_executed() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let admin2 = Address::generate(&env);
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -6196,7 +6194,7 @@ fn test_execute_proposal_returns_proposal_already_executed() {
 #[test]
 #[should_panic(expected = "Error(Contract, #24)")]
 fn test_approve_action_returns_proposal_expired() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let admin2 = Address::generate(&env);
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -6233,7 +6231,7 @@ fn test_approve_action_returns_proposal_expired() {
 #[test]
 #[should_panic(expected = "Error(Contract, #24)")]
 fn test_execute_proposal_returns_proposal_expired() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let admin2 = Address::generate(&env);
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -6274,7 +6272,7 @@ fn test_execute_proposal_returns_proposal_expired() {
 #[test]
 #[should_panic(expected = "Error(Contract, #25)")]
 fn test_approve_action_returns_already_approved() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let admin2 = Address::generate(&env);
     let admin3 = Address::generate(&env);
     let company = Address::generate(&env);
@@ -6313,7 +6311,7 @@ fn test_approve_action_returns_already_approved() {
 #[test]
 #[should_panic(expected = "Error(Contract, #26)")]
 fn test_execute_proposal_returns_insufficient_approvals() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let admin2 = Address::generate(&env);
     let admin3 = Address::generate(&env);
     let company = Address::generate(&env);
@@ -6351,7 +6349,7 @@ fn test_execute_proposal_returns_insufficient_approvals() {
 #[test]
 #[should_panic(expected = "Error(Contract, #27)")]
 fn test_propose_action_returns_not_an_admin() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let admin2 = Address::generate(&env);
     let outsider = Address::generate(&env);
     let company = Address::generate(&env);
@@ -6384,7 +6382,7 @@ fn test_propose_action_returns_not_an_admin() {
 #[test]
 #[should_panic(expected = "Error(Contract, #27)")]
 fn test_approve_action_returns_not_an_admin() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let admin2 = Address::generate(&env);
     let outsider = Address::generate(&env);
     let company = Address::generate(&env);
@@ -6421,7 +6419,7 @@ fn test_approve_action_returns_not_an_admin() {
 #[test]
 #[should_panic(expected = "Error(Contract, #28)")]
 fn test_init_multisig_returns_invalid_multisig_config_threshold_too_high() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let admin2 = Address::generate(&env);
 
     let mut admins = soroban_sdk::Vec::new(&env);
@@ -6437,7 +6435,7 @@ fn test_init_multisig_returns_invalid_multisig_config_threshold_too_high() {
 #[test]
 #[should_panic(expected = "Error(Contract, #28)")]
 fn test_init_multisig_returns_invalid_multisig_config_threshold_zero() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let admin2 = Address::generate(&env);
 
     let mut admins = soroban_sdk::Vec::new(&env);
@@ -6453,7 +6451,7 @@ fn test_init_multisig_returns_invalid_multisig_config_threshold_zero() {
 #[test]
 #[should_panic(expected = "Error(Contract, #28)")]
 fn test_init_multisig_returns_invalid_multisig_config_empty_admins() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     let admins = soroban_sdk::Vec::new(&env);
 
@@ -6468,7 +6466,7 @@ fn test_init_multisig_returns_invalid_multisig_config_empty_admins() {
 #[test]
 #[should_panic(expected = "Error(Contract, #29)")]
 fn test_check_deadline_returns_not_expired() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -6496,7 +6494,7 @@ fn test_check_deadline_returns_not_expired() {
 #[test]
 #[should_panic(expected = "Error(Contract, #30)")]
 fn test_create_shipment_returns_shipment_limit_reached() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -6532,7 +6530,7 @@ fn test_create_shipment_returns_shipment_limit_reached() {
 #[test]
 #[should_panic(expected = "Error(Contract, #30)")]
 fn test_create_shipments_batch_returns_shipment_limit_reached() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 3600;
 
@@ -6560,7 +6558,7 @@ fn test_create_shipments_batch_returns_shipment_limit_reached() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_create_shipment_returns_not_initialized() {
-    let (env, client, _admin, _token_contract) = setup_env();
+    let (env, client, _admin, _token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -6580,7 +6578,7 @@ fn test_create_shipment_returns_not_initialized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_add_company_returns_not_initialized() {
-    let (env, client, admin, _token_contract) = setup_env();
+    let (env, client, admin, _token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
 
     client.add_company(&admin, &company);
@@ -6589,7 +6587,7 @@ fn test_add_company_returns_not_initialized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_add_carrier_returns_not_initialized() {
-    let (env, client, admin, _token_contract) = setup_env();
+    let (env, client, admin, _token_contract) = setup_shipment_env();
     let carrier = Address::generate(&env);
 
     client.add_carrier(&admin, &carrier);
@@ -6598,7 +6596,7 @@ fn test_add_carrier_returns_not_initialized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_get_admin_returns_not_initialized() {
-    let (_env, client, _admin, _token_contract) = setup_env();
+    let (_env, client, _admin, _token_contract) = setup_shipment_env();
 
     client.get_admin();
 }
@@ -6606,7 +6604,7 @@ fn test_get_admin_returns_not_initialized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_set_shipment_limit_returns_not_initialized() {
-    let (_env, client, admin, _token_contract) = setup_env();
+    let (_env, client, admin, _token_contract) = setup_shipment_env();
 
     client.set_shipment_limit(&admin, &10);
 }
@@ -6614,7 +6612,7 @@ fn test_set_shipment_limit_returns_not_initialized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_get_shipment_limit_returns_not_initialized() {
-    let (_env, client, _admin, _token_contract) = setup_env();
+    let (_env, client, _admin, _token_contract) = setup_shipment_env();
 
     client.get_shipment_limit();
 }
@@ -6622,7 +6620,7 @@ fn test_get_shipment_limit_returns_not_initialized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_get_active_shipment_count_returns_not_initialized() {
-    let (env, client, _admin, _token_contract) = setup_env();
+    let (env, client, _admin, _token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
 
     client.get_active_shipment_count(&company);
@@ -6631,7 +6629,7 @@ fn test_get_active_shipment_count_returns_not_initialized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_get_analytics_returns_not_initialized() {
-    let (_env, client, _admin, _token_contract) = setup_env();
+    let (_env, client, _admin, _token_contract) = setup_shipment_env();
 
     client.get_analytics();
 }
@@ -6641,7 +6639,7 @@ fn test_get_analytics_returns_not_initialized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_add_company_returns_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let non_admin = Address::generate(&env);
 
@@ -6653,7 +6651,7 @@ fn test_add_company_returns_unauthorized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_add_carrier_returns_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let carrier = Address::generate(&env);
     let non_admin = Address::generate(&env);
 
@@ -6665,7 +6663,7 @@ fn test_add_carrier_returns_unauthorized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_set_shipment_limit_returns_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let non_admin = Address::generate(&env);
 
     client.initialize(&admin, &token_contract);
@@ -6676,7 +6674,7 @@ fn test_set_shipment_limit_returns_unauthorized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_add_carrier_to_whitelist_returns_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let non_company = Address::generate(&env);
@@ -6690,7 +6688,7 @@ fn test_add_carrier_to_whitelist_returns_unauthorized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_remove_carrier_from_whitelist_returns_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let non_company = Address::generate(&env);
@@ -6705,7 +6703,7 @@ fn test_remove_carrier_from_whitelist_returns_unauthorized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_cancel_shipment_returns_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -6732,7 +6730,7 @@ fn test_cancel_shipment_returns_unauthorized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_report_condition_breach_returns_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -6766,7 +6764,7 @@ fn test_report_condition_breach_returns_unauthorized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_update_status_returns_shipment_not_found() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let carrier = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
 
@@ -6779,7 +6777,7 @@ fn test_update_status_returns_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_confirm_delivery_returns_shipment_not_found() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let receiver = Address::generate(&env);
     let confirmation_hash = BytesN::from_array(&env, &[1u8; 32]);
 
@@ -6791,7 +6789,7 @@ fn test_confirm_delivery_returns_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_release_escrow_returns_shipment_not_found() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let receiver = Address::generate(&env);
 
     client.initialize(&admin, &token_contract);
@@ -6802,7 +6800,7 @@ fn test_release_escrow_returns_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_refund_escrow_returns_shipment_not_found() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
 
     client.initialize(&admin, &token_contract);
@@ -6814,7 +6812,7 @@ fn test_refund_escrow_returns_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_raise_dispute_returns_shipment_not_found() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let reason_hash = BytesN::from_array(&env, &[1u8; 32]);
 
@@ -6827,7 +6825,7 @@ fn test_raise_dispute_returns_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_resolve_dispute_returns_shipment_not_found() {
-    let (_env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -6837,7 +6835,7 @@ fn test_resolve_dispute_returns_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_cancel_shipment_returns_shipment_not_found() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
 
     client.initialize(&admin, &token_contract);
@@ -6850,7 +6848,7 @@ fn test_cancel_shipment_returns_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_update_eta_returns_shipment_not_found() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let carrier = Address::generate(&env);
     let eta_hash = BytesN::from_array(&env, &[1u8; 32]);
     let eta_timestamp = env.ledger().timestamp() + 3600;
@@ -6864,7 +6862,7 @@ fn test_update_eta_returns_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_record_milestone_returns_shipment_not_found() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let carrier = Address::generate(&env);
     let checkpoint = soroban_sdk::Symbol::new(&env, "port_arrival");
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -6878,7 +6876,7 @@ fn test_record_milestone_returns_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_handoff_shipment_returns_shipment_not_found() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let carrier = Address::generate(&env);
     let new_carrier = Address::generate(&env);
 
@@ -6893,7 +6891,7 @@ fn test_handoff_shipment_returns_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_report_condition_breach_returns_shipment_not_found() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let carrier = Address::generate(&env);
     let breach_hash = BytesN::from_array(&env, &[1u8; 32]);
 
@@ -6906,7 +6904,7 @@ fn test_report_condition_breach_returns_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_check_deadline_returns_shipment_not_found() {
-    let (_env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -6918,7 +6916,7 @@ fn test_check_deadline_returns_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_deposit_escrow_returns_invalid_status() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -6951,7 +6949,7 @@ fn test_deposit_escrow_returns_invalid_status() {
 // #[test]
 // #[should_panic(expected = "Error(Contract, #5)")]
 // fn test_raise_dispute_returns_invalid_status() {
-//     let (env, client, admin, token_contract) = setup_env();
+//     let (env, client, admin, token_contract) = setup_shipment_env();
 //     let company = Address::generate(&env);
 //     let receiver = Address::generate(&env);
 //     let carrier = Address::generate(&env);
@@ -7010,7 +7008,7 @@ fn test_full_shipment_lifecycle_integration() {
     use crate::ShipmentStatus;
 
     // ─── STEP 1: Setup Environment and Initialize Contract ───────────────────
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     // Generate addresses for all participants
     let company = Address::generate(&env);
@@ -7232,7 +7230,7 @@ fn test_full_shipment_lifecycle_integration() {
 
 #[test]
 fn test_event_count_after_create() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -7259,7 +7257,7 @@ fn test_event_count_after_create() {
 
 #[test]
 fn test_event_count_after_milestone() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -7304,7 +7302,7 @@ fn test_event_count_after_milestone() {
 
 #[test]
 fn test_event_count_after_status_updates() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -7354,7 +7352,7 @@ fn test_event_count_after_status_updates() {
 
 #[test]
 fn test_event_count_after_delivery() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -7394,7 +7392,7 @@ fn test_event_count_after_delivery() {
 
 #[test]
 fn test_event_count_returns_zero_for_new_shipment() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -7422,7 +7420,7 @@ fn test_event_count_returns_zero_for_new_shipment() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_event_count_shipment_not_found() {
-    let (_env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -7432,7 +7430,7 @@ fn test_event_count_shipment_not_found() {
 
 #[test]
 fn test_event_count_with_multiple_milestones() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -7495,7 +7493,7 @@ fn test_event_count_with_multiple_milestones() {
 
 #[test]
 fn test_archive_delivered_shipment() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -7538,7 +7536,7 @@ fn test_archive_delivered_shipment() {
 
 #[test]
 fn test_archive_cancelled_shipment() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -7574,7 +7572,7 @@ fn test_archive_cancelled_shipment() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_archive_active_shipment_fails() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -7601,7 +7599,7 @@ fn test_archive_active_shipment_fails() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_archive_nonexistent_shipment_fails() {
-    let (_env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
@@ -7612,7 +7610,7 @@ fn test_archive_nonexistent_shipment_fails() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_archive_shipment_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -7644,7 +7642,7 @@ fn test_archive_shipment_unauthorized() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_archive_in_transit_shipment_fails() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -7680,7 +7678,7 @@ fn test_archive_in_transit_shipment_fails() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_archive_disputed_shipment_fails() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -7721,7 +7719,7 @@ fn test_archive_disputed_shipment_fails() {
 
 #[test]
 fn test_carrier_handoff_completed_event() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let current_carrier = Address::generate(&env);
@@ -7770,7 +7768,7 @@ fn test_carrier_handoff_completed_event() {
 
 #[test]
 fn test_carrier_on_time_delivery_event() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -7820,7 +7818,7 @@ fn test_carrier_on_time_delivery_event() {
 
 #[test]
 fn test_carrier_late_delivery_event_and_milestones() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -7907,7 +7905,7 @@ fn test_carrier_late_delivery_event_and_milestones() {
 
 #[test]
 fn test_revoke_role_company() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
     let company = Address::generate(&env);
@@ -7920,7 +7918,7 @@ fn test_revoke_role_company() {
 
 #[test]
 fn test_revoke_role_carrier() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
     let carrier = Address::generate(&env);
@@ -7933,7 +7931,7 @@ fn test_revoke_role_carrier() {
 
 #[test]
 fn test_revoke_role_then_create_shipment_fails() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
     let company = Address::generate(&env);
@@ -7961,7 +7959,7 @@ fn test_revoke_role_then_create_shipment_fails() {
 #[test]
 #[should_panic(expected = "Error(Contract, #32)")]
 fn test_revoke_role_self_revoke_fails() {
-    let (_env, client, admin, token_contract) = setup_env();
+    let (_env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
     // Admin cannot self-revoke (error code 32 = CannotSelfRevoke)
@@ -7971,7 +7969,7 @@ fn test_revoke_role_self_revoke_fails() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_revoke_role_unauthorized() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
     let non_admin = Address::generate(&env);
@@ -7984,7 +7982,7 @@ fn test_revoke_role_unauthorized() {
 
 #[test]
 fn test_revoke_role_emits_event() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
     let company = Address::generate(&env);
@@ -8009,7 +8007,7 @@ fn test_revoke_role_emits_event() {
 
 #[test]
 fn test_get_shipment_reference_deterministic() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -8037,7 +8035,7 @@ fn test_get_shipment_reference_deterministic() {
 
 #[test]
 fn test_get_shipment_reference_collision_free() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);

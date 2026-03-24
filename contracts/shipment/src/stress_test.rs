@@ -2,7 +2,7 @@
 
 extern crate std;
 
-use crate::{NavinShipment, NavinShipmentClient, ShipmentStatus};
+use crate::{test_utils::setup_env, NavinShipment, NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env};
 
 #[contract]
@@ -13,18 +13,16 @@ impl MockToken {
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
 }
 
-fn setup_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
-    let env = Env::default();
-    let admin = Address::generate(&env);
+fn setup_stress_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
+    let (env, admin) = setup_env();
     let token_contract = env.register(MockToken {}, ());
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
-    env.mock_all_auths();
     (env, client, admin, token_contract)
 }
 
 #[test]
 fn test_create_50_shipments_sequentially() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_stress_env();
     let company = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 3600;
 
@@ -52,7 +50,7 @@ fn test_create_50_shipments_sequentially() {
 
 #[test]
 fn test_20_concurrent_status_updates() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_stress_env();
     let company = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 3600;
 
@@ -102,7 +100,7 @@ fn test_20_concurrent_status_updates() {
 
 #[test]
 fn test_verify_shipment_count_after_mass_operations() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_stress_env();
     let company = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 3600;
 
@@ -134,7 +132,7 @@ fn test_verify_shipment_count_after_mass_operations() {
 
 #[test]
 fn test_no_data_corruption_between_shipments() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_stress_env();
     let company = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 3600;
 

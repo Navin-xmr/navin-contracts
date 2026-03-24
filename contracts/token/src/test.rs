@@ -2,15 +2,13 @@
 
 extern crate std;
 
-use crate::{NavinToken, NavinTokenClient};
+use crate::{test_utils::setup_env, NavinToken, NavinTokenClient};
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
-fn setup_env() -> (Env, NavinTokenClient<'static>, Address) {
-    let env = Env::default();
-    env.mock_all_auths();
+fn setup_token_env() -> (Env, NavinTokenClient<'static>, Address) {
+    let (env, admin) = setup_env();
     let contract_id = env.register(NavinToken, ());
     let client = NavinTokenClient::new(&env, &contract_id);
-    let admin = Address::generate(&env);
 
     (env, client, admin)
 }
@@ -23,7 +21,7 @@ fn initialize_token(client: &NavinTokenClient, env: &Env, admin: &Address, total
 
 #[test]
 fn test_initialize() {
-    let (env, client, admin) = setup_env();
+    let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
 
     assert_eq!(client.get_admin(), admin);
@@ -36,7 +34,7 @@ fn test_initialize() {
 #[test]
 #[should_panic(expected = "Error(Contract, #1)")]
 fn test_re_initialization_fails() {
-    let (env, client, admin) = setup_env();
+    let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
     // Second initialization must fail with AlreadyInitialized
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -44,7 +42,7 @@ fn test_re_initialization_fails() {
 
 #[test]
 fn test_mint() {
-    let (env, client, admin) = setup_env();
+    let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
 
     let recipient = Address::generate(&env);
@@ -57,7 +55,7 @@ fn test_mint() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_mint_unauthorized() {
-    let (env, client, admin) = setup_env();
+    let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
 
     let non_admin = Address::generate(&env);
@@ -66,7 +64,7 @@ fn test_mint_unauthorized() {
 
 #[test]
 fn test_transfer() {
-    let (env, client, admin) = setup_env();
+    let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
 
     let recipient = Address::generate(&env);
@@ -79,7 +77,7 @@ fn test_transfer() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_transfer_insufficient_balance() {
-    let (env, client, admin) = setup_env();
+    let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
 
     let sender = Address::generate(&env);
@@ -90,7 +88,7 @@ fn test_transfer_insufficient_balance() {
 
 #[test]
 fn test_balance_default_zero() {
-    let (env, client, admin) = setup_env();
+    let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
 
     let unknown = Address::generate(&env);
@@ -99,7 +97,7 @@ fn test_balance_default_zero() {
 
 #[test]
 fn test_approve_and_transfer_from() {
-    let (env, client, admin) = setup_env();
+    let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
 
     let spender = Address::generate(&env);

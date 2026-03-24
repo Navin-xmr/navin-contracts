@@ -5,8 +5,10 @@ use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String};
 mod errors;
 mod storage;
 mod test;
+mod test_utils;
 
 pub use errors::*;
+pub use test_utils::*;
 
 #[contract]
 pub struct NavinToken;
