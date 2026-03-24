@@ -1,7 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractimpl, symbol_short, Address, BytesN, Env, IntoVal, Map, Symbol, Vec,
+    contract, contractimpl, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal, Map, Symbol,
+    Vec,
 };
 
 mod config;
@@ -2717,5 +2718,40 @@ impl NavinShipment {
         events::emit_shipment_expired(&env, shipment_id);
 
         Ok(())
+    }
+
+    /// Generate a deterministic shipment reference string for cross-system interoperability.
+    /// The reference is derived from: SHA-256(NetworkIdentifier | ContractAddress | ShipmentID).
+    pub fn get_shipment_reference(
+        env: Env,
+        shipment_id: u64,
+    ) -> Result<soroban_sdk::String, NavinError> {
+        require_initialized(&env)?;
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+
+        let network_id = env.ledger().network_id();
+        let contract_address = env.current_contract_address();
+
+        let mut payload = soroban_sdk::Bytes::new(&env);
+        payload.append(&network_id.into());
+        payload.append(&contract_address.to_xdr(&env));
+        payload.append(&soroban_sdk::Bytes::from_array(
+            &env,
+            &shipment_id.to_be_bytes(),
+        ));
+
+        let hash_array = env.crypto().sha256(&payload).to_array();
+        let mut hex_chars = [0u8; 64];
+        let alphabet = b"0123456789abcdef";
+        for i in 0..32 {
+            hex_chars[i * 2] = alphabet[(hash_array[i] >> 4) as usize];
+            hex_chars[i * 2 + 1] = alphabet[(hash_array[i] & 0x0f) as usize];
+        }
+
+        Ok(soroban_sdk::String::from_str(&env, unsafe {
+            core::str::from_utf8_unchecked(&hex_chars)
+        }))
     }
 }
