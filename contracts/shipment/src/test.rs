@@ -8006,3 +8006,65 @@ fn test_revoke_role_emits_event() {
     }
     assert!(found, "role_revoked event not found");
 }
+
+#[test]
+fn test_get_shipment_reference_deterministic() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let ref1 = client.get_shipment_reference(&shipment_id);
+    let ref2 = client.get_shipment_reference(&shipment_id);
+
+    assert_eq!(ref1, ref2);
+    assert_eq!(ref1.len(), 64);
+}
+
+#[test]
+fn test_get_shipment_reference_collision_free() {
+    let (env, client, admin, token_contract) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let id1 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    let id2 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let ref1 = client.get_shipment_reference(&id1);
+    let ref2 = client.get_shipment_reference(&id2);
+
+    assert_ne!(ref1, ref2);
+}
