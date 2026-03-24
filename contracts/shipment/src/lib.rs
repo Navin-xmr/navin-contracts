@@ -2737,7 +2737,10 @@ impl NavinShipment {
         let mut payload = soroban_sdk::Bytes::new(&env);
         payload.append(&network_id.into());
         payload.append(&contract_address.to_xdr(&env));
-        payload.append(&soroban_sdk::Bytes::from_array(&env, &shipment_id.to_be_bytes()));
+        payload.append(&soroban_sdk::Bytes::from_array(
+            &env,
+            &shipment_id.to_be_bytes(),
+        ));
 
         let hash_array = env.crypto().sha256(&payload).to_array();
         let mut hex_chars = [0u8; 64];
