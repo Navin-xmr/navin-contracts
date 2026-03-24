@@ -25,6 +25,8 @@ pub enum DataKey {
     CarrierWhitelist(Address, Address),
     /// Role assigned to an address — (address, role) -> bool.
     UserRole(Address, Role),
+    /// Role suspension status — (address, role) -> bool.
+    RoleSuspended(Address, Role),
     /// Escrow balance for a shipment.
     Escrow(u64),
     /// Legacy single-role storage key for compatibility.
@@ -79,6 +81,26 @@ pub enum Role {
     Carrier,
     /// No role assigned.
     Unassigned,
+}
+
+/// Role change actions for RBAC audit trail.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::RoleChangeAction;
+/// let action = RoleChangeAction::Assigned;
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum RoleChangeAction {
+    /// Role was assigned to an address.
+    Assigned,
+    /// Role was revoked from an address.
+    Revoked,
+    /// Role was temporarily suspended.
+    Suspended,
+    /// Role was reactivated after suspension.
+    Reactivated,
 }
 
 /// Shipment status lifecycle.

@@ -18,7 +18,7 @@
 //! Each event uses a single descriptive `Symbol` as its topic so that
 //! consumers can filter by topic when subscribing to contract events.
 
-use crate::types::{BreachType, Severity, ShipmentStatus};
+use crate::types::{BreachType, Role, RoleChangeAction, Severity, ShipmentStatus};
 use soroban_sdk::{Address, BytesN, Env, Symbol};
 
 /// Emits a `shipment_created` event when a new shipment is registered.
@@ -744,6 +744,62 @@ pub fn emit_role_revoked(env: &Env, admin: &Address, target: &Address, role: &cr
     env.events().publish(
         (Symbol::new(env, "role_revoked"),),
         (admin.clone(), target.clone(), role.clone()),
+    );
+}
+
+/// Emits a `role_changed` event for the complete RBAC audit trail.
+///
+/// This event is emitted on every role assignment, revocation, suspension,
+/// and reactivation. It provides a complete history stream for compliance,
+/// analytics, and off-chain indexing.
+///
+/// # Event Data (Payload Schema)
+///
+/// | Field       | Type                | Description                                    |
+/// |-------------|---------------------|------------------------------------------------|
+/// | action      | `RoleChangeAction`  | The type of change (Assigned/Revoked/Suspended/Reactivated) |
+/// | admin       | `Address`           | Admin who performed the action                 |
+/// | target      | `Address`           | Address whose role was changed                 |
+/// | role        | `Role`              | The role that was affected                     |
+/// | timestamp   | `u64`               | Ledger timestamp of the change                 |
+///
+/// # Listeners
+///
+/// - **Express backend**: Maintains a role-history index for each address.
+/// - **Compliance**: Audits all RBAC changes for regulatory requirements.
+/// - **Frontend**: Displays role change timeline in admin dashboard.
+/// - **Analytics**: Tracks role distribution and changes over time.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `action` - The type of role change action.
+/// * `admin` - The admin who performed the action.
+/// * `target` - The address whose role was changed.
+/// * `role` - The role that was affected.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_role_changed(&env, &RoleChangeAction::Assigned, &admin, &target, &Role::Company);
+/// ```
+pub fn emit_role_changed(
+    env: &Env,
+    action: &RoleChangeAction,
+    admin: &Address,
+    target: &Address,
+    role: &Role,
+) {
+    env.events().publish(
+        (Symbol::new(env, "role_changed"),),
+        (
+            action.clone(),
+            admin.clone(),
+            target.clone(),
+            role.clone(),
+            env.ledger().timestamp(),
+        ),
     );
 }
 
