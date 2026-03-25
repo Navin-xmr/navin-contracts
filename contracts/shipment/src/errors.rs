@@ -82,4 +82,6 @@ pub enum NavinError {
     CarrierSuspended = 33,
     /// Force-cancel requires a non-zero reason hash.
     ForceCancelReasonHashMissing = 34,
+    /// Arithmetic overflow/underflow encountered during escrow math operations.
+    ArithmeticError = 35,
 }

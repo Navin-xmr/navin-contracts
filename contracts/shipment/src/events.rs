@@ -1004,12 +1004,7 @@ pub fn emit_note_appended(
 ) {
     env.events().publish(
         (Symbol::new(env, "note_appended"),),
-        (
-            shipment_id,
-            note_index,
-            note_hash.clone(),
-            reporter.clone(),
-        ),
+        (shipment_id, note_index, note_hash.clone(), reporter.clone()),
     );
     crate::storage::increment_event_count(env, shipment_id);
 }

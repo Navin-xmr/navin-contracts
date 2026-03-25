@@ -4988,16 +4988,23 @@ fn test_delivery_success_event_contains_correct_carrier() {
         if let Some(raw) = topics.get(0) {
             if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
                 if topic == Symbol::new(&env, "delivery_success") {
-                    // data is (carrier, shipment_id, delivery_time)
-                    return <(Address, u64, u64)>::try_from_val(&env, &data).ok();
+                    // data is (carrier, shipment_id, delivery_time, schema_version, event_counter, idempotency_key)
+                    return <(Address, u64, u64, u32, u32, BytesN<32>)>::try_from_val(&env, &data)
+                        .ok();
                 }
             }
         }
         None
     });
 
-    let (event_carrier, event_shipment_id, _delivery_time) =
-        event_data.expect("delivery_success event data must be present");
+    let (
+        event_carrier,
+        event_shipment_id,
+        _delivery_time,
+        _schema_version,
+        _event_counter,
+        _idempotency_key,
+    ) = event_data.expect("delivery_success event data must be present");
     assert_eq!(
         event_carrier, carrier,
         "event must reference the assigned carrier"
@@ -8484,8 +8491,7 @@ fn test_check_deadline_at_grace_boundary_succeeds() {
     client.update_config(&admin, &config);
 
     // Advance time to exactly deadline + grace
-    env.ledger()
-        .with_mut(|l| l.timestamp = deadline + grace);
+    env.ledger().with_mut(|l| l.timestamp = deadline + grace);
 
     client.check_deadline(&shipment_id);
 
@@ -8592,8 +8598,7 @@ fn setup_force_cancel_env() -> (
 /// Admin can force-cancel a shipment in Created status.
 #[test]
 fn test_force_cancel_shipment_success_created() {
-    let (env, client, admin, _token_contract, _company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
 
     let reason_hash = BytesN::from_array(&env, &[0x01u8; 32]);
     client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
@@ -8606,19 +8611,13 @@ fn test_force_cancel_shipment_success_created() {
 /// Admin can force-cancel a shipment that is InTransit.
 #[test]
 fn test_force_cancel_shipment_success_in_transit() {
-    let (env, client, admin, _token_contract, _company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
 
     let data_hash = BytesN::from_array(&env, &[0x02u8; 32]);
 
     // Move to InTransit via admin (bypasses carrier whitelist requirement)
     env.ledger().with_mut(|l| l.timestamp += 120);
-    client.update_status(
-        &admin,
-        &shipment_id,
-        &ShipmentStatus::InTransit,
-        &data_hash,
-    );
+    client.update_status(&admin, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
 
     let reason_hash = BytesN::from_array(&env, &[0x03u8; 32]);
     client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
@@ -8630,8 +8629,7 @@ fn test_force_cancel_shipment_success_in_transit() {
 /// Admin can force-cancel a Disputed shipment (bypasses normal cancel restriction).
 #[test]
 fn test_force_cancel_shipment_success_disputed() {
-    let (env, client, admin, _token_contract, company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, company, shipment_id) = setup_force_cancel_env();
 
     let data_hash = BytesN::from_array(&env, &[0x04u8; 32]);
 
@@ -8649,8 +8647,7 @@ fn test_force_cancel_shipment_success_disputed() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_force_cancel_shipment_unauthorized_company() {
-    let (env, client, _admin, _token_contract, company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, _admin, _token_contract, company, shipment_id) = setup_force_cancel_env();
 
     let reason_hash = BytesN::from_array(&env, &[0x06u8; 32]);
     // company is not admin — must be rejected
@@ -8661,8 +8658,7 @@ fn test_force_cancel_shipment_unauthorized_company() {
 #[test]
 #[should_panic(expected = "Error(Contract, #34)")]
 fn test_force_cancel_shipment_zero_reason_hash_rejected() {
-    let (env, client, admin, _token_contract, _company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
 
     let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
     client.force_cancel_shipment(&admin, &shipment_id, &zero_hash);
@@ -8672,8 +8668,7 @@ fn test_force_cancel_shipment_zero_reason_hash_rejected() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_force_cancel_shipment_not_found() {
-    let (env, client, admin, _token_contract, _company, _shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, _company, _shipment_id) = setup_force_cancel_env();
 
     let reason_hash = BytesN::from_array(&env, &[0x07u8; 32]);
     client.force_cancel_shipment(&admin, &9999, &reason_hash);
@@ -8683,8 +8678,7 @@ fn test_force_cancel_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #9)")]
 fn test_force_cancel_shipment_already_delivered() {
-    let (env, client, admin, _token_contract, _company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
 
     let shipment = client.get_shipment(&shipment_id);
     let receiver = shipment.receiver.clone();
@@ -8709,8 +8703,7 @@ fn test_force_cancel_shipment_already_delivered() {
 #[test]
 #[should_panic(expected = "Error(Contract, #9)")]
 fn test_force_cancel_shipment_already_cancelled() {
-    let (env, client, admin, _token_contract, company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, company, shipment_id) = setup_force_cancel_env();
 
     let reason_hash = BytesN::from_array(&env, &[0x0Bu8; 32]);
     // Regular cancel first
@@ -8725,8 +8718,7 @@ fn test_force_cancel_shipment_already_cancelled() {
 #[test]
 fn test_force_cancel_shipment_refunds_escrow() {
     use soroban_sdk::TryFromVal;
-    let (env, client, admin, _token_contract, _company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
 
     // No escrow deposited — escrow_amount is already 0
     let reason_hash = BytesN::from_array(&env, &[0x0Cu8; 32]);
@@ -8754,8 +8746,7 @@ fn test_force_cancel_shipment_refunds_escrow() {
 #[test]
 fn test_force_cancel_emits_dedicated_event_not_shipment_cancelled() {
     use soroban_sdk::TryFromVal;
-    let (env, client, admin, _token_contract, _company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
 
     let reason_hash = BytesN::from_array(&env, &[0x0Du8; 32]);
     client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
@@ -8816,12 +8807,18 @@ fn test_shipment_notes_success() {
     // Sender can append
     client.append_note_hash(&company, &shipment_id, &note_hash1.clone());
     assert_eq!(client.get_note_count(&shipment_id), 1);
-    assert_eq!(client.get_note_hash(&shipment_id, &0), Some(note_hash1.clone()));
+    assert_eq!(
+        client.get_note_hash(&shipment_id, &0),
+        Some(note_hash1.clone())
+    );
 
     // Carrier can append
     client.append_note_hash(&carrier, &shipment_id, &note_hash2.clone());
     assert_eq!(client.get_note_count(&shipment_id), 2);
-    assert_eq!(client.get_note_hash(&shipment_id, &1), Some(note_hash2.clone()));
+    assert_eq!(
+        client.get_note_hash(&shipment_id, &1),
+        Some(note_hash2.clone())
+    );
 
     // Admin can append
     let note_hash3 = BytesN::from_array(&env, &[12u8; 32]);
@@ -8829,9 +8826,18 @@ fn test_shipment_notes_success() {
     assert_eq!(client.get_note_count(&shipment_id), 3);
 
     // Verify storage consistency
-    assert_eq!(client.get_note_hash(&shipment_id, &0), Some(note_hash1.clone()));
-    assert_eq!(client.get_note_hash(&shipment_id, &1), Some(note_hash2.clone()));
-    assert_eq!(client.get_note_hash(&shipment_id, &2), Some(note_hash3.clone()));
+    assert_eq!(
+        client.get_note_hash(&shipment_id, &0),
+        Some(note_hash1.clone())
+    );
+    assert_eq!(
+        client.get_note_hash(&shipment_id, &1),
+        Some(note_hash2.clone())
+    );
+    assert_eq!(
+        client.get_note_hash(&shipment_id, &2),
+        Some(note_hash3.clone())
+    );
 
     // Verify event count was incremented in storage (proves event emission was triggered)
     assert_eq!(client.get_event_count(&shipment_id), 4);
