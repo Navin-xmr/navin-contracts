@@ -206,7 +206,8 @@ impl NavinShipment {
         require_initialized(&env)?;
         reporter.require_auth();
 
-        let shipment = storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
         let admin = storage::get_admin(&env);
 
         // Authorization: Sender, Receiver, Carrier, or Admin
