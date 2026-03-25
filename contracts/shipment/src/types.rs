@@ -69,6 +69,10 @@ pub enum DataKey {
     ShipmentNote(u64, u32),
     /// Total number of notes appended to a shipment.
     ShipmentNoteCount(u64),
+    /// Append-only dispute evidence hashes (shipment_id, index) -> hash.
+    DisputeEvidence(u64, u32),
+    /// Total number of evidence hashes added to a dispute.
+    DisputeEvidenceCount(u64),
 }
 
 /// Supported user roles.

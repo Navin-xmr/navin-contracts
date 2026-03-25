@@ -8484,8 +8484,7 @@ fn test_check_deadline_at_grace_boundary_succeeds() {
     client.update_config(&admin, &config);
 
     // Advance time to exactly deadline + grace
-    env.ledger()
-        .with_mut(|l| l.timestamp = deadline + grace);
+    env.ledger().with_mut(|l| l.timestamp = deadline + grace);
 
     client.check_deadline(&shipment_id);
 
@@ -8592,8 +8591,7 @@ fn setup_force_cancel_env() -> (
 /// Admin can force-cancel a shipment in Created status.
 #[test]
 fn test_force_cancel_shipment_success_created() {
-    let (env, client, admin, _token_contract, _company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
 
     let reason_hash = BytesN::from_array(&env, &[0x01u8; 32]);
     client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
@@ -8606,19 +8604,13 @@ fn test_force_cancel_shipment_success_created() {
 /// Admin can force-cancel a shipment that is InTransit.
 #[test]
 fn test_force_cancel_shipment_success_in_transit() {
-    let (env, client, admin, _token_contract, _company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
 
     let data_hash = BytesN::from_array(&env, &[0x02u8; 32]);
 
     // Move to InTransit via admin (bypasses carrier whitelist requirement)
     env.ledger().with_mut(|l| l.timestamp += 120);
-    client.update_status(
-        &admin,
-        &shipment_id,
-        &ShipmentStatus::InTransit,
-        &data_hash,
-    );
+    client.update_status(&admin, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
 
     let reason_hash = BytesN::from_array(&env, &[0x03u8; 32]);
     client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
@@ -8630,8 +8622,7 @@ fn test_force_cancel_shipment_success_in_transit() {
 /// Admin can force-cancel a Disputed shipment (bypasses normal cancel restriction).
 #[test]
 fn test_force_cancel_shipment_success_disputed() {
-    let (env, client, admin, _token_contract, company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, company, shipment_id) = setup_force_cancel_env();
 
     let data_hash = BytesN::from_array(&env, &[0x04u8; 32]);
 
@@ -8649,8 +8640,7 @@ fn test_force_cancel_shipment_success_disputed() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_force_cancel_shipment_unauthorized_company() {
-    let (env, client, _admin, _token_contract, company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, _admin, _token_contract, company, shipment_id) = setup_force_cancel_env();
 
     let reason_hash = BytesN::from_array(&env, &[0x06u8; 32]);
     // company is not admin — must be rejected
@@ -8661,8 +8651,7 @@ fn test_force_cancel_shipment_unauthorized_company() {
 #[test]
 #[should_panic(expected = "Error(Contract, #34)")]
 fn test_force_cancel_shipment_zero_reason_hash_rejected() {
-    let (env, client, admin, _token_contract, _company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
 
     let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
     client.force_cancel_shipment(&admin, &shipment_id, &zero_hash);
@@ -8672,8 +8661,7 @@ fn test_force_cancel_shipment_zero_reason_hash_rejected() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_force_cancel_shipment_not_found() {
-    let (env, client, admin, _token_contract, _company, _shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, _company, _shipment_id) = setup_force_cancel_env();
 
     let reason_hash = BytesN::from_array(&env, &[0x07u8; 32]);
     client.force_cancel_shipment(&admin, &9999, &reason_hash);
@@ -8683,8 +8671,7 @@ fn test_force_cancel_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #9)")]
 fn test_force_cancel_shipment_already_delivered() {
-    let (env, client, admin, _token_contract, _company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
 
     let shipment = client.get_shipment(&shipment_id);
     let receiver = shipment.receiver.clone();
@@ -8709,8 +8696,7 @@ fn test_force_cancel_shipment_already_delivered() {
 #[test]
 #[should_panic(expected = "Error(Contract, #9)")]
 fn test_force_cancel_shipment_already_cancelled() {
-    let (env, client, admin, _token_contract, company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, company, shipment_id) = setup_force_cancel_env();
 
     let reason_hash = BytesN::from_array(&env, &[0x0Bu8; 32]);
     // Regular cancel first
@@ -8725,8 +8711,7 @@ fn test_force_cancel_shipment_already_cancelled() {
 #[test]
 fn test_force_cancel_shipment_refunds_escrow() {
     use soroban_sdk::TryFromVal;
-    let (env, client, admin, _token_contract, _company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
 
     // No escrow deposited — escrow_amount is already 0
     let reason_hash = BytesN::from_array(&env, &[0x0Cu8; 32]);
@@ -8754,8 +8739,7 @@ fn test_force_cancel_shipment_refunds_escrow() {
 #[test]
 fn test_force_cancel_emits_dedicated_event_not_shipment_cancelled() {
     use soroban_sdk::TryFromVal;
-    let (env, client, admin, _token_contract, _company, shipment_id) =
-        setup_force_cancel_env();
+    let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
 
     let reason_hash = BytesN::from_array(&env, &[0x0Du8; 32]);
     client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
@@ -8816,12 +8800,18 @@ fn test_shipment_notes_success() {
     // Sender can append
     client.append_note_hash(&company, &shipment_id, &note_hash1.clone());
     assert_eq!(client.get_note_count(&shipment_id), 1);
-    assert_eq!(client.get_note_hash(&shipment_id, &0), Some(note_hash1.clone()));
+    assert_eq!(
+        client.get_note_hash(&shipment_id, &0),
+        Some(note_hash1.clone())
+    );
 
     // Carrier can append
     client.append_note_hash(&carrier, &shipment_id, &note_hash2.clone());
     assert_eq!(client.get_note_count(&shipment_id), 2);
-    assert_eq!(client.get_note_hash(&shipment_id, &1), Some(note_hash2.clone()));
+    assert_eq!(
+        client.get_note_hash(&shipment_id, &1),
+        Some(note_hash2.clone())
+    );
 
     // Admin can append
     let note_hash3 = BytesN::from_array(&env, &[12u8; 32]);
@@ -8829,9 +8819,18 @@ fn test_shipment_notes_success() {
     assert_eq!(client.get_note_count(&shipment_id), 3);
 
     // Verify storage consistency
-    assert_eq!(client.get_note_hash(&shipment_id, &0), Some(note_hash1.clone()));
-    assert_eq!(client.get_note_hash(&shipment_id, &1), Some(note_hash2.clone()));
-    assert_eq!(client.get_note_hash(&shipment_id, &2), Some(note_hash3.clone()));
+    assert_eq!(
+        client.get_note_hash(&shipment_id, &0),
+        Some(note_hash1.clone())
+    );
+    assert_eq!(
+        client.get_note_hash(&shipment_id, &1),
+        Some(note_hash2.clone())
+    );
+    assert_eq!(
+        client.get_note_hash(&shipment_id, &2),
+        Some(note_hash3.clone())
+    );
 
     // Verify event count was incremented in storage (proves event emission was triggered)
     assert_eq!(client.get_event_count(&shipment_id), 4);
@@ -8863,4 +8862,132 @@ fn test_shipment_notes_unauthorized() {
     let note_hash = BytesN::from_array(&env, &[10u8; 32]);
     // Outsider cannot append
     client.append_note_hash(&outsider, &shipment_id, &note_hash);
+}
+
+// ============= Dispute Evidence Tests =============
+
+#[test]
+fn test_dispute_evidence_success() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Transition to Disputed
+    let reason_hash = BytesN::from_array(&env, &[99u8; 32]);
+    client.raise_dispute(&company, &shipment_id, &reason_hash);
+
+    let evidence_hash1 = BytesN::from_array(&env, &[100u8; 32]);
+    let evidence_hash2 = BytesN::from_array(&env, &[101u8; 32]);
+
+    // Sender can add evidence
+    client.add_dispute_evidence_hash(&company, &shipment_id, &evidence_hash1.clone());
+    assert_eq!(client.get_dispute_evidence_count(&shipment_id), 1);
+    assert_eq!(
+        client.get_dispute_evidence_hash(&shipment_id, &0),
+        Some(evidence_hash1.clone())
+    );
+
+    // Receiver can add evidence
+    client.add_dispute_evidence_hash(&receiver, &shipment_id, &evidence_hash2.clone());
+    assert_eq!(client.get_dispute_evidence_count(&shipment_id), 2);
+    assert_eq!(
+        client.get_dispute_evidence_hash(&shipment_id, &1),
+        Some(evidence_hash2.clone())
+    );
+
+    // Admin can add evidence
+    let evidence_hash3 = BytesN::from_array(&env, &[102u8; 32]);
+    client.add_dispute_evidence_hash(&admin, &shipment_id, &evidence_hash3.clone());
+    assert_eq!(client.get_dispute_evidence_count(&shipment_id), 3);
+
+    // Verify storage consistency
+    assert_eq!(
+        client.get_dispute_evidence_hash(&shipment_id, &0),
+        Some(evidence_hash1.clone())
+    );
+    assert_eq!(
+        client.get_dispute_evidence_hash(&shipment_id, &1),
+        Some(evidence_hash2.clone())
+    );
+    assert_eq!(
+        client.get_dispute_evidence_hash(&shipment_id, &2),
+        Some(evidence_hash3.clone())
+    );
+
+    // Verify event count: 1 (create) + 1 (dispute) + 3 (evidence) = 5
+    assert_eq!(client.get_event_count(&shipment_id), 5);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #5)")] // InvalidStatus
+fn test_dispute_evidence_invalid_status() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Shipment is in 'Created' state, not 'Disputed'
+    let evidence_hash = BytesN::from_array(&env, &[100u8; 32]);
+    client.add_dispute_evidence_hash(&company, &shipment_id, &evidence_hash);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")] // Unauthorized
+fn test_dispute_evidence_unauthorized() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let outsider = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Transition to Disputed
+    let reason_hash = BytesN::from_array(&env, &[99u8; 32]);
+    client.raise_dispute(&company, &shipment_id, &reason_hash);
+
+    // Outsider cannot add evidence
+    let evidence_hash = BytesN::from_array(&env, &[100u8; 32]);
+    client.add_dispute_evidence_hash(&outsider, &shipment_id, &evidence_hash);
 }

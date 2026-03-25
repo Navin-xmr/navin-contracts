@@ -320,6 +320,7 @@ pub fn emit_dispute_raised(
         (Symbol::new(env, "dispute_raised"),),
         (shipment_id, raised_by.clone(), reason_hash.clone()),
     );
+    crate::storage::increment_event_count(env, shipment_id);
 }
 
 /// Emits a `shipment_cancelled` event when a shipment is cancelled.
@@ -896,10 +897,44 @@ pub fn emit_note_appended(
 ) {
     env.events().publish(
         (Symbol::new(env, "note_appended"),),
+        (shipment_id, note_index, note_hash.clone(), reporter.clone()),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
+
+/// Emits an `evidence_added` event when a dispute evidence hash is attached to a shipment.
+///
+/// This event facilitates off-chain indexing of dispute evidence, allowing
+/// parties to view the tamper-proof hashes without storing full text on-chain.
+///
+/// # Event Data
+///
+/// | Field       | Type         | Description                                       |
+/// |-------------|--------------|---------------------------------------------------|
+/// | shipment_id | `u64`        | Shipment this evidence belongs to                  |
+/// | evidence_idx| `u32`        | Sequence number of the evidence for this shipment  |
+/// | evidence_h  | `BytesN<32>` | SHA-256 hash of the off-chain evidence             |
+/// | reporter    | `Address`    | Address that provided the evidence                 |
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `shipment_id` - ID of the shipment.
+/// * `evidence_index` - Sequence index of the evidence added.
+/// * `evidence_hash` - The hash of the off-chain evidence.
+/// * `reporter` - The address that attached the evidence.
+pub fn emit_evidence_added(
+    env: &Env,
+    shipment_id: u64,
+    evidence_index: u32,
+    evidence_hash: &BytesN<32>,
+    reporter: &Address,
+) {
+    env.events().publish(
+        (Symbol::new(env, "evidence_added"),),
         (
             shipment_id,
-            note_index,
-            note_hash.clone(),
+            evidence_index,
+            evidence_hash.clone(),
             reporter.clone(),
         ),
     );

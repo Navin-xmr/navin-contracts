@@ -1105,3 +1105,38 @@ pub fn get_note_hash(env: &Env, shipment_id: u64, index: u32) -> Option<BytesN<3
         .persistent()
         .get(&DataKey::ShipmentNote(shipment_id, index))
 }
+
+// ============= Dispute Evidence Storage Functions =============
+
+/// Get the total number of evidence hashes added to a dispute.
+pub fn get_evidence_count(env: &Env, shipment_id: u64) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::DisputeEvidenceCount(shipment_id))
+        .unwrap_or(0)
+}
+
+/// Increment the evidence count for a dispute and return the new index.
+pub fn increment_evidence_count(env: &Env, shipment_id: u64) -> u32 {
+    let current = get_evidence_count(env, shipment_id);
+    let next = current.checked_add(1).expect("Evidence count overflow");
+    env.storage()
+        .persistent()
+        .set(&DataKey::DisputeEvidenceCount(shipment_id), &next);
+    current // Return 0-based index for storage
+}
+
+/// Store an evidence hash for a dispute at a specific index.
+pub fn set_evidence_hash(env: &Env, shipment_id: u64, index: u32, hash: &BytesN<32>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::DisputeEvidence(shipment_id, index), hash);
+}
+
+/// Retrieve an evidence hash for a dispute by its index.
+#[allow(dead_code)]
+pub fn get_evidence_hash(env: &Env, shipment_id: u64, index: u32) -> Option<BytesN<32>> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::DisputeEvidence(shipment_id, index))
+}

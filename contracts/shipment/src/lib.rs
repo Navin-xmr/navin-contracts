@@ -206,7 +206,8 @@ impl NavinShipment {
         require_initialized(&env)?;
         reporter.require_auth();
 
-        let shipment = storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
         let admin = storage::get_admin(&env);
 
         // Authorization: Sender, Receiver, Carrier, or Admin
@@ -264,6 +265,82 @@ impl NavinShipment {
             return Err(NavinError::ShipmentNotFound);
         }
         Ok(storage::get_note_hash(&env, shipment_id, index))
+    }
+
+    /// Add an evidence hash during an active dispute.
+    /// Only the sender, receiver, assigned carrier, or admin can add evidence.
+    /// The shipment must be in the `Disputed` state.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `reporter` - The address attaching the evidence.
+    /// * `shipment_id` - ID of the shipment.
+    /// * `evidence_hash` - SHA-256 hash of the off-chain evidence.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if successfully attached.
+    ///
+    /// # Errors
+    /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
+    /// * `NavinError::InvalidStatus` - If the shipment is not in Disputed state.
+    /// * `NavinError::Unauthorized` - If the caller is not authorized.
+    pub fn add_dispute_evidence_hash(
+        env: Env,
+        reporter: Address,
+        shipment_id: u64,
+        evidence_hash: BytesN<32>,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        reporter.require_auth();
+
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        let admin = storage::get_admin(&env);
+
+        // State check: Must be Disputed
+        if shipment.status != ShipmentStatus::Disputed {
+            return Err(NavinError::InvalidStatus);
+        }
+
+        // Authorization: Sender, Receiver, Carrier, or Admin
+        if reporter != shipment.sender
+            && reporter != shipment.receiver
+            && reporter != shipment.carrier
+            && reporter != admin
+        {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // notes are append-only; we just increment the counter and store at the next index.
+        let index = storage::increment_evidence_count(&env, shipment_id);
+        storage::set_evidence_hash(&env, shipment_id, index, &evidence_hash);
+
+        // Emit the event following the Hash-and-Emit pattern.
+        events::emit_evidence_added(&env, shipment_id, index, &evidence_hash, &reporter);
+
+        Ok(())
+    }
+
+    /// Get the total number of evidence hashes added to a dispute.
+    pub fn get_dispute_evidence_count(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+        Ok(storage::get_evidence_count(&env, shipment_id))
+    }
+
+    /// Get a specific evidence hash for a dispute by its sequence index.
+    pub fn get_dispute_evidence_hash(
+        env: Env,
+        shipment_id: u64,
+        index: u32,
+    ) -> Result<Option<BytesN<32>>, NavinError> {
+        require_initialized(&env)?;
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+        Ok(storage::get_evidence_hash(&env, shipment_id, index))
     }
     /// Initialize the contract with an admin address and token contract address.
     /// Can only be called once. Sets the admin and shipment counter to 0.
