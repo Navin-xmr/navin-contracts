@@ -54,6 +54,23 @@ data:   (field1, field2, ...)    — tuple of typed payload fields
 When subscribing to Horizon's event stream, filter by `contract_id` and the `topic[0]` symbol
 to receive only the relevant event type.
 
+### Schema Version and Idempotency
+
+Shipment lifecycle and escrow settlement events now include three trailing fields:
+
+1. `schema_version: u32` — current value is `2`
+2. `event_counter: u32` — monotonically increasing per `shipment_id`
+3. `idempotency_key: BytesN<32>` — deterministic hash of `(shipment_id, event_type, event_counter)`
+
+This enables safe parser upgrades and indexer deduplication during contract evolution.
+
+### Migration Guidance (v1 -> v2)
+
+1. Keep legacy decoders for historical events without `schema_version`.
+2. For new events, branch parser logic by `schema_version`.
+3. Use `idempotency_key` as the primary dedup key in indexer storage.
+4. During rollout, allow mixed payloads in the same stream window (older blocks vs new blocks).
+
 ---
 
 ## Soroban Type Reference

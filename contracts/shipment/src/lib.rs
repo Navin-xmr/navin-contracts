@@ -49,9 +49,31 @@ fn validate_milestones(_env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<()
     Ok(())
 }
 
-fn internal_release_escrow(env: &Env, shipment: &mut Shipment, amount: i128) {
+fn checked_add_i128(a: i128, b: i128) -> Result<i128, NavinError> {
+    a.checked_add(b).ok_or(NavinError::ArithmeticError)
+}
+
+fn checked_sub_i128(a: i128, b: i128) -> Result<i128, NavinError> {
+    a.checked_sub(b).ok_or(NavinError::ArithmeticError)
+}
+
+fn checked_mul_div_i128(value: i128, multiplier: i128, divisor: i128) -> Result<i128, NavinError> {
+    if divisor == 0 {
+        return Err(NavinError::ArithmeticError);
+    }
+    let product = value
+        .checked_mul(multiplier)
+        .ok_or(NavinError::ArithmeticError)?;
+    Ok(product / divisor)
+}
+
+fn internal_release_escrow(
+    env: &Env,
+    shipment: &mut Shipment,
+    amount: i128,
+) -> Result<(), NavinError> {
     if amount <= 0 {
-        return;
+        return Ok(());
     }
     let actual_release = if amount > shipment.escrow_amount {
         shipment.escrow_amount
@@ -60,7 +82,7 @@ fn internal_release_escrow(env: &Env, shipment: &mut Shipment, amount: i128) {
     };
 
     if actual_release > 0 {
-        shipment.escrow_amount -= actual_release;
+        shipment.escrow_amount = checked_sub_i128(shipment.escrow_amount, actual_release)?;
         shipment.updated_at = env.ledger().timestamp();
         storage::set_shipment(env, shipment);
 
@@ -77,6 +99,8 @@ fn internal_release_escrow(env: &Env, shipment: &mut Shipment, amount: i128) {
 
         events::emit_escrow_released(env, shipment.id, &shipment.carrier, actual_release);
     }
+
+    Ok(())
 }
 
 fn require_initialized(env: &Env) -> Result<(), NavinError> {
@@ -1157,11 +1181,11 @@ impl NavinShipment {
         args.push_back(amount.into_val(&env));
         env.invoke_contract::<()>(&token_contract, &symbol_short!("transfer"), args);
 
-        shipment.escrow_amount = amount;
-        shipment.total_escrow = amount;
+        shipment.escrow_amount = checked_add_i128(0, amount)?;
+        shipment.total_escrow = checked_add_i128(0, amount)?;
         shipment.updated_at = env.ledger().timestamp();
         storage::set_shipment(&env, &shipment);
-        storage::add_total_escrow_volume(&env, amount);
+        storage::add_total_escrow_volume(&env, amount)?;
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_escrow_deposited(&env, shipment_id, &from, amount);
@@ -1309,6 +1333,50 @@ impl NavinShipment {
         storage::get_shipment_counter(&env)
     }
 
+    /// Cursor-based search for shipment IDs by status.
+    ///
+    /// Results are returned in ascending shipment ID order for deterministic pagination.
+    /// `cursor` is the last seen shipment ID from a previous page.
+    pub fn search_shipments_by_status(
+        env: Env,
+        status: ShipmentStatus,
+        cursor: Option<u64>,
+        page_size: u32,
+    ) -> Result<ShipmentStatusCursorPage, NavinError> {
+        require_initialized(&env)?;
+
+        let config = config::get_config(&env);
+        if page_size == 0 || page_size > config.batch_operation_limit {
+            return Err(NavinError::InvalidConfig);
+        }
+
+        let mut shipment_ids = Vec::new(&env);
+        let mut current_id = cursor.unwrap_or(0);
+        let total_shipments = storage::get_shipment_counter(&env);
+        let mut next_cursor = None;
+
+        while current_id < total_shipments {
+            current_id = current_id.saturating_add(1);
+
+            if let Some(shipment) = storage::get_shipment(&env, current_id) {
+                if shipment.status == status {
+                    shipment_ids.push_back(current_id);
+                    if shipment_ids.len() == page_size {
+                        if current_id < total_shipments {
+                            next_cursor = Some(current_id);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(ShipmentStatusCursorPage {
+            shipment_ids,
+            next_cursor,
+        })
+    }
+
     /// Get the event count for a shipment.
     /// Returns the number of events emitted for this shipment.
     /// Returns 0 for brand-new shipments or shipments with no events yet.
@@ -1450,7 +1518,7 @@ impl NavinShipment {
         extend_shipment_ttl(&env, shipment_id);
 
         let remaining_escrow = shipment.escrow_amount;
-        internal_release_escrow(&env, &mut shipment, remaining_escrow);
+        internal_release_escrow(&env, &mut shipment, remaining_escrow)?;
 
         env.events().publish(
             (Symbol::new(&env, "delivery_confirmed"),),
@@ -1688,9 +1756,10 @@ impl NavinShipment {
 
             if !already_paid {
                 let milestone = mut_shipment.payment_milestones.get(idx as u32).unwrap();
-                let release_amount = (mut_shipment.total_escrow * milestone.1 as i128) / 100;
+                let release_amount =
+                    checked_mul_div_i128(mut_shipment.total_escrow, milestone.1 as i128, 100)?;
                 mut_shipment.paid_milestones.push_back(checkpoint.clone());
-                internal_release_escrow(&env, &mut mut_shipment, release_amount);
+                internal_release_escrow(&env, &mut mut_shipment, release_amount)?;
             }
         }
 
@@ -1806,10 +1875,13 @@ impl NavinShipment {
                 if !already_paid {
                     let payment_milestone =
                         mut_shipment.payment_milestones.get(idx as u32).unwrap();
-                    let release_amount =
-                        (mut_shipment.total_escrow * payment_milestone.1 as i128) / 100;
+                    let release_amount = checked_mul_div_i128(
+                        mut_shipment.total_escrow,
+                        payment_milestone.1 as i128,
+                        100,
+                    )?;
                     mut_shipment.paid_milestones.push_back(checkpoint.clone());
-                    internal_release_escrow(&env, &mut mut_shipment, release_amount);
+                    internal_release_escrow(&env, &mut mut_shipment, release_amount)?;
                 }
             }
         }
@@ -2098,7 +2170,7 @@ impl NavinShipment {
             return Err(NavinError::InsufficientFunds);
         }
 
-        internal_release_escrow(&env, &mut shipment, escrow_amount);
+        internal_release_escrow(&env, &mut shipment, escrow_amount)?;
         events::emit_notification(
             &env,
             &shipment.sender,

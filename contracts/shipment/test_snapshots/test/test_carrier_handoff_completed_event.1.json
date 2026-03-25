@@ -1050,6 +1050,15 @@
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                },
+                {
+                  "u32": 2
+                },
+                {
+                  "u32": 2
+                },
+                {
+                  "bytes": "a8f5bd819d263c843c187271a5feb4b1c3f1f9d5dc2b39030d32d09acb563283"
                 }
               ]
             }
