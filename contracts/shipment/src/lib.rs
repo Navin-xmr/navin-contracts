@@ -92,6 +92,10 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinErr
     match role {
         Role::Company => {
             if storage::has_company_role(env, address) {
+                // Check if role is suspended
+                if storage::is_role_suspended(env, address, &Role::Company) {
+                    return Err(NavinError::Unauthorized);
+                }
                 Ok(())
             } else {
                 Err(NavinError::Unauthorized)
@@ -99,6 +103,10 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinErr
         }
         Role::Carrier => {
             if storage::has_carrier_role(env, address) {
+                // Check if role is suspended
+                if storage::is_role_suspended(env, address, &Role::Carrier) {
+                    return Err(NavinError::Unauthorized);
+                }
                 Ok(())
             } else {
                 Err(NavinError::Unauthorized)
@@ -505,6 +513,16 @@ impl NavinShipment {
         }
 
         storage::set_company_role(&env, &company);
+
+        // Emit role history event
+        events::emit_role_changed(
+            &env,
+            &RoleChangeAction::Assigned,
+            &admin,
+            &company,
+            &Role::Company,
+        );
+
         Ok(())
     }
 
@@ -535,6 +553,16 @@ impl NavinShipment {
         }
 
         storage::set_carrier_role(&env, &carrier);
+
+        // Emit role history event
+        events::emit_role_changed(
+            &env,
+            &RoleChangeAction::Assigned,
+            &admin,
+            &carrier,
+            &Role::Carrier,
+        );
+
         Ok(())
     }
 
@@ -581,6 +609,120 @@ impl NavinShipment {
         }
 
         events::emit_role_revoked(&env, &admin, &target, &current_role);
+
+        // Emit role history event for audit trail
+        events::emit_role_changed(
+            &env,
+            &RoleChangeAction::Revoked,
+            &admin,
+            &target,
+            &current_role,
+        );
+
+        Ok(())
+    }
+
+    /// Suspend a role temporarily (e.g., for investigation or compliance review).
+    ///
+    /// Only the admin can suspend roles. Suspended addresses retain their role
+    /// assignment but cannot perform role-gated actions until reactivated.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Contract admin executing the suspension.
+    /// * `target` - The address whose role is being suspended.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok on successful suspension.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If called by a non-admin.
+    /// * `NavinError::CannotSelfRevoke` - If admin tries to suspend their own role.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // contract.suspend_role(&env, &admin, &target_addr);
+    /// ```
+    pub fn suspend_role(env: Env, admin: Address, target: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        if admin == target {
+            return Err(NavinError::CannotSelfRevoke);
+        }
+
+        let current_role = storage::get_role(&env, &target).unwrap_or(Role::Unassigned);
+
+        if current_role == Role::Unassigned {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // Mark as suspended in storage
+        storage::suspend_role(&env, &target, &current_role);
+
+        // Emit role history event
+        events::emit_role_changed(
+            &env,
+            &RoleChangeAction::Suspended,
+            &admin,
+            &target,
+            &current_role,
+        );
+
+        Ok(())
+    }
+
+    /// Reactivate a previously suspended role.
+    ///
+    /// Only the admin can reactivate roles. This restores the address's
+    /// ability to perform role-gated actions.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Contract admin executing the reactivation.
+    /// * `target` - The address whose role is being reactivated.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok on successful reactivation.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If called by a non-admin or target not suspended.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // contract.reactivate_role(&env, &admin, &target_addr);
+    /// ```
+    pub fn reactivate_role(env: Env, admin: Address, target: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        let current_role = storage::get_role(&env, &target).unwrap_or(Role::Unassigned);
+
+        if current_role == Role::Unassigned {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // Reactivate the role
+        storage::reactivate_role(&env, &target, &current_role);
+
+        // Emit role history event
+        events::emit_role_changed(
+            &env,
+            &RoleChangeAction::Reactivated,
+            &admin,
+            &target,
+            &current_role,
+        );
 
         Ok(())
     }

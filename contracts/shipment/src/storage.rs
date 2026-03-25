@@ -306,6 +306,46 @@ pub fn revoke_role(env: &Env, address: &Address, role: &Role) {
         .set(&DataKey::Role(address.clone()), &Role::Unassigned);
 }
 
+/// Suspend a role temporarily. The role is retained but marked as suspended.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `address` - The address whose role is being suspended.
+/// * `role` - The role to suspend.
+///
+/// # Examples
+/// ```rust
+/// // storage::suspend_role(&env, &user_addr, &Role::Company);
+/// ```
+pub fn suspend_role(env: &Env, address: &Address, role: &Role) {
+    // Mark as suspended using a separate key
+    let suspend_key = DataKey::RoleSuspended(address.clone(), role.clone());
+    env.storage().instance().set(&suspend_key, &true);
+}
+
+/// Reactivate a suspended role.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `address` - The address whose role is being reactivated.
+/// * `role` - The role to reactivate.
+///
+/// # Examples
+/// ```rust
+/// // storage::reactivate_role(&env, &user_addr, &Role::Company);
+/// ```
+pub fn reactivate_role(env: &Env, address: &Address, role: &Role) {
+    // Remove suspension flag
+    let suspend_key = DataKey::RoleSuspended(address.clone(), role.clone());
+    env.storage().instance().remove(&suspend_key);
+}
+
+/// Check if a role is suspended
+pub fn is_role_suspended(env: &Env, address: &Address, role: &Role) -> bool {
+    let suspend_key = DataKey::RoleSuspended(address.clone(), role.clone());
+    env.storage().instance().get(&suspend_key).unwrap_or(false)
+}
+
 /// Check whether an address has Company role (legacy compatibility)
 #[allow(dead_code)]
 pub fn has_company_role(env: &Env, address: &Address) -> bool {

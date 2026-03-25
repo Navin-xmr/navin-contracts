@@ -8078,6 +8078,173 @@ fn test_revoke_role_emits_event() {
 }
 
 #[test]
+fn test_role_changed_event_emitted_on_add_company() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let company = Address::generate(&env);
+    client.add_company(&admin, &company);
+
+    let events = env.events().all();
+    let mut found = false;
+    for event in events.iter() {
+        if event.0 == client.address {
+            if let Some(first_val) = event.1.get(0) {
+                if let Ok(topic) = Symbol::try_from_val(&env, &first_val) {
+                    if topic == Symbol::new(&env, "role_changed") {
+                        found = true;
+                    }
+                }
+            }
+        }
+    }
+    assert!(found, "role_changed event not found on add_company");
+}
+
+#[test]
+fn test_role_changed_event_emitted_on_add_carrier() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let carrier = Address::generate(&env);
+    client.add_carrier(&admin, &carrier);
+
+    let events = env.events().all();
+    let mut found = false;
+    for event in events.iter() {
+        if event.0 == client.address {
+            if let Some(first_val) = event.1.get(0) {
+                if let Ok(topic) = Symbol::try_from_val(&env, &first_val) {
+                    if topic == Symbol::new(&env, "role_changed") {
+                        found = true;
+                    }
+                }
+            }
+        }
+    }
+    assert!(found, "role_changed event not found on add_carrier");
+}
+
+#[test]
+fn test_role_changed_event_emitted_on_revoke_role() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let company = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.revoke_role(&admin, &company);
+
+    let events = env.events().all();
+    let mut found = false;
+    for event in events.iter() {
+        if event.0 == client.address {
+            if let Some(first_val) = event.1.get(0) {
+                if let Ok(topic) = Symbol::try_from_val(&env, &first_val) {
+                    if topic == Symbol::new(&env, "role_changed") {
+                        found = true;
+                    }
+                }
+            }
+        }
+    }
+    assert!(found, "role_changed event not found on revoke_role");
+}
+
+#[test]
+fn test_suspend_role_success() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let company = Address::generate(&env);
+    client.add_company(&admin, &company);
+
+    // Suspend the role
+    client.suspend_role(&admin, &company);
+
+    // Verify role_changed event was emitted with Suspended action
+    let events = env.events().all();
+    let mut found = false;
+    for event in events.iter() {
+        if event.0 == client.address {
+            if let Some(first_val) = event.1.get(0) {
+                if let Ok(topic) = Symbol::try_from_val(&env, &first_val) {
+                    if topic == Symbol::new(&env, "role_changed") {
+                        found = true;
+                    }
+                }
+            }
+        }
+    }
+    assert!(found, "role_changed event not found on suspend_role");
+}
+
+#[test]
+fn test_reactivate_role_success() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let company = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.suspend_role(&admin, &company);
+
+    // Reactivate the role
+    client.reactivate_role(&admin, &company);
+
+    // Verify role_changed event was emitted with Reactivated action
+    let events = env.events().all();
+    let mut found = false;
+    for event in events.iter() {
+        if event.0 == client.address {
+            if let Some(first_val) = event.1.get(0) {
+                if let Ok(topic) = Symbol::try_from_val(&env, &first_val) {
+                    if topic == Symbol::new(&env, "role_changed") {
+                        found = true;
+                    }
+                }
+            }
+        }
+    }
+    assert!(found, "role_changed event not found on reactivate_role");
+}
+
+#[test]
+fn test_suspended_role_cannot_perform_actions() {
+    use soroban_sdk::testutils::Address as _;
+
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Suspend the company role
+    client.suspend_role(&admin, &company);
+
+    // Suspended company cannot create shipment - should panic with Unauthorized
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &data_hash,
+            &soroban_sdk::Vec::new(&env),
+            &deadline,
+        );
+    }));
+
+    assert!(
+        result.is_err(),
+        "Suspended company should not be able to create shipments"
+    );
+}
+
+#[test]
 fn test_get_shipment_reference_deterministic() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
