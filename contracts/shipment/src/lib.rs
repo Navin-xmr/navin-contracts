@@ -1028,7 +1028,8 @@ impl NavinShipment {
     /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
     pub fn get_shipment_creator(env: Env, shipment_id: u64) -> Result<Address, NavinError> {
         require_initialized(&env)?;
-        let shipment = storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
         Ok(shipment.sender)
     }
 
@@ -1046,7 +1047,8 @@ impl NavinShipment {
     /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
     pub fn get_shipment_receiver(env: Env, shipment_id: u64) -> Result<Address, NavinError> {
         require_initialized(&env)?;
-        let shipment = storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
         Ok(shipment.receiver)
     }
 
