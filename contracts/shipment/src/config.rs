@@ -23,6 +23,7 @@
 //! | multisig_min_admins          | 2       | Min admins for multi-sig                       |
 //! | multisig_max_admins          | 10      | Max admins for multi-sig                       |
 //! | proposal_expiry_seconds      | 604,800 | Proposal expiry time (7 days)                  |
+//! | deadline_grace_seconds       | 0       | Grace window after deadline before expiry fires |
 
 use crate::types::DataKey;
 use soroban_sdk::{contracttype, Env};
@@ -77,6 +78,15 @@ pub struct ContractConfig {
     /// Number of seconds before a multi-sig proposal expires.
     /// Default: 604,800 seconds (7 days).
     pub proposal_expiry_seconds: u64,
+
+    /// Grace window (in seconds) added to a shipment's deadline before expiry
+    /// logic fires. A caller invoking `check_deadline` must wait until
+    /// `ledger_timestamp >= deadline + deadline_grace_seconds`.
+    ///
+    /// Setting this to 0 (the default) preserves the original behaviour where
+    /// expiry triggers the moment the deadline timestamp is reached.
+    /// Default: 0 seconds (no grace period).
+    pub deadline_grace_seconds: u64,
 }
 
 impl Default for ContractConfig {
@@ -98,6 +108,7 @@ impl Default for ContractConfig {
             multisig_min_admins: 2,           // 2 admins
             multisig_max_admins: 10,          // 10 admins
             proposal_expiry_seconds: 604_800, // 7 days
+            deadline_grace_seconds: 0,        // no grace period
         }
     }
 }
@@ -216,6 +227,11 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
         return Err("proposal_expiry_seconds must be >= 3,600 and <= 2,592,000");
     }
 
+    // Validate deadline grace period (0 = disabled, max 7 days)
+    if config.deadline_grace_seconds > 604_800 {
+        return Err("deadline_grace_seconds must be <= 604,800 (7 days)");
+    }
+
     Ok(())
 }
 
@@ -301,5 +317,29 @@ mod tests {
             ..Default::default()
         };
         assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_validate_deadline_grace_seconds() {
+        // Valid: 0 (disabled)
+        let config = ContractConfig {
+            deadline_grace_seconds: 0,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+
+        // Valid: exactly 7 days
+        let config = ContractConfig {
+            deadline_grace_seconds: 604_800,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+
+        // Invalid: exceeds 7-day cap
+        let config = ContractConfig {
+            deadline_grace_seconds: 604_801,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_err());
     }
 }

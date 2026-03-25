@@ -8411,3 +8411,144 @@ fn test_get_shipment_reference_collision_free() {
 
     assert_ne!(ref1, ref2);
 }
+
+// ============= Deadline Grace Period Tests =============
+
+/// Helper: initialize the contract, register a company, and create a shipment with the given
+/// deadline. Returns the shipment ID.
+fn setup_shipment_with_deadline(
+    env: &Env,
+    client: &NavinShipmentClient,
+    admin: &Address,
+    token_contract: &Address,
+    deadline: u64,
+) -> u64 {
+    let company = Address::generate(env);
+    let receiver = Address::generate(env);
+    let carrier = Address::generate(env);
+    let data_hash = BytesN::from_array(env, &[42u8; 32]);
+
+    client.initialize(admin, token_contract);
+    client.add_company(admin, &company);
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(env),
+        &deadline,
+    )
+}
+
+/// Within the grace window: deadline has passed but grace has not — must return NotExpired.
+#[test]
+#[should_panic(expected = "Error(Contract, #29)")]
+fn test_check_deadline_within_grace_period_returns_not_expired() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+
+    let now = env.ledger().timestamp();
+    let deadline = now + 1000;
+    let grace = 300u64;
+
+    let shipment_id =
+        setup_shipment_with_deadline(&env, &client, &admin, &token_contract, deadline);
+
+    // Configure a 300-second grace period
+    let mut config = client.get_contract_config();
+    config.deadline_grace_seconds = grace;
+    client.update_config(&admin, &config);
+
+    // Advance time: deadline has passed, but we are still inside the grace window
+    // timestamp = deadline + grace - 1  =>  NOT yet expired
+    env.ledger()
+        .with_mut(|l| l.timestamp = deadline + grace - 1);
+
+    client.check_deadline(&shipment_id);
+}
+
+/// Exactly at the grace boundary: timestamp == deadline + grace — must succeed.
+#[test]
+fn test_check_deadline_at_grace_boundary_succeeds() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+
+    let now = env.ledger().timestamp();
+    let deadline = now + 1000;
+    let grace = 300u64;
+
+    let shipment_id =
+        setup_shipment_with_deadline(&env, &client, &admin, &token_contract, deadline);
+
+    let mut config = client.get_contract_config();
+    config.deadline_grace_seconds = grace;
+    client.update_config(&admin, &config);
+
+    // Advance time to exactly deadline + grace
+    env.ledger()
+        .with_mut(|l| l.timestamp = deadline + grace);
+
+    client.check_deadline(&shipment_id);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
+}
+
+/// After the grace window: timestamp > deadline + grace — must succeed and cancel.
+#[test]
+fn test_check_deadline_after_grace_period_cancels_shipment() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+
+    let now = env.ledger().timestamp();
+    let deadline = now + 1000;
+    let grace = 300u64;
+
+    let shipment_id =
+        setup_shipment_with_deadline(&env, &client, &admin, &token_contract, deadline);
+
+    let mut config = client.get_contract_config();
+    config.deadline_grace_seconds = grace;
+    client.update_config(&admin, &config);
+
+    // Advance time well past deadline + grace
+    env.ledger()
+        .with_mut(|l| l.timestamp = deadline + grace + 500);
+
+    client.check_deadline(&shipment_id);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+/// Zero grace (default): deadline passed by 1 second — must succeed immediately.
+#[test]
+fn test_check_deadline_zero_grace_expires_immediately() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+
+    let now = env.ledger().timestamp();
+    let deadline = now + 1000;
+
+    let shipment_id =
+        setup_shipment_with_deadline(&env, &client, &admin, &token_contract, deadline);
+
+    // Default config has deadline_grace_seconds = 0
+    env.ledger().with_mut(|l| l.timestamp = deadline + 1);
+
+    client.check_deadline(&shipment_id);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
+}
+
+/// Validate that deadline_grace_seconds > 604_800 is rejected by update_config.
+#[test]
+#[should_panic(expected = "Error(Contract, #31)")]
+fn test_update_config_rejects_grace_period_exceeding_max() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+
+    client.initialize(&admin, &token_contract);
+
+    let mut config = client.get_contract_config();
+    config.deadline_grace_seconds = 604_801; // 1 second over the 7-day cap
+    client.update_config(&admin, &config);
+}

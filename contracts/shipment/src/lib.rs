@@ -2888,7 +2888,12 @@ impl NavinShipment {
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
-        if env.ledger().timestamp() < shipment.deadline {
+        let config = config::get_config(&env);
+        let expiry_threshold = shipment
+            .deadline
+            .saturating_add(config.deadline_grace_seconds);
+
+        if env.ledger().timestamp() < expiry_threshold {
             return Err(NavinError::NotExpired);
         }
 
