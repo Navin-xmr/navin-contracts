@@ -7,9 +7,10 @@ Complete guide for integrating the Navin shipment tracking smart contract with y
 1. [Architecture Overview](#architecture-overview)
 2. [Setup & Configuration](#setup--configuration)
 3. [Contract Invocation](#contract-invocation)
-4. [Event Listening](#event-listening)
-5. [Transaction Verification](#transaction-verification)
-6. [Complete Examples](#complete-examples)
+4. [Immutable Provenance Queries](#immutable-provenance-queries)
+5. [Event Listening](#event-listening)
+6. [Transaction Verification](#transaction-verification)
+7. [Complete Examples](#complete-examples)
 
 ## Architecture Overview
 
@@ -291,6 +292,70 @@ return scValToNative(result.returnValue);
 }
 
 ````
+
+## Immutable Provenance Queries
+
+Use these read-only methods to render verification views without fetching the full shipment payload.
+
+- `get_shipment_creator(shipment_id: u64) -> Address`: Returns the immutable creator (sender) address captured at shipment creation.
+- `get_shipment_receiver(shipment_id: u64) -> Address`: Returns the immutable receiver address captured at shipment creation.
+
+Both methods fail with `ShipmentNotFound` for unknown IDs, which helps frontend verification flows distinguish missing records from mismatched identities.
+
+```typescript
+// src/services/shipment-query.service.ts
+import {
+  Contract,
+  TransactionBuilder,
+  BASE_FEE,
+  Address,
+  nativeToScVal,
+} from '@stellar/stellar-sdk';
+import { StellarService } from './stellar.service';
+import { config } from '../config/stellar.config';
+
+export class ShipmentQueryService extends StellarService {
+  async getShipmentCreator(shipmentId: number): Promise<string> {
+    const contract = new Contract(config.contractId);
+    const account = await this.getAccount();
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: config.networkPassphrase,
+    })
+      .addOperation(
+        contract.call(
+          'get_shipment_creator',
+          nativeToScVal(shipmentId, { type: 'u64' })
+        )
+      )
+      .setTimeout(30)
+      .build();
+
+    const sim = await this.server.simulateTransaction(tx);
+    return Address.fromScVal(sim.result!.retval).toString();
+  }
+
+  async getShipmentReceiver(shipmentId: number): Promise<string> {
+    const contract = new Contract(config.contractId);
+    const account = await this.getAccount();
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: config.networkPassphrase,
+    })
+      .addOperation(
+        contract.call(
+          'get_shipment_receiver',
+          nativeToScVal(shipmentId, { type: 'u64' })
+        )
+      )
+      .setTimeout(30)
+      .build();
+
+    const sim = await this.server.simulateTransaction(tx);
+    return Address.fromScVal(sim.result!.retval).toString();
+  }
+}
+```
 
 ## Event Listening
 
