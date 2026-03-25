@@ -643,7 +643,7 @@ fn test_update_status_nonexistent_shipment() {
 #[test]
 fn test_suspend_and_reactivate_carrier_for_status_updates() {
     use crate::ShipmentStatus;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -697,7 +697,7 @@ fn test_suspend_and_reactivate_carrier_for_status_updates() {
 
 #[test]
 fn test_suspend_carrier_requires_admin() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let outsider = Address::generate(&env);
     let carrier = Address::generate(&env);
 
@@ -2129,7 +2129,7 @@ fn test_record_milestone_unauthorized() {
 
 #[test]
 fn test_suspended_carrier_blocked_from_milestone_handlers() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -8410,4 +8410,379 @@ fn test_get_shipment_reference_collision_free() {
     let ref2 = client.get_shipment_reference(&id2);
 
     assert_ne!(ref1, ref2);
+}
+
+// ============= Deadline Grace Period Tests =============
+
+/// Helper: initialize the contract, register a company, and create a shipment with the given
+/// deadline. Returns the shipment ID.
+fn setup_shipment_with_deadline(
+    env: &Env,
+    client: &NavinShipmentClient,
+    admin: &Address,
+    token_contract: &Address,
+    deadline: u64,
+) -> u64 {
+    let company = Address::generate(env);
+    let receiver = Address::generate(env);
+    let carrier = Address::generate(env);
+    let data_hash = BytesN::from_array(env, &[42u8; 32]);
+
+    client.initialize(admin, token_contract);
+    client.add_company(admin, &company);
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(env),
+        &deadline,
+    )
+}
+
+/// Within the grace window: deadline has passed but grace has not — must return NotExpired.
+#[test]
+#[should_panic(expected = "Error(Contract, #29)")]
+fn test_check_deadline_within_grace_period_returns_not_expired() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+
+    let now = env.ledger().timestamp();
+    let deadline = now + 1000;
+    let grace = 300u64;
+
+    let shipment_id =
+        setup_shipment_with_deadline(&env, &client, &admin, &token_contract, deadline);
+
+    // Configure a 300-second grace period
+    let mut config = client.get_contract_config();
+    config.deadline_grace_seconds = grace;
+    client.update_config(&admin, &config);
+
+    // Advance time: deadline has passed, but we are still inside the grace window
+    // timestamp = deadline + grace - 1  =>  NOT yet expired
+    env.ledger()
+        .with_mut(|l| l.timestamp = deadline + grace - 1);
+
+    client.check_deadline(&shipment_id);
+}
+
+/// Exactly at the grace boundary: timestamp == deadline + grace — must succeed.
+#[test]
+fn test_check_deadline_at_grace_boundary_succeeds() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+
+    let now = env.ledger().timestamp();
+    let deadline = now + 1000;
+    let grace = 300u64;
+
+    let shipment_id =
+        setup_shipment_with_deadline(&env, &client, &admin, &token_contract, deadline);
+
+    let mut config = client.get_contract_config();
+    config.deadline_grace_seconds = grace;
+    client.update_config(&admin, &config);
+
+    // Advance time to exactly deadline + grace
+    env.ledger()
+        .with_mut(|l| l.timestamp = deadline + grace);
+
+    client.check_deadline(&shipment_id);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
+}
+
+/// After the grace window: timestamp > deadline + grace — must succeed and cancel.
+#[test]
+fn test_check_deadline_after_grace_period_cancels_shipment() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+
+    let now = env.ledger().timestamp();
+    let deadline = now + 1000;
+    let grace = 300u64;
+
+    let shipment_id =
+        setup_shipment_with_deadline(&env, &client, &admin, &token_contract, deadline);
+
+    let mut config = client.get_contract_config();
+    config.deadline_grace_seconds = grace;
+    client.update_config(&admin, &config);
+
+    // Advance time well past deadline + grace
+    env.ledger()
+        .with_mut(|l| l.timestamp = deadline + grace + 500);
+
+    client.check_deadline(&shipment_id);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+/// Zero grace (default): deadline passed by 1 second — must succeed immediately.
+#[test]
+fn test_check_deadline_zero_grace_expires_immediately() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+
+    let now = env.ledger().timestamp();
+    let deadline = now + 1000;
+
+    let shipment_id =
+        setup_shipment_with_deadline(&env, &client, &admin, &token_contract, deadline);
+
+    // Default config has deadline_grace_seconds = 0
+    env.ledger().with_mut(|l| l.timestamp = deadline + 1);
+
+    client.check_deadline(&shipment_id);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
+}
+
+/// Validate that deadline_grace_seconds > 604_800 is rejected by update_config.
+#[test]
+#[should_panic(expected = "Error(Contract, #31)")]
+fn test_update_config_rejects_grace_period_exceeding_max() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+
+    client.initialize(&admin, &token_contract);
+
+    let mut config = client.get_contract_config();
+    config.deadline_grace_seconds = 604_801; // 1 second over the 7-day cap
+    client.update_config(&admin, &config);
+}
+
+// =============================================================================
+// force_cancel_shipment tests
+// =============================================================================
+
+/// Helper: initialise contract, register a company, create one shipment, and
+/// return (env, client, admin, token_contract, company, shipment_id).
+fn setup_force_cancel_env() -> (
+    Env,
+    NavinShipmentClient<'static>,
+    Address,
+    Address,
+    Address,
+    u64,
+) {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xABu8; 32]);
+    let deadline = env.ledger().timestamp() + 7200;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    (env, client, admin, token_contract, company, shipment_id)
+}
+
+/// Admin can force-cancel a shipment in Created status.
+#[test]
+fn test_force_cancel_shipment_success_created() {
+    let (env, client, admin, _token_contract, _company, shipment_id) =
+        setup_force_cancel_env();
+
+    let reason_hash = BytesN::from_array(&env, &[0x01u8; 32]);
+    client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+/// Admin can force-cancel a shipment that is InTransit.
+#[test]
+fn test_force_cancel_shipment_success_in_transit() {
+    let (env, client, admin, _token_contract, _company, shipment_id) =
+        setup_force_cancel_env();
+
+    let data_hash = BytesN::from_array(&env, &[0x02u8; 32]);
+
+    // Move to InTransit via admin (bypasses carrier whitelist requirement)
+    env.ledger().with_mut(|l| l.timestamp += 120);
+    client.update_status(
+        &admin,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    let reason_hash = BytesN::from_array(&env, &[0x03u8; 32]);
+    client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+}
+
+/// Admin can force-cancel a Disputed shipment (bypasses normal cancel restriction).
+#[test]
+fn test_force_cancel_shipment_success_disputed() {
+    let (env, client, admin, _token_contract, company, shipment_id) =
+        setup_force_cancel_env();
+
+    let data_hash = BytesN::from_array(&env, &[0x04u8; 32]);
+
+    // Raise a dispute as the company (sender)
+    client.raise_dispute(&company, &shipment_id, &data_hash);
+
+    let reason_hash = BytesN::from_array(&env, &[0x05u8; 32]);
+    client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+}
+
+/// Non-admin caller is rejected with Unauthorized (#3).
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_force_cancel_shipment_unauthorized_company() {
+    let (env, client, _admin, _token_contract, company, shipment_id) =
+        setup_force_cancel_env();
+
+    let reason_hash = BytesN::from_array(&env, &[0x06u8; 32]);
+    // company is not admin — must be rejected
+    client.force_cancel_shipment(&company, &shipment_id, &reason_hash);
+}
+
+/// All-zero reason_hash is rejected with ForceCancelReasonHashMissing (#34).
+#[test]
+#[should_panic(expected = "Error(Contract, #34)")]
+fn test_force_cancel_shipment_zero_reason_hash_rejected() {
+    let (env, client, admin, _token_contract, _company, shipment_id) =
+        setup_force_cancel_env();
+
+    let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+    client.force_cancel_shipment(&admin, &shipment_id, &zero_hash);
+}
+
+/// Force-cancelling a non-existent shipment returns ShipmentNotFound (#4).
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")]
+fn test_force_cancel_shipment_not_found() {
+    let (env, client, admin, _token_contract, _company, _shipment_id) =
+        setup_force_cancel_env();
+
+    let reason_hash = BytesN::from_array(&env, &[0x07u8; 32]);
+    client.force_cancel_shipment(&admin, &9999, &reason_hash);
+}
+
+/// Force-cancelling an already-Delivered shipment returns ShipmentAlreadyCompleted (#9).
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_force_cancel_shipment_already_delivered() {
+    let (env, client, admin, _token_contract, _company, shipment_id) =
+        setup_force_cancel_env();
+
+    let shipment = client.get_shipment(&shipment_id);
+    let receiver = shipment.receiver.clone();
+    let confirmation_hash = BytesN::from_array(&env, &[0x08u8; 32]);
+
+    // Move to InTransit then Delivered via admin
+    env.ledger().with_mut(|l| l.timestamp += 120);
+    client.update_status(
+        &admin,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[0x09u8; 32]),
+    );
+    env.ledger().with_mut(|l| l.timestamp += 120);
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    let reason_hash = BytesN::from_array(&env, &[0x0Au8; 32]);
+    client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
+}
+
+/// Force-cancelling an already-Cancelled shipment returns ShipmentAlreadyCompleted (#9).
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_force_cancel_shipment_already_cancelled() {
+    let (env, client, admin, _token_contract, company, shipment_id) =
+        setup_force_cancel_env();
+
+    let reason_hash = BytesN::from_array(&env, &[0x0Bu8; 32]);
+    // Regular cancel first
+    client.cancel_shipment(&company, &shipment_id, &reason_hash);
+
+    // Force-cancel on already-cancelled shipment must fail
+    client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
+}
+
+/// Escrow is deterministically zeroed on force-cancel (no-escrow path).
+/// Verifies escrow_amount stays 0 and force_cancelled event is emitted.
+#[test]
+fn test_force_cancel_shipment_refunds_escrow() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, _token_contract, _company, shipment_id) =
+        setup_force_cancel_env();
+
+    // No escrow deposited — escrow_amount is already 0
+    let reason_hash = BytesN::from_array(&env, &[0x0Cu8; 32]);
+    client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
+
+    // Check events BEFORE any further client calls (env.events().all() is cumulative,
+    // but snapshot-based client calls may flush the buffer internally).
+    let events = env.events().all();
+    let has_force_cancelled = events.iter().any(|(_contract, topics, _data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "force_cancelled");
+            }
+        }
+        false
+    });
+    assert!(has_force_cancelled, "force_cancelled event must be emitted");
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+/// The dedicated force_cancelled event is emitted (not shipment_cancelled).
+#[test]
+fn test_force_cancel_emits_dedicated_event_not_shipment_cancelled() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, _token_contract, _company, shipment_id) =
+        setup_force_cancel_env();
+
+    let reason_hash = BytesN::from_array(&env, &[0x0Du8; 32]);
+    client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
+
+    let events = env.events().all();
+
+    let has_force_cancelled = events.iter().any(|(_c, topics, _d)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "force_cancelled");
+            }
+        }
+        false
+    });
+
+    let has_shipment_cancelled = events.iter().any(|(_c, topics, _d)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "shipment_cancelled");
+            }
+        }
+        false
+    });
+
+    assert!(has_force_cancelled, "force_cancelled event must be emitted");
+    assert!(
+        !has_shipment_cancelled,
+        "shipment_cancelled must NOT be emitted on force-cancel"
+    );
 }
