@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String};
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String, Symbol};
 
 mod errors;
 mod storage;
@@ -247,6 +247,214 @@ impl NavinToken {
 
         env.events()
             .publish((symbol_short!("burn"),), (from, amount));
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // Metadata Allowlist Management (Admin Only)
+    // ========================================================================
+
+    /// Add a metadata key to the admin-registered allowlist.
+    /// Only admin can register allowed keys.
+    ///
+    /// # Arguments
+    /// * `admin` - Admin address authorizing the operation.
+    /// * `key` - The metadata key to allow (e.g., "website", "twitter").
+    ///
+    /// # Errors
+    /// * `MetadataError::NotInitialized` - If contract is not initialized.
+    /// * `MetadataError::Unauthorized` - If caller is not admin.
+    /// * `MetadataError::InvalidKey` - If key is empty.
+    /// * `MetadataError::KeyAlreadyExists` - If key is already allowed.
+    pub fn add_allowed_metadata_key(
+        env: Env,
+        admin: Address,
+        key: Symbol,
+    ) -> Result<(), MetadataError> {
+        if !storage::is_initialized(&env) {
+            return Err(MetadataError::NotInitialized);
+        }
+
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(MetadataError::Unauthorized);
+        }
+
+        // Validate key is not empty (compare with empty symbol)
+        let empty_key = Symbol::new(&env, "");
+        if key == empty_key {
+            return Err(MetadataError::InvalidKey);
+        }
+
+        // Check if key is already allowed
+        if storage::is_metadata_key_allowed(&env, &key) {
+            return Err(MetadataError::KeyAlreadyExists);
+        }
+
+        storage::add_allowed_metadata_key(&env, &key);
+
+        env.events()
+            .publish((symbol_short!("meta_add"),), (admin, key));
+
+        Ok(())
+    }
+
+    /// Remove a metadata key from the admin-registered allowlist.
+    /// Only admin can remove allowed keys.
+    ///
+    /// # Arguments
+    /// * `admin` - Admin address authorizing the operation.
+    /// * `key` - The metadata key to remove from allowlist.
+    ///
+    /// # Errors
+    /// * `MetadataError::NotInitialized` - If contract is not initialized.
+    /// * `MetadataError::Unauthorized` - If caller is not admin.
+    /// * `MetadataError::KeyNotFound` - If key is not in allowlist.
+    pub fn remove_allowed_metadata_key(
+        env: Env,
+        admin: Address,
+        key: Symbol,
+    ) -> Result<(), MetadataError> {
+        if !storage::is_initialized(&env) {
+            return Err(MetadataError::NotInitialized);
+        }
+
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(MetadataError::Unauthorized);
+        }
+
+        // Check if key exists in allowlist
+        if !storage::is_metadata_key_allowed(&env, &key) {
+            return Err(MetadataError::KeyNotFound);
+        }
+
+        storage::remove_allowed_metadata_key(&env, &key);
+
+        env.events()
+            .publish((symbol_short!("meta_rm"),), (admin, key));
+
+        Ok(())
+    }
+
+    /// Check if a metadata key is in the admin-registered allowlist.
+    ///
+    /// # Arguments
+    /// * `key` - The metadata key to check.
+    ///
+    /// # Returns
+    /// * `bool` - True if the key is allowed, false otherwise.
+    pub fn is_metadata_key_allowed(env: Env, key: Symbol) -> Result<bool, MetadataError> {
+        if !storage::is_initialized(&env) {
+            return Err(MetadataError::NotInitialized);
+        }
+
+        Ok(storage::is_metadata_key_allowed(&env, &key))
+    }
+
+    // ========================================================================
+    // Token Metadata Management (Admin Only)
+    // ========================================================================
+
+    /// Set a metadata key-value pair for the token.
+    /// Only admin can set metadata, and only for allowed keys.
+    ///
+    /// # Arguments
+    /// * `admin` - Admin address authorizing the operation.
+    /// * `key` - The metadata key (must be in allowlist).
+    /// * `value` - The metadata value.
+    ///
+    /// # Errors
+    /// * `MetadataError::NotInitialized` - If contract is not initialized.
+    /// * `MetadataError::Unauthorized` - If caller is not admin.
+    /// * `MetadataError::KeyNotAllowed` - If key is not in allowlist.
+    /// * `MetadataError::InvalidValue` - If value is empty.
+    pub fn set_metadata(
+        env: Env,
+        admin: Address,
+        key: Symbol,
+        value: String,
+    ) -> Result<(), MetadataError> {
+        if !storage::is_initialized(&env) {
+            return Err(MetadataError::NotInitialized);
+        }
+
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(MetadataError::Unauthorized);
+        }
+
+        // Validate key is in allowlist
+        if !storage::is_metadata_key_allowed(&env, &key) {
+            return Err(MetadataError::KeyNotAllowed);
+        }
+
+        // Validate value is not empty
+        if value.is_empty() {
+            return Err(MetadataError::InvalidValue);
+        }
+
+        storage::set_metadata(&env, &key, &value);
+
+        env.events()
+            .publish((symbol_short!("meta_set"),), (admin, key, value));
+
+        Ok(())
+    }
+
+    /// Get a metadata value by key.
+    ///
+    /// # Arguments
+    /// * `key` - The metadata key to retrieve.
+    ///
+    /// # Returns
+    /// * `Option<String>` - The metadata value if exists, None otherwise.
+    ///
+    /// # Errors
+    /// * `MetadataError::NotInitialized` - If contract is not initialized.
+    pub fn get_metadata(env: Env, key: Symbol) -> Result<Option<String>, MetadataError> {
+        if !storage::is_initialized(&env) {
+            return Err(MetadataError::NotInitialized);
+        }
+
+        Ok(storage::get_metadata(&env, &key))
+    }
+
+    /// Remove a metadata key-value pair.
+    /// Only admin can remove metadata.
+    ///
+    /// # Arguments
+    /// * `admin` - Admin address authorizing the operation.
+    /// * `key` - The metadata key to remove.
+    ///
+    /// # Errors
+    /// * `MetadataError::NotInitialized` - If contract is not initialized.
+    /// * `MetadataError::Unauthorized` - If caller is not admin.
+    /// * `MetadataError::KeyNotFound` - If key does not exist.
+    pub fn remove_metadata(env: Env, admin: Address, key: Symbol) -> Result<(), MetadataError> {
+        if !storage::is_initialized(&env) {
+            return Err(MetadataError::NotInitialized);
+        }
+
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(MetadataError::Unauthorized);
+        }
+
+        // Check if metadata exists
+        if !storage::has_metadata(&env, &key) {
+            return Err(MetadataError::KeyNotFound);
+        }
+
+        storage::remove_metadata(&env, &key);
+
+        env.events()
+            .publish((symbol_short!("meta_del"),), (admin, key));
 
         Ok(())
     }

@@ -11,3 +11,15 @@ pub enum TokenError {
     InsufficientAllowance = 6,
     SameAccount = 7,
 }
+
+#[contracterror]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MetadataError {
+    NotInitialized = 1,
+    Unauthorized = 2,
+    KeyNotAllowed = 3,
+    KeyNotFound = 4,
+    KeyAlreadyExists = 5,
+    InvalidKey = 6,
+    InvalidValue = 7,
+}
