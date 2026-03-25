@@ -180,6 +180,91 @@ impl NavinShipment {
         storage::set_shipment(&env, &shipment);
         Ok(())
     }
+
+    /// Append a hash-only note to a shipment for commentary.
+    /// Only the sender, receiver, assigned carrier, or admin can append notes.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `reporter` - The address appending the note.
+    /// * `shipment_id` - ID of the shipment.
+    /// * `note_hash` - SHA-256 hash of the off-chain note text.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if successfully appended.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
+    /// * `NavinError::Unauthorized` - If the caller is not involved in the shipment or admin.
+    pub fn append_note_hash(
+        env: Env,
+        reporter: Address,
+        shipment_id: u64,
+        note_hash: BytesN<32>,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        reporter.require_auth();
+
+        let shipment = storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        let admin = storage::get_admin(&env);
+
+        // Authorization: Sender, Receiver, Carrier, or Admin
+        if reporter != shipment.sender
+            && reporter != shipment.receiver
+            && reporter != shipment.carrier
+            && reporter != admin
+        {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // notes are append-only; we just increment the counter and store at the next index.
+        let index = storage::increment_note_count(&env, shipment_id);
+        storage::set_note_hash(&env, shipment_id, index, &note_hash);
+
+        // Emit the event following the Hash-and-Emit pattern.
+        events::emit_note_appended(&env, shipment_id, index, &note_hash, &reporter);
+
+        Ok(())
+    }
+
+    /// Get the total number of notes appended to a shipment.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - Number of notes for the shipment.
+    pub fn get_note_count(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        // Verify existence or check archived
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+        Ok(storage::get_note_count(&env, shipment_id))
+    }
+
+    /// Get a specific note hash for a shipment by its sequence index.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    /// * `index` - The 0-based index of the note.
+    ///
+    /// # Returns
+    /// * `Result<Option<BytesN<32>>, NavinError>` - The note hash if found.
+    pub fn get_note_hash(
+        env: Env,
+        shipment_id: u64,
+        index: u32,
+    ) -> Result<Option<BytesN<32>>, NavinError> {
+        require_initialized(&env)?;
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+        Ok(storage::get_note_hash(&env, shipment_id, index))
+    }
     /// Initialize the contract with an admin address and token contract address.
     /// Can only be called once. Sets the admin and shipment counter to 0.
     ///

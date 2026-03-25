@@ -865,3 +865,43 @@ pub fn emit_force_cancelled(
     );
     crate::storage::increment_event_count(env, shipment_id);
 }
+
+/// Emits a `note_appended` event when a new hash-only note is added to a shipment.
+///
+/// This follows the Hash-and-Emit pattern for shipment commentary. The actual
+/// text of the note is stored off-chain (e.g., in IPFS or a private database),
+/// while the SHA-256 hash is recorded on-chain for tamper-proof auditability.
+///
+/// # Event Data
+///
+/// | Field       | Type         | Description                                       |
+/// |-------------|--------------|---------------------------------------------------|
+/// | shipment_id | `u64`        | Shipment this note belongs to                      |
+/// | note_index  | `u32`        | Sequence number of the note for this shipment      |
+/// | note_hash   | `BytesN<32>` | SHA-256 hash of the off-chain note text            |
+/// | reporter    | `Address`    | Address that appended the note                     |
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `shipment_id` - ID of the shipment.
+/// * `note_index` - Cumulative count/index of the note for this shipment.
+/// * `note_hash` - The hash of the off-chain commentary.
+/// * `reporter` - The address that provided the note.
+pub fn emit_note_appended(
+    env: &Env,
+    shipment_id: u64,
+    note_index: u32,
+    note_hash: &BytesN<32>,
+    reporter: &Address,
+) {
+    env.events().publish(
+        (Symbol::new(env, "note_appended"),),
+        (
+            shipment_id,
+            note_index,
+            note_hash.clone(),
+            reporter.clone(),
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
