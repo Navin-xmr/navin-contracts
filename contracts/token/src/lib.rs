@@ -6,6 +6,9 @@ mod errors;
 mod storage;
 mod test;
 
+#[cfg(test)]
+mod test_utils;
+
 pub use errors::*;
 
 #[contract]
