@@ -65,6 +65,10 @@ pub enum DataKey {
     EventCount(u64),
     /// Archived shipment data in temporary storage (for terminal state shipments).
     ArchivedShipment(u64),
+    /// Append-only note hashes for shipment commentary (shipment_id, index) -> hash.
+    ShipmentNote(u64, u32),
+    /// Total number of notes appended to a shipment.
+    ShipmentNoteCount(u64),
 }
 
 /// Supported user roles.

@@ -423,6 +423,14 @@
                             },
                             {
                               "key": {
+                                "symbol": "deadline_grace_seconds"
+                              },
+                              "val": {
+                                "u64": 0
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "default_shipment_limit"
                               },
                               "val": {

@@ -821,3 +821,87 @@ pub fn emit_carrier_milestone_rate(
         ),
     );
 }
+
+/// Emits a `force_cancelled` event when an admin or multi-sig forcibly cancels a shipment.
+///
+/// This is a dedicated, immutable audit trail for emergency admin-only cancellations.
+/// It is intentionally separate from `shipment_cancelled` so that off-chain indexers
+/// can distinguish routine cancellations from privileged force-cancels.
+///
+/// # Event Data
+///
+/// | Field       | Type         | Description                                              |
+/// |-------------|--------------|----------------------------------------------------------|
+/// | shipment_id | `u64`        | Forcibly cancelled shipment identifier                   |
+/// | admin       | `Address`    | Admin or multi-sig address that triggered the cancel     |
+/// | reason_hash | `BytesN<32>` | SHA-256 hash of the mandatory off-chain reason document  |
+/// | escrow_refunded | `i128`   | Amount refunded to the company (0 if no escrow held)     |
+///
+/// # Listeners
+/// - **Express backend**: Creates a force-cancel audit record and triggers compliance alerts.
+/// - **Frontend**: Flags the shipment with an admin-override badge.
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `shipment_id` - ID of the force-cancelled shipment.
+/// * `admin` - Admin address that executed the force-cancel.
+/// * `reason_hash` - Mandatory SHA-256 hash of the off-chain reason document.
+/// * `escrow_refunded` - Amount refunded to the company.
+pub fn emit_force_cancelled(
+    env: &Env,
+    shipment_id: u64,
+    admin: &Address,
+    reason_hash: &BytesN<32>,
+    escrow_refunded: i128,
+) {
+    env.events().publish(
+        (Symbol::new(env, "force_cancelled"),),
+        (
+            shipment_id,
+            admin.clone(),
+            reason_hash.clone(),
+            escrow_refunded,
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
+
+/// Emits a `note_appended` event when a new hash-only note is added to a shipment.
+///
+/// This follows the Hash-and-Emit pattern for shipment commentary. The actual
+/// text of the note is stored off-chain (e.g., in IPFS or a private database),
+/// while the SHA-256 hash is recorded on-chain for tamper-proof auditability.
+///
+/// # Event Data
+///
+/// | Field       | Type         | Description                                       |
+/// |-------------|--------------|---------------------------------------------------|
+/// | shipment_id | `u64`        | Shipment this note belongs to                      |
+/// | note_index  | `u32`        | Sequence number of the note for this shipment      |
+/// | note_hash   | `BytesN<32>` | SHA-256 hash of the off-chain note text            |
+/// | reporter    | `Address`    | Address that appended the note                     |
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `shipment_id` - ID of the shipment.
+/// * `note_index` - Cumulative count/index of the note for this shipment.
+/// * `note_hash` - The hash of the off-chain commentary.
+/// * `reporter` - The address that provided the note.
+pub fn emit_note_appended(
+    env: &Env,
+    shipment_id: u64,
+    note_index: u32,
+    note_hash: &BytesN<32>,
+    reporter: &Address,
+) {
+    env.events().publish(
+        (Symbol::new(env, "note_appended"),),
+        (
+            shipment_id,
+            note_index,
+            note_hash.clone(),
+            reporter.clone(),
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
