@@ -78,4 +78,6 @@ pub enum NavinError {
     InvalidConfig = 31,
     /// Admin cannot revoke their own role; use `transfer_admin` instead.
     CannotSelfRevoke = 32,
+    /// Carrier account is suspended from carrier action handlers.
+    CarrierSuspended = 33,
 }

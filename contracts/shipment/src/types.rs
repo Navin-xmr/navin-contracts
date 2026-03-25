@@ -19,6 +19,8 @@ pub enum DataKey {
     Company(Address),
     /// Addresses with Carrier role.
     Carrier(Address),
+    /// Carrier suspension flag (carrier -> bool).
+    CarrierSuspended(Address),
     /// Individual shipment data keyed by ID.
     Shipment(u64),
     /// Carrier whitelist for a company — (company, carrier) -> bool.

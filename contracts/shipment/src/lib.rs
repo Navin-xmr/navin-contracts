@@ -116,6 +116,13 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinErr
     }
 }
 
+fn require_active_carrier(env: &Env, carrier: &Address) -> Result<(), NavinError> {
+    if storage::is_carrier_suspended(env, carrier) {
+        return Err(NavinError::CarrierSuspended);
+    }
+    Ok(())
+}
+
 #[contract]
 pub struct NavinShipment;
 
@@ -564,6 +571,52 @@ impl NavinShipment {
         );
 
         Ok(())
+    }
+
+    /// Suspend a carrier from carrier-only operations.
+    ///
+    /// Only the admin can call this function.
+    pub fn suspend_carrier(env: Env, admin: Address, carrier: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::suspend_carrier(&env, &carrier);
+        env.events()
+            .publish((Symbol::new(&env, "carrier_suspended"),), (admin, carrier));
+        Ok(())
+    }
+
+    /// Reactivate a previously suspended carrier.
+    ///
+    /// Only the admin can call this function.
+    pub fn reactivate_carrier(
+        env: Env,
+        admin: Address,
+        carrier: Address,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::reactivate_carrier(&env, &carrier);
+        env.events().publish(
+            (Symbol::new(&env, "carrier_reactivated"),),
+            (admin, carrier),
+        );
+        Ok(())
+    }
+
+    /// Return whether a carrier is currently suspended.
+    pub fn is_carrier_suspended(env: Env, carrier: Address) -> Result<bool, NavinError> {
+        require_initialized(&env)?;
+        Ok(storage::is_carrier_suspended(&env, &carrier))
     }
 
     /// Revoke a previously assigned role from an address.
@@ -1048,6 +1101,7 @@ impl NavinShipment {
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::ShipmentNotFound` - If shipment doesn't exist.
     /// * `NavinError::Unauthorized` - If caller is neither the carrier nor admin.
+    /// * `NavinError::CarrierSuspended` - If the assigned carrier is suspended.
     /// * `NavinError::RateLimitExceeded` - If status was updated too recently (unless Admin).
     /// * `NavinError::InvalidStatus` - If transitioning to an improperly sequenced state.
     ///
@@ -1071,6 +1125,9 @@ impl NavinShipment {
 
         if caller != shipment.carrier && caller != admin {
             return Err(NavinError::Unauthorized);
+        }
+        if caller == shipment.carrier {
+            require_active_carrier(&env, &caller)?;
         }
 
         // Rate-limit check: admin bypasses; all other callers must wait the minimum interval.
@@ -1479,6 +1536,7 @@ impl NavinShipment {
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::Unauthorized` - If called by unassigned identity.
+    /// * `NavinError::CarrierSuspended` - If the carrier is suspended.
     /// * `NavinError::ShipmentNotFound` - If shipment instance targets missing entry.
     /// * `NavinError::InvalidStatus` - If tracked instance is not `InTransit`.
     ///
@@ -1496,6 +1554,7 @@ impl NavinShipment {
         require_initialized(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
+        require_active_carrier(&env, &carrier)?;
 
         // Verify shipment exists, carrier is assigned, and status
         let shipment =
@@ -1569,6 +1628,7 @@ impl NavinShipment {
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::Unauthorized` - If called by unassigned identity.
+    /// * `NavinError::CarrierSuspended` - If the carrier is suspended.
     /// * `NavinError::ShipmentNotFound` - If shipment instance targets missing entry.
     /// * `NavinError::InvalidStatus` - If tracked instance is not `InTransit`.
     /// * `NavinError::BatchTooLarge` - If more than 10 milestones are submitted.
@@ -1590,6 +1650,7 @@ impl NavinShipment {
         require_initialized(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
+        require_active_carrier(&env, &carrier)?;
 
         // Validate batch size
         let config = config::get_config(&env);
