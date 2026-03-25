@@ -643,7 +643,7 @@ fn test_update_status_nonexistent_shipment() {
 #[test]
 fn test_suspend_and_reactivate_carrier_for_status_updates() {
     use crate::ShipmentStatus;
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -697,7 +697,7 @@ fn test_suspend_and_reactivate_carrier_for_status_updates() {
 
 #[test]
 fn test_suspend_carrier_requires_admin() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let outsider = Address::generate(&env);
     let carrier = Address::generate(&env);
 
@@ -984,6 +984,74 @@ fn test_get_shipment_fails_before_initialization() {
     let (_env, client, _admin, _token_contract) = setup_shipment_env();
 
     client.get_shipment(&1);
+}
+
+#[test]
+fn test_get_shipment_creator_returns_sender_for_valid_id() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[11u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    assert_eq!(client.get_shipment_creator(&shipment_id), company);
+}
+
+#[test]
+fn test_get_shipment_receiver_returns_receiver_for_valid_id() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[12u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    assert_eq!(client.get_shipment_receiver(&shipment_id), receiver);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")]
+fn test_get_shipment_creator_fails_for_invalid_id() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+
+    client.initialize(&admin, &token_contract);
+
+    client.get_shipment_creator(&999);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")]
+fn test_get_shipment_receiver_fails_for_invalid_id() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+
+    client.initialize(&admin, &token_contract);
+
+    client.get_shipment_receiver(&999);
 }
 
 // ============= Geofence Event Tests =============
@@ -2129,7 +2197,7 @@ fn test_record_milestone_unauthorized() {
 
 #[test]
 fn test_suspended_carrier_blocked_from_milestone_handlers() {
-    let (env, client, admin, token_contract) = setup_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
