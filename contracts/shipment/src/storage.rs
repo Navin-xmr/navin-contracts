@@ -1070,3 +1070,38 @@ pub fn is_shipment_archived(env: &Env, shipment_id: u64) -> bool {
         .temporary()
         .has(&DataKey::ArchivedShipment(shipment_id))
 }
+
+// ============= Shipment Note Storage Functions =============
+
+/// Get the total number of notes appended to a shipment.
+pub fn get_note_count(env: &Env, shipment_id: u64) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ShipmentNoteCount(shipment_id))
+        .unwrap_or(0)
+}
+
+/// Increment the note count for a shipment and return the new index.
+pub fn increment_note_count(env: &Env, shipment_id: u64) -> u32 {
+    let current = get_note_count(env, shipment_id);
+    let next = current.checked_add(1).expect("Note count overflow");
+    env.storage()
+        .persistent()
+        .set(&DataKey::ShipmentNoteCount(shipment_id), &next);
+    current // Return 0-based index for storage
+}
+
+/// Store a note hash for a shipment at a specific index.
+pub fn set_note_hash(env: &Env, shipment_id: u64, index: u32, hash: &BytesN<32>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ShipmentNote(shipment_id, index), hash);
+}
+
+/// Retrieve a note hash for a shipment by its index.
+#[allow(dead_code)]
+pub fn get_note_hash(env: &Env, shipment_id: u64, index: u32) -> Option<BytesN<32>> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ShipmentNote(shipment_id, index))
+}
