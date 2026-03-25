@@ -333,6 +333,14 @@ pub struct ShipmentInput {
     pub deadline: u64,
 }
 
+/// Cursor page result for searching shipment IDs by status.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShipmentStatusCursorPage {
+    pub shipment_ids: Vec<u64>,
+    pub next_cursor: Option<u64>,
+}
+
 /// On-chain introspection snapshot of the contract state.
 ///
 /// # Examples

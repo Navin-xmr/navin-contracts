@@ -19,7 +19,32 @@
 //! consumers can filter by topic when subscribing to contract events.
 
 use crate::types::{BreachType, Role, RoleChangeAction, Severity, ShipmentStatus};
-use soroban_sdk::{Address, BytesN, Env, Symbol};
+use soroban_sdk::{xdr::ToXdr, Address, BytesN, Env, Symbol};
+
+pub const EVENT_SCHEMA_VERSION: u32 = 2;
+
+fn next_event_counter(env: &Env, shipment_id: u64) -> u32 {
+    crate::storage::get_event_count(env, shipment_id).saturating_add(1)
+}
+
+fn generate_idempotency_key(
+    env: &Env,
+    shipment_id: u64,
+    event_type: &str,
+    event_counter: u32,
+) -> BytesN<32> {
+    let mut payload = soroban_sdk::Bytes::new(env);
+    payload.append(&soroban_sdk::Bytes::from_array(
+        env,
+        &shipment_id.to_be_bytes(),
+    ));
+    payload.append(&Symbol::new(env, event_type).to_xdr(env));
+    payload.append(&soroban_sdk::Bytes::from_array(
+        env,
+        &event_counter.to_be_bytes(),
+    ));
+    env.crypto().sha256(&payload).into()
+}
 
 /// Emits a `shipment_created` event when a new shipment is registered.
 ///
@@ -58,6 +83,9 @@ pub fn emit_shipment_created(
     receiver: &Address,
     data_hash: &BytesN<32>,
 ) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key =
+        generate_idempotency_key(env, shipment_id, "shipment_created", event_counter);
     env.events().publish(
         (Symbol::new(env, "shipment_created"),),
         (
@@ -65,6 +93,9 @@ pub fn emit_shipment_created(
             sender.clone(),
             receiver.clone(),
             data_hash.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
         ),
     );
     crate::storage::increment_event_count(env, shipment_id);
@@ -107,6 +138,9 @@ pub fn emit_status_updated(
     new_status: &ShipmentStatus,
     data_hash: &BytesN<32>,
 ) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key =
+        generate_idempotency_key(env, shipment_id, "status_updated", event_counter);
     env.events().publish(
         (Symbol::new(env, "status_updated"),),
         (
@@ -114,6 +148,9 @@ pub fn emit_status_updated(
             old_status.clone(),
             new_status.clone(),
             data_hash.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
         ),
     );
     crate::storage::increment_event_count(env, shipment_id);
@@ -160,6 +197,9 @@ pub fn emit_milestone_recorded(
     data_hash: &BytesN<32>,
     reporter: &Address,
 ) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key =
+        generate_idempotency_key(env, shipment_id, "milestone_recorded", event_counter);
     env.events().publish(
         (Symbol::new(env, "milestone_recorded"),),
         (
@@ -167,6 +207,9 @@ pub fn emit_milestone_recorded(
             checkpoint.clone(),
             data_hash.clone(),
             reporter.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
         ),
     );
     crate::storage::increment_event_count(env, shipment_id);
@@ -202,10 +245,21 @@ pub fn emit_milestone_recorded(
 /// ```
 #[allow(dead_code)]
 pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount: i128) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key =
+        generate_idempotency_key(env, shipment_id, "escrow_deposited", event_counter);
     env.events().publish(
         (Symbol::new(env, "escrow_deposited"),),
-        (shipment_id, from.clone(), amount),
+        (
+            shipment_id,
+            from.clone(),
+            amount,
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
     );
+    crate::storage::increment_event_count(env, shipment_id);
 }
 
 /// Emits an `escrow_released` event when escrowed funds are paid out.
@@ -237,10 +291,21 @@ pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount
 /// // events::emit_escrow_released(&env, 1, &carrier_addr, 1000);
 /// ```
 pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i128) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key =
+        generate_idempotency_key(env, shipment_id, "escrow_released", event_counter);
     env.events().publish(
         (Symbol::new(env, "escrow_released"),),
-        (shipment_id, to.clone(), amount),
+        (
+            shipment_id,
+            to.clone(),
+            amount,
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
     );
+    crate::storage::increment_event_count(env, shipment_id);
 }
 
 /// Emits an `escrow_refunded` event when escrowed funds are returned to the company.
@@ -272,10 +337,21 @@ pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i
 /// // events::emit_escrow_refunded(&env, 1, &company_addr, 1000);
 /// ```
 pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i128) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key =
+        generate_idempotency_key(env, shipment_id, "escrow_refunded", event_counter);
     env.events().publish(
         (Symbol::new(env, "escrow_refunded"),),
-        (shipment_id, to.clone(), amount),
+        (
+            shipment_id,
+            to.clone(),
+            amount,
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
     );
+    crate::storage::increment_event_count(env, shipment_id);
 }
 
 /// Emits a `dispute_raised` event when a party disputes a shipment.
@@ -351,10 +427,21 @@ pub fn emit_shipment_cancelled(
     caller: &Address,
     reason_hash: &BytesN<32>,
 ) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key =
+        generate_idempotency_key(env, shipment_id, "shipment_cancelled", event_counter);
     env.events().publish(
         (Symbol::new(env, "shipment_cancelled"),),
-        (shipment_id, caller.clone(), reason_hash.clone()),
+        (
+            shipment_id,
+            caller.clone(),
+            reason_hash.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
     );
+    crate::storage::increment_event_count(env, shipment_id);
 }
 
 /// Emits a `contract_upgraded` event when the contract WASM is upgraded.
@@ -519,8 +606,19 @@ pub fn emit_admin_transferred(env: &Env, old_admin: &Address, new_admin: &Addres
 /// |-------------|--------|-------------------------------------------------|
 /// | shipment_id | `u64`  | Cancelled shipment identifier                   |
 pub fn emit_shipment_expired(env: &Env, shipment_id: u64) {
-    env.events()
-        .publish((Symbol::new(env, "shipment_expired"),), (shipment_id,));
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key =
+        generate_idempotency_key(env, shipment_id, "shipment_expired", event_counter);
+    env.events().publish(
+        (Symbol::new(env, "shipment_expired"),),
+        (
+            shipment_id,
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
 }
 
 // ─── Paste these three functions at the BOTTOM of src/events.rs ──────────────
@@ -541,9 +639,19 @@ pub fn emit_shipment_expired(env: &Env, shipment_id: u64) {
 /// # Listeners
 /// - **Express backend**: Increments on-time delivery counter in carrier reputation index.
 pub fn emit_delivery_success(env: &Env, carrier: &Address, shipment_id: u64, delivery_time: u64) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key =
+        generate_idempotency_key(env, shipment_id, "delivery_success", event_counter);
     env.events().publish(
         (Symbol::new(env, "delivery_success"),),
-        (carrier.clone(), shipment_id, delivery_time),
+        (
+            carrier.clone(),
+            shipment_id,
+            delivery_time,
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
     );
     crate::storage::increment_event_count(env, shipment_id);
 }

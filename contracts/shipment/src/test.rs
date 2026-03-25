@@ -5056,16 +5056,23 @@ fn test_delivery_success_event_contains_correct_carrier() {
         if let Some(raw) = topics.get(0) {
             if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
                 if topic == Symbol::new(&env, "delivery_success") {
-                    // data is (carrier, shipment_id, delivery_time)
-                    return <(Address, u64, u64)>::try_from_val(&env, &data).ok();
+                    // data is (carrier, shipment_id, delivery_time, schema_version, event_counter, idempotency_key)
+                    return <(Address, u64, u64, u32, u32, BytesN<32>)>::try_from_val(&env, &data)
+                        .ok();
                 }
             }
         }
         None
     });
 
-    let (event_carrier, event_shipment_id, _delivery_time) =
-        event_data.expect("delivery_success event data must be present");
+    let (
+        event_carrier,
+        event_shipment_id,
+        _delivery_time,
+        _schema_version,
+        _event_counter,
+        _idempotency_key,
+    ) = event_data.expect("delivery_success event data must be present");
     assert_eq!(
         event_carrier, carrier,
         "event must reference the assigned carrier"
