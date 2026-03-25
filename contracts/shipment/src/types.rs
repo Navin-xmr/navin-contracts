@@ -251,6 +251,26 @@ pub enum BreachType {
     TamperDetected,
 }
 
+/// Severity levels for condition breach events used for downstream analytics and alerting.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::Severity;
+/// let severity = Severity::High;
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum Severity {
+    /// Minor deviation with minimal impact on shipment integrity.
+    Low,
+    /// Moderate deviation requiring attention but not critical.
+    Medium,
+    /// Significant deviation that may compromise shipment quality.
+    High,
+    /// Critical deviation requiring immediate intervention.
+    Critical,
+}
+
 /// Geofence event types for tracking shipment location events.
 ///
 /// # Examples

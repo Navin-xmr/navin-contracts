@@ -2083,6 +2083,7 @@ impl NavinShipment {
     /// * `carrier` - Tracking address specifying mapped context boundaries mapped assignments limits pointer validations constraints checking identifiers boundaries limits pointer configurations constraints context values references formats map matching arrays instances string definitions parameters matches checks limits permissions rules string formats limits rules scopes configurations maps tokens contexts scopes mapping instances matches.
     /// * `shipment_id` - Execution identifier reference binding sequence parameters formatting properties matches checking definitions sizes boundary arrays fields values bindings tracking identifier sequences parameters mapping limits bounds validation context limits formats values.
     /// * `breach_type` - Parameter tracking mapped enum values binding sequence identifier maps pointers validations checking mapped roles parameters mapped map matching pointer formats parameters mapping context limits keys.
+    /// * `severity` - Severity level for downstream analytics and alerting (Low/Medium/High/Critical).
     /// * `data_hash` - Configuration identifier string pointers limits bounds values matches arrays validation mapped strings format properties rules context bindings format array scopes references definitions maps matches validation sizes limits permissions validations.
     ///
     /// # Returns
@@ -2095,13 +2096,14 @@ impl NavinShipment {
     ///
     /// # Examples
     /// ```rust
-    /// // contract.report_condition_breach(&env, &carrier, 1, BreachType::TemperatureHigh, &hash);
+    /// // contract.report_condition_breach(&env, &carrier, 1, BreachType::TemperatureHigh, Severity::High, &hash);
     /// ```
     pub fn report_condition_breach(
         env: Env,
         carrier: Address,
         shipment_id: u64,
         breach_type: BreachType,
+        severity: Severity,
         data_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
@@ -2116,10 +2118,17 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
 
-        events::emit_condition_breach(&env, shipment_id, &carrier, &breach_type, &data_hash);
+        events::emit_condition_breach(
+            &env,
+            shipment_id,
+            &carrier,
+            &breach_type,
+            &severity,
+            &data_hash,
+        );
 
         // Reputation: record breach against carrier
-        events::emit_carrier_breach(&env, &carrier, shipment_id, &breach_type);
+        events::emit_carrier_breach(&env, &carrier, shipment_id, &breach_type, &severity);
 
         Ok(())
     }
