@@ -80,4 +80,6 @@ pub enum NavinError {
     CannotSelfRevoke = 32,
     /// Carrier account is suspended from carrier action handlers.
     CarrierSuspended = 33,
+    /// Force-cancel requires a non-zero reason hash.
+    ForceCancelReasonHashMissing = 34,
 }

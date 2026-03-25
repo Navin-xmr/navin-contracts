@@ -1828,6 +1828,108 @@ impl NavinShipment {
         Ok(())
     }
 
+    /// Emergency admin-only force-cancel for a shipment.
+    ///
+    /// This is a privileged override that bypasses the normal cancellation rules.
+    /// It can cancel a shipment in **any non-terminal state** (including Disputed),
+    /// and it requires a mandatory, non-zero `reason_hash` to ensure an immutable
+    /// audit trail is always present.
+    ///
+    /// Escrow behaviour is deterministic:
+    /// - If escrow is held, the full remaining balance is refunded to the company
+    ///   via the token contract before the shipment is marked Cancelled.
+    /// - If no escrow is held, the shipment is cancelled with no token transfer.
+    ///
+    /// Only the single admin or a multi-sig admin (via `propose_action` /
+    /// `approve_action`) may call this function directly. Regular companies and
+    /// carriers are rejected with `Unauthorized`.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Admin address executing the force-cancel.
+    /// * `shipment_id` - ID of the shipment to force-cancel.
+    /// * `reason_hash` - Mandatory SHA-256 hash of the off-chain reason document.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok on success.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - Contract not initialized.
+    /// * `NavinError::Unauthorized` - Caller is not the admin.
+    /// * `NavinError::ShipmentNotFound` - Shipment does not exist.
+    /// * `NavinError::ForceCancelReasonHashMissing` - `reason_hash` is all-zero.
+    /// * `NavinError::ShipmentAlreadyCompleted` - Shipment is already Delivered or Cancelled.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // contract.force_cancel_shipment(&env, &admin, 1, &reason_hash);
+    /// ```
+    pub fn force_cancel_shipment(
+        env: Env,
+        admin: Address,
+        shipment_id: u64,
+        reason_hash: BytesN<32>,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        // Strict admin-only gate — no company/carrier bypass.
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // Reason hash is mandatory and must be non-zero.
+        validate_hash(&reason_hash).map_err(|_| NavinError::ForceCancelReasonHashMissing)?;
+
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        // Terminal states cannot be force-cancelled.
+        match shipment.status {
+            ShipmentStatus::Delivered | ShipmentStatus::Cancelled => {
+                return Err(NavinError::ShipmentAlreadyCompleted);
+            }
+            _ => {}
+        }
+
+        let old_status = shipment.status.clone();
+        let escrow_amount = shipment.escrow_amount;
+
+        // Deterministic escrow refund: always refund to company if escrow is held.
+        if escrow_amount > 0 {
+            let token_contract =
+                storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
+            let contract_address = env.current_contract_address();
+            let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(&env);
+            args.push_back(contract_address.into_val(&env));
+            args.push_back(shipment.sender.clone().into_val(&env));
+            args.push_back(escrow_amount.into_val(&env));
+            env.invoke_contract::<()>(&token_contract, &symbol_short!("transfer"), args);
+
+            shipment.escrow_amount = 0;
+            events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
+        }
+
+        shipment.status = ShipmentStatus::Cancelled;
+        shipment.updated_at = env.ledger().timestamp();
+
+        storage::set_shipment(&env, &shipment);
+        storage::decrement_status_count(&env, &old_status);
+        storage::increment_status_count(&env, &ShipmentStatus::Cancelled);
+
+        // Decrement active count only if the shipment was not already in a
+        // non-active state (Cancelled is the only non-active non-terminal state
+        // that can't reach here, so this is always safe).
+        storage::decrement_active_shipment_count(&env, &shipment.sender);
+
+        extend_shipment_ttl(&env, shipment_id);
+
+        // Emit the dedicated force-cancel event — distinct from shipment_cancelled.
+        events::emit_force_cancelled(&env, shipment_id, &admin, &reason_hash, escrow_amount);
+
+        Ok(())
+    }
+
     /// Upgrade the contract to a new WASM implementation.
     /// Only the admin can trigger upgrades. State is preserved.
     ///
