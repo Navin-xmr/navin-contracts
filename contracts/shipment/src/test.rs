@@ -5608,7 +5608,8 @@ fn test_notification_emitted_on_dispute_resolved() {
     client.resolve_dispute(
         &admin,
         &shipment_id,
-        &crate::DisputeResolution::ReleaseToCarrier, &reason_hash,
+        &crate::DisputeResolution::ReleaseToCarrier,
+        &reason_hash,
     );
 
     let events = env.events().all();
@@ -5694,7 +5695,8 @@ fn test_analytics_counters() {
     client.resolve_dispute(
         &admin,
         &shipment_id,
-        &crate::DisputeResolution::ReleaseToCarrier, &data_hash,
+        &crate::DisputeResolution::ReleaseToCarrier,
+        &data_hash,
     );
 
     let analytics = client.get_analytics();
@@ -5841,16 +5843,22 @@ fn test_add_dispute_evidence_hash_success() {
 
     // Now adding evidence should work
     client.add_dispute_evidence_hash(&company, &shipment_id, &evidence_hash);
-    
+
     assert_eq!(client.get_dispute_evidence_count(&shipment_id), 1);
-    assert_eq!(client.get_dispute_evidence_hash(&shipment_id, &0), Some(evidence_hash.clone()));
+    assert_eq!(
+        client.get_dispute_evidence_hash(&shipment_id, &0),
+        Some(evidence_hash.clone())
+    );
 
     // Adding multiple evidence hashes
     let second_evidence = BytesN::from_array(&env, &[88u8; 32]);
     client.add_dispute_evidence_hash(&receiver, &shipment_id, &second_evidence);
-    
+
     assert_eq!(client.get_dispute_evidence_count(&shipment_id), 2);
-    assert_eq!(client.get_dispute_evidence_hash(&shipment_id, &1), Some(second_evidence));
+    assert_eq!(
+        client.get_dispute_evidence_hash(&shipment_id, &1),
+        Some(second_evidence)
+    );
 
     // Admin can also add evidence
     let admin_evidence = BytesN::from_array(&env, &[99u8; 32]);
@@ -5891,7 +5899,10 @@ fn test_resolve_dispute_fails_without_reason_hash() {
         &crate::DisputeResolution::ReleaseToCarrier,
         &empty_hash,
     );
-    assert_eq!(res, Err(Ok(crate::NavinError::DisputeResolutionReasonHashMissing)));
+    assert_eq!(
+        res,
+        Err(Ok(crate::NavinError::DisputeResolutionReasonHashMissing))
+    );
 }
 
 #[test]
@@ -5923,7 +5934,12 @@ fn test_integration_nonce_increment() {
     assert_eq!(client.get_integration_nonce(&shipment_id), 1);
 
     // Update status
-    client.update_status(&carrier, &shipment_id, &crate::ShipmentStatus::InTransit, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::ShipmentStatus::InTransit,
+        &data_hash,
+    );
     assert_eq!(client.get_integration_nonce(&shipment_id), 2);
 
     // Raise dispute
@@ -5935,7 +5951,12 @@ fn test_integration_nonce_increment() {
     assert_eq!(client.get_integration_nonce(&shipment_id), 4);
 
     // Resolve dispute
-    client.resolve_dispute(&admin, &shipment_id, &crate::DisputeResolution::RefundToCompany, &data_hash);
+    client.resolve_dispute(
+        &admin,
+        &shipment_id,
+        &crate::DisputeResolution::RefundToCompany,
+        &data_hash,
+    );
     assert_eq!(client.get_integration_nonce(&shipment_id), 5);
 }
 
@@ -6121,7 +6142,12 @@ fn test_count_decrements_on_dispute_resolution() {
     assert_eq!(client.get_active_shipment_count(&company), 1);
 
     // Resolve dispute
-    client.resolve_dispute(&admin, &1, &crate::DisputeResolution::RefundToCompany, &BytesN::from_array(&env, &[1u8; 32]));
+    client.resolve_dispute(
+        &admin,
+        &1,
+        &crate::DisputeResolution::RefundToCompany,
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
 
     assert_eq!(client.get_active_shipment_count(&company), 0);
 }
@@ -7245,7 +7271,12 @@ fn test_resolve_dispute_returns_shipment_not_found() {
 
     client.initialize(&admin, &token_contract);
 
-    client.resolve_dispute(&admin, &999, &crate::DisputeResolution::ReleaseToCarrier, &BytesN::from_array(&env, &[1u8; 32]));
+    client.resolve_dispute(
+        &admin,
+        &999,
+        &crate::DisputeResolution::ReleaseToCarrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
 }
 
 #[test]

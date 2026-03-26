@@ -341,7 +341,8 @@ impl NavinShipment {
     /// * `Result<u32, NavinError>` - The current nonce.
     pub fn get_integration_nonce(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
         require_initialized(&env)?;
-        let shipment = storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
         Ok(shipment.integration_nonce)
     }
 

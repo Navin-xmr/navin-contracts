@@ -1056,7 +1056,8 @@ pub fn emit_dispute_resolved(
     admin: &Address,
 ) {
     let event_counter = next_event_counter(env, shipment_id);
-    let idempotency_key = generate_idempotency_key(env, shipment_id, "dispute_resolved", event_counter);
+    let idempotency_key =
+        generate_idempotency_key(env, shipment_id, "dispute_resolved", event_counter);
     env.events().publish(
         (Symbol::new(env, "dispute_resolved"),),
         (
