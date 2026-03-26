@@ -1008,3 +1008,67 @@ pub fn emit_note_appended(
     );
     crate::storage::increment_event_count(env, shipment_id);
 }
+
+/// Emits an `evidence_added` event when a new hash-only evidence is added to a shipment dispute.
+///
+/// # Event Data
+///
+/// | Field       | Type         | Description                                       |
+/// |-------------|--------------|---------------------------------------------------|
+/// | shipment_id | `u64`        | Shipment under dispute                             |
+/// | evidence_index | `u32`      | Sequence number of the evidence for this shipment  |
+/// | evidence_hash | `BytesN<32>`| SHA-256 hash of the off-chain evidence             |
+/// | reporter    | `Address`    | Address that added the evidence                    |
+pub fn emit_evidence_added(
+    env: &Env,
+    shipment_id: u64,
+    evidence_index: u32,
+    evidence_hash: &BytesN<32>,
+    reporter: &Address,
+) {
+    env.events().publish(
+        (Symbol::new(env, "evidence_added"),),
+        (
+            shipment_id,
+            evidence_index,
+            evidence_hash.clone(),
+            reporter.clone(),
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
+
+/// Emits a `dispute_resolved` event when an admin settles a shipment dispute.
+///
+/// # Event Data
+///
+/// | Field       | Type              | Description                                       |
+/// |-------------|-------------------|---------------------------------------------------|
+/// | shipment_id | `u64`             | Shipment that was disputed                         |
+/// | resolution  | `DisputeResolution` | The final settlement choice (Carrier or Company)  |
+/// | reason_hash | `BytesN<32>`      | SHA-256 hash of the off-chain settlement rationale |
+/// | admin       | `Address`         | Admin address that resolved the dispute            |
+pub fn emit_dispute_resolved(
+    env: &Env,
+    shipment_id: u64,
+    resolution: &crate::types::DisputeResolution,
+    reason_hash: &BytesN<32>,
+    admin: &Address,
+) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key =
+        generate_idempotency_key(env, shipment_id, "dispute_resolved", event_counter);
+    env.events().publish(
+        (Symbol::new(env, "dispute_resolved"),),
+        (
+            shipment_id,
+            resolution.clone(),
+            reason_hash.clone(),
+            admin.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}

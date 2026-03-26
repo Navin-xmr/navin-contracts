@@ -84,4 +84,6 @@ pub enum NavinError {
     ForceCancelReasonHashMissing = 34,
     /// Arithmetic overflow/underflow encountered during escrow math operations.
     ArithmeticError = 35,
+    /// Dispute resolution requires a reason hash.
+    DisputeResolutionReasonHashMissing = 36,
 }
