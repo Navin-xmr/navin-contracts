@@ -380,6 +380,28 @@ pub fn is_carrier_suspended(env: &Env, carrier: &Address) -> bool {
         .unwrap_or(false)
 }
 
+/// Mark a company as suspended in instance storage.
+pub fn suspend_company(env: &Env, company: &Address) {
+    env.storage()
+        .instance()
+        .set(&DataKey::CompanySuspended(company.clone()), &true);
+}
+
+/// Remove a company suspension flag from instance storage.
+pub fn reactivate_company(env: &Env, company: &Address) {
+    env.storage()
+        .instance()
+        .remove(&DataKey::CompanySuspended(company.clone()));
+}
+
+/// Returns true when the company has an active suspension flag.
+pub fn is_company_suspended(env: &Env, company: &Address) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::CompanySuspended(company.clone()))
+        .unwrap_or(false)
+}
+
 /// Get shipment by ID
 pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
     // First check persistent storage

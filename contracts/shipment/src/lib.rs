@@ -17,6 +17,8 @@ mod validation;
 
 #[cfg(test)]
 mod test_utils;
+#[cfg(test)]
+mod test_suspension;
 
 pub use config::*;
 pub use errors::*;
@@ -117,9 +119,13 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinErr
     match role {
         Role::Company => {
             if storage::has_company_role(env, address) {
-                // Check if role is suspended
+                // Check if role is suspended via generic role suspension
                 if storage::is_role_suspended(env, address, &Role::Company) {
                     return Err(NavinError::Unauthorized);
+                }
+                // Check if company specifically is suspended
+                if storage::is_company_suspended(env, address) {
+                    return Err(NavinError::CompanySuspended);
                 }
                 Ok(())
             } else {
@@ -132,6 +138,10 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinErr
                 if storage::is_role_suspended(env, address, &Role::Carrier) {
                     return Err(NavinError::Unauthorized);
                 }
+                // Also check legacy carrier-specific suspension
+                if storage::is_carrier_suspended(env, address) {
+                    return Err(NavinError::CarrierSuspended);
+                }
                 Ok(())
             } else {
                 Err(NavinError::Unauthorized)
@@ -141,9 +151,24 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinErr
     }
 }
 
+fn require_active_company(env: &Env, company: &Address) -> Result<(), NavinError> {
+    if storage::is_company_suspended(env, company) {
+        return Err(NavinError::CompanySuspended);
+    }
+    // Also check generic role suspension for completeness
+    if storage::is_role_suspended(env, company, &Role::Company) {
+        return Err(NavinError::Unauthorized);
+    }
+    Ok(())
+}
+
 fn require_active_carrier(env: &Env, carrier: &Address) -> Result<(), NavinError> {
     if storage::is_carrier_suspended(env, carrier) {
         return Err(NavinError::CarrierSuspended);
+    }
+    // Also check generic role suspension
+    if storage::is_role_suspended(env, carrier, &Role::Carrier) {
+        return Err(NavinError::Unauthorized);
     }
     Ok(())
 }
@@ -191,6 +216,10 @@ impl NavinShipment {
         // Only sender or admin can set
         if caller != shipment.sender && caller != admin {
             return Err(NavinError::Unauthorized);
+        }
+        // If caller is the company (sender), check for suspension
+        if caller == shipment.sender {
+            require_active_company(&env, &caller)?;
         }
         // Initialize metadata map if not present
         let mut metadata = shipment.metadata.unwrap_or(Map::new(&env));
@@ -245,6 +274,11 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
 
+        // If reporter is the company (sender), check for suspension
+        if reporter == shipment.sender {
+            require_active_company(&env, &reporter)?;
+        }
+
         // notes are append-only; we just increment the counter and store at the next index.
         let index = storage::increment_note_count(&env, shipment_id);
         storage::set_note_hash(&env, shipment_id, index, &note_hash);
@@ -291,6 +325,11 @@ impl NavinShipment {
             && reporter != admin
         {
             return Err(NavinError::Unauthorized);
+        }
+
+        // If reporter is the company (sender), check for suspension
+        if reporter == shipment.sender {
+            require_active_company(&env, &reporter)?;
         }
 
         // Increment counter and store hash
@@ -978,6 +1017,56 @@ impl NavinShipment {
             &admin,
             &target,
             &current_role,
+        );
+
+        Ok(())
+    }
+
+    /// Suspend a company from creating or updating shipments.
+    pub fn suspend_company(env: Env, admin: Address, company: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        if !storage::has_company_role(&env, &company) {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::suspend_company(&env, &company);
+
+        // Emit role history event (reusing Reactive/Suspended for audit)
+        events::emit_role_changed(
+            &env,
+            &RoleChangeAction::Suspended,
+            &admin,
+            &company,
+            &Role::Company,
+        );
+
+        Ok(())
+    }
+
+    /// Reactivate a suspended company.
+    pub fn reactivate_company(env: Env, admin: Address, company: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::reactivate_company(&env, &company);
+
+        // Emit role history event
+        events::emit_role_changed(
+            &env,
+            &RoleChangeAction::Reactivated,
+            &admin,
+            &company,
+            &Role::Company,
         );
 
         Ok(())
@@ -2088,6 +2177,11 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
 
+        // Check for suspension if caller is the sender (company)
+        if caller == shipment.sender {
+            require_active_company(&env, &caller)?;
+        }
+
         match shipment.status {
             ShipmentStatus::Delivered | ShipmentStatus::Disputed => {
                 return Err(NavinError::ShipmentAlreadyCompleted);
@@ -2362,6 +2456,11 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
 
+        // Check for suspension if caller is the sender (company)
+        if caller == shipment.sender {
+            require_active_company(&env, &caller)?;
+        }
+
         if shipment.status != ShipmentStatus::Created
             && shipment.status != ShipmentStatus::Cancelled
         {
@@ -2444,6 +2543,11 @@ impl NavinShipment {
 
         if caller != shipment.sender && caller != shipment.receiver && caller != shipment.carrier {
             return Err(NavinError::Unauthorized);
+        }
+
+        // Check for suspension if caller is the sender (company)
+        if caller == shipment.sender {
+            require_active_company(&env, &caller)?;
         }
 
         if shipment.status == ShipmentStatus::Cancelled
