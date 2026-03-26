@@ -69,6 +69,10 @@ pub enum DataKey {
     ShipmentNote(u64, u32),
     /// Total number of notes appended to a shipment.
     ShipmentNoteCount(u64),
+    /// Append-only evidence hashes for shipment disputes (shipment_id, index) -> hash.
+    DisputeEvidence(u64, u32),
+    /// Total number of evidence hashes appended to a shipment dispute.
+    DisputeEvidenceCount(u64),
 }
 
 /// Supported user roles.
@@ -233,6 +237,8 @@ pub struct Shipment {
     pub paid_milestones: Vec<Symbol>,
     /// Timestamp after which the shipment is considered expired and can be auto-cancelled.
     pub deadline: u64,
+    /// Counter to prevent replay of external actions and correlate off-chain integrations.
+    pub integration_nonce: u32,
 }
 
 /// A checkpoint milestone recorded during shipment transit.

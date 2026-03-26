@@ -1950,6 +1950,7 @@ fn test_resolve_dispute_release_to_carrier() {
         &admin,
         &shipment_id,
         &crate::DisputeResolution::ReleaseToCarrier,
+        &reason_hash,
     );
 
     let shipment = client.get_shipment(&shipment_id);
@@ -1987,6 +1988,7 @@ fn test_resolve_dispute_refund_to_company() {
         &admin,
         &shipment_id,
         &crate::DisputeResolution::RefundToCompany,
+        &reason_hash,
     );
 
     let shipment = client.get_shipment(&shipment_id);
@@ -2026,6 +2028,7 @@ fn test_resolve_dispute_unauthorized() {
         &outsider,
         &shipment_id,
         &crate::DisputeResolution::ReleaseToCarrier,
+        &reason_hash,
     );
 }
 
@@ -2058,6 +2061,7 @@ fn test_resolve_dispute_not_disputed() {
         &admin,
         &shipment_id,
         &crate::DisputeResolution::ReleaseToCarrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
     );
 }
 
@@ -4270,6 +4274,7 @@ fn test_rbac_all_gated_functions_with_wrong_role() {
         &company,
         &shipment_id,
         &crate::DisputeResolution::ReleaseToCarrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
     );
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
 
@@ -5273,6 +5278,7 @@ fn test_carrier_dispute_loss_event_emitted_on_refund_to_company() {
         &admin,
         &shipment_id,
         &crate::DisputeResolution::RefundToCompany,
+        &reason_hash,
     );
 
     let events = env.events().all();
@@ -5321,6 +5327,7 @@ fn test_carrier_dispute_loss_not_emitted_when_carrier_wins() {
         &admin,
         &shipment_id,
         &crate::DisputeResolution::ReleaseToCarrier,
+        &reason_hash,
     );
 
     let events = env.events().all();
@@ -5369,6 +5376,7 @@ fn test_carrier_dispute_loss_event_contains_correct_carrier() {
         &admin,
         &shipment_id,
         &crate::DisputeResolution::RefundToCompany,
+        &reason_hash,
     );
 
     let events = env.events().all();
@@ -5600,7 +5608,7 @@ fn test_notification_emitted_on_dispute_resolved() {
     client.resolve_dispute(
         &admin,
         &shipment_id,
-        &crate::DisputeResolution::ReleaseToCarrier,
+        &crate::DisputeResolution::ReleaseToCarrier, &reason_hash,
     );
 
     let events = env.events().all();
@@ -5686,7 +5694,7 @@ fn test_analytics_counters() {
     client.resolve_dispute(
         &admin,
         &shipment_id,
-        &crate::DisputeResolution::ReleaseToCarrier,
+        &crate::DisputeResolution::ReleaseToCarrier, &data_hash,
     );
 
     let analytics = client.get_analytics();
@@ -5798,6 +5806,167 @@ fn test_active_shipment_count_tracking() {
         &deadline,
     );
     assert_eq!(client.get_active_shipment_count(&company), 2);
+}
+
+// ============= Dispute Evidence Tests =============
+
+#[test]
+fn test_add_dispute_evidence_hash_success() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let evidence_hash = BytesN::from_array(&env, &[77u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Initial state is Created, not Disputed
+    let res = client.try_add_dispute_evidence_hash(&company, &shipment_id, &evidence_hash);
+    assert_eq!(res, Err(Ok(crate::NavinError::InvalidStatus)));
+
+    // Change to Disputed
+    client.raise_dispute(&company, &shipment_id, &data_hash);
+
+    // Now adding evidence should work
+    client.add_dispute_evidence_hash(&company, &shipment_id, &evidence_hash);
+    
+    assert_eq!(client.get_dispute_evidence_count(&shipment_id), 1);
+    assert_eq!(client.get_dispute_evidence_hash(&shipment_id, &0), Some(evidence_hash.clone()));
+
+    // Adding multiple evidence hashes
+    let second_evidence = BytesN::from_array(&env, &[88u8; 32]);
+    client.add_dispute_evidence_hash(&receiver, &shipment_id, &second_evidence);
+    
+    assert_eq!(client.get_dispute_evidence_count(&shipment_id), 2);
+    assert_eq!(client.get_dispute_evidence_hash(&shipment_id, &1), Some(second_evidence));
+
+    // Admin can also add evidence
+    let admin_evidence = BytesN::from_array(&env, &[99u8; 32]);
+    client.add_dispute_evidence_hash(&admin, &shipment_id, &admin_evidence);
+    assert_eq!(client.get_dispute_evidence_count(&shipment_id), 3);
+}
+
+#[test]
+fn test_resolve_dispute_fails_without_reason_hash() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[99u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    let escrow_amount: i128 = 5000;
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+    client.raise_dispute(&company, &shipment_id, &reason_hash);
+
+    // Empty reason hash should fail
+    let empty_hash = BytesN::from_array(&env, &[0u8; 32]);
+    let res = client.try_resolve_dispute(
+        &admin,
+        &shipment_id,
+        &crate::DisputeResolution::ReleaseToCarrier,
+        &empty_hash,
+    );
+    assert_eq!(res, Err(Ok(crate::NavinError::DisputeResolutionReasonHashMissing)));
+}
+
+#[test]
+fn test_integration_nonce_increment() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Initial nonce is 0
+    assert_eq!(client.get_integration_nonce(&shipment_id), 0);
+
+    // Deposit escrow
+    client.deposit_escrow(&company, &shipment_id, &5000);
+    assert_eq!(client.get_integration_nonce(&shipment_id), 1);
+
+    // Update status
+    client.update_status(&carrier, &shipment_id, &crate::ShipmentStatus::InTransit, &data_hash);
+    assert_eq!(client.get_integration_nonce(&shipment_id), 2);
+
+    // Raise dispute
+    client.raise_dispute(&company, &shipment_id, &data_hash);
+    assert_eq!(client.get_integration_nonce(&shipment_id), 3);
+
+    // Add evidence
+    client.add_dispute_evidence_hash(&company, &shipment_id, &data_hash);
+    assert_eq!(client.get_integration_nonce(&shipment_id), 4);
+
+    // Resolve dispute
+    client.resolve_dispute(&admin, &shipment_id, &crate::DisputeResolution::RefundToCompany, &data_hash);
+    assert_eq!(client.get_integration_nonce(&shipment_id), 5);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_add_dispute_evidence_unauthorized() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let outsider = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let evidence_hash = BytesN::from_array(&env, &[77u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    client.raise_dispute(&company, &shipment_id, &data_hash);
+
+    // Outsider tries to add evidence
+    client.add_dispute_evidence_hash(&outsider, &shipment_id, &evidence_hash);
 }
 
 #[test]
@@ -5952,7 +6121,7 @@ fn test_count_decrements_on_dispute_resolution() {
     assert_eq!(client.get_active_shipment_count(&company), 1);
 
     // Resolve dispute
-    client.resolve_dispute(&admin, &1, &crate::DisputeResolution::RefundToCompany);
+    client.resolve_dispute(&admin, &1, &crate::DisputeResolution::RefundToCompany, &BytesN::from_array(&env, &[1u8; 32]));
 
     assert_eq!(client.get_active_shipment_count(&company), 0);
 }
@@ -7072,11 +7241,11 @@ fn test_raise_dispute_returns_shipment_not_found() {
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_resolve_dispute_returns_shipment_not_found() {
-    let (_env, client, admin, token_contract) = setup_shipment_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     client.initialize(&admin, &token_contract);
 
-    client.resolve_dispute(&admin, &999, &crate::DisputeResolution::ReleaseToCarrier);
+    client.resolve_dispute(&admin, &999, &crate::DisputeResolution::ReleaseToCarrier, &BytesN::from_array(&env, &[1u8; 32]));
 }
 
 #[test]

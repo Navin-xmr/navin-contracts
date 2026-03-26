@@ -84,6 +84,7 @@ fn internal_release_escrow(
     if actual_release > 0 {
         shipment.escrow_amount = checked_sub_i128(shipment.escrow_amount, actual_release)?;
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
         storage::set_shipment(env, shipment);
 
         // Get token contract address
@@ -201,6 +202,7 @@ impl NavinShipment {
         metadata.set(key.clone(), value.clone());
         shipment.metadata = Some(metadata);
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
         storage::set_shipment(&env, &shipment);
         Ok(())
     }
@@ -251,6 +253,96 @@ impl NavinShipment {
         events::emit_note_appended(&env, shipment_id, index, &note_hash, &reporter);
 
         Ok(())
+    }
+
+    /// Add an evidence hash to an active shipment dispute.
+    /// Only in Disputed state. Authorization: Sender, Receiver, Carrier, or Admin.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `reporter` - The address adding the evidence.
+    /// * `shipment_id` - ID of the shipment.
+    /// * `evidence_hash` - SHA-256 hash of the off-chain evidence.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if successfully added.
+    pub fn add_dispute_evidence_hash(
+        env: Env,
+        reporter: Address,
+        shipment_id: u64,
+        evidence_hash: BytesN<32>,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        reporter.require_auth();
+
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        let admin = storage::get_admin(&env);
+
+        // State check: Only in Disputed state
+        if shipment.status != ShipmentStatus::Disputed {
+            return Err(NavinError::InvalidStatus);
+        }
+
+        // Authorization: Sender, Receiver, Carrier, or Admin
+        if reporter != shipment.sender
+            && reporter != shipment.receiver
+            && reporter != shipment.carrier
+            && reporter != admin
+        {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // Increment counter and store hash
+        let index = storage::increment_evidence_count(&env, shipment_id);
+        storage::set_evidence_hash(&env, shipment_id, index, &evidence_hash);
+
+        // Increment integration nonce
+        let mut shipment_mut = shipment;
+        shipment_mut.integration_nonce = shipment_mut.integration_nonce.saturating_add(1);
+        storage::set_shipment(&env, &shipment_mut);
+
+        // Emit event
+        events::emit_evidence_added(&env, shipment_id, index, &evidence_hash, &reporter);
+
+        Ok(())
+    }
+
+    /// Get the total number of evidence hashes for a shipment dispute.
+    pub fn get_dispute_evidence_count(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+        Ok(storage::get_evidence_count(&env, shipment_id))
+    }
+
+    /// Get a specific evidence hash for a shipment dispute by its sequence index.
+    pub fn get_dispute_evidence_hash(
+        env: Env,
+        shipment_id: u64,
+        index: u32,
+    ) -> Result<Option<BytesN<32>>, NavinError> {
+        require_initialized(&env)?;
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+        Ok(storage::get_evidence_hash(&env, shipment_id, index))
+    }
+
+    /// Get the current integration nonce for a shipment.
+    /// Nonce increments on critical transitions like status changes and escrow movements.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - The current nonce.
+    pub fn get_integration_nonce(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        let shipment = storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        Ok(shipment.integration_nonce)
     }
 
     /// Get the total number of notes appended to a shipment.
@@ -962,6 +1054,7 @@ impl NavinShipment {
             paid_milestones: Vec::new(&env),
             metadata: None,
             deadline,
+            integration_nonce: 0,
         };
 
         storage::set_shipment(&env, &shipment);
@@ -1067,6 +1160,7 @@ impl NavinShipment {
                 paid_milestones: Vec::new(&env),
                 metadata: None,
                 deadline: shipment_input.deadline,
+                integration_nonce: 0,
             };
 
             storage::set_shipment(&env, &shipment);
@@ -1223,6 +1317,7 @@ impl NavinShipment {
         shipment.escrow_amount = checked_add_i128(0, amount)?;
         shipment.total_escrow = checked_add_i128(0, amount)?;
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
         storage::set_shipment(&env, &shipment);
         storage::add_total_escrow_volume(&env, amount)?;
         extend_shipment_ttl(&env, shipment_id);
@@ -1297,6 +1392,7 @@ impl NavinShipment {
         shipment.status = new_status.clone();
         shipment.data_hash = data_hash.clone();
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
         storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
@@ -2003,6 +2099,7 @@ impl NavinShipment {
         shipment.status = ShipmentStatus::Cancelled;
         shipment.escrow_amount = 0;
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
         storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
@@ -2108,6 +2205,7 @@ impl NavinShipment {
 
         shipment.status = ShipmentStatus::Cancelled;
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
         storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
@@ -2289,6 +2387,7 @@ impl NavinShipment {
         let old_status = shipment.status.clone();
         shipment.status = ShipmentStatus::Cancelled;
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
         storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
@@ -2355,6 +2454,7 @@ impl NavinShipment {
         let old_status = shipment.status.clone();
         shipment.status = ShipmentStatus::Disputed;
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
         storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
@@ -2389,40 +2489,40 @@ impl NavinShipment {
         Ok(())
     }
 
-    /// Resolve a dispute by releasing funds to carrier or refunding to company.
-    /// Only admin can resolve disputes.
+    /// Resolve a shipment dispute. Only the admin can call this.
     ///
     /// # Arguments
-    /// * `env` - Execution environment tracking context.
-    /// * `admin` - Contract admin executing the resolution.
-    /// * `shipment_id` - ID specifying tracked shipment sequence.
-    /// * `resolution` - Target outcome assigned by platform resolving admin.
+    /// * `env` - Execution environment.
+    /// * `admin` - Contract admin address.
+    /// * `shipment_id` - ID of the shipment.
+    /// * `resolution` - Target resolution (Release to Carrier or Refund to Company).
+    /// * `reason_hash` - SHA-256 hash of the off-chain justification document.
     ///
     /// # Returns
-    /// * `Result<(), NavinError>` - Ok on successful resolution instance.
+    /// * `Result<(), NavinError>` - Ok if successfully resolved.
     ///
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::Unauthorized` - If caller isn't contract admin mapping.
-    /// * `NavinError::ShipmentNotFound` - If parameters track undefined mappings.
-    /// * `NavinError::InvalidStatus` - If tracked instance is not `Disputed`.
-    /// * `NavinError::InsufficientFunds` - If linked balance mapped values reflect unset tracking.
-    ///
-    /// # Examples
-    /// ```rust
-    /// // contract.resolve_dispute(env, admin, 1, DisputeResolution::ReleaseToCarrier);
-    /// ```
+    /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
+    /// * `NavinError::Unauthorized` - If called by a non-admin.
+    /// * `NavinError::DisputeResolutionReasonHashMissing` - If reason_hash is all zeros.
     pub fn resolve_dispute(
         env: Env,
         admin: Address,
         shipment_id: u64,
         resolution: DisputeResolution,
+        reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
             return Err(NavinError::Unauthorized);
+        }
+
+        // Validate reason hash is not empty
+        if reason_hash == BytesN::from_array(&env, &[0u8; 32]) {
+            return Err(NavinError::DisputeResolutionReasonHashMissing);
         }
 
         let mut shipment =
@@ -2439,6 +2539,7 @@ impl NavinShipment {
 
         shipment.escrow_amount = 0;
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
         let recipient = match resolution {
             DisputeResolution::ReleaseToCarrier => {
@@ -2470,26 +2571,29 @@ impl NavinShipment {
             }
         }
 
+        // Emit specialized resolution event with context
+        events::emit_dispute_resolved(&env, shipment_id, &resolution, &reason_hash, &admin);
+
         events::emit_notification(
             &env,
             &shipment.sender,
             NotificationType::DisputeResolved,
             shipment_id,
-            &BytesN::from_array(&env, &[0u8; 32]),
+            &reason_hash,
         );
         events::emit_notification(
             &env,
             &shipment.receiver,
             NotificationType::DisputeResolved,
             shipment_id,
-            &BytesN::from_array(&env, &[0u8; 32]),
+            &reason_hash,
         );
         events::emit_notification(
             &env,
             &shipment.carrier,
             NotificationType::DisputeResolved,
             shipment_id,
-            &BytesN::from_array(&env, &[0u8; 32]),
+            &reason_hash,
         );
 
         Ok(())
@@ -2551,6 +2655,7 @@ impl NavinShipment {
         let old_carrier = shipment.carrier.clone();
         shipment.carrier = new_carrier.clone();
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
         storage::set_shipment(&env, &shipment);
         extend_shipment_ttl(&env, shipment_id);
@@ -3003,6 +3108,7 @@ impl NavinShipment {
 
                     shipment.escrow_amount = 0;
                     shipment.updated_at = env.ledger().timestamp();
+                    shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
                     storage::set_shipment(&env, &shipment);
 
                     events::emit_escrow_released(
@@ -3037,6 +3143,7 @@ impl NavinShipment {
 
                     shipment.escrow_amount = 0;
                     shipment.updated_at = env.ledger().timestamp();
+                    shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
                     storage::set_shipment(&env, &shipment);
 
                     events::emit_escrow_refunded(
@@ -3207,6 +3314,7 @@ impl NavinShipment {
         shipment.status = ShipmentStatus::Cancelled;
         shipment.escrow_amount = 0;
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
         storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
