@@ -707,6 +707,54 @@ impl NavinShipment {
         })
     }
 
+    /// Get the deterministic SHA-256 checksum of critical config fields.
+    ///
+    /// This query exposes the config checksum to help indexers and operators
+    /// detect unintended configuration drift. The checksum is computed from
+    /// all config fields serialized in a fixed order and is automatically
+    /// updated whenever the config changes.
+    ///
+    /// # Serialization Order
+    /// Fields are serialized in declaration order:
+    /// 1. shipment_ttl_threshold (u32)
+    /// 2. shipment_ttl_extension (u32)
+    /// 3. min_status_update_interval (u64)
+    /// 4. batch_operation_limit (u32)
+    /// 5. max_metadata_entries (u32)
+    /// 6. default_shipment_limit (u32)
+    /// 7. multisig_min_admins (u32)
+    /// 8. multisig_max_admins (u32)
+    /// 9. proposal_expiry_seconds (u64)
+    /// 10. deadline_grace_seconds (u64)
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    ///
+    /// # Returns
+    /// * `Result<BytesN<32>, NavinError>` - The SHA-256 checksum of the config.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let checksum = contract.get_config_checksum(&env)?;
+    /// // Indexer can verify: checksum == sha256(serialized_config)
+    /// ```
+    pub fn get_config_checksum(env: Env) -> Result<BytesN<32>, NavinError> {
+        require_initialized(&env)?;
+        
+        // Retrieve stored checksum, or compute it if not yet stored
+        match config::get_config_checksum(&env) {
+            Some(checksum) => Ok(checksum),
+            None => {
+                // Fallback: compute checksum from current config
+                let current_config = config::get_config(&env);
+                Ok(config::compute_config_checksum(&current_config))
+            }
+        }
+    }
+
     /// Add a carrier to a company's whitelist.
     /// Only the company can add carriers to their own whitelist.
     ///

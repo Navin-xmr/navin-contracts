@@ -9216,3 +9216,6 @@ fn test_shipment_notes_unauthorized() {
     // Outsider cannot append
     client.append_note_hash(&outsider, &shipment_id, &note_hash);
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────────

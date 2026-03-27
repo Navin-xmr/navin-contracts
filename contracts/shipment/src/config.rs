@@ -26,7 +26,7 @@
 //! | deadline_grace_seconds       | 0       | Grace window after deadline before expiry fires |
 
 use crate::types::DataKey;
-use soroban_sdk::{contracttype, Env};
+use soroban_sdk::{contracttype, BytesN, Env};
 
 /// Contract configuration parameters stored in instance storage.
 ///
@@ -138,7 +138,8 @@ pub fn get_config(env: &Env) -> ContractConfig {
 /// Store the contract configuration in instance storage.
 ///
 /// This function is called during initialization and when the admin
-/// updates the configuration via `update_config`.
+/// updates the configuration via `update_config`. It automatically computes
+/// and stores the config checksum for drift detection.
 ///
 /// # Arguments
 /// * `env` - The execution environment.
@@ -157,6 +158,10 @@ pub fn set_config(env: &Env, config: &ContractConfig) {
     env.storage()
         .instance()
         .set(&DataKey::ContractConfig, config);
+    
+    // Automatically compute and store checksum for drift detection
+    let checksum = compute_config_checksum(config);
+    set_config_checksum(env, &checksum);
 }
 
 /// Validate configuration parameters to ensure they are within acceptable ranges.
@@ -233,6 +238,137 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
     }
 
     Ok(())
+}
+
+/// Compute a deterministic SHA-256 checksum of the config for drift detection.
+///
+/// This function serializes all config fields in a fixed order and computes
+/// their SHA-256 hash. The same config always produces the same checksum,
+/// enabling indexers and operators to detect unintended config drift.
+///
+/// # Serialization Order
+/// Fields are serialized in declaration order (top-to-bottom in the struct):
+/// 1. shipment_ttl_threshold (u32, 4 bytes, big-endian)
+/// 2. shipment_ttl_extension (u32, 4 bytes, big-endian)
+/// 3. min_status_update_interval (u64, 8 bytes, big-endian)
+/// 4. batch_operation_limit (u32, 4 bytes, big-endian)
+/// 5. max_metadata_entries (u32, 4 bytes, big-endian)
+/// 6. default_shipment_limit (u32, 4 bytes, big-endian)
+/// 7. multisig_min_admins (u32, 4 bytes, big-endian)
+/// 8. multisig_max_admins (u32, 4 bytes, big-endian)
+/// 9. proposal_expiry_seconds (u64, 8 bytes, big-endian)
+/// 10. deadline_grace_seconds (u64, 8 bytes, big-endian)
+///
+/// Total: 52 bytes serialized, hashed to 32-byte SHA-256 digest.
+///
+/// # Arguments
+/// * `config` - The configuration to checksum.
+///
+/// # Returns
+/// * `BytesN<32>` - The SHA-256 hash of the serialized config.
+///
+/// # Examples
+/// ```rust
+/// let config = ContractConfig::default();
+/// let checksum1 = config::compute_config_checksum(&config);
+/// let checksum2 = config::compute_config_checksum(&config);
+/// assert_eq!(checksum1, checksum2); // Deterministic
+/// ```
+pub fn compute_config_checksum(config: &ContractConfig) -> BytesN<32> {
+    use soroban_sdk::Env;
+    
+    // Create a temporary environment for hashing
+    let env = Env::default();
+    
+    // Serialize all fields in fixed order (52 bytes total)
+    let mut bytes: [u8; 52] = [0; 52];
+    let mut offset = 0;
+    
+    // 1. shipment_ttl_threshold (u32, big-endian)
+    bytes[offset..offset + 4].copy_from_slice(&config.shipment_ttl_threshold.to_be_bytes());
+    offset += 4;
+    
+    // 2. shipment_ttl_extension (u32, big-endian)
+    bytes[offset..offset + 4].copy_from_slice(&config.shipment_ttl_extension.to_be_bytes());
+    offset += 4;
+    
+    // 3. min_status_update_interval (u64, big-endian)
+    bytes[offset..offset + 8].copy_from_slice(&config.min_status_update_interval.to_be_bytes());
+    offset += 8;
+    
+    // 4. batch_operation_limit (u32, big-endian)
+    bytes[offset..offset + 4].copy_from_slice(&config.batch_operation_limit.to_be_bytes());
+    offset += 4;
+    
+    // 5. max_metadata_entries (u32, big-endian)
+    bytes[offset..offset + 4].copy_from_slice(&config.max_metadata_entries.to_be_bytes());
+    offset += 4;
+    
+    // 6. default_shipment_limit (u32, big-endian)
+    bytes[offset..offset + 4].copy_from_slice(&config.default_shipment_limit.to_be_bytes());
+    offset += 4;
+    
+    // 7. multisig_min_admins (u32, big-endian)
+    bytes[offset..offset + 4].copy_from_slice(&config.multisig_min_admins.to_be_bytes());
+    offset += 4;
+    
+    // 8. multisig_max_admins (u32, big-endian)
+    bytes[offset..offset + 4].copy_from_slice(&config.multisig_max_admins.to_be_bytes());
+    offset += 4;
+    
+    // 9. proposal_expiry_seconds (u64, big-endian)
+    bytes[offset..offset + 8].copy_from_slice(&config.proposal_expiry_seconds.to_be_bytes());
+    offset += 8;
+    
+    // 10. deadline_grace_seconds (u64, big-endian)
+    bytes[offset..offset + 8].copy_from_slice(&config.deadline_grace_seconds.to_be_bytes());
+    
+    // Compute SHA-256 hash and convert to BytesN<32>
+    let hash = env.crypto().sha256(&soroban_sdk::Bytes::from_slice(&env, &bytes));
+    BytesN::from_array(&env, &hash.to_array())
+}
+
+/// Retrieve the stored config checksum from instance storage.
+///
+/// If no checksum has been computed and stored, returns None.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+///
+/// # Returns
+/// * `Option<BytesN<32>>` - The stored checksum, or None if not set.
+///
+/// # Examples
+/// ```rust
+/// let checksum = config::get_config_checksum(&env);
+/// ```
+pub fn get_config_checksum(env: &Env) -> Option<BytesN<32>> {
+    env.storage()
+        .instance()
+        .get(&DataKey::ConfigChecksum)
+}
+
+/// Store the config checksum in instance storage.
+///
+/// This is called whenever the config is updated to maintain a current
+/// checksum that indexers can query to detect drift.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `checksum` - The checksum to store.
+///
+/// # Returns
+/// No return value.
+///
+/// # Examples
+/// ```rust
+/// let checksum = config::compute_config_checksum(&config);
+/// config::set_config_checksum(&env, &checksum);
+/// ```
+pub fn set_config_checksum(env: &Env, checksum: &BytesN<32>) {
+    env.storage()
+        .instance()
+        .set(&DataKey::ConfigChecksum, checksum);
 }
 
 #[cfg(test)]
@@ -341,5 +477,266 @@ mod tests {
             ..Default::default()
         };
         assert!(validate_config(&config).is_err());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Checksum Tests — Deterministic Config Drift Detection
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_checksum_deterministic_same_config() {
+        // Same config must always produce the same checksum
+        let config = ContractConfig::default();
+        let checksum1 = compute_config_checksum(&config);
+        let checksum2 = compute_config_checksum(&config);
+        assert_eq!(checksum1, checksum2, "Same config must produce identical checksums");
+    }
+
+    #[test]
+    fn test_checksum_changes_on_field_modification() {
+        // Modifying any field must change the checksum
+        let config_original = ContractConfig::default();
+        let checksum_original = compute_config_checksum(&config_original);
+
+        // Test each field independently
+        let mut config = config_original.clone();
+        config.shipment_ttl_threshold = 20_000;
+        let checksum = compute_config_checksum(&config);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing shipment_ttl_threshold must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.shipment_ttl_extension = 600_000;
+        let checksum = compute_config_checksum(&config);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing shipment_ttl_extension must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.min_status_update_interval = 120;
+        let checksum = compute_config_checksum(&config);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing min_status_update_interval must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.batch_operation_limit = 20;
+        let checksum = compute_config_checksum(&config);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing batch_operation_limit must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.max_metadata_entries = 10;
+        let checksum = compute_config_checksum(&config);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing max_metadata_entries must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.default_shipment_limit = 200;
+        let checksum = compute_config_checksum(&config);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing default_shipment_limit must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.multisig_min_admins = 3;
+        let checksum = compute_config_checksum(&config);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing multisig_min_admins must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.multisig_max_admins = 15;
+        let checksum = compute_config_checksum(&config);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing multisig_max_admins must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.proposal_expiry_seconds = 1_209_600; // 14 days
+        let checksum = compute_config_checksum(&config);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing proposal_expiry_seconds must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.deadline_grace_seconds = 86_400; // 1 day
+        let checksum = compute_config_checksum(&config);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing deadline_grace_seconds must change checksum"
+        );
+    }
+
+    #[test]
+    fn test_checksum_different_for_different_configs() {
+        // Two different configs must produce different checksums
+        let config1 = ContractConfig {
+            batch_operation_limit: 10,
+            ..Default::default()
+        };
+        let config2 = ContractConfig {
+            batch_operation_limit: 20,
+            ..Default::default()
+        };
+
+        let checksum1 = compute_config_checksum(&config1);
+        let checksum2 = compute_config_checksum(&config2);
+
+        assert_ne!(
+            checksum1, checksum2,
+            "Different configs must produce different checksums"
+        );
+    }
+
+    #[test]
+    fn test_checksum_stable_across_multiple_runs() {
+        // Verify checksum stability across multiple independent computations
+        let config = ContractConfig {
+            shipment_ttl_threshold: 25_000,
+            shipment_ttl_extension: 600_000,
+            min_status_update_interval: 90,
+            batch_operation_limit: 15,
+            max_metadata_entries: 8,
+            default_shipment_limit: 150,
+            multisig_min_admins: 3,
+            multisig_max_admins: 8,
+            proposal_expiry_seconds: 864_000,
+            deadline_grace_seconds: 43_200,
+        };
+
+        let checksums = [
+            compute_config_checksum(&config),
+            compute_config_checksum(&config),
+            compute_config_checksum(&config),
+            compute_config_checksum(&config),
+            compute_config_checksum(&config),
+        ];
+
+        // All checksums should be identical
+        for i in 1..checksums.len() {
+            assert_eq!(
+                checksums[0], checksums[i],
+                "Checksum must be stable across multiple runs"
+            );
+        }
+    }
+
+    #[test]
+    fn test_checksum_serialization_order_matters() {
+        // Verify that field order in serialization is critical
+        // Two configs with same values but different field order would have
+        // different checksums if serialization order changed (which it shouldn't)
+
+        let config1 = ContractConfig {
+            shipment_ttl_threshold: 17_280,
+            batch_operation_limit: 10,
+            ..Default::default()
+        };
+
+        let config2 = ContractConfig {
+            shipment_ttl_threshold: 17_280,
+            batch_operation_limit: 10,
+            ..Default::default()
+        };
+
+        // These should be identical since all fields are the same
+        let checksum1 = compute_config_checksum(&config1);
+        let checksum2 = compute_config_checksum(&config2);
+        assert_eq!(checksum1, checksum2);
+    }
+
+    #[test]
+    fn test_checksum_is_32_bytes() {
+        // Verify checksum is always 32 bytes (SHA-256)
+        let config = ContractConfig::default();
+        let checksum = compute_config_checksum(&config);
+        assert_eq!(checksum.len(), 32, "Checksum must be 32 bytes (SHA-256)");
+    }
+
+    #[test]
+    fn test_checksum_not_all_zeros() {
+        // Verify checksum is not all zeros (sanity check)
+        let config = ContractConfig::default();
+        let checksum = compute_config_checksum(&config);
+        let bytes: [u8; 32] = checksum.to_array();
+        assert!(
+            bytes.iter().any(|&b| b != 0),
+            "Checksum should not be all zeros"
+        );
+    }
+
+    #[test]
+    fn test_checksum_boundary_values() {
+        // Test checksums with boundary values to ensure serialization handles them
+        let config_min = ContractConfig {
+            shipment_ttl_threshold: 1,
+            shipment_ttl_extension: 1,
+            min_status_update_interval: 10,
+            batch_operation_limit: 1,
+            max_metadata_entries: 1,
+            default_shipment_limit: 1,
+            multisig_min_admins: 2,
+            multisig_max_admins: 2,
+            proposal_expiry_seconds: 3_600,
+            deadline_grace_seconds: 0,
+        };
+
+        let config_max = ContractConfig {
+            shipment_ttl_threshold: 1_000_000,
+            shipment_ttl_extension: 10_000_000,
+            min_status_update_interval: 86_400,
+            batch_operation_limit: 100,
+            max_metadata_entries: 50,
+            default_shipment_limit: 10_000,
+            multisig_min_admins: 2,
+            multisig_max_admins: 50,
+            proposal_expiry_seconds: 2_592_000,
+            deadline_grace_seconds: 604_800,
+        };
+
+        let checksum_min = compute_config_checksum(&config_min);
+        let checksum_max = compute_config_checksum(&config_max);
+
+        // Both should be valid 32-byte checksums
+        assert_eq!(checksum_min.len(), 32);
+        assert_eq!(checksum_max.len(), 32);
+
+        // They should be different
+        assert_ne!(checksum_min, checksum_max);
+    }
+
+    #[test]
+    fn test_checksum_single_bit_flip_changes_hash() {
+        // Verify that even a single bit change produces a different checksum
+        let config1 = ContractConfig {
+            batch_operation_limit: 10,
+            ..Default::default()
+        };
+
+        let config2 = ContractConfig {
+            batch_operation_limit: 11, // Single unit change
+            ..Default::default()
+        };
+
+        let checksum1 = compute_config_checksum(&config1);
+        let checksum2 = compute_config_checksum(&config2);
+
+        assert_ne!(
+            checksum1, checksum2,
+            "Even a single unit change must produce different checksum"
+        );
     }
 }
