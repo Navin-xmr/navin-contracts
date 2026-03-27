@@ -20,6 +20,10 @@ mod validation;
 #[cfg(test)]
 mod test_auth;
 #[cfg(test)]
+mod test_iot_verification;
+#[cfg(test)]
+mod test_pause;
+#[cfg(test)]
 mod test_preflight;
 #[cfg(test)]
 mod test_suspension;
@@ -223,6 +227,13 @@ fn require_initialized(env: &Env) -> Result<(), NavinError> {
     Ok(())
 }
 
+fn require_not_paused(env: &Env) -> Result<(), NavinError> {
+    if storage::is_paused(env) {
+        return Err(NavinError::ContractPaused);
+    }
+    Ok(())
+}
+
 fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinError> {
     require_initialized(env)?;
 
@@ -319,6 +330,7 @@ impl NavinShipment {
         value: Symbol,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         caller.require_auth();
 
         // Validate metadata symbols for bounded usage before storage
@@ -374,6 +386,7 @@ impl NavinShipment {
         note_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         reporter.require_auth();
 
         // Validate hash before storage
@@ -426,6 +439,7 @@ impl NavinShipment {
         evidence_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         reporter.require_auth();
 
         // Validate hash before storage
@@ -807,6 +821,7 @@ impl NavinShipment {
         carrier: Address,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         company.require_auth();
         require_role(&env, &company, Role::Company)?;
 
@@ -844,6 +859,7 @@ impl NavinShipment {
         carrier: Address,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         company.require_auth();
         require_role(&env, &company, Role::Company)?;
 
@@ -926,6 +942,7 @@ impl NavinShipment {
     /// ```
     pub fn add_company(env: Env, admin: Address, company: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -966,6 +983,7 @@ impl NavinShipment {
     /// ```
     pub fn add_carrier(env: Env, admin: Address, carrier: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -991,6 +1009,7 @@ impl NavinShipment {
     /// Only the admin can call this function.
     pub fn suspend_carrier(env: Env, admin: Address, carrier: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -1012,6 +1031,7 @@ impl NavinShipment {
         carrier: Address,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -1056,6 +1076,7 @@ impl NavinShipment {
     /// ```
     pub fn revoke_role(env: Env, admin: Address, target: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -1112,6 +1133,7 @@ impl NavinShipment {
     /// ```
     pub fn suspend_role(env: Env, admin: Address, target: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -1166,6 +1188,7 @@ impl NavinShipment {
     /// ```
     pub fn reactivate_role(env: Env, admin: Address, target: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -1196,6 +1219,7 @@ impl NavinShipment {
     /// Suspend a company from creating or updating shipments.
     pub fn suspend_company(env: Env, admin: Address, company: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -1227,6 +1251,7 @@ impl NavinShipment {
         company: Address,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -1283,6 +1308,7 @@ impl NavinShipment {
         deadline: u64,
     ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         sender.require_auth();
         require_role(&env, &sender, Role::Company)?;
         validate_milestones(&env, &payment_milestones)?;
@@ -1384,6 +1410,7 @@ impl NavinShipment {
         shipments: Vec<ShipmentInput>,
     ) -> Result<Vec<u64>, NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         sender.require_auth();
         require_role(&env, &sender, Role::Company)?;
 
@@ -1595,6 +1622,7 @@ impl NavinShipment {
         amount: i128,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         from.require_auth();
         require_role(&env, &from, Role::Company)?;
 
@@ -1666,6 +1694,7 @@ impl NavinShipment {
         data_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         caller.require_auth();
 
         let admin = storage::get_admin(&env);
@@ -1723,6 +1752,9 @@ impl NavinShipment {
 
         storage::set_last_status_update(&env, shipment_id, env.ledger().timestamp());
         extend_shipment_ttl(&env, shipment_id);
+
+        // Store the data hash for this status transition (IoT verification)
+        storage::set_status_hash(&env, shipment_id, &new_status, &data_hash);
 
         events::emit_status_updated(&env, shipment_id, &old_status, &new_status, &data_hash);
         events::emit_notification(
@@ -1940,6 +1972,7 @@ impl NavinShipment {
         confirmation_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         receiver.require_auth();
 
         let mut shipment =
@@ -2165,6 +2198,7 @@ impl NavinShipment {
         data_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
         require_active_carrier(&env, &carrier)?;
@@ -2267,6 +2301,7 @@ impl NavinShipment {
         milestones: Vec<(Symbol, BytesN<32>)>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
         require_active_carrier(&env, &carrier)?;
@@ -2412,6 +2447,7 @@ impl NavinShipment {
         reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         caller.require_auth();
 
         let admin = storage::get_admin(&env);
@@ -2508,6 +2544,7 @@ impl NavinShipment {
         reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         // Strict admin-only gate — no company/carrier bypass.
@@ -2800,6 +2837,7 @@ impl NavinShipment {
         reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         caller.require_auth();
 
         let mut shipment =
@@ -2885,6 +2923,7 @@ impl NavinShipment {
         reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -3748,5 +3787,166 @@ impl NavinShipment {
         Ok(soroban_sdk::String::from_str(&env, unsafe {
             core::str::from_utf8_unchecked(&hex_chars)
         }))
+    }
+
+    /// Pause the contract, disabling all state-changing operations.
+    /// Only the admin can pause the contract. Read-only queries still work.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - The admin address pausing the contract.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if successfully paused.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not the admin.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // contract.pause(&env, &admin);
+    /// ```
+    pub fn pause(env: Env, admin: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::set_paused(&env, true);
+        events::emit_contract_paused(&env, &admin);
+
+        Ok(())
+    }
+
+    /// Unpause the contract, re-enabling state-changing operations.
+    /// Only the admin can unpause the contract.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - The admin address unpausing the contract.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if successfully unpaused.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not the admin.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // contract.unpause(&env, &admin);
+    /// ```
+    pub fn unpause(env: Env, admin: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::set_paused(&env, false);
+        events::emit_contract_unpaused(&env, &admin);
+
+        Ok(())
+    }
+
+    /// Check if the contract is currently paused.
+    /// Read-only function, no authentication required.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    ///
+    /// # Returns
+    /// * `Result<bool, NavinError>` - True if paused, false otherwise.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let paused = contract.is_paused(&env)?;
+    /// ```
+    pub fn is_paused(env: Env) -> Result<bool, NavinError> {
+        require_initialized(&env)?;
+        Ok(storage::is_paused(&env))
+    }
+
+    /// Get the status hash for a shipment at a specific status point.
+    /// Read-only function, no authentication required.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - The ID of the shipment.
+    /// * `status` - The status to retrieve the hash for.
+    ///
+    /// # Returns
+    /// * `Result<BytesN<32>, NavinError>` - The data hash recorded at that status.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
+    /// * `NavinError::StatusHashNotFound` - If no hash was recorded for that status.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let hash = contract.get_status_hash(&env, 1, &ShipmentStatus::InTransit)?;
+    /// ```
+    pub fn get_status_hash(
+        env: Env,
+        shipment_id: u64,
+        status: ShipmentStatus,
+    ) -> Result<BytesN<32>, NavinError> {
+        require_initialized(&env)?;
+
+        // Verify shipment exists
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+
+        storage::get_status_hash(&env, shipment_id, &status).ok_or(NavinError::StatusHashNotFound)
+    }
+
+    /// Verify that a given data hash matches what was recorded on-chain for a
+    /// shipment at a specific status point.
+    /// Read-only function, no authentication required.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - The ID of the shipment.
+    /// * `status` - The status to verify against.
+    /// * `expected_hash` - The hash to verify.
+    ///
+    /// # Returns
+    /// * `Result<bool, NavinError>` - True if the hash matches, false otherwise.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
+    /// * `NavinError::StatusHashNotFound` - If no hash was recorded for that status.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let verified = contract.verify_data_hash(&env, 1, &ShipmentStatus::InTransit, &hash)?;
+    /// ```
+    pub fn verify_data_hash(
+        env: Env,
+        shipment_id: u64,
+        status: ShipmentStatus,
+        expected_hash: BytesN<32>,
+    ) -> Result<bool, NavinError> {
+        require_initialized(&env)?;
+
+        // Verify shipment exists
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+
+        let stored_hash = storage::get_status_hash(&env, shipment_id, &status)
+            .ok_or(NavinError::StatusHashNotFound)?;
+
+        Ok(stored_hash == expected_hash)
     }
 }

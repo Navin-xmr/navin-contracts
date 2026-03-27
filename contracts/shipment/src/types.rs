@@ -79,6 +79,10 @@ pub enum DataKey {
     ConfigChecksum,
     /// Temporary idempotency window key — present while the action hash is within its window.
     IdempotencyWindow(BytesN<32>),
+    /// IoT sensor data hash stored per shipment status transition.
+    StatusHash(u64, ShipmentStatus),
+    /// Contract pause state flag.
+    IsPaused,
 }
 
 /// Supported user roles.
