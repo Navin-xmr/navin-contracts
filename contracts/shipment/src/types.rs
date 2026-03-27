@@ -75,6 +75,8 @@ pub enum DataKey {
     DisputeEvidence(u64, u32),
     /// Total number of evidence hashes appended to a shipment dispute.
     DisputeEvidenceCount(u64),
+    /// SHA-256 checksum of critical config fields for drift detection.
+    ConfigChecksum,
     /// Temporary idempotency window key — present while the action hash is within its window.
     IdempotencyWindow(BytesN<32>),
 }
