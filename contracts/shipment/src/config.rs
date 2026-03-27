@@ -623,6 +623,7 @@ mod tests {
             multisig_max_admins: 8,
             proposal_expiry_seconds: 864_000,
             deadline_grace_seconds: 43_200,
+            idempotency_window_seconds: 300,
         };
 
         let checksums = [
@@ -704,6 +705,7 @@ mod tests {
             multisig_max_admins: 2,
             proposal_expiry_seconds: 3_600,
             deadline_grace_seconds: 0,
+            idempotency_window_seconds: 0,
         };
 
         let config_max = ContractConfig {
@@ -717,6 +719,7 @@ mod tests {
             multisig_max_admins: 50,
             proposal_expiry_seconds: 2_592_000,
             deadline_grace_seconds: 604_800,
+            idempotency_window_seconds: 86_400,
         };
 
         let checksum_min = compute_config_checksum(&config_min, &env);
