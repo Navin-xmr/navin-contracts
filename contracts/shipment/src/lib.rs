@@ -70,7 +70,8 @@ fn checked_mul_div_i128(value: i128, multiplier: i128, divisor: i128) -> Result<
 }
 
 fn finalize_if_settled(_env: &Env, shipment: &mut Shipment) {
-    if (shipment.status == ShipmentStatus::Delivered || shipment.status == ShipmentStatus::Cancelled)
+    if (shipment.status == ShipmentStatus::Delivered
+        || shipment.status == ShipmentStatus::Cancelled)
         && shipment.escrow_amount == 0
     {
         shipment.finalized = true;

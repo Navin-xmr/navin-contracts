@@ -1,12 +1,5 @@
-#![cfg(test)]
-
-use crate::{
-    NavinShipment, NavinShipmentClient, ShipmentStatus,
-};
-use soroban_sdk::{
-    testutils::{Address as _},
-    Address, BytesN, Env, Symbol, Vec,
-};
+use crate::{NavinShipment, NavinShipmentClient, ShipmentStatus};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Symbol, Vec};
 
 #[soroban_sdk::contract]
 struct MockToken;
@@ -17,7 +10,7 @@ impl MockToken {
 
 fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
     let (env, admin) = crate::test_utils::setup_env();
-    
+
     let token_contract = env.register(MockToken {}, ());
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
 
@@ -37,7 +30,14 @@ fn test_finalization_on_delivery_settlement() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &Vec::new(&env), &deadline);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
 
     // Initial state: not finalized
     let shipment = client.get_shipment(&shipment_id);
@@ -47,7 +47,12 @@ fn test_finalization_on_delivery_settlement() {
     client.deposit_escrow(&company, &shipment_id, &1000);
 
     // Step 2: Transition to Delivered - this should release remaining escrow and finalize
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
     client.confirm_delivery(&receiver, &shipment_id, &data_hash);
 
     // Should be finalized because status is Delivered and escrow is released (cleared to 0)
@@ -69,7 +74,14 @@ fn test_finalization_on_cancel_with_zero_escrow() {
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &Vec::new(&env), &deadline);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
 
     // Initial state: not finalized
     let shipment = client.get_shipment(&shipment_id);
@@ -97,7 +109,14 @@ fn test_mutation_rejected_after_finalization() {
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &Vec::new(&env), &deadline);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
 
     // Finalize it
     client.cancel_shipment(&company, &shipment_id, &data_hash);
@@ -105,7 +124,12 @@ fn test_mutation_rejected_after_finalization() {
     assert!(shipment.finalized);
 
     // Try to update metadata - should panic with ShipmentFinalized (37)
-    client.set_shipment_metadata(&company, &shipment_id, &Symbol::new(&env, "key"), &Symbol::new(&env, "val"));
+    client.set_shipment_metadata(
+        &company,
+        &shipment_id,
+        &Symbol::new(&env, "key"),
+        &Symbol::new(&env, "val"),
+    );
 }
 
 #[test]
@@ -120,7 +144,14 @@ fn test_archival_permitted_after_finalization() {
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
 
-    let shipment_id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &Vec::new(&env), &deadline);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
 
     // Finalize it
     client.cancel_shipment(&company, &shipment_id, &data_hash);
@@ -129,7 +160,7 @@ fn test_archival_permitted_after_finalization() {
 
     // Archiving should succeed (proving the finalize lock exception)
     client.archive_shipment(&admin, &shipment_id);
-    
+
     // Verify it's still readable (fallback to temporary storage works)
     let archived = client.get_shipment(&shipment_id);
     assert_eq!(archived.id, shipment_id);
