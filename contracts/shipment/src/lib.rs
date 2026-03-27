@@ -743,14 +743,14 @@ impl NavinShipment {
     /// ```
     pub fn get_config_checksum(env: Env) -> Result<BytesN<32>, NavinError> {
         require_initialized(&env)?;
-        
+
         // Retrieve stored checksum, or compute it if not yet stored
         match config::get_config_checksum(&env) {
             Some(checksum) => Ok(checksum),
             None => {
                 // Fallback: compute checksum from current config
                 let current_config = config::get_config(&env);
-                Ok(config::compute_config_checksum(&current_config))
+                Ok(config::compute_config_checksum(&current_config, &env))
             }
         }
     }

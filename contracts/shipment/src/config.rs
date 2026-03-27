@@ -158,9 +158,9 @@ pub fn set_config(env: &Env, config: &ContractConfig) {
     env.storage()
         .instance()
         .set(&DataKey::ContractConfig, config);
-    
+
     // Automatically compute and store checksum for drift detection
-    let checksum = compute_config_checksum(config);
+    let checksum = compute_config_checksum(config, env);
     set_config_checksum(env, &checksum);
 }
 
@@ -274,58 +274,55 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// let checksum2 = config::compute_config_checksum(&config);
 /// assert_eq!(checksum1, checksum2); // Deterministic
 /// ```
-pub fn compute_config_checksum(config: &ContractConfig) -> BytesN<32> {
-    use soroban_sdk::Env;
-    
-    // Create a temporary environment for hashing
-    let env = Env::default();
-    
+pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32> {
     // Serialize all fields in fixed order (52 bytes total)
     let mut bytes: [u8; 52] = [0; 52];
     let mut offset = 0;
-    
+
     // 1. shipment_ttl_threshold (u32, big-endian)
     bytes[offset..offset + 4].copy_from_slice(&config.shipment_ttl_threshold.to_be_bytes());
     offset += 4;
-    
+
     // 2. shipment_ttl_extension (u32, big-endian)
     bytes[offset..offset + 4].copy_from_slice(&config.shipment_ttl_extension.to_be_bytes());
     offset += 4;
-    
+
     // 3. min_status_update_interval (u64, big-endian)
     bytes[offset..offset + 8].copy_from_slice(&config.min_status_update_interval.to_be_bytes());
     offset += 8;
-    
+
     // 4. batch_operation_limit (u32, big-endian)
     bytes[offset..offset + 4].copy_from_slice(&config.batch_operation_limit.to_be_bytes());
     offset += 4;
-    
+
     // 5. max_metadata_entries (u32, big-endian)
     bytes[offset..offset + 4].copy_from_slice(&config.max_metadata_entries.to_be_bytes());
     offset += 4;
-    
+
     // 6. default_shipment_limit (u32, big-endian)
     bytes[offset..offset + 4].copy_from_slice(&config.default_shipment_limit.to_be_bytes());
     offset += 4;
-    
+
     // 7. multisig_min_admins (u32, big-endian)
     bytes[offset..offset + 4].copy_from_slice(&config.multisig_min_admins.to_be_bytes());
     offset += 4;
-    
+
     // 8. multisig_max_admins (u32, big-endian)
     bytes[offset..offset + 4].copy_from_slice(&config.multisig_max_admins.to_be_bytes());
     offset += 4;
-    
+
     // 9. proposal_expiry_seconds (u64, big-endian)
     bytes[offset..offset + 8].copy_from_slice(&config.proposal_expiry_seconds.to_be_bytes());
     offset += 8;
-    
+
     // 10. deadline_grace_seconds (u64, big-endian)
     bytes[offset..offset + 8].copy_from_slice(&config.deadline_grace_seconds.to_be_bytes());
-    
+
     // Compute SHA-256 hash and convert to BytesN<32>
-    let hash = env.crypto().sha256(&soroban_sdk::Bytes::from_slice(&env, &bytes));
-    BytesN::from_array(&env, &hash.to_array())
+    let hash = env
+        .crypto()
+        .sha256(&soroban_sdk::Bytes::from_slice(env, &bytes));
+    BytesN::from_array(env, &hash.to_array())
 }
 
 /// Retrieve the stored config checksum from instance storage.
@@ -343,9 +340,7 @@ pub fn compute_config_checksum(config: &ContractConfig) -> BytesN<32> {
 /// let checksum = config::get_config_checksum(&env);
 /// ```
 pub fn get_config_checksum(env: &Env) -> Option<BytesN<32>> {
-    env.storage()
-        .instance()
-        .get(&DataKey::ConfigChecksum)
+    env.storage().instance().get(&DataKey::ConfigChecksum)
 }
 
 /// Store the config checksum in instance storage.
@@ -486,22 +481,27 @@ mod tests {
     #[test]
     fn test_checksum_deterministic_same_config() {
         // Same config must always produce the same checksum
+        let env = Env::default();
         let config = ContractConfig::default();
-        let checksum1 = compute_config_checksum(&config);
-        let checksum2 = compute_config_checksum(&config);
-        assert_eq!(checksum1, checksum2, "Same config must produce identical checksums");
+        let checksum1 = compute_config_checksum(&config, &env);
+        let checksum2 = compute_config_checksum(&config, &env);
+        assert_eq!(
+            checksum1, checksum2,
+            "Same config must produce identical checksums"
+        );
     }
 
     #[test]
     fn test_checksum_changes_on_field_modification() {
         // Modifying any field must change the checksum
+        let env = Env::default();
         let config_original = ContractConfig::default();
-        let checksum_original = compute_config_checksum(&config_original);
+        let checksum_original = compute_config_checksum(&config_original, &env);
 
         // Test each field independently
         let mut config = config_original.clone();
         config.shipment_ttl_threshold = 20_000;
-        let checksum = compute_config_checksum(&config);
+        let checksum = compute_config_checksum(&config, &env);
         assert_ne!(
             checksum, checksum_original,
             "Changing shipment_ttl_threshold must change checksum"
@@ -509,7 +509,7 @@ mod tests {
 
         let mut config = config_original.clone();
         config.shipment_ttl_extension = 600_000;
-        let checksum = compute_config_checksum(&config);
+        let checksum = compute_config_checksum(&config, &env);
         assert_ne!(
             checksum, checksum_original,
             "Changing shipment_ttl_extension must change checksum"
@@ -517,7 +517,7 @@ mod tests {
 
         let mut config = config_original.clone();
         config.min_status_update_interval = 120;
-        let checksum = compute_config_checksum(&config);
+        let checksum = compute_config_checksum(&config, &env);
         assert_ne!(
             checksum, checksum_original,
             "Changing min_status_update_interval must change checksum"
@@ -525,7 +525,7 @@ mod tests {
 
         let mut config = config_original.clone();
         config.batch_operation_limit = 20;
-        let checksum = compute_config_checksum(&config);
+        let checksum = compute_config_checksum(&config, &env);
         assert_ne!(
             checksum, checksum_original,
             "Changing batch_operation_limit must change checksum"
@@ -533,7 +533,7 @@ mod tests {
 
         let mut config = config_original.clone();
         config.max_metadata_entries = 10;
-        let checksum = compute_config_checksum(&config);
+        let checksum = compute_config_checksum(&config, &env);
         assert_ne!(
             checksum, checksum_original,
             "Changing max_metadata_entries must change checksum"
@@ -541,7 +541,7 @@ mod tests {
 
         let mut config = config_original.clone();
         config.default_shipment_limit = 200;
-        let checksum = compute_config_checksum(&config);
+        let checksum = compute_config_checksum(&config, &env);
         assert_ne!(
             checksum, checksum_original,
             "Changing default_shipment_limit must change checksum"
@@ -549,7 +549,7 @@ mod tests {
 
         let mut config = config_original.clone();
         config.multisig_min_admins = 3;
-        let checksum = compute_config_checksum(&config);
+        let checksum = compute_config_checksum(&config, &env);
         assert_ne!(
             checksum, checksum_original,
             "Changing multisig_min_admins must change checksum"
@@ -557,7 +557,7 @@ mod tests {
 
         let mut config = config_original.clone();
         config.multisig_max_admins = 15;
-        let checksum = compute_config_checksum(&config);
+        let checksum = compute_config_checksum(&config, &env);
         assert_ne!(
             checksum, checksum_original,
             "Changing multisig_max_admins must change checksum"
@@ -565,7 +565,7 @@ mod tests {
 
         let mut config = config_original.clone();
         config.proposal_expiry_seconds = 1_209_600; // 14 days
-        let checksum = compute_config_checksum(&config);
+        let checksum = compute_config_checksum(&config, &env);
         assert_ne!(
             checksum, checksum_original,
             "Changing proposal_expiry_seconds must change checksum"
@@ -573,7 +573,7 @@ mod tests {
 
         let mut config = config_original.clone();
         config.deadline_grace_seconds = 86_400; // 1 day
-        let checksum = compute_config_checksum(&config);
+        let checksum = compute_config_checksum(&config, &env);
         assert_ne!(
             checksum, checksum_original,
             "Changing deadline_grace_seconds must change checksum"
@@ -583,6 +583,7 @@ mod tests {
     #[test]
     fn test_checksum_different_for_different_configs() {
         // Two different configs must produce different checksums
+        let env = Env::default();
         let config1 = ContractConfig {
             batch_operation_limit: 10,
             ..Default::default()
@@ -592,8 +593,8 @@ mod tests {
             ..Default::default()
         };
 
-        let checksum1 = compute_config_checksum(&config1);
-        let checksum2 = compute_config_checksum(&config2);
+        let checksum1 = compute_config_checksum(&config1, &env);
+        let checksum2 = compute_config_checksum(&config2, &env);
 
         assert_ne!(
             checksum1, checksum2,
@@ -604,6 +605,7 @@ mod tests {
     #[test]
     fn test_checksum_stable_across_multiple_runs() {
         // Verify checksum stability across multiple independent computations
+        let env = Env::default();
         let config = ContractConfig {
             shipment_ttl_threshold: 25_000,
             shipment_ttl_extension: 600_000,
@@ -618,11 +620,11 @@ mod tests {
         };
 
         let checksums = [
-            compute_config_checksum(&config),
-            compute_config_checksum(&config),
-            compute_config_checksum(&config),
-            compute_config_checksum(&config),
-            compute_config_checksum(&config),
+            compute_config_checksum(&config, &env),
+            compute_config_checksum(&config, &env),
+            compute_config_checksum(&config, &env),
+            compute_config_checksum(&config, &env),
+            compute_config_checksum(&config, &env),
         ];
 
         // All checksums should be identical
@@ -639,6 +641,7 @@ mod tests {
         // Verify that field order in serialization is critical
         // Two configs with same values but different field order would have
         // different checksums if serialization order changed (which it shouldn't)
+        let env = Env::default();
 
         let config1 = ContractConfig {
             shipment_ttl_threshold: 17_280,
@@ -653,24 +656,26 @@ mod tests {
         };
 
         // These should be identical since all fields are the same
-        let checksum1 = compute_config_checksum(&config1);
-        let checksum2 = compute_config_checksum(&config2);
+        let checksum1 = compute_config_checksum(&config1, &env);
+        let checksum2 = compute_config_checksum(&config2, &env);
         assert_eq!(checksum1, checksum2);
     }
 
     #[test]
     fn test_checksum_is_32_bytes() {
         // Verify checksum is always 32 bytes (SHA-256)
+        let env = Env::default();
         let config = ContractConfig::default();
-        let checksum = compute_config_checksum(&config);
+        let checksum = compute_config_checksum(&config, &env);
         assert_eq!(checksum.len(), 32, "Checksum must be 32 bytes (SHA-256)");
     }
 
     #[test]
     fn test_checksum_not_all_zeros() {
         // Verify checksum is not all zeros (sanity check)
+        let env = Env::default();
         let config = ContractConfig::default();
-        let checksum = compute_config_checksum(&config);
+        let checksum = compute_config_checksum(&config, &env);
         let bytes: [u8; 32] = checksum.to_array();
         assert!(
             bytes.iter().any(|&b| b != 0),
@@ -681,6 +686,7 @@ mod tests {
     #[test]
     fn test_checksum_boundary_values() {
         // Test checksums with boundary values to ensure serialization handles them
+        let env = Env::default();
         let config_min = ContractConfig {
             shipment_ttl_threshold: 1,
             shipment_ttl_extension: 1,
@@ -707,8 +713,8 @@ mod tests {
             deadline_grace_seconds: 604_800,
         };
 
-        let checksum_min = compute_config_checksum(&config_min);
-        let checksum_max = compute_config_checksum(&config_max);
+        let checksum_min = compute_config_checksum(&config_min, &env);
+        let checksum_max = compute_config_checksum(&config_max, &env);
 
         // Both should be valid 32-byte checksums
         assert_eq!(checksum_min.len(), 32);
@@ -721,6 +727,7 @@ mod tests {
     #[test]
     fn test_checksum_single_bit_flip_changes_hash() {
         // Verify that even a single bit change produces a different checksum
+        let env = Env::default();
         let config1 = ContractConfig {
             batch_operation_limit: 10,
             ..Default::default()
@@ -731,8 +738,8 @@ mod tests {
             ..Default::default()
         };
 
-        let checksum1 = compute_config_checksum(&config1);
-        let checksum2 = compute_config_checksum(&config2);
+        let checksum1 = compute_config_checksum(&config1, &env);
+        let checksum2 = compute_config_checksum(&config2, &env);
 
         assert_ne!(
             checksum1, checksum2,

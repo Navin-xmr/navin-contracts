@@ -9217,5 +9217,4 @@ fn test_shipment_notes_unauthorized() {
     client.append_note_hash(&outsider, &shipment_id, &note_hash);
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
