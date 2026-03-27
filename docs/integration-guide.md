@@ -302,6 +302,21 @@ Use these read-only methods to render verification views without fetching the fu
 
 Both methods fail with `ShipmentNotFound` for unknown IDs, which helps frontend verification flows distinguish missing records from mismatched identities.
 
+### Restore Triage Query
+
+For pre-restore operations, call:
+
+- `get_restore_diagnostics(shipment_id: u64) -> PersistentRestoreDiagnostics`
+
+Interpretation guidance:
+
+- `ActivePersistent`: no restore path needed for the primary shipment payload.
+- `ArchivedExpected`: shipment has been archived and may require restore flow depending on operator policy.
+- `Missing`: shipment ID is absent from both persistent and archived paths.
+- `InconsistentDualPresence`: both paths are populated; investigate before any restore mutation.
+
+This method is read-only and does not mutate contract state.
+
 ```typescript
 // src/services/shipment-query.service.ts
 import {

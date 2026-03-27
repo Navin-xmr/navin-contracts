@@ -1527,6 +1527,41 @@ impl NavinShipment {
         Ok(shipment.receiver)
     }
 
+    /// Return read-only diagnostics that help operators triage restore requirements.
+    ///
+    /// This query does not mutate state. It classifies the shipment ID as active,
+    /// archived-expected, missing, or inconsistent (both active and archived present).
+    pub fn get_restore_diagnostics(
+        env: Env,
+        shipment_id: u64,
+    ) -> Result<PersistentRestoreDiagnostics, NavinError> {
+        require_initialized(&env)?;
+
+        let persistent_shipment_present = storage::has_persistent_shipment(&env, shipment_id);
+        let archived_shipment_present = storage::is_shipment_archived(&env, shipment_id);
+
+        let state = if persistent_shipment_present && archived_shipment_present {
+            StoragePresenceState::InconsistentDualPresence
+        } else if persistent_shipment_present {
+            StoragePresenceState::ActivePersistent
+        } else if archived_shipment_present {
+            StoragePresenceState::ArchivedExpected
+        } else {
+            StoragePresenceState::Missing
+        };
+
+        Ok(PersistentRestoreDiagnostics {
+            shipment_id,
+            state,
+            persistent_shipment_present,
+            archived_shipment_present,
+            escrow_present: storage::has_escrow_entry(&env, shipment_id),
+            confirmation_hash_present: storage::has_confirmation_hash_entry(&env, shipment_id),
+            last_status_update_present: storage::has_last_status_update_entry(&env, shipment_id),
+            event_count_present: storage::has_event_count_entry(&env, shipment_id),
+        })
+    }
+
     /// Deposit escrow funds for a shipment.
     /// Only a Company can deposit, and the shipment must be in Created status.
     ///

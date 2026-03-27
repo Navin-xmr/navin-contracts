@@ -355,6 +355,34 @@ pub struct ShipmentStatusCursorPage {
     pub next_cursor: Option<u64>,
 }
 
+/// Storage presence classification used for restore triage.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum StoragePresenceState {
+    /// Canonical active path: shipment exists in persistent storage.
+    ActivePersistent,
+    /// Archived path: shipment is no longer persistent and exists in temporary storage.
+    ArchivedExpected,
+    /// Neither active nor archived entries were found for this shipment ID.
+    Missing,
+    /// Both active and archived entries exist; operators should investigate.
+    InconsistentDualPresence,
+}
+
+/// Read-only diagnostics to determine whether restore flow is needed.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PersistentRestoreDiagnostics {
+    pub shipment_id: u64,
+    pub state: StoragePresenceState,
+    pub persistent_shipment_present: bool,
+    pub archived_shipment_present: bool,
+    pub escrow_present: bool,
+    pub confirmation_hash_present: bool,
+    pub last_status_update_present: bool,
+    pub event_count_present: bool,
+}
+
 /// On-chain introspection snapshot of the contract state.
 ///
 /// # Examples

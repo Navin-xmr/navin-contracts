@@ -419,6 +419,41 @@ pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
         .get(&DataKey::ArchivedShipment(shipment_id))
 }
 
+/// Check whether shipment payload exists in persistent storage.
+pub fn has_persistent_shipment(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::Shipment(shipment_id))
+}
+
+/// Check whether escrow entry exists in persistent storage.
+pub fn has_escrow_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::Escrow(shipment_id))
+}
+
+/// Check whether confirmation hash exists in persistent storage.
+pub fn has_confirmation_hash_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::ConfirmationHash(shipment_id))
+}
+
+/// Check whether last status update timestamp exists in persistent storage.
+pub fn has_last_status_update_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::LastStatusUpdate(shipment_id))
+}
+
+/// Check whether event count entry exists in persistent storage.
+pub fn has_event_count_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::EventCount(shipment_id))
+}
+
 /// Persist a shipment to persistent storage (survives TTL extension).
 ///
 /// # Arguments

@@ -236,6 +236,7 @@ pub fn sanitize_json_snapshot(json: &str) -> std::string::String {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
