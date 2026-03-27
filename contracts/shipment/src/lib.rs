@@ -16,9 +16,9 @@ mod types;
 mod validation;
 
 #[cfg(test)]
-mod test_utils;
-#[cfg(test)]
 mod test_suspension;
+#[cfg(test)]
+mod test_utils;
 
 pub use config::*;
 pub use errors::*;
@@ -1050,7 +1050,11 @@ impl NavinShipment {
     }
 
     /// Reactivate a suspended company.
-    pub fn reactivate_company(env: Env, admin: Address, company: Address) -> Result<(), NavinError> {
+    pub fn reactivate_company(
+        env: Env,
+        admin: Address,
+        company: Address,
+    ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         admin.require_auth();
 

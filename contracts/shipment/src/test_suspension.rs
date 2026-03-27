@@ -1,12 +1,6 @@
-#![cfg(test)]
-
-use crate::{
-    NavinShipment, NavinShipmentClient, Role,
-};
+use crate::{NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
-    contract, contractimpl,
-    testutils::{Address as _},
-    Address, BytesN, Env, Symbol, Vec,
+    contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Symbol, Vec,
 };
 
 #[contract]
@@ -109,7 +103,7 @@ fn test_company_reactivation_restores_access() {
 
     // Suspend
     client.suspend_company(&admin, &company);
-    
+
     // Create should fail
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -117,14 +111,16 @@ fn test_company_reactivation_restores_access() {
     let milestones = Vec::new(&env);
     let deadline = env.ledger().timestamp() + 3600;
 
-    assert!(client.try_create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &milestones,
-        &deadline,
-    ).is_err());
+    assert!(client
+        .try_create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &data_hash,
+            &milestones,
+            &deadline,
+        )
+        .is_err());
 
     // Reactivate
     client.reactivate_company(&admin, &company);
