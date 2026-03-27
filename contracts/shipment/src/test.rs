@@ -9261,9 +9261,23 @@ fn test_idempotency_create_shipment_duplicate_in_window_rejected() {
     let milestones = soroban_sdk::Vec::new(&env);
 
     // First call succeeds
-    client.create_shipment(&company, &receiver, &carrier, &data_hash, &milestones, &deadline);
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
     // Immediate replay within window must be rejected with DuplicateAction (#41)
-    client.create_shipment(&company, &receiver, &carrier, &data_hash, &milestones, &deadline);
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
 }
 
 #[test]
@@ -9281,15 +9295,21 @@ fn test_idempotency_create_shipment_different_hash_not_blocked() {
     let milestones = soroban_sdk::Vec::new(&env);
 
     let id1 = client.create_shipment(
-        &company, &receiver, &carrier,
+        &company,
+        &receiver,
+        &carrier,
         &BytesN::from_array(&env, &[1u8; 32]),
-        &milestones, &deadline,
+        &milestones,
+        &deadline,
     );
     // Different data_hash → different action hash → not blocked
     let id2 = client.create_shipment(
-        &company, &receiver, &carrier,
+        &company,
+        &receiver,
+        &carrier,
         &BytesN::from_array(&env, &[2u8; 32]),
-        &milestones, &deadline,
+        &milestones,
+        &deadline,
     );
     assert_eq!(id1, 1);
     assert_eq!(id2, 2);
@@ -9311,7 +9331,9 @@ fn test_idempotency_update_status_duplicate_in_window_rejected() {
     let deadline = env.ledger().timestamp() + 3600;
 
     let id = client.create_shipment(
-        &company, &receiver, &carrier,
+        &company,
+        &receiver,
+        &carrier,
         &data_hash,
         &soroban_sdk::Vec::new(&env),
         &deadline,
@@ -9339,15 +9361,27 @@ fn test_idempotency_update_status_different_hash_not_blocked() {
     let deadline = env.ledger().timestamp() + 3600;
 
     let id = client.create_shipment(
-        &company, &receiver, &carrier,
+        &company,
+        &receiver,
+        &carrier,
         &data_hash,
         &soroban_sdk::Vec::new(&env),
         &deadline,
     );
 
     // InTransit with hash_a
-    client.update_status(&carrier, &id, &ShipmentStatus::InTransit, &BytesN::from_array(&env, &[2u8; 32]));
+    client.update_status(
+        &carrier,
+        &id,
+        &ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[2u8; 32]),
+    );
     super::test_utils::advance_past_rate_limit(&env);
     // AtCheckpoint with hash_b — different action hash, must succeed
-    client.update_status(&carrier, &id, &ShipmentStatus::AtCheckpoint, &BytesN::from_array(&env, &[3u8; 32]));
+    client.update_status(
+        &carrier,
+        &id,
+        &ShipmentStatus::AtCheckpoint,
+        &BytesN::from_array(&env, &[3u8; 32]),
+    );
 }
