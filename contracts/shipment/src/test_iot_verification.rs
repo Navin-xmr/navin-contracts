@@ -40,14 +40,8 @@ mod tests {
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
 
-        let shipment_id = client.create_shipment(
-            &company,
-            &receiver,
-            &carrier,
-            &hash,
-            &milestones,
-            &deadline,
-        );
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
 
         // Update status to InTransit
         let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
@@ -79,14 +73,8 @@ mod tests {
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
 
-        let shipment_id = client.create_shipment(
-            &company,
-            &receiver,
-            &carrier,
-            &hash,
-            &milestones,
-            &deadline,
-        );
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
 
         // Update status to InTransit
         let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
@@ -98,11 +86,8 @@ mod tests {
         );
 
         // Verify with correct hash
-        let verified = client.verify_data_hash(
-            &shipment_id,
-            &ShipmentStatus::InTransit,
-            &transit_hash,
-        );
+        let verified =
+            client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &transit_hash);
         assert!(verified);
     }
 
@@ -122,14 +107,8 @@ mod tests {
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
 
-        let shipment_id = client.create_shipment(
-            &company,
-            &receiver,
-            &carrier,
-            &hash,
-            &milestones,
-            &deadline,
-        );
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
 
         // Update status to InTransit
         let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
@@ -142,11 +121,8 @@ mod tests {
 
         // Verify with wrong hash
         let wrong_hash = BytesN::from_array(&env, &[3u8; 32]);
-        let verified = client.verify_data_hash(
-            &shipment_id,
-            &ShipmentStatus::InTransit,
-            &wrong_hash,
-        );
+        let verified =
+            client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &wrong_hash);
         assert!(!verified);
     }
 
@@ -166,14 +142,8 @@ mod tests {
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
 
-        let shipment_id = client.create_shipment(
-            &company,
-            &receiver,
-            &carrier,
-            &hash,
-            &milestones,
-            &deadline,
-        );
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
 
         // Update to InTransit
         let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
@@ -219,14 +189,8 @@ mod tests {
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
 
-        let shipment_id = client.create_shipment(
-            &company,
-            &receiver,
-            &carrier,
-            &hash,
-            &milestones,
-            &deadline,
-        );
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
 
         // Try to get hash for status that was never set
         client.get_status_hash(&shipment_id, &ShipmentStatus::Delivered);
@@ -259,14 +223,8 @@ mod tests {
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
 
-        let shipment_id = client.create_shipment(
-            &company,
-            &receiver,
-            &carrier,
-            &hash,
-            &milestones,
-            &deadline,
-        );
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
 
         // Update status
         let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
@@ -278,11 +236,8 @@ mod tests {
         );
 
         // Anyone can verify (no auth required) - this is a read-only operation
-        let verified = client.verify_data_hash(
-            &shipment_id,
-            &ShipmentStatus::InTransit,
-            &transit_hash,
-        );
+        let verified =
+            client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &transit_hash);
         assert!(verified);
     }
 }

@@ -20,15 +20,15 @@ mod validation;
 #[cfg(test)]
 mod test_auth;
 #[cfg(test)]
+mod test_iot_verification;
+#[cfg(test)]
+mod test_pause;
+#[cfg(test)]
 mod test_preflight;
 #[cfg(test)]
 mod test_suspension;
 #[cfg(test)]
 mod test_utils;
-#[cfg(test)]
-mod test_iot_verification;
-#[cfg(test)]
-mod test_pause;
 
 pub use config::*;
 pub use errors::*;
@@ -3900,14 +3900,13 @@ impl NavinShipment {
         status: ShipmentStatus,
     ) -> Result<BytesN<32>, NavinError> {
         require_initialized(&env)?;
-        
+
         // Verify shipment exists
         if storage::get_shipment(&env, shipment_id).is_none() {
             return Err(NavinError::ShipmentNotFound);
         }
 
-        storage::get_status_hash(&env, shipment_id, &status)
-            .ok_or(NavinError::StatusHashNotFound)
+        storage::get_status_hash(&env, shipment_id, &status).ok_or(NavinError::StatusHashNotFound)
     }
 
     /// Verify that a given data hash matches what was recorded on-chain for a
@@ -3939,7 +3938,7 @@ impl NavinShipment {
         expected_hash: BytesN<32>,
     ) -> Result<bool, NavinError> {
         require_initialized(&env)?;
-        
+
         // Verify shipment exists
         if storage::get_shipment(&env, shipment_id).is_none() {
             return Err(NavinError::ShipmentNotFound);
