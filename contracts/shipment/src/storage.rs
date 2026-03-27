@@ -1165,3 +1165,23 @@ pub fn get_evidence_hash(env: &Env, shipment_id: u64, index: u32) -> Option<Byte
         .persistent()
         .get(&DataKey::DisputeEvidence(shipment_id, index))
 }
+
+// ============= Idempotency Window Storage Functions =============
+
+/// Returns true if the action hash is already within an active idempotency window.
+pub fn has_idempotency_window(env: &Env, action_hash: &BytesN<32>) -> bool {
+    env.storage()
+        .temporary()
+        .has(&DataKey::IdempotencyWindow(action_hash.clone()))
+}
+
+/// Record an action hash in temporary storage for `window_seconds`.
+/// The key expires naturally when the ledger TTL elapses — no cleanup needed.
+pub fn set_idempotency_window(env: &Env, action_hash: &BytesN<32>, window_seconds: u64) {
+    let key = DataKey::IdempotencyWindow(action_hash.clone());
+    // Soroban temporary storage TTL is in ledgers. At ~5 s/ledger we convert
+    // seconds to ledgers (rounding up, minimum 1).
+    let ledgers = window_seconds.div_ceil(5).max(1) as u32;
+    env.storage().temporary().set(&key, &true);
+    env.storage().temporary().extend_ttl(&key, 0, ledgers);
+}

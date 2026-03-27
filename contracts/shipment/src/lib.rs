@@ -89,6 +89,18 @@ fn require_not_finalized(shipment: &Shipment) -> Result<(), NavinError> {
     Ok(())
 }
 
+/// Build a 32-byte action hash from arbitrary bytes and check/set the idempotency window.
+/// Returns `DuplicateAction` if the hash is already present in temporary storage.
+fn check_idempotency(env: &Env, payload: soroban_sdk::Bytes) -> Result<(), NavinError> {
+    let action_hash: BytesN<32> = env.crypto().sha256(&payload).into();
+    if storage::has_idempotency_window(env, &action_hash) {
+        return Err(NavinError::DuplicateAction);
+    }
+    let window = config::get_config(env).idempotency_window_seconds;
+    storage::set_idempotency_window(env, &action_hash, window);
+    Ok(())
+}
+
 #[derive(Copy, Clone)]
 enum TokenOperation {
     Transfer,
@@ -1260,6 +1272,12 @@ impl NavinShipment {
         validate_milestones(&env, &payment_milestones)?;
         validate_hash(&data_hash)?;
 
+        // Idempotency: reject duplicate (sender, data_hash) within the window.
+        let mut payload = soroban_sdk::Bytes::new(&env);
+        payload.append(&sender.clone().to_xdr(&env));
+        payload.append(&data_hash.clone().into());
+        check_idempotency(&env, payload)?;
+
         let now = env.ledger().timestamp();
         if deadline <= now {
             return Err(NavinError::InvalidTimestamp);
@@ -1610,6 +1628,16 @@ impl NavinShipment {
         if caller == shipment.carrier {
             require_active_carrier(&env, &caller)?;
         }
+
+        // Idempotency: reject duplicate (shipment_id, new_status, data_hash) within the window.
+        let mut payload = soroban_sdk::Bytes::new(&env);
+        payload.append(&soroban_sdk::Bytes::from_array(
+            &env,
+            &shipment_id.to_be_bytes(),
+        ));
+        payload.append(&new_status.clone().to_xdr(&env));
+        payload.append(&data_hash.clone().into());
+        check_idempotency(&env, payload)?;
 
         // Rate-limit check: admin bypasses; all other callers must wait the minimum interval.
         if caller != admin {
