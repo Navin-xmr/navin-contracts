@@ -98,4 +98,10 @@ pub enum NavinError {
     DuplicateAction = 41,
     /// Shipment state is unavailable due to archival or expiration.
     ShipmentUnavailable = 42,
+    /// Contract is paused; state-changing operations are disabled.
+    ContractPaused = 43,
+    /// Status hash not found for the given shipment and status.
+    StatusHashNotFound = 44,
+    /// Data hash verification failed; provided hash does not match stored hash.
+    DataHashMismatch = 45,
 }
