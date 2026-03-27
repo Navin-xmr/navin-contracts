@@ -1072,3 +1072,65 @@ pub fn emit_dispute_resolved(
     );
     crate::storage::increment_event_count(env, shipment_id);
 }
+
+/// Emits a `contract_paused` event when the contract is paused by an admin.
+///
+/// # Event Data
+///
+/// | Field     | Type      | Description                                |
+/// |-----------|-----------|-------------------------------------------|
+/// | admin     | `Address` | Admin that paused the contract             |
+/// | timestamp | `u64`     | Ledger timestamp when pause occurred       |
+///
+/// # Listeners
+/// - **Express backend**: Updates contract status and alerts operators.
+/// - **Frontend**: Displays maintenance mode banner.
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `admin` - Admin address that paused the contract.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_contract_paused(&env, &admin);
+/// ```
+pub fn emit_contract_paused(env: &Env, admin: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "contract_paused"),),
+        (admin.clone(), env.ledger().timestamp()),
+    );
+}
+
+/// Emits a `contract_unpaused` event when the contract is unpaused by an admin.
+///
+/// # Event Data
+///
+/// | Field     | Type      | Description                                |
+/// |-----------|-----------|-------------------------------------------|
+/// | admin     | `Address` | Admin that unpaused the contract           |
+/// | timestamp | `u64`     | Ledger timestamp when unpause occurred     |
+///
+/// # Listeners
+/// - **Express backend**: Updates contract status and resumes operations.
+/// - **Frontend**: Removes maintenance mode banner.
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `admin` - Admin address that unpaused the contract.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_contract_unpaused(&env, &admin);
+/// ```
+pub fn emit_contract_unpaused(env: &Env, admin: &Address) {
+    env.events().publish(
+        (Symbol::new(env, "contract_unpaused"),),
+        (admin.clone(), env.ledger().timestamp()),
+    );
+}
