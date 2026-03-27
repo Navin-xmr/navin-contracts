@@ -257,7 +257,7 @@ pub fn preflight_check_shipment_available(
         .storage()
         .persistent()
         .get(&crate::types::DataKey::Shipment(shipment_id));
-    
+
     let shipment = shipment.ok_or(NavinError::ShipmentNotFound)?;
 
     // Check if shipment is finalized (locked)
