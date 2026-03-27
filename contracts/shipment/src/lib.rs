@@ -89,6 +89,76 @@ fn require_not_finalized(shipment: &Shipment) -> Result<(), NavinError> {
     Ok(())
 }
 
+#[derive(Copy, Clone)]
+enum TokenOperation {
+    Transfer,
+    #[cfg(test)]
+    Mint,
+}
+
+impl TokenOperation {
+    fn symbol(self) -> Symbol {
+        match self {
+            TokenOperation::Transfer => symbol_short!("transfer"),
+            #[cfg(test)]
+            TokenOperation::Mint => symbol_short!("mint"),
+        }
+    }
+
+    fn error(self) -> NavinError {
+        match self {
+            TokenOperation::Transfer => NavinError::TokenTransferFailed,
+            #[cfg(test)]
+            TokenOperation::Mint => NavinError::TokenMintFailed,
+        }
+    }
+}
+
+fn invoke_token_operation(
+    env: &Env,
+    token_contract: &Address,
+    operation: TokenOperation,
+    args: Vec<soroban_sdk::Val>,
+) -> Result<(), NavinError> {
+    match env.try_invoke_contract::<(), soroban_sdk::Error>(
+        token_contract,
+        &operation.symbol(),
+        args,
+    ) {
+        Ok(Ok(())) => Ok(()),
+        _ => Err(operation.error()),
+    }
+}
+
+fn invoke_token_transfer(
+    env: &Env,
+    token_contract: &Address,
+    from: &Address,
+    to: &Address,
+    amount: i128,
+) -> Result<(), NavinError> {
+    let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(env);
+    args.push_back(from.clone().into_val(env));
+    args.push_back(to.clone().into_val(env));
+    args.push_back(amount.into_val(env));
+    invoke_token_operation(env, token_contract, TokenOperation::Transfer, args)
+}
+
+#[cfg(test)]
+fn invoke_token_mint(
+    env: &Env,
+    token_contract: &Address,
+    admin: &Address,
+    to: &Address,
+    amount: i128,
+) -> Result<(), NavinError> {
+    let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(env);
+    args.push_back(admin.clone().into_val(env));
+    args.push_back(to.clone().into_val(env));
+    args.push_back(amount.into_val(env));
+    invoke_token_operation(env, token_contract, TokenOperation::Mint, args)
+}
+
 fn internal_release_escrow(
     env: &Env,
     shipment: &mut Shipment,
@@ -113,11 +183,13 @@ fn internal_release_escrow(
         if let Some(token_contract) = storage::get_token_contract(env) {
             // Transfer tokens from this contract to carrier
             let contract_address = env.current_contract_address();
-            let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(env);
-            args.push_back(contract_address.into_val(env));
-            args.push_back(shipment.carrier.clone().into_val(env));
-            args.push_back(actual_release.into_val(env));
-            env.invoke_contract::<()>(&token_contract, &symbol_short!("transfer"), args);
+            invoke_token_transfer(
+                env,
+                &token_contract,
+                &contract_address,
+                &shipment.carrier,
+                actual_release,
+            )?;
         }
 
         events::emit_escrow_released(env, shipment.id, &shipment.carrier, actual_release);
@@ -1429,11 +1501,7 @@ impl NavinShipment {
 
         // Transfer tokens from user to this contract
         let contract_address = env.current_contract_address();
-        let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(&env);
-        args.push_back(from.clone().into_val(&env));
-        args.push_back(contract_address.into_val(&env));
-        args.push_back(amount.into_val(&env));
-        env.invoke_contract::<()>(&token_contract, &symbol_short!("transfer"), args);
+        invoke_token_transfer(&env, &token_contract, &from, &contract_address, amount)?;
 
         shipment.escrow_amount = checked_add_i128(0, amount)?;
         shipment.total_escrow = checked_add_i128(0, amount)?;
@@ -2344,11 +2412,13 @@ impl NavinShipment {
             let token_contract =
                 storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
             let contract_address = env.current_contract_address();
-            let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(&env);
-            args.push_back(contract_address.into_val(&env));
-            args.push_back(shipment.sender.clone().into_val(&env));
-            args.push_back(escrow_amount.into_val(&env));
-            env.invoke_contract::<()>(&token_contract, &symbol_short!("transfer"), args);
+            invoke_token_transfer(
+                &env,
+                &token_contract,
+                &contract_address,
+                &shipment.sender,
+                escrow_amount,
+            )?;
 
             shipment.escrow_amount = 0;
             events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
@@ -2541,11 +2611,13 @@ impl NavinShipment {
 
         // Transfer tokens from this contract to company
         let contract_address = env.current_contract_address();
-        let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(&env);
-        args.push_back(contract_address.into_val(&env));
-        args.push_back(shipment.sender.clone().into_val(&env));
-        args.push_back(escrow_amount.into_val(&env));
-        env.invoke_contract::<soroban_sdk::Val>(&token_contract, &symbol_short!("transfer"), args);
+        invoke_token_transfer(
+            &env,
+            &token_contract,
+            &contract_address,
+            &shipment.sender,
+            escrow_amount,
+        )?;
 
         shipment.escrow_amount = 0;
         let old_status = shipment.status.clone();
@@ -3273,16 +3345,13 @@ impl NavinShipment {
                     if let Some(token_contract) = storage::get_token_contract(&env) {
                         // Transfer tokens from this contract to carrier
                         let contract_address = env.current_contract_address();
-                        let mut args: soroban_sdk::Vec<soroban_sdk::Val> =
-                            soroban_sdk::Vec::new(&env);
-                        args.push_back(contract_address.into_val(&env));
-                        args.push_back(shipment.carrier.clone().into_val(&env));
-                        args.push_back(escrow_amount.into_val(&env));
-                        env.invoke_contract::<()>(
+                        invoke_token_transfer(
+                            &env,
                             &token_contract,
-                            &symbol_short!("transfer"),
-                            args,
-                        );
+                            &contract_address,
+                            &shipment.carrier,
+                            escrow_amount,
+                        )?;
                     }
 
                     shipment.escrow_amount = 0;
@@ -3308,16 +3377,13 @@ impl NavinShipment {
                     if let Some(token_contract) = storage::get_token_contract(&env) {
                         // Transfer tokens from this contract to company
                         let contract_address = env.current_contract_address();
-                        let mut args: soroban_sdk::Vec<soroban_sdk::Val> =
-                            soroban_sdk::Vec::new(&env);
-                        args.push_back(contract_address.into_val(&env));
-                        args.push_back(shipment.sender.clone().into_val(&env));
-                        args.push_back(escrow_amount.into_val(&env));
-                        env.invoke_contract::<()>(
+                        invoke_token_transfer(
+                            &env,
                             &token_contract,
-                            &symbol_short!("transfer"),
-                            args,
-                        );
+                            &contract_address,
+                            &shipment.sender,
+                            escrow_amount,
+                        )?;
                     }
 
                     shipment.escrow_amount = 0;
@@ -3506,16 +3572,13 @@ impl NavinShipment {
             let token_contract =
                 storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
             let contract_address = env.current_contract_address();
-            let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(&env);
-
-            args.push_back(contract_address.into_val(&env));
-            args.push_back(shipment.sender.clone().into_val(&env));
-            args.push_back(escrow_amount.into_val(&env));
-            env.invoke_contract::<soroban_sdk::Val>(
+            invoke_token_transfer(
+                &env,
                 &token_contract,
-                &symbol_short!("transfer"),
-                args,
-            );
+                &contract_address,
+                &shipment.sender,
+                escrow_amount,
+            )?;
             events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
         }
 
