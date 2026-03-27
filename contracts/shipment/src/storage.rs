@@ -419,6 +419,41 @@ pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
         .get(&DataKey::ArchivedShipment(shipment_id))
 }
 
+/// Check whether shipment payload exists in persistent storage.
+pub fn has_persistent_shipment(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::Shipment(shipment_id))
+}
+
+/// Check whether escrow entry exists in persistent storage.
+pub fn has_escrow_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::Escrow(shipment_id))
+}
+
+/// Check whether confirmation hash exists in persistent storage.
+pub fn has_confirmation_hash_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::ConfirmationHash(shipment_id))
+}
+
+/// Check whether last status update timestamp exists in persistent storage.
+pub fn has_last_status_update_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::LastStatusUpdate(shipment_id))
+}
+
+/// Check whether event count entry exists in persistent storage.
+pub fn has_event_count_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::EventCount(shipment_id))
+}
+
 /// Persist a shipment to persistent storage (survives TTL extension).
 ///
 /// # Arguments
@@ -1164,6 +1199,26 @@ pub fn get_evidence_hash(env: &Env, shipment_id: u64, index: u32) -> Option<Byte
     env.storage()
         .persistent()
         .get(&DataKey::DisputeEvidence(shipment_id, index))
+}
+
+// ============= Idempotency Window Storage Functions =============
+
+/// Returns true if the action hash is already within an active idempotency window.
+pub fn has_idempotency_window(env: &Env, action_hash: &BytesN<32>) -> bool {
+    env.storage()
+        .temporary()
+        .has(&DataKey::IdempotencyWindow(action_hash.clone()))
+}
+
+/// Record an action hash in temporary storage for `window_seconds`.
+/// The key expires naturally when the ledger TTL elapses - no cleanup needed.
+pub fn set_idempotency_window(env: &Env, action_hash: &BytesN<32>, window_seconds: u64) {
+    let key = DataKey::IdempotencyWindow(action_hash.clone());
+    // Soroban temporary storage TTL is in ledgers. At ~5 s/ledger we convert
+    // seconds to ledgers (rounding up, minimum 1).
+    let ledgers = window_seconds.div_ceil(5).max(1) as u32;
+    env.storage().temporary().set(&key, &true);
+    env.storage().temporary().extend_ttl(&key, 0, ledgers);
 }
 
 #[cfg(test)]

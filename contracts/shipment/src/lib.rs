@@ -39,10 +39,14 @@ fn extend_shipment_ttl(env: &Env, shipment_id: u64) {
     );
 }
 
-fn validate_milestones(_env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(), NavinError> {
+fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(), NavinError> {
     if milestones.is_empty() {
         return Ok(());
     }
+
+    // Validate all milestone symbols for bounded usage
+    validation::validate_milestone_symbols(env, milestones)?;
+
     let mut total_percentage = 0;
     for milestone in milestones.iter() {
         total_percentage += milestone.1;
@@ -86,6 +90,18 @@ fn require_not_finalized(shipment: &Shipment) -> Result<(), NavinError> {
     if shipment.finalized {
         return Err(NavinError::ShipmentFinalized);
     }
+    Ok(())
+}
+
+/// Build a 32-byte action hash from arbitrary bytes and check/set the idempotency window.
+/// Returns `DuplicateAction` if the hash is already present in temporary storage.
+fn check_idempotency(env: &Env, payload: soroban_sdk::Bytes) -> Result<(), NavinError> {
+    let action_hash: BytesN<32> = env.crypto().sha256(&payload).into();
+    if storage::has_idempotency_window(env, &action_hash) {
+        return Err(NavinError::DuplicateAction);
+    }
+    let window = config::get_config(env).idempotency_window_seconds;
+    storage::set_idempotency_window(env, &action_hash, window);
     Ok(())
 }
 
@@ -302,6 +318,10 @@ impl NavinShipment {
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         caller.require_auth();
+
+        // Validate metadata symbols for bounded usage before storage
+        validation::validate_metadata_symbols(&env, &key, &value)?;
+
         let admin = storage::get_admin(&env);
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
@@ -354,6 +374,9 @@ impl NavinShipment {
         require_initialized(&env)?;
         reporter.require_auth();
 
+        // Validate hash before storage
+        validation::validate_hash(&note_hash)?;
+
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
         require_not_finalized(&shipment)?;
@@ -402,6 +425,9 @@ impl NavinShipment {
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         reporter.require_auth();
+
+        // Validate hash before storage
+        validation::validate_hash(&evidence_hash)?;
 
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
@@ -705,6 +731,54 @@ impl NavinShipment {
             disputed_count: storage::get_status_count(&env, &ShipmentStatus::Disputed),
             cancelled_count: storage::get_status_count(&env, &ShipmentStatus::Cancelled),
         })
+    }
+
+    /// Get the deterministic SHA-256 checksum of critical config fields.
+    ///
+    /// This query exposes the config checksum to help indexers and operators
+    /// detect unintended configuration drift. The checksum is computed from
+    /// all config fields serialized in a fixed order and is automatically
+    /// updated whenever the config changes.
+    ///
+    /// # Serialization Order
+    /// Fields are serialized in declaration order:
+    /// 1. shipment_ttl_threshold (u32)
+    /// 2. shipment_ttl_extension (u32)
+    /// 3. min_status_update_interval (u64)
+    /// 4. batch_operation_limit (u32)
+    /// 5. max_metadata_entries (u32)
+    /// 6. default_shipment_limit (u32)
+    /// 7. multisig_min_admins (u32)
+    /// 8. multisig_max_admins (u32)
+    /// 9. proposal_expiry_seconds (u64)
+    /// 10. deadline_grace_seconds (u64)
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    ///
+    /// # Returns
+    /// * `Result<BytesN<32>, NavinError>` - The SHA-256 checksum of the config.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let checksum = contract.get_config_checksum(&env)?;
+    /// // Indexer can verify: checksum == sha256(serialized_config)
+    /// ```
+    pub fn get_config_checksum(env: Env) -> Result<BytesN<32>, NavinError> {
+        require_initialized(&env)?;
+
+        // Retrieve stored checksum, or compute it if not yet stored
+        match config::get_config_checksum(&env) {
+            Some(checksum) => Ok(checksum),
+            None => {
+                // Fallback: compute checksum from current config
+                let current_config = config::get_config(&env);
+                Ok(config::compute_config_checksum(&current_config, &env))
+            }
+        }
     }
 
     /// Add a carrier to a company's whitelist.
@@ -1212,6 +1286,12 @@ impl NavinShipment {
         validate_milestones(&env, &payment_milestones)?;
         validate_hash(&data_hash)?;
 
+        // Idempotency: reject duplicate (sender, data_hash) within the window.
+        let mut payload = soroban_sdk::Bytes::new(&env);
+        payload.append(&sender.clone().to_xdr(&env));
+        payload.append(&data_hash.clone().into());
+        check_idempotency(&env, payload)?;
+
         let now = env.ledger().timestamp();
         if deadline <= now {
             return Err(NavinError::InvalidTimestamp);
@@ -1447,6 +1527,41 @@ impl NavinShipment {
         Ok(shipment.receiver)
     }
 
+    /// Return read-only diagnostics that help operators triage restore requirements.
+    ///
+    /// This query does not mutate state. It classifies the shipment ID as active,
+    /// archived-expected, missing, or inconsistent (both active and archived present).
+    pub fn get_restore_diagnostics(
+        env: Env,
+        shipment_id: u64,
+    ) -> Result<PersistentRestoreDiagnostics, NavinError> {
+        require_initialized(&env)?;
+
+        let persistent_shipment_present = storage::has_persistent_shipment(&env, shipment_id);
+        let archived_shipment_present = storage::is_shipment_archived(&env, shipment_id);
+
+        let state = if persistent_shipment_present && archived_shipment_present {
+            StoragePresenceState::InconsistentDualPresence
+        } else if persistent_shipment_present {
+            StoragePresenceState::ActivePersistent
+        } else if archived_shipment_present {
+            StoragePresenceState::ArchivedExpected
+        } else {
+            StoragePresenceState::Missing
+        };
+
+        Ok(PersistentRestoreDiagnostics {
+            shipment_id,
+            state,
+            persistent_shipment_present,
+            archived_shipment_present,
+            escrow_present: storage::has_escrow_entry(&env, shipment_id),
+            confirmation_hash_present: storage::has_confirmation_hash_entry(&env, shipment_id),
+            last_status_update_present: storage::has_last_status_update_entry(&env, shipment_id),
+            event_count_present: storage::has_event_count_entry(&env, shipment_id),
+        })
+    }
+
     /// Deposit escrow funds for a shipment.
     /// Only a Company can deposit, and the shipment must be in Created status.
     ///
@@ -1562,6 +1677,16 @@ impl NavinShipment {
         if caller == shipment.carrier {
             require_active_carrier(&env, &caller)?;
         }
+
+        // Idempotency: reject duplicate (shipment_id, new_status, data_hash) within the window.
+        let mut payload = soroban_sdk::Bytes::new(&env);
+        payload.append(&soroban_sdk::Bytes::from_array(
+            &env,
+            &shipment_id.to_be_bytes(),
+        ));
+        payload.append(&new_status.clone().to_xdr(&env));
+        payload.append(&data_hash.clone().into());
+        check_idempotency(&env, payload)?;
 
         // Rate-limit check: admin bypasses; all other callers must wait the minimum interval.
         if caller != admin {
