@@ -87,6 +87,11 @@ pub struct ContractConfig {
     /// expiry triggers the moment the deadline timestamp is reached.
     /// Default: 0 seconds (no grace period).
     pub deadline_grace_seconds: u64,
+
+    /// Duration (in seconds) for which an action hash is held in temporary
+    /// storage to reject duplicate external triggers.
+    /// Default: 300 seconds (5 minutes).
+    pub idempotency_window_seconds: u64,
 }
 
 impl Default for ContractConfig {
@@ -109,6 +114,7 @@ impl Default for ContractConfig {
             multisig_max_admins: 10,          // 10 admins
             proposal_expiry_seconds: 604_800, // 7 days
             deadline_grace_seconds: 0,        // no grace period
+            idempotency_window_seconds: 300,  // 5 minutes
         }
     }
 }
