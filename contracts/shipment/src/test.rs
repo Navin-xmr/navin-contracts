@@ -3,8 +3,8 @@
 extern crate std;
 
 use crate::{
-    BreachType, GeofenceEvent, NavinShipment, NavinShipmentClient, Severity, ShipmentInput,
-    ShipmentStatus,
+    types::DataKey, BreachType, GeofenceEvent, NavinShipment, NavinShipmentClient,
+    PersistentRestoreDiagnostics, Severity, ShipmentInput, ShipmentStatus, StoragePresenceState,
 };
 use soroban_sdk::{
     contract, contractimpl,
@@ -8160,6 +8160,116 @@ fn test_archive_disputed_shipment_fails() {
 
     // Try to archive a disputed shipment (should fail with InvalidStatus)
     client.archive_shipment(&admin, &shipment_id);
+}
+
+#[test]
+fn test_restore_diagnostics_missing_state() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let diagnostics: PersistentRestoreDiagnostics = client.get_restore_diagnostics(&999_u64);
+    assert_eq!(diagnostics.shipment_id, 999_u64);
+    assert_eq!(diagnostics.state, StoragePresenceState::Missing);
+    assert!(!diagnostics.persistent_shipment_present);
+    assert!(!diagnostics.archived_shipment_present);
+}
+
+#[test]
+fn test_restore_diagnostics_active_persistent_state() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[9u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::vec![&env],
+        &deadline,
+    );
+
+    let diagnostics: PersistentRestoreDiagnostics = client.get_restore_diagnostics(&shipment_id);
+    assert_eq!(diagnostics.state, StoragePresenceState::ActivePersistent);
+    assert!(diagnostics.persistent_shipment_present);
+    assert!(!diagnostics.archived_shipment_present);
+}
+
+#[test]
+fn test_restore_diagnostics_archived_expected_state() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[8u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::vec![&env],
+        &deadline,
+    );
+
+    client.cancel_shipment(&company, &shipment_id, &data_hash);
+    client.archive_shipment(&admin, &shipment_id);
+
+    let diagnostics: PersistentRestoreDiagnostics = client.get_restore_diagnostics(&shipment_id);
+    assert_eq!(diagnostics.state, StoragePresenceState::ArchivedExpected);
+    assert!(!diagnostics.persistent_shipment_present);
+    assert!(diagnostics.archived_shipment_present);
+}
+
+#[test]
+fn test_restore_diagnostics_inconsistent_dual_presence_state() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::vec![&env],
+        &deadline,
+    );
+
+    // Inject archived copy without removing persistent state to simulate inconsistent storage.
+    let shipment = client.get_shipment(&shipment_id);
+    env.as_contract(&client.address, || {
+        env.storage()
+            .temporary()
+            .set(&DataKey::ArchivedShipment(shipment_id), &shipment);
+    });
+
+    let diagnostics: PersistentRestoreDiagnostics = client.get_restore_diagnostics(&shipment_id);
+    assert_eq!(
+        diagnostics.state,
+        StoragePresenceState::InconsistentDualPresence
+    );
+    assert!(diagnostics.persistent_shipment_present);
+    assert!(diagnostics.archived_shipment_present);
 }
 
 // ============= Analytics Event Tests =============

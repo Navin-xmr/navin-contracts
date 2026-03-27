@@ -60,6 +60,25 @@ Stellar Soroban provides three storage tiers with distinct cost and durability p
 
 ---
 
+## Restore Diagnostics Query
+
+Operators can call the read-only query below to triage whether restore action is required for a shipment ID:
+
+- `get_restore_diagnostics(shipment_id: u64) -> PersistentRestoreDiagnostics`
+
+The query reports:
+
+- `state = ActivePersistent`: shipment currently exists in persistent storage.
+- `state = ArchivedExpected`: shipment is not persistent and is present in temporary archived storage.
+- `state = Missing`: no persistent or archived entry was found for the shipment ID.
+- `state = InconsistentDualPresence`: both persistent and archived entries exist and should be investigated.
+
+Additional booleans (`escrow_present`, `confirmation_hash_present`, `last_status_update_present`, `event_count_present`) help determine which dependent entries might need restore verification.
+
+This query does not mutate storage and is safe to run in pre-restore triage workflows.
+
+---
+
 ## Issues Found & Recommendations
 
 ### ⚠️ Note 1 — `CarrierWhitelist` should move to Persistent
