@@ -40,7 +40,6 @@ use soroban_sdk::{
 #[cfg(any(test, feature = "testutils"))]
 extern crate std;
 
-
 /// Default protocol version for tests
 pub const DEFAULT_PROTOCOL_VERSION: u32 = 22;
 
@@ -179,6 +178,7 @@ pub fn future_deadline(env: &Env, secs_from_now: u64) -> u64 {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
@@ -290,7 +290,9 @@ pub fn sanitize_json_snapshot(json: &str) -> std::string::String {
             Value::Object(map) => {
                 // Sanitize known non-deterministic fields
                 if map.contains_key("ledger_key_nonce") {
-                    if let Some(nonce_obj) = map.get_mut("ledger_key_nonce").and_then(|n| n.as_object_mut())
+                    if let Some(nonce_obj) = map
+                        .get_mut("ledger_key_nonce")
+                        .and_then(|n| n.as_object_mut())
                     {
                         nonce_obj.insert("nonce".to_string(), Value::from(0));
                     }
@@ -332,4 +334,3 @@ pub fn sanitize_json_snapshot(json: &str) -> std::string::String {
     walk(&mut v);
     serde_json::to_string_pretty(&v).expect("Failed to serialize sanitized JSON")
 }
-
