@@ -37,6 +37,10 @@ use soroban_sdk::{
     Address, Env,
 };
 
+#[cfg(any(test, feature = "testutils"))]
+extern crate std;
+
+
 /// Default protocol version for tests
 pub const DEFAULT_PROTOCOL_VERSION: u32 = 22;
 
@@ -253,4 +257,79 @@ mod tests {
         let dl = future_deadline(&env, 3_600);
         assert_eq!(dl, now + 3_600);
     }
+
+    #[test]
+    fn test_sanitize_json_snapshot() {
+        let json = r#"{
+            "generators": { "address": 10, "nonce": 5 },
+            "ledger": { "timestamp": 123456, "sequence_number": 99 },
+            "ledger_entries": [
+                {
+                    "ledger_key_nonce": { "nonce": 987654321 }
+                }
+            ]
+        }"#;
+        let sanitized = sanitize_json_snapshot(json);
+        assert!(sanitized.contains(r#""timestamp": 86400"#));
+        assert!(sanitized.contains(r#""sequence_number": 1"#));
+        assert!(sanitized.contains(r#""address": 0"#));
+        assert!(sanitized.contains(r#""nonce": 0"#));
+    }
 }
+
+/// Normalizes non-deterministic fields in a JSON snapshot.
+#[cfg(any(test, feature = "testutils"))]
+pub fn sanitize_json_snapshot(json: &str) -> std::string::String {
+    use serde_json::Value;
+    use std::string::ToString;
+
+    let mut v: Value = serde_json::from_str(json).expect("Invalid JSON for sanitization");
+
+    fn walk(v: &mut Value) {
+        match v {
+            Value::Object(map) => {
+                // Sanitize known non-deterministic fields
+                if map.contains_key("ledger_key_nonce") {
+                    if let Some(nonce_obj) = map.get_mut("ledger_key_nonce").and_then(|n| n.as_object_mut())
+                    {
+                        nonce_obj.insert("nonce".to_string(), Value::from(0));
+                    }
+                }
+
+                // Sanitize generators
+                if let Some(gen) = map.get_mut("generators").and_then(|g| g.as_object_mut()) {
+                    if gen.contains_key("address") {
+                        gen.insert("address".to_string(), Value::from(0));
+                    }
+                    if gen.contains_key("nonce") {
+                        gen.insert("nonce".to_string(), Value::from(0));
+                    }
+                }
+
+                // Sanitize ledger
+                if let Some(ledger) = map.get_mut("ledger").and_then(|l| l.as_object_mut()) {
+                    if ledger.contains_key("timestamp") {
+                        ledger.insert("timestamp".to_string(), Value::from(86400));
+                    }
+                    if ledger.contains_key("sequence_number") {
+                        ledger.insert("sequence_number".to_string(), Value::from(1));
+                    }
+                }
+
+                for value in map.values_mut() {
+                    walk(value);
+                }
+            }
+            Value::Array(arr) => {
+                for value in arr.iter_mut() {
+                    walk(value);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    walk(&mut v);
+    serde_json::to_string_pretty(&v).expect("Failed to serialize sanitized JSON")
+}
+
