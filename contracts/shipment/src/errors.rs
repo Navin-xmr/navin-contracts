@@ -88,4 +88,6 @@ pub enum NavinError {
     DisputeResolutionReasonHashMissing = 36,
     /// Company account is suspended from creating or updating shipments.
     CompanySuspended = 37,
+    /// Action rejected because the shipment is finalized and locked.
+    ShipmentFinalized = 38,
 }
