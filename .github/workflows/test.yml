@@ -137,6 +137,9 @@ jobs:
           echo "Built WASM files:"
           ls -lh target/wasm32-unknown-unknown/release/*.wasm
 
+      - name: Check WASM size budget
+        run: ./scripts/check_wasm_size.sh
+
       - name: Upload WASM artifacts
         uses: actions/upload-artifact@v4
         with:
