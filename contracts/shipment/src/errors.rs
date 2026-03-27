@@ -96,4 +96,6 @@ pub enum NavinError {
     TokenMintFailed = 40,
     /// Action hash was already processed within the idempotency window.
     DuplicateAction = 41,
+    /// Shipment state is unavailable due to archival or expiration.
+    ShipmentUnavailable = 42,
 }

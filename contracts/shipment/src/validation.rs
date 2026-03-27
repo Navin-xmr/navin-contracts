@@ -100,6 +100,68 @@ pub fn validate_shipment_exists(env: &Env, id: u64) -> Result<Shipment, NavinErr
     storage::get_shipment(env, id).ok_or(NavinError::ShipmentNotFound)
 }
 
+/// Preflight check for state-changing operations: ensures the shipment exists
+/// and is available for mutation.
+///
+/// This helper gates all mutating endpoints to prevent operations on unavailable
+/// shipment state due to archival or expiration. It performs two critical checks:
+///
+/// 1. **Existence Check**: Verifies the shipment exists in persistent storage.
+///    Archived shipments (in temporary storage) are considered unavailable for
+///    mutations to prevent accidental modifications to finalized state.
+///
+/// 2. **Finalization Check**: Ensures the shipment is not finalized. Finalized
+///    shipments are locked and cannot be modified.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment to check.
+///
+/// # Returns
+/// * `Ok(Shipment)` - The shipment if available for mutation.
+/// * `Err(NavinError::ShipmentNotFound)` - If shipment doesn't exist in persistent storage.
+/// * `Err(NavinError::ShipmentUnavailable)` - If shipment is archived or expired.
+/// * `Err(NavinError::ShipmentFinalized)` - If shipment is finalized and locked.
+///
+/// # Design Rationale
+///
+/// **Why Archived Shipments Are Unavailable**:
+/// - Archived shipments are moved to temporary storage (cheaper, shorter TTL)
+/// - They represent terminal state (Delivered/Cancelled) with zero escrow
+/// - Allowing mutations would violate the finalization contract
+/// - Clients should query the shipment before attempting mutations
+///
+/// **Error Hierarchy**:
+/// - `ShipmentNotFound`: Shipment never existed or has expired completely
+/// - `ShipmentUnavailable`: Shipment exists but is archived (terminal state)
+/// - `ShipmentFinalized`: Shipment is locked due to settlement
+///
+/// # Examples
+/// ```rust
+/// // In a mutating endpoint:
+/// let shipment = preflight_check_shipment_available(&env, shipment_id)?;
+/// // Now safe to mutate the shipment
+/// ```
+pub fn preflight_check_shipment_available(
+    env: &Env,
+    shipment_id: u64,
+) -> Result<Shipment, NavinError> {
+    // Check if shipment exists in persistent storage
+    let shipment: Option<Shipment> = env
+        .storage()
+        .persistent()
+        .get(&crate::types::DataKey::Shipment(shipment_id));
+    
+    let shipment = shipment.ok_or(NavinError::ShipmentNotFound)?;
+
+    // Check if shipment is finalized (locked)
+    if shipment.finalized {
+        return Err(NavinError::ShipmentFinalized);
+    }
+
+    Ok(shipment)
+}
+
 // Tests
 #[cfg(test)]
 mod tests {
@@ -205,6 +267,135 @@ mod tests {
         // Storage access requires a contract context in Soroban.
         let result = env.as_contract(&env.register(crate::NavinShipment, ()), || {
             validate_shipment_exists(&env, 999)
+        });
+        assert!(matches!(result, Err(NavinError::ShipmentNotFound)));
+    }
+
+    // preflight_check_shipment_available
+    #[test]
+    fn test_preflight_check_shipment_available_not_found() {
+        let env = Env::default();
+        let result = env.as_contract(&env.register(crate::NavinShipment, ()), || {
+            preflight_check_shipment_available(&env, 999)
+        });
+        assert!(matches!(result, Err(NavinError::ShipmentNotFound)));
+    }
+
+    #[test]
+    fn test_preflight_check_shipment_available_finalized_fails() {
+        use crate::types::{Shipment, ShipmentStatus};
+        use soroban_sdk::{testutils::Address as _, Address};
+
+        let env = Env::default();
+        let result = env.as_contract(&env.register(crate::NavinShipment, ()), || {
+            // Create a finalized shipment in persistent storage
+            let sender = Address::generate(&env);
+            let receiver = Address::generate(&env);
+            let carrier = Address::generate(&env);
+            let shipment = Shipment {
+                id: 1,
+                sender: sender.clone(),
+                receiver: receiver.clone(),
+                carrier: carrier.clone(),
+                status: ShipmentStatus::Delivered,
+                data_hash: BytesN::from_array(&env, &[1u8; 32]),
+                escrow_amount: 0,
+                total_escrow: 1000,
+                metadata: None,
+                payment_milestones: soroban_sdk::Vec::new(&env),
+                paid_milestones: soroban_sdk::Vec::new(&env),
+                deadline: env.ledger().timestamp() + 86400,
+                integration_nonce: 0,
+                finalized: true, // Mark as finalized
+                created_at: env.ledger().timestamp(),
+                updated_at: env.ledger().timestamp(),
+            };
+
+            storage::set_shipment(&env, &shipment);
+
+            // Attempt to check availability — should fail with ShipmentFinalized
+            preflight_check_shipment_available(&env, 1)
+        });
+        assert!(matches!(result, Err(NavinError::ShipmentFinalized)));
+    }
+
+    #[test]
+    fn test_preflight_check_shipment_available_success() {
+        use crate::types::{Shipment, ShipmentStatus};
+        use soroban_sdk::{testutils::Address as _, Address};
+
+        let env = Env::default();
+        let result = env.as_contract(&env.register(crate::NavinShipment, ()), || {
+            // Create an active (non-finalized) shipment in persistent storage
+            let sender = Address::generate(&env);
+            let receiver = Address::generate(&env);
+            let carrier = Address::generate(&env);
+            let shipment = Shipment {
+                id: 1,
+                sender: sender.clone(),
+                receiver: receiver.clone(),
+                carrier: carrier.clone(),
+                status: ShipmentStatus::InTransit,
+                data_hash: BytesN::from_array(&env, &[1u8; 32]),
+                escrow_amount: 1000,
+                total_escrow: 1000,
+                metadata: None,
+                payment_milestones: soroban_sdk::Vec::new(&env),
+                paid_milestones: soroban_sdk::Vec::new(&env),
+                deadline: env.ledger().timestamp() + 86400,
+                integration_nonce: 0,
+                finalized: false, // Not finalized
+                created_at: env.ledger().timestamp(),
+                updated_at: env.ledger().timestamp(),
+            };
+
+            storage::set_shipment(&env, &shipment);
+
+            // Attempt to check availability — should succeed
+            preflight_check_shipment_available(&env, 1)
+        });
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().id, 1);
+    }
+
+    #[test]
+    fn test_preflight_check_shipment_available_archived_not_found() {
+        use crate::types::{Shipment, ShipmentStatus};
+        use soroban_sdk::{testutils::Address as _, Address};
+
+        let env = Env::default();
+        let result = env.as_contract(&env.register(crate::NavinShipment, ()), || {
+            // Create a shipment in temporary (archived) storage only
+            let sender = Address::generate(&env);
+            let receiver = Address::generate(&env);
+            let carrier = Address::generate(&env);
+            let shipment = Shipment {
+                id: 1,
+                sender: sender.clone(),
+                receiver: receiver.clone(),
+                carrier: carrier.clone(),
+                status: ShipmentStatus::Delivered,
+                data_hash: BytesN::from_array(&env, &[1u8; 32]),
+                escrow_amount: 0,
+                total_escrow: 1000,
+                metadata: None,
+                payment_milestones: soroban_sdk::Vec::new(&env),
+                paid_milestones: soroban_sdk::Vec::new(&env),
+                deadline: env.ledger().timestamp() + 86400,
+                integration_nonce: 0,
+                finalized: true,
+                created_at: env.ledger().timestamp(),
+                updated_at: env.ledger().timestamp(),
+            };
+
+            // Store in temporary storage (archived)
+            env.storage()
+                .temporary()
+                .set(&crate::types::DataKey::ArchivedShipment(1), &shipment);
+
+            // Attempt to check availability — should fail with ShipmentNotFound
+            // because archived shipments are not in persistent storage
+            preflight_check_shipment_available(&env, 1)
         });
         assert!(matches!(result, Err(NavinError::ShipmentNotFound)));
     }

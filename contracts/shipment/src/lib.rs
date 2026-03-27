@@ -23,6 +23,8 @@ mod test_auth;
 mod test_suspension;
 #[cfg(test)]
 mod test_utils;
+#[cfg(test)]
+mod test_preflight;
 
 pub use config::*;
 pub use errors::*;
