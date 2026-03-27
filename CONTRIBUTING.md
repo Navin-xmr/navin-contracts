@@ -222,6 +222,20 @@ cargo audit
 # Checks for known security vulnerabilities in dependencies
 ```
 
+### 6. WASM Size Budget
+
+To ensure our contracts remain deployable on-chain, we enforce strict size limits on the generated WASM files.
+
+```bash
+# Command run by CI:
+./scripts/check_wasm_size.sh
+```
+
+**Budget Update Policy:**
+- **Thresholds**: Currently 192KB for `shipment` and 25KB for `token`.
+- **Increases**: Budget increases must be justified in the PR description (e.g., due to critical new features) and approved by a maintainer.
+- **Optimization**: Always attempt to optimize the code or reduce dependencies before requesting a budget increase.
+
 ## Code Standards
 
 ### Rust Style Guide
