@@ -206,6 +206,68 @@ pub fn validate_shipment_exists(env: &Env, id: u64) -> Result<Shipment, NavinErr
     storage::get_shipment(env, id).ok_or(NavinError::ShipmentNotFound)
 }
 
+/// Preflight check for state-changing operations: ensures the shipment exists
+/// and is available for mutation.
+///
+/// This helper gates all mutating endpoints to prevent operations on unavailable
+/// shipment state due to archival or expiration. It performs two critical checks:
+///
+/// 1. **Existence Check**: Verifies the shipment exists in persistent storage.
+///    Archived shipments (in temporary storage) are considered unavailable for
+///    mutations to prevent accidental modifications to finalized state.
+///
+/// 2. **Finalization Check**: Ensures the shipment is not finalized. Finalized
+///    shipments are locked and cannot be modified.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment to check.
+///
+/// # Returns
+/// * `Ok(Shipment)` - The shipment if available for mutation.
+/// * `Err(NavinError::ShipmentNotFound)` - If shipment doesn't exist in persistent storage.
+/// * `Err(NavinError::ShipmentUnavailable)` - If shipment is archived or expired.
+/// * `Err(NavinError::ShipmentFinalized)` - If shipment is finalized and locked.
+///
+/// # Design Rationale
+///
+/// **Why Archived Shipments Are Unavailable**:
+/// - Archived shipments are moved to temporary storage (cheaper, shorter TTL)
+/// - They represent terminal state (Delivered/Cancelled) with zero escrow
+/// - Allowing mutations would violate the finalization contract
+/// - Clients should query the shipment before attempting mutations
+///
+/// **Error Hierarchy**:
+/// - `ShipmentNotFound`: Shipment never existed or has expired completely
+/// - `ShipmentUnavailable`: Shipment exists but is archived (terminal state)
+/// - `ShipmentFinalized`: Shipment is locked due to settlement
+///
+/// # Examples
+/// ```rust
+/// // In a mutating endpoint:
+/// let shipment = preflight_check_shipment_available(&env, shipment_id)?;
+/// // Now safe to mutate the shipment
+/// ```
+pub fn preflight_check_shipment_available(
+    env: &Env,
+    shipment_id: u64,
+) -> Result<Shipment, NavinError> {
+    // Check if shipment exists in persistent storage
+    let shipment: Option<Shipment> = env
+        .storage()
+        .persistent()
+        .get(&crate::types::DataKey::Shipment(shipment_id));
+
+    let shipment = shipment.ok_or(NavinError::ShipmentNotFound)?;
+
+    // Check if shipment is finalized (locked)
+    if shipment.finalized {
+        return Err(NavinError::ShipmentFinalized);
+    }
+
+    Ok(shipment)
+}
+
 // Tests
 #[cfg(test)]
 mod tests {
