@@ -64,11 +64,11 @@ pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
     // In Soroban, we check the XDR-encoded length as a proxy for symbol size.
     // Typical XDR overhead is ~8 bytes, so we allow up to 40 bytes for safety margin.
     let symbol_bytes = symbol.to_xdr(env);
-    
+
     if symbol_bytes.len() > 40 {
         return Err(NavinError::InvalidShipmentInput);
     }
-    
+
     Ok(())
 }
 
@@ -97,7 +97,7 @@ pub fn validate_milestone_symbols(
     for milestone in milestones.iter() {
         validate_symbol(env, &milestone.0)?;
     }
-    
+
     // Check for duplicate milestone names by comparing XDR representations
     for i in 0..milestones.len() {
         let current = &milestones.get_unchecked(i).0;
@@ -110,7 +110,7 @@ pub fn validate_milestone_symbols(
             }
         }
     }
-    
+
     Ok(())
 }
 

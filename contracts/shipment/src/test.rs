@@ -9521,7 +9521,7 @@ fn test_append_note_hash_validates_hash() {
 
     // Verify event was emitted
     let events = env.events().all();
-    assert!(events.len() > 0);
+    assert!(!events.is_empty());
 }
 
 #[test]
@@ -9583,11 +9583,7 @@ fn test_add_dispute_evidence_hash_validates_hash() {
     );
 
     // Transition to Disputed state
-    client.raise_dispute(
-        &company,
-        &id,
-        &BytesN::from_array(&env, &[9u8; 32]),
-    );
+    client.raise_dispute(&company, &id, &BytesN::from_array(&env, &[9u8; 32]));
 
     // Add evidence with valid hash
     let evidence_hash = BytesN::from_array(&env, &[10u8; 32]);
@@ -9595,7 +9591,7 @@ fn test_add_dispute_evidence_hash_validates_hash() {
 
     // Verify event was emitted
     let events = env.events().all();
-    assert!(events.len() > 0);
+    assert!(!events.is_empty());
 }
 
 #[test]
@@ -9626,11 +9622,7 @@ fn test_add_dispute_evidence_hash_rejects_zero_hash() {
     );
 
     // Transition to Disputed state
-    client.raise_dispute(
-        &company,
-        &id,
-        &BytesN::from_array(&env, &[9u8; 32]),
-    );
+    client.raise_dispute(&company, &id, &BytesN::from_array(&env, &[9u8; 32]));
 
     // Try to add evidence with all-zero hash (should fail)
     let zero_hash = BytesN::from_array(&env, &[0u8; 32]);

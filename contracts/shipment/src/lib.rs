@@ -43,10 +43,10 @@ fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(),
     if milestones.is_empty() {
         return Ok(());
     }
-    
+
     // Validate all milestone symbols for bounded usage
     validation::validate_milestone_symbols(env, milestones)?;
-    
+
     let mut total_percentage = 0;
     for milestone in milestones.iter() {
         total_percentage += milestone.1;
@@ -318,10 +318,10 @@ impl NavinShipment {
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         caller.require_auth();
-        
+
         // Validate metadata symbols for bounded usage before storage
         validation::validate_metadata_symbols(&env, &key, &value)?;
-        
+
         let admin = storage::get_admin(&env);
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
@@ -373,7 +373,7 @@ impl NavinShipment {
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         reporter.require_auth();
-        
+
         // Validate hash before storage
         validation::validate_hash(&note_hash)?;
 
@@ -425,7 +425,7 @@ impl NavinShipment {
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         reporter.require_auth();
-        
+
         // Validate hash before storage
         validation::validate_hash(&evidence_hash)?;
 
