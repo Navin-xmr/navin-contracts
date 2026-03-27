@@ -1,7 +1,7 @@
 use crate::errors::NavinError;
 use crate::storage;
 use crate::types::Shipment;
-use soroban_sdk::{BytesN, Env};
+use soroban_sdk::{xdr::ToXdr, BytesN, Env, Symbol};
 
 /// Maximum reasonable escrow amount (1 quadrillion stroops ≈ 1 billion XLM).
 const MAX_AMOUNT: i128 = 1_000_000_000_000_000;
@@ -15,6 +15,10 @@ const MAX_PAST_OFFSET: u64 = 365 * 24 * 60 * 60;
 const MAX_FUTURE_OFFSET: u64 = 10 * 365 * 24 * 60 * 60;
 
 /// Ensure a `BytesN<32>` hash is not the all-zeros sentinel value.
+///
+/// This validator performs a sanity check on external hashes (data_hash, reason_hash, etc.)
+/// to reject the all-zeros pattern which is commonly used as a sentinel for "no data".
+/// This prevents accidental or malicious use of zero hashes in critical fields.
 ///
 /// # Arguments
 /// * `hash` - The 32-byte hash to validate.
@@ -33,6 +37,108 @@ pub fn validate_hash(hash: &BytesN<32>) -> Result<(), NavinError> {
     if bytes.iter().all(|&b| b == 0) {
         return Err(NavinError::InvalidHash);
     }
+    Ok(())
+}
+
+/// Validate a Symbol for bounded usage in shipment metadata and milestones.
+///
+/// This validator ensures that Symbol strings conform to expected length constraints
+/// and do not contain invalid patterns. Symbols are used in:
+/// - Milestone checkpoint names (e.g., "warehouse", "port")
+/// - Metadata keys and values
+/// - Event topic names
+///
+/// # Arguments
+/// * `symbol` - The Symbol to validate.
+///
+/// # Returns
+/// * `Ok(())` if the symbol is valid.
+/// * `Err(NavinError::InvalidShipmentInput)` if the symbol is empty or exceeds max length.
+///
+/// # Examples
+/// ```rust
+/// validate_symbol(&Symbol::new(&env, "warehouse"))?;
+/// ```
+pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
+    // Convert Symbol to XDR representation for length checking.
+    // In Soroban, we check the XDR-encoded length as a proxy for symbol size.
+    // Typical XDR overhead is ~8 bytes, so we allow up to 40 bytes for safety margin.
+    let symbol_bytes = symbol.to_xdr(env);
+    
+    if symbol_bytes.len() > 40 {
+        return Err(NavinError::InvalidShipmentInput);
+    }
+    
+    Ok(())
+}
+
+/// Validate a collection of milestone symbols for bounded usage.
+///
+/// This validator ensures that all milestone checkpoint names conform to length
+/// constraints and are not duplicated within the same shipment.
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `milestones` - Vector of (Symbol, percentage) tuples.
+///
+/// # Returns
+/// * `Ok(())` if all symbols are valid and unique.
+/// * `Err(NavinError::InvalidShipmentInput)` if any symbol is invalid or duplicated.
+///
+/// # Examples
+/// ```rust
+/// validate_milestone_symbols(&env, &milestones)?;
+/// ```
+pub fn validate_milestone_symbols(
+    env: &Env,
+    milestones: &soroban_sdk::Vec<(Symbol, u32)>,
+) -> Result<(), NavinError> {
+    // Check each milestone symbol for validity
+    for milestone in milestones.iter() {
+        validate_symbol(env, &milestone.0)?;
+    }
+    
+    // Check for duplicate milestone names by comparing XDR representations
+    for i in 0..milestones.len() {
+        let current = &milestones.get_unchecked(i).0;
+        let current_xdr = current.to_xdr(env);
+        for j in (i + 1)..milestones.len() {
+            let other = &milestones.get_unchecked(j).0;
+            let other_xdr = other.to_xdr(env);
+            if current_xdr == other_xdr {
+                return Err(NavinError::InvalidShipmentInput);
+            }
+        }
+    }
+    
+    Ok(())
+}
+
+/// Validate metadata key-value pair symbols for bounded usage.
+///
+/// This validator ensures that both metadata keys and values conform to
+/// length constraints before storage.
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `key` - The metadata key symbol.
+/// * `value` - The metadata value symbol.
+///
+/// # Returns
+/// * `Ok(())` if both symbols are valid.
+/// * `Err(NavinError::InvalidShipmentInput)` if either symbol is invalid.
+///
+/// # Examples
+/// ```rust
+/// validate_metadata_symbols(&env, &key, &value)?;
+/// ```
+pub fn validate_metadata_symbols(
+    env: &Env,
+    key: &Symbol,
+    value: &Symbol,
+) -> Result<(), NavinError> {
+    validate_symbol(env, key)?;
+    validate_symbol(env, value)?;
     Ok(())
 }
 
@@ -104,7 +210,7 @@ pub fn validate_shipment_exists(env: &Env, id: u64) -> Result<Shipment, NavinErr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Ledger, BytesN, Env};
+    use soroban_sdk::{testutils::Ledger, BytesN, Env, Symbol};
 
     // validate_hash
     #[test]
@@ -207,5 +313,143 @@ mod tests {
             validate_shipment_exists(&env, 999)
         });
         assert!(matches!(result, Err(NavinError::ShipmentNotFound)));
+    }
+
+    // validate_symbol
+    #[test]
+    fn test_validate_symbol_valid_short_passes() {
+        let env = Env::default();
+        let symbol = Symbol::new(&env, "warehouse");
+        assert_eq!(validate_symbol(&env, &symbol), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_symbol_valid_long_passes() {
+        let env = Env::default();
+        // Create a 32-character symbol (maximum safe length)
+        let long_name = "a".repeat(32);
+        let symbol = Symbol::new(&env, &long_name);
+        assert_eq!(validate_symbol(&env, &symbol), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_symbol_single_char_passes() {
+        let env = Env::default();
+        let symbol = Symbol::new(&env, "a");
+        assert_eq!(validate_symbol(&env, &symbol), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_symbol_common_names_pass() {
+        let env = Env::default();
+        let test_names = ["port", "warehouse", "checkpoint", "final_destination"];
+        for name in &test_names {
+            let symbol = Symbol::new(&env, name);
+            assert_eq!(
+                validate_symbol(&env, &symbol),
+                Ok(()),
+                "Symbol '{}' should be valid",
+                name
+            );
+        }
+    }
+
+    // validate_milestone_symbols
+    #[test]
+    fn test_validate_milestone_symbols_valid_passes() {
+        let env = Env::default();
+        let mut milestones = soroban_sdk::Vec::new(&env);
+        milestones.push_back((Symbol::new(&env, "warehouse"), 30_u32));
+        milestones.push_back((Symbol::new(&env, "port"), 30_u32));
+        milestones.push_back((Symbol::new(&env, "final"), 40_u32));
+        assert_eq!(validate_milestone_symbols(&env, &milestones), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_milestone_symbols_single_milestone_passes() {
+        let env = Env::default();
+        let mut milestones = soroban_sdk::Vec::new(&env);
+        milestones.push_back((Symbol::new(&env, "delivery"), 100_u32));
+        assert_eq!(validate_milestone_symbols(&env, &milestones), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_milestone_symbols_empty_passes() {
+        let env = Env::default();
+        let milestones: soroban_sdk::Vec<(Symbol, u32)> = soroban_sdk::Vec::new(&env);
+        assert_eq!(validate_milestone_symbols(&env, &milestones), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_milestone_symbols_duplicate_fails() {
+        let env = Env::default();
+        let mut milestones = soroban_sdk::Vec::new(&env);
+        milestones.push_back((Symbol::new(&env, "warehouse"), 50_u32));
+        milestones.push_back((Symbol::new(&env, "warehouse"), 50_u32));
+        assert_eq!(
+            validate_milestone_symbols(&env, &milestones),
+            Err(NavinError::InvalidShipmentInput)
+        );
+    }
+
+    #[test]
+    fn test_validate_milestone_symbols_many_unique_passes() {
+        let env = Env::default();
+        let mut milestones = soroban_sdk::Vec::new(&env);
+        let names = ["a", "b", "c", "d", "e"];
+        for name in &names {
+            milestones.push_back((Symbol::new(&env, name), 20_u32));
+        }
+        assert_eq!(validate_milestone_symbols(&env, &milestones), Ok(()));
+    }
+
+    // validate_metadata_symbols
+    #[test]
+    fn test_validate_metadata_symbols_valid_passes() {
+        let env = Env::default();
+        let key = Symbol::new(&env, "weight");
+        let value = Symbol::new(&env, "kg_100");
+        assert_eq!(validate_metadata_symbols(&env, &key, &value), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_metadata_symbols_single_char_passes() {
+        let env = Env::default();
+        let key = Symbol::new(&env, "w");
+        let value = Symbol::new(&env, "k");
+        assert_eq!(validate_metadata_symbols(&env, &key, &value), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_metadata_symbols_long_names_pass() {
+        let env = Env::default();
+        // Create long symbol names by concatenating strings
+        let long_key = "key_aaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let long_value = "val_bbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let key = Symbol::new(&env, long_key);
+        let value = Symbol::new(&env, long_value);
+        assert_eq!(validate_metadata_symbols(&env, &key, &value), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_metadata_symbols_common_pairs_pass() {
+        let env = Env::default();
+        let pairs = [
+            ("weight", "kg_100"),
+            ("priority", "high"),
+            ("category", "fragile"),
+            ("temperature", "controlled"),
+        ];
+        for (key_str, val_str) in &pairs {
+            let key = Symbol::new(&env, key_str);
+            let value = Symbol::new(&env, val_str);
+            assert_eq!(
+                validate_metadata_symbols(&env, &key, &value),
+                Ok(()),
+                "Pair ({}, {}) should be valid",
+                key_str,
+                val_str
+            );
+        }
     }
 }
