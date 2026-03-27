@@ -9385,3 +9385,342 @@ fn test_idempotency_update_status_different_hash_not_blocked() {
         &BytesN::from_array(&env, &[3u8; 32]),
     );
 }
+
+// ============================================================================
+// Integration Tests for Symbol and BytesN<32> Validators
+// ============================================================================
+
+#[test]
+fn test_create_shipment_with_valid_milestone_symbols() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "warehouse"), 30_u32));
+    milestones.push_back((Symbol::new(&env, "port"), 30_u32));
+    milestones.push_back((Symbol::new(&env, "final"), 40_u32));
+
+    let deadline = super::test_utils::future_deadline(&env, 86400);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    assert!(id > 0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #17)")]
+fn test_create_shipment_with_duplicate_milestone_symbols_fails() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    // Duplicate milestone names should fail validation
+    milestones.push_back((Symbol::new(&env, "warehouse"), 50_u32));
+    milestones.push_back((Symbol::new(&env, "warehouse"), 50_u32));
+
+    let deadline = super::test_utils::future_deadline(&env, 86400);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+}
+
+#[test]
+fn test_set_metadata_with_valid_symbols() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "delivery"), 100_u32));
+
+    let deadline = super::test_utils::future_deadline(&env, 86400);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    // Set metadata with valid symbols
+    client.set_shipment_metadata(
+        &company,
+        &id,
+        &Symbol::new(&env, "weight"),
+        &Symbol::new(&env, "kg_100"),
+    );
+
+    let shipment = client.get_shipment(&id);
+    assert!(shipment.metadata.is_some());
+}
+
+#[test]
+fn test_append_note_hash_validates_hash() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "delivery"), 100_u32));
+
+    let deadline = super::test_utils::future_deadline(&env, 86400);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    // Append a valid note hash
+    let note_hash = BytesN::from_array(&env, &[8u8; 32]);
+    client.append_note_hash(&company, &id, &note_hash);
+
+    // Verify event was emitted
+    let events = env.events().all();
+    assert!(!events.is_empty());
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_append_note_hash_rejects_zero_hash() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "delivery"), 100_u32));
+
+    let deadline = super::test_utils::future_deadline(&env, 86400);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    // Try to append an all-zero hash (should fail)
+    let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+    client.append_note_hash(&company, &id, &zero_hash);
+}
+
+#[test]
+fn test_add_dispute_evidence_hash_validates_hash() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "delivery"), 100_u32));
+
+    let deadline = super::test_utils::future_deadline(&env, 86400);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    // Transition to Disputed state
+    client.raise_dispute(&company, &id, &BytesN::from_array(&env, &[9u8; 32]));
+
+    // Add evidence with valid hash
+    let evidence_hash = BytesN::from_array(&env, &[10u8; 32]);
+    client.add_dispute_evidence_hash(&company, &id, &evidence_hash);
+
+    // Verify event was emitted
+    let events = env.events().all();
+    assert!(!events.is_empty());
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_add_dispute_evidence_hash_rejects_zero_hash() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "delivery"), 100_u32));
+
+    let deadline = super::test_utils::future_deadline(&env, 86400);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    // Transition to Disputed state
+    client.raise_dispute(&company, &id, &BytesN::from_array(&env, &[9u8; 32]));
+
+    // Try to add evidence with all-zero hash (should fail)
+    let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+    client.add_dispute_evidence_hash(&company, &id, &zero_hash);
+}
+
+#[test]
+fn test_create_shipments_batch_validates_milestone_symbols() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver1 = Address::generate(&env);
+    let receiver2 = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut inputs = soroban_sdk::Vec::new(&env);
+
+    // First shipment with valid milestones
+    let mut milestones1 = soroban_sdk::Vec::new(&env);
+    milestones1.push_back((Symbol::new(&env, "warehouse"), 50_u32));
+    milestones1.push_back((Symbol::new(&env, "delivery"), 50_u32));
+
+    let deadline = super::test_utils::future_deadline(&env, 86400);
+    let data_hash1 = BytesN::from_array(&env, &[7u8; 32]);
+
+    inputs.push_back(ShipmentInput {
+        receiver: receiver1,
+        carrier: carrier.clone(),
+        data_hash: data_hash1,
+        payment_milestones: milestones1,
+        deadline,
+    });
+
+    // Second shipment with valid milestones
+    let mut milestones2 = soroban_sdk::Vec::new(&env);
+    milestones2.push_back((Symbol::new(&env, "port"), 100_u32));
+
+    let data_hash2 = BytesN::from_array(&env, &[8u8; 32]);
+
+    inputs.push_back(ShipmentInput {
+        receiver: receiver2,
+        carrier: carrier.clone(),
+        data_hash: data_hash2,
+        payment_milestones: milestones2,
+        deadline,
+    });
+
+    let ids = client.create_shipments_batch(&company, &inputs);
+    assert_eq!(ids.len(), 2);
+}
+
+#[test]
+fn test_metadata_symbols_multiple_entries() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "delivery"), 100_u32));
+
+    let deadline = super::test_utils::future_deadline(&env, 86400);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    // Add multiple metadata entries with valid symbols
+    let metadata_pairs = [
+        ("weight", "kg_100"),
+        ("priority", "high"),
+        ("category", "fragile"),
+    ];
+
+    for (key_str, val_str) in &metadata_pairs {
+        client.set_shipment_metadata(
+            &company,
+            &id,
+            &Symbol::new(&env, key_str),
+            &Symbol::new(&env, val_str),
+        );
+    }
+
+    let shipment = client.get_shipment(&id);
+    assert!(shipment.metadata.is_some());
+    let metadata = shipment.metadata.unwrap();
+    assert_eq!(metadata.len(), 3);
+}
