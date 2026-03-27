@@ -1211,7 +1211,7 @@ pub fn has_idempotency_window(env: &Env, action_hash: &BytesN<32>) -> bool {
 }
 
 /// Record an action hash in temporary storage for `window_seconds`.
-/// The key expires naturally when the ledger TTL elapses — no cleanup needed.
+/// The key expires naturally when the ledger TTL elapses - no cleanup needed.
 pub fn set_idempotency_window(env: &Env, action_hash: &BytesN<32>, window_seconds: u64) {
     let key = DataKey::IdempotencyWindow(action_hash.clone());
     // Soroban temporary storage TTL is in ledgers. At ~5 s/ledger we convert
@@ -1219,4 +1219,115 @@ pub fn set_idempotency_window(env: &Env, action_hash: &BytesN<32>, window_second
     let ledgers = window_seconds.div_ceil(5).max(1) as u32;
     env.storage().temporary().set(&key, &true);
     env.storage().temporary().extend_ttl(&key, 0, ledgers);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils;
+    use soroban_sdk::testutils::Address as _;
+
+    fn with_contract_env() -> (Env, Address) {
+        let (env, _) = test_utils::setup_env();
+        let contract_id = env.register(crate::NavinShipment, ());
+        (env, contract_id)
+    }
+
+    #[test]
+    fn carrier_whitelist_tuple_key_round_trip_and_order_regression() {
+        let (env, contract_id) = with_contract_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            add_carrier_to_whitelist(&env, &company, &carrier);
+
+            assert!(is_carrier_whitelisted(&env, &company, &carrier));
+            assert!(!is_carrier_whitelisted(&env, &carrier, &company));
+
+            let canonical_key = DataKey::CarrierWhitelist(company.clone(), carrier.clone());
+            let reversed_key = DataKey::CarrierWhitelist(carrier.clone(), company.clone());
+            assert!(env.storage().instance().has(&canonical_key));
+            assert!(!env.storage().instance().has(&reversed_key));
+        });
+    }
+
+    #[test]
+    fn user_role_tuple_key_round_trip() {
+        let (env, contract_id) = with_contract_env();
+        let user = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            set_role(&env, &user, &Role::Carrier);
+
+            assert!(has_role(&env, &user, &Role::Carrier));
+            assert!(!has_role(&env, &user, &Role::Company));
+        });
+    }
+
+    #[test]
+    fn role_suspended_tuple_key_round_trip() {
+        let (env, contract_id) = with_contract_env();
+        let user = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            suspend_role(&env, &user, &Role::Company);
+            assert!(is_role_suspended(&env, &user, &Role::Company));
+
+            reactivate_role(&env, &user, &Role::Company);
+            assert!(!is_role_suspended(&env, &user, &Role::Company));
+        });
+    }
+
+    #[test]
+    fn shipment_note_tuple_key_round_trip_and_component_regression() {
+        let (env, contract_id) = with_contract_env();
+        let shipment_id = 77_u64;
+        let note_idx_0 = 0_u32;
+        let note_idx_1 = 1_u32;
+        let note_0 = BytesN::from_array(&env, &[0x11; 32]);
+        let note_1 = BytesN::from_array(&env, &[0x22; 32]);
+
+        env.as_contract(&contract_id, || {
+            set_note_hash(&env, shipment_id, note_idx_0, &note_0);
+            set_note_hash(&env, shipment_id, note_idx_1, &note_1);
+
+            assert_eq!(get_note_hash(&env, shipment_id, note_idx_0), Some(note_0));
+            assert_eq!(get_note_hash(&env, shipment_id, note_idx_1), Some(note_1));
+            assert_eq!(get_note_hash(&env, shipment_id + 1, note_idx_0), None);
+            assert_eq!(get_note_hash(&env, shipment_id, note_idx_1 + 1), None);
+        });
+    }
+
+    #[test]
+    fn dispute_evidence_tuple_key_round_trip_and_component_regression() {
+        let (env, contract_id) = with_contract_env();
+        let shipment_id = 900_u64;
+        let evidence_idx_0 = 0_u32;
+        let evidence_idx_1 = 1_u32;
+        let evidence_0 = BytesN::from_array(&env, &[0x33; 32]);
+        let evidence_1 = BytesN::from_array(&env, &[0x44; 32]);
+
+        env.as_contract(&contract_id, || {
+            set_evidence_hash(&env, shipment_id, evidence_idx_0, &evidence_0);
+            set_evidence_hash(&env, shipment_id, evidence_idx_1, &evidence_1);
+
+            assert_eq!(
+                get_evidence_hash(&env, shipment_id, evidence_idx_0),
+                Some(evidence_0)
+            );
+            assert_eq!(
+                get_evidence_hash(&env, shipment_id, evidence_idx_1),
+                Some(evidence_1)
+            );
+            assert_eq!(
+                get_evidence_hash(&env, shipment_id + 1, evidence_idx_0),
+                None
+            );
+            assert_eq!(
+                get_evidence_hash(&env, shipment_id, evidence_idx_1 + 1),
+                None
+            );
+        });
+    }
 }
