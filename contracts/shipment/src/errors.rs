@@ -86,6 +86,8 @@ pub enum NavinError {
     ArithmeticError = 35,
     /// Dispute resolution requires a reason hash.
     DisputeResolutionReasonHashMissing = 36,
+    /// Company account is suspended from creating or updating shipments.
+    CompanySuspended = 37,
     /// Action rejected because the shipment is finalized and locked.
-    ShipmentFinalized = 37,
+    ShipmentFinalized = 38,
 }
