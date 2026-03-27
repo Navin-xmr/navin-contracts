@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 0,
+    "address": 6,
     "nonce": 0
   },
   "auth": [
@@ -118,6 +118,14 @@
                               },
                               "val": {
                                 "u32": 100
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "idempotency_window_seconds"
+                              },
+                              "val": {
+                                "u64": 300
                               }
                             },
                             {

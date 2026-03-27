@@ -94,4 +94,6 @@ pub enum NavinError {
     TokenTransferFailed = 39,
     /// A cross-contract token mint failed.
     TokenMintFailed = 40,
+    /// Action hash was already processed within the idempotency window.
+    DuplicateAction = 41,
 }

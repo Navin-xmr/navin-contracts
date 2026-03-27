@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 0,
+    "address": 6,
     "nonce": 0
   },
   "auth": [
@@ -81,7 +81,7 @@
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
             "key": {
               "ledger_key_nonce": {
-                "nonce": 0
+                "nonce": 801925984706572462
               }
             },
             "durability": "temporary"
@@ -96,7 +96,7 @@
                 "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
                 "key": {
                   "ledger_key_nonce": {
-                    "nonce": 0
+                    "nonce": 801925984706572462
                   }
                 },
                 "durability": "temporary",
@@ -192,6 +192,51 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "IdempotencyWindow"
+                },
+                {
+                  "bytes": "a20062f6aaf42715eb5471344a327db2a7f60345c9e38b54de11509f532d765c"
+                }
+              ]
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "IdempotencyWindow"
+                    },
+                    {
+                      "bytes": "a20062f6aaf42715eb5471344a327db2a7f60345c9e38b54de11509f532d765c"
+                    }
+                  ]
+                },
+                "durability": "temporary",
+                "val": {
+                  "bool": true
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          16
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
                   "symbol": "Shipment"
                 },
                 {
@@ -267,10 +312,26 @@
                     },
                     {
                       "key": {
+                        "symbol": "finalized"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "id"
                       },
                       "val": {
                         "u64": 1
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "integration_nonce"
+                      },
+                      "val": {
+                        "u32": 0
                       }
                     },
                     {
@@ -421,10 +482,26 @@
                             },
                             {
                               "key": {
+                                "symbol": "deadline_grace_seconds"
+                              },
+                              "val": {
+                                "u64": 0
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "default_shipment_limit"
                               },
                               "val": {
                                 "u32": 100
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "idempotency_window_seconds"
+                              },
+                              "val": {
+                                "u64": 300
                               }
                             },
                             {
@@ -651,7 +728,7 @@
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
             "key": {
               "ledger_key_nonce": {
-                "nonce": 0
+                "nonce": 5541220902715666415
               }
             },
             "durability": "temporary"
@@ -666,7 +743,7 @@
                 "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
                 "key": {
                   "ledger_key_nonce": {
-                    "nonce": 0
+                    "nonce": 5541220902715666415
                   }
                 },
                 "durability": "temporary",

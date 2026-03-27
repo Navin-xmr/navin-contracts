@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 0,
+    "address": 4,
     "nonce": 0
   },
   "auth": [
@@ -57,7 +57,7 @@
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
             "key": {
               "ledger_key_nonce": {
-                "nonce": 0
+                "nonce": 801925984706572462
               }
             },
             "durability": "temporary"
@@ -72,7 +72,7 @@
                 "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
                 "key": {
                   "ledger_key_nonce": {
-                    "nonce": 0
+                    "nonce": 801925984706572462
                   }
                 },
                 "durability": "temporary",
@@ -202,6 +202,14 @@
                               },
                               "val": {
                                 "u32": 100
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "idempotency_window_seconds"
+                              },
+                              "val": {
+                                "u64": 300
                               }
                             },
                             {

@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 0,
+    "address": 6,
     "nonce": 0
   },
   "auth": [
@@ -77,7 +77,7 @@
                   "vec": []
                 },
                 {
-                  "u64": 172801
+                  "u64": 172800
                 }
               ]
             }
@@ -103,7 +103,7 @@
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
             "key": {
               "ledger_key_nonce": {
-                "nonce": 0
+                "nonce": 801925984706572462
               }
             },
             "durability": "temporary"
@@ -118,7 +118,7 @@
                 "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
                 "key": {
                   "ledger_key_nonce": {
-                    "nonce": 0
+                    "nonce": 801925984706572462
                   }
                 },
                 "durability": "temporary",
@@ -136,7 +136,7 @@
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
             "key": {
               "ledger_key_nonce": {
-                "nonce": 0
+                "nonce": 5541220902715666415
               }
             },
             "durability": "temporary"
@@ -151,7 +151,7 @@
                 "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
                 "key": {
                   "ledger_key_nonce": {
-                    "nonce": 0
+                    "nonce": 5541220902715666415
                   }
                 },
                 "durability": "temporary",
@@ -169,7 +169,7 @@
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
             "key": {
               "ledger_key_nonce": {
-                "nonce": 0
+                "nonce": 1033654523790656264
               }
             },
             "durability": "temporary"
@@ -184,7 +184,7 @@
                 "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
                 "key": {
                   "ledger_key_nonce": {
-                    "nonce": 0
+                    "nonce": 1033654523790656264
                   }
                 },
                 "durability": "temporary",
@@ -350,6 +350,51 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "IdempotencyWindow"
+                },
+                {
+                  "bytes": "4d02ff51a84c37b7487b7d6db8c5b686e7c98f6a9ac6b05d6ccad0e8e6abaa35"
+                }
+              ]
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "IdempotencyWindow"
+                    },
+                    {
+                      "bytes": "4d02ff51a84c37b7487b7d6db8c5b686e7c98f6a9ac6b05d6ccad0e8e6abaa35"
+                    }
+                  ]
+                },
+                "durability": "temporary",
+                "val": {
+                  "bool": true
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          16
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
+            "key": {
+              "vec": [
+                {
                   "symbol": "Shipment"
                 },
                 {
@@ -409,7 +454,7 @@
                         "symbol": "deadline"
                       },
                       "val": {
-                        "u64": 172801
+                        "u64": 172800
                       }
                     },
                     {
@@ -607,6 +652,14 @@
                               },
                               "val": {
                                 "u32": 100
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "idempotency_window_seconds"
+                              },
+                              "val": {
+                                "u64": 300
                               }
                             },
                             {

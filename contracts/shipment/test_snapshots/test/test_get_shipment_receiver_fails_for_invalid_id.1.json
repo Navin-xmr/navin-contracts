@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 0,
+    "address": 3,
     "nonce": 0
   },
   "auth": [
@@ -106,10 +106,26 @@
                             },
                             {
                               "key": {
+                                "symbol": "deadline_grace_seconds"
+                              },
+                              "val": {
+                                "u64": 0
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "default_shipment_limit"
                               },
                               "val": {
                                 "u32": 100
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "idempotency_window_seconds"
+                              },
+                              "val": {
+                                "u64": 300
                               }
                             },
                             {
