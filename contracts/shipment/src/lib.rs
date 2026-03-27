@@ -18,6 +18,8 @@ mod types;
 mod validation;
 
 #[cfg(test)]
+mod test_auth;
+#[cfg(test)]
 mod test_suspension;
 #[cfg(test)]
 mod test_utils;

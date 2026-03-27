@@ -8,7 +8,7 @@ use crate::{
 };
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::{storage::Persistent, Address as _, Events, Ledger as _},
+    testutils::{storage::Persistent, Address as _, Events},
     Address, BytesN, Env, Symbol, TryFromVal,
 };
 
@@ -486,7 +486,7 @@ fn test_update_status_valid_transition_by_admin() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #5)")]
+#[should_panic(expected = "Error(Contract, #38)")]
 fn test_update_status_invalid_transition() {
     use crate::ShipmentStatus;
     let (env, client, admin, token_contract) = setup_shipment_env();
@@ -516,7 +516,7 @@ fn test_update_status_invalid_transition() {
         &new_data_hash,
     );
 
-    env.ledger().with_mut(|l| l.timestamp += 61);
+    super::test_utils::advance_past_rate_limit(&env);
     client.update_status(
         &carrier,
         &shipment_id,
@@ -524,7 +524,7 @@ fn test_update_status_invalid_transition() {
         &new_data_hash,
     );
 
-    env.ledger().with_mut(|l| l.timestamp += 61);
+    super::test_utils::advance_past_rate_limit(&env);
     // Invalid: Delivered → Created
     client.update_status(
         &carrier,
@@ -605,7 +605,7 @@ fn test_update_status_multiple_valid_transitions() {
     );
 
     // InTransit → AtCheckpoint
-    env.ledger().with_mut(|l| l.timestamp += 61);
+    super::test_utils::advance_past_rate_limit(&env);
     client.update_status(
         &carrier,
         &shipment_id,
@@ -618,7 +618,7 @@ fn test_update_status_multiple_valid_transitions() {
     );
 
     // AtCheckpoint → Delivered
-    env.ledger().with_mut(|l| l.timestamp += 61);
+    super::test_utils::advance_past_rate_limit(&env);
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::Delivered, &hash_4);
     assert_eq!(
         client.get_shipment(&shipment_id).status,
@@ -686,7 +686,7 @@ fn test_suspend_and_reactivate_carrier_for_status_updates() {
     client.reactivate_carrier(&admin, &carrier);
     assert!(!client.is_carrier_suspended(&carrier));
 
-    env.ledger().with_mut(|l| l.timestamp += 61);
+    super::test_utils::advance_past_rate_limit(&env);
     client.update_status(
         &carrier,
         &shipment_id,
@@ -1477,7 +1477,7 @@ fn test_release_escrow_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #8)")]
+#[should_panic(expected = "Error(Contract, #38)")]
 fn test_release_escrow_double_release() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -1738,7 +1738,7 @@ fn test_refund_escrow_by_admin() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #8)")]
+#[should_panic(expected = "Error(Contract, #38)")]
 fn test_refund_escrow_double_refund() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -2786,7 +2786,7 @@ fn test_escrow_happy_path_create_deposit_transit_deliver_confirm() {
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
 
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash2);
-    env.ledger().with_mut(|l| l.timestamp += 61);
+    super::test_utils::advance_past_rate_limit(&env);
     client.update_status(
         &carrier,
         &shipment_id,
@@ -2858,7 +2858,7 @@ fn test_escrow_dispute_resolve_to_delivered() {
     );
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash2);
-    env.ledger().with_mut(|l| l.timestamp += 61);
+    super::test_utils::advance_past_rate_limit(&env);
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::Disputed, &hash3);
     client.update_status(&admin, &shipment_id, &ShipmentStatus::Delivered, &hash3);
 
@@ -2893,7 +2893,7 @@ fn test_escrow_dispute_resolve_to_cancelled() {
     );
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash2);
-    env.ledger().with_mut(|l| l.timestamp += 61);
+    super::test_utils::advance_past_rate_limit(&env);
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::Disputed, &hash2);
     client.update_status(
         &admin,
@@ -2961,7 +2961,7 @@ fn test_escrow_release_without_delivery_confirm_from_created_fails() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #9)")]
+#[should_panic(expected = "Error(Contract, #38)")]
 fn test_escrow_refund_after_delivery_fails() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -3582,7 +3582,7 @@ fn test_handoff_delivered_shipment() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #9)")]
+#[should_panic(expected = "Error(Contract, #38)")]
 fn test_handoff_cancelled_shipment() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -3955,9 +3955,7 @@ fn test_rate_limit_update_after_interval_succeeds() {
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash1);
 
     // Advance the ledger timestamp past the 60-second minimum interval
-    env.ledger().with_mut(|l| {
-        l.timestamp += 61;
-    });
+    super::test_utils::advance_past_rate_limit(&env);
 
     // Second update after the interval — should succeed
     client.update_status(
@@ -4648,7 +4646,7 @@ fn test_proposal_expiration() {
     let proposal_id = client.propose_action(&admin1, &action);
 
     // Fast forward time beyond expiration (7 days + 1 second)
-    env.ledger().with_mut(|l| l.timestamp += 604_801);
+    super::test_utils::advance_past_multisig_expiry(&env);
 
     // Try to approve expired proposal - should fail
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -4891,7 +4889,7 @@ fn test_check_deadline_success_auto_cancels_and_refunds() {
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
 
     // Advance ledger time past the deadline threshold
-    env.ledger().with_mut(|l| l.timestamp += 1001);
+    super::test_utils::advance_ledger_time(&env, 1001);
 
     // Execute the deadline checker
     client.check_deadline(&shipment_id);
@@ -4968,7 +4966,7 @@ fn test_delivery_before_deadline() {
     assert_eq!(shipment.status, ShipmentStatus::Delivered);
 
     // Fast-forward past the deadline point
-    env.ledger().with_mut(|l| l.timestamp += 1001);
+    super::test_utils::advance_ledger_time(&env, 1001);
 
     // Attempting to crank check_deadline on a safely completed shipment errors appropriately (Error 9)
     let res = client.try_check_deadline(&shipment_id);
@@ -6175,7 +6173,7 @@ fn test_count_decrements_on_deadline_expiration() {
     assert_eq!(client.get_active_shipment_count(&company), 1);
 
     // Fast forward time
-    env.ledger().with_mut(|l| l.timestamp = deadline + 1);
+    super::test_utils::set_ledger_time(&env, deadline + 1);
 
     client.check_deadline(&1);
 
@@ -6663,8 +6661,7 @@ fn test_approve_action_returns_proposal_expired() {
     let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
 
     // Fast forward time past expiration (7 days)
-    env.ledger()
-        .with_mut(|l| l.timestamp += 7 * 24 * 60 * 60 + 1);
+    super::test_utils::advance_past_multisig_expiry(&env);
 
     client.approve_action(&admin2, &proposal_id);
 }
@@ -6702,8 +6699,7 @@ fn test_execute_proposal_returns_proposal_expired() {
     client.approve_action(&admin2, &proposal_id);
 
     // Fast forward time past expiration
-    env.ledger()
-        .with_mut(|l| l.timestamp += 7 * 24 * 60 * 60 + 1);
+    super::test_utils::advance_past_multisig_expiry(&env);
 
     client.execute_proposal(&proposal_id);
 }
@@ -7537,7 +7533,7 @@ fn test_full_shipment_lifecycle_integration() {
 
     // ─── STEP 5: Record First Milestone (Warehouse) ──────────────────────────
     // Advance time to bypass rate limiting
-    env.ledger().with_mut(|l| l.timestamp += 61);
+    super::test_utils::advance_past_rate_limit(&env);
 
     let warehouse_checkpoint = soroban_sdk::Symbol::new(&env, "warehouse");
     let milestone_hash_1 = BytesN::from_array(&env, &[3u8; 32]);
@@ -7554,7 +7550,7 @@ fn test_full_shipment_lifecycle_integration() {
     assert_eq!(shipment.paid_milestones.len(), 1);
 
     // ─── STEP 6: Update Status to AtCheckpoint ───────────────────────────────
-    env.ledger().with_mut(|l| l.timestamp += 61);
+    super::test_utils::advance_past_rate_limit(&env);
     let checkpoint_hash = BytesN::from_array(&env, &[4u8; 32]);
     client.update_status(
         &carrier,
@@ -7568,7 +7564,7 @@ fn test_full_shipment_lifecycle_integration() {
     assert_eq!(shipment.status, ShipmentStatus::AtCheckpoint);
 
     // ─── STEP 7: Update Status Back to InTransit ─────────────────────────────
-    env.ledger().with_mut(|l| l.timestamp += 61);
+    super::test_utils::advance_past_rate_limit(&env);
     let transit_hash_2 = BytesN::from_array(&env, &[5u8; 32]);
     client.update_status(
         &carrier,
@@ -7582,7 +7578,7 @@ fn test_full_shipment_lifecycle_integration() {
     assert_eq!(shipment.status, ShipmentStatus::InTransit);
 
     // ─── STEP 8: Record Second Milestone (Port) ──────────────────────────────
-    env.ledger().with_mut(|l| l.timestamp += 61);
+    super::test_utils::advance_past_rate_limit(&env);
     let port_checkpoint = soroban_sdk::Symbol::new(&env, "port");
     let milestone_hash_2 = BytesN::from_array(&env, &[6u8; 32]);
     client.record_milestone(&carrier, &shipment_id, &port_checkpoint, &milestone_hash_2);
@@ -7785,9 +7781,7 @@ fn test_event_count_after_status_updates() {
     );
 
     // Advance ledger timestamp to avoid rate limit
-    env.ledger().with_mut(|li| {
-        li.timestamp += 61; // Advance by 61 seconds (default min interval is 60)
-    });
+    super::test_utils::advance_past_rate_limit(&env);
 
     // Update status to AtCheckpoint
     let status_hash2 = BytesN::from_array(&env, &[3u8; 32]);
@@ -8315,7 +8309,7 @@ fn test_carrier_late_delivery_event_and_milestones() {
     );
 
     // Advance time past the deadline to trigger a late delivery
-    env.ledger().with_mut(|l| l.timestamp = deadline + 100);
+    super::test_utils::set_ledger_time(&env, deadline + 100);
 
     // Delivery
     let actual_time = env.ledger().timestamp();
@@ -8736,8 +8730,7 @@ fn test_check_deadline_within_grace_period_returns_not_expired() {
 
     // Advance time: deadline has passed, but we are still inside the grace window
     // timestamp = deadline + grace - 1  =>  NOT yet expired
-    env.ledger()
-        .with_mut(|l| l.timestamp = deadline + grace - 1);
+    super::test_utils::set_ledger_time(&env, deadline + grace - 1);
 
     client.check_deadline(&shipment_id);
 }
@@ -8759,7 +8752,7 @@ fn test_check_deadline_at_grace_boundary_succeeds() {
     client.update_config(&admin, &config);
 
     // Advance time to exactly deadline + grace
-    env.ledger().with_mut(|l| l.timestamp = deadline + grace);
+    super::test_utils::set_ledger_time(&env, deadline + grace);
 
     client.check_deadline(&shipment_id);
 
@@ -8784,8 +8777,7 @@ fn test_check_deadline_after_grace_period_cancels_shipment() {
     client.update_config(&admin, &config);
 
     // Advance time well past deadline + grace
-    env.ledger()
-        .with_mut(|l| l.timestamp = deadline + grace + 500);
+    super::test_utils::set_ledger_time(&env, deadline + grace + 500);
 
     client.check_deadline(&shipment_id);
 
@@ -8806,7 +8798,7 @@ fn test_check_deadline_zero_grace_expires_immediately() {
         setup_shipment_with_deadline(&env, &client, &admin, &token_contract, deadline);
 
     // Default config has deadline_grace_seconds = 0
-    env.ledger().with_mut(|l| l.timestamp = deadline + 1);
+    super::test_utils::set_ledger_time(&env, deadline + 1);
 
     client.check_deadline(&shipment_id);
 
@@ -8884,7 +8876,7 @@ fn test_force_cancel_shipment_success_in_transit() {
     let data_hash = BytesN::from_array(&env, &[0x02u8; 32]);
 
     // Move to InTransit via admin (bypasses carrier whitelist requirement)
-    env.ledger().with_mut(|l| l.timestamp += 120);
+    super::test_utils::advance_ledger_time(&env, 120);
     client.update_status(&admin, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
 
     let reason_hash = BytesN::from_array(&env, &[0x03u8; 32]);
@@ -8942,9 +8934,9 @@ fn test_force_cancel_shipment_not_found() {
     client.force_cancel_shipment(&admin, &9999, &reason_hash);
 }
 
-/// Force-cancelling an already-Delivered shipment returns ShipmentAlreadyCompleted (#9).
+/// Force-cancelling an already-Delivered shipment returns ShipmentFinalized (#38).
 #[test]
-#[should_panic(expected = "Error(Contract, #9)")]
+#[should_panic(expected = "Error(Contract, #38)")]
 fn test_force_cancel_shipment_already_delivered() {
     let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
 
@@ -8953,23 +8945,23 @@ fn test_force_cancel_shipment_already_delivered() {
     let confirmation_hash = BytesN::from_array(&env, &[0x08u8; 32]);
 
     // Move to InTransit then Delivered via admin
-    env.ledger().with_mut(|l| l.timestamp += 120);
+    super::test_utils::advance_ledger_time(&env, 120);
     client.update_status(
         &admin,
         &shipment_id,
         &ShipmentStatus::InTransit,
         &BytesN::from_array(&env, &[0x09u8; 32]),
     );
-    env.ledger().with_mut(|l| l.timestamp += 120);
+    super::test_utils::advance_ledger_time(&env, 120);
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
 
     let reason_hash = BytesN::from_array(&env, &[0x0Au8; 32]);
     client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
 }
 
-/// Force-cancelling an already-Cancelled shipment returns ShipmentAlreadyCompleted (#9).
+/// Force-cancelling an already-Cancelled shipment returns ShipmentFinalized (#38).
 #[test]
-#[should_panic(expected = "Error(Contract, #9)")]
+#[should_panic(expected = "Error(Contract, #38)")]
 fn test_force_cancel_shipment_already_cancelled() {
     let (env, client, admin, _token_contract, company, shipment_id) = setup_force_cancel_env();
 

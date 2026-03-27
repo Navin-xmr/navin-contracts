@@ -97,7 +97,7 @@ fn test_finalization_on_cancel_with_zero_escrow() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #37)")]
+#[should_panic(expected = "Error(Contract, #38)")]
 fn test_mutation_rejected_after_finalization() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -123,7 +123,7 @@ fn test_mutation_rejected_after_finalization() {
     let shipment = client.get_shipment(&shipment_id);
     assert!(shipment.finalized);
 
-    // Try to update metadata - should panic with ShipmentFinalized (37)
+    // Try to update metadata - should panic with ShipmentFinalized (38)
     client.set_shipment_metadata(
         &company,
         &shipment_id,
