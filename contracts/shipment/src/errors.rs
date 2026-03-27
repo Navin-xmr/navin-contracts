@@ -90,4 +90,8 @@ pub enum NavinError {
     CompanySuspended = 37,
     /// Action rejected because the shipment is finalized and locked.
     ShipmentFinalized = 38,
+    /// A cross-contract token transfer failed.
+    TokenTransferFailed = 39,
+    /// A cross-contract token mint failed.
+    TokenMintFailed = 40,
 }

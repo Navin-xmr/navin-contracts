@@ -7,7 +7,7 @@ use crate::{
     PersistentRestoreDiagnostics, Severity, ShipmentInput, ShipmentStatus, StoragePresenceState,
 };
 use soroban_sdk::{
-    contract, contractimpl,
+    contract, contracterror, contractimpl,
     testutils::{storage::Persistent, Address as _, Events},
     Address, BytesN, Env, Symbol, TryFromVal,
 };
@@ -22,9 +22,54 @@ impl MockToken {
     }
 }
 
+mod failing_token {
+    use super::*;
+
+    #[contracterror]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+    #[repr(u32)]
+    pub enum MockTokenFailure {
+        TransferFailed = 1,
+        MintFailed = 2,
+    }
+
+    #[contract]
+    pub struct FailingMockToken;
+
+    #[contractimpl]
+    impl FailingMockToken {
+        pub fn transfer(
+            _env: Env,
+            _from: Address,
+            _to: Address,
+            _amount: i128,
+        ) -> Result<(), MockTokenFailure> {
+            Err(MockTokenFailure::TransferFailed)
+        }
+
+        pub fn mint(
+            _env: Env,
+            _admin: Address,
+            _to: Address,
+            _amount: i128,
+        ) -> Result<(), MockTokenFailure> {
+            Err(MockTokenFailure::MintFailed)
+        }
+    }
+}
+
 fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
     let (env, admin) = super::test_utils::setup_env();
     let token_contract = env.register(MockToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+
+    (env, client, admin, token_contract)
+}
+
+fn setup_shipment_env_with_failing_token() -> (Env, NavinShipmentClient<'static>, Address, Address)
+{
+    let (env, admin) = super::test_utils::setup_env();
+    let token_contract = env.register(failing_token::FailingMockToken {}, ());
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
 
     (env, client, admin, token_contract)
@@ -118,6 +163,47 @@ fn test_create_shipment_success() {
     assert_eq!(shipment.receiver, receiver);
     assert_eq!(shipment.carrier, carrier);
     assert_eq!(shipment.data_hash, data_hash);
+}
+
+#[test]
+fn test_deposit_escrow_maps_token_transfer_failure() {
+    let (env, client, admin, token_contract) = setup_shipment_env_with_failing_token();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let result = client.try_deposit_escrow(&company, &shipment_id, &500);
+
+    assert_eq!(result, Err(Ok(crate::NavinError::TokenTransferFailed)));
+    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 0);
+}
+
+#[test]
+fn test_token_mint_helper_maps_failure() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_contract = env.register(failing_token::FailingMockToken {}, ());
+    let admin = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let result = super::invoke_token_mint(&env, &token_contract, &admin, &recipient, 250);
+
+    assert_eq!(result, Err(crate::NavinError::TokenMintFailed));
 }
 
 #[test]
