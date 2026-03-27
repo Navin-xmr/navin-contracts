@@ -1331,3 +1331,34 @@ mod tests {
         });
     }
 }
+
+// ============= Pause/Unpause Storage Functions =============
+
+/// Check if the contract is paused.
+pub fn is_paused(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::IsPaused)
+        .unwrap_or(false)
+}
+
+/// Set the contract pause state.
+pub fn set_paused(env: &Env, paused: bool) {
+    env.storage().instance().set(&DataKey::IsPaused, &paused);
+}
+
+// ============= IoT Hash Verification Storage Functions =============
+
+/// Store the data hash for a specific shipment status transition.
+pub fn set_status_hash(env: &Env, shipment_id: u64, status: &ShipmentStatus, hash: &BytesN<32>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::StatusHash(shipment_id, status.clone()), hash);
+}
+
+/// Retrieve the data hash for a specific shipment status transition.
+pub fn get_status_hash(env: &Env, shipment_id: u64, status: &ShipmentStatus) -> Option<BytesN<32>> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::StatusHash(shipment_id, status.clone()))
+}
