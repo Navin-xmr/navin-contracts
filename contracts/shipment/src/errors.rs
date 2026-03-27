@@ -86,4 +86,6 @@ pub enum NavinError {
     ArithmeticError = 35,
     /// Dispute resolution requires a reason hash.
     DisputeResolutionReasonHashMissing = 36,
+    /// Action rejected because the shipment is finalized and locked.
+    ShipmentFinalized = 37,
 }

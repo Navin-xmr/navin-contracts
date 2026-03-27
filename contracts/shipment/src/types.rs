@@ -239,6 +239,8 @@ pub struct Shipment {
     pub deadline: u64,
     /// Counter to prevent replay of external actions and correlate off-chain integrations.
     pub integration_nonce: u32,
+    /// Whether the shipment is finalized (terminal state reached and escrow cleared).
+    pub finalized: bool,
 }
 
 /// A checkpoint milestone recorded during shipment transit.

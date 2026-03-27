@@ -12,6 +12,8 @@ mod events;
 mod storage;
 mod stress_test;
 mod test;
+#[cfg(test)]
+mod test_finalization;
 mod types;
 mod validation;
 
@@ -65,6 +67,22 @@ fn checked_mul_div_i128(value: i128, multiplier: i128, divisor: i128) -> Result<
         .checked_mul(multiplier)
         .ok_or(NavinError::ArithmeticError)?;
     Ok(product / divisor)
+}
+
+fn finalize_if_settled(_env: &Env, shipment: &mut Shipment) {
+    if (shipment.status == ShipmentStatus::Delivered
+        || shipment.status == ShipmentStatus::Cancelled)
+        && shipment.escrow_amount == 0
+    {
+        shipment.finalized = true;
+    }
+}
+
+fn require_not_finalized(shipment: &Shipment) -> Result<(), NavinError> {
+    if shipment.finalized {
+        return Err(NavinError::ShipmentFinalized);
+    }
+    Ok(())
 }
 
 fn internal_release_escrow(
@@ -188,6 +206,7 @@ impl NavinShipment {
         let admin = storage::get_admin(&env);
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        require_not_finalized(&shipment)?;
         // Only sender or admin can set
         if caller != shipment.sender && caller != admin {
             return Err(NavinError::Unauthorized);
@@ -234,6 +253,7 @@ impl NavinShipment {
 
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        require_not_finalized(&shipment)?;
         let admin = storage::get_admin(&env);
 
         // Authorization: Sender, Receiver, Carrier, or Admin
@@ -277,6 +297,7 @@ impl NavinShipment {
 
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        require_not_finalized(&shipment)?;
         let admin = storage::get_admin(&env);
 
         // State check: Only in Disputed state
@@ -1056,6 +1077,7 @@ impl NavinShipment {
             metadata: None,
             deadline,
             integration_nonce: 0,
+            finalized: false,
         };
 
         storage::set_shipment(&env, &shipment);
@@ -1162,6 +1184,7 @@ impl NavinShipment {
                 metadata: None,
                 deadline: shipment_input.deadline,
                 integration_nonce: 0,
+                finalized: false,
             };
 
             storage::set_shipment(&env, &shipment);
@@ -1296,6 +1319,8 @@ impl NavinShipment {
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+        require_not_finalized(&shipment)?;
+
         if shipment.status != ShipmentStatus::Created {
             return Err(NavinError::InvalidStatus);
         }
@@ -1370,6 +1395,7 @@ impl NavinShipment {
         if caller != shipment.carrier && caller != admin {
             return Err(NavinError::Unauthorized);
         }
+        require_not_finalized(&shipment)?;
         if caller == shipment.carrier {
             require_active_carrier(&env, &caller)?;
         }
@@ -1395,9 +1421,11 @@ impl NavinShipment {
         shipment.updated_at = env.ledger().timestamp();
         shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
-        storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
         storage::increment_status_count(&env, &shipment.status);
+
+        finalize_if_settled(&env, &mut shipment);
+        storage::set_shipment(&env, &shipment);
 
         if shipment.status == ShipmentStatus::Disputed {
             storage::increment_total_disputes(&env);
@@ -1631,6 +1659,7 @@ impl NavinShipment {
         if shipment.receiver != receiver {
             return Err(NavinError::Unauthorized);
         }
+        require_not_finalized(&shipment)?;
 
         // Validate transition to Delivered
         if !shipment
@@ -1645,16 +1674,17 @@ impl NavinShipment {
         shipment.status = ShipmentStatus::Delivered;
         shipment.updated_at = now;
 
-        storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
         storage::increment_status_count(&env, &ShipmentStatus::Delivered);
-
         storage::set_confirmation_hash(&env, shipment_id, &confirmation_hash);
         storage::decrement_active_shipment_count(&env, &shipment.sender);
         extend_shipment_ttl(&env, shipment_id);
 
         let remaining_escrow = shipment.escrow_amount;
         internal_release_escrow(&env, &mut shipment, remaining_escrow)?;
+
+        finalize_if_settled(&env, &mut shipment);
+        storage::set_shipment(&env, &shipment);
 
         env.events().publish(
             (Symbol::new(&env, "delivery_confirmed"),),
@@ -1741,6 +1771,8 @@ impl NavinShipment {
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+        require_not_finalized(&shipment)?;
+
         if shipment.carrier != carrier {
             return Err(NavinError::Unauthorized);
         }
@@ -1792,6 +1824,8 @@ impl NavinShipment {
 
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        require_not_finalized(&shipment)?;
 
         if shipment.carrier != carrier {
             return Err(NavinError::Unauthorized);
@@ -1849,6 +1883,8 @@ impl NavinShipment {
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+        require_not_finalized(&shipment)?;
+
         if shipment.carrier != carrier {
             return Err(NavinError::Unauthorized);
         }
@@ -1898,6 +1934,9 @@ impl NavinShipment {
                 internal_release_escrow(&env, &mut mut_shipment, release_amount)?;
             }
         }
+
+        finalize_if_settled(&env, &mut mut_shipment);
+        storage::set_shipment(&env, &mut_shipment);
 
         Ok(())
     }
@@ -1951,6 +1990,8 @@ impl NavinShipment {
         // Verify shipment exists, carrier is assigned, and status
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        require_not_finalized(&shipment)?;
 
         if shipment.carrier != carrier {
             return Err(NavinError::Unauthorized);
@@ -2022,6 +2063,9 @@ impl NavinShipment {
             }
         }
 
+        finalize_if_settled(&env, &mut mut_shipment);
+        storage::set_shipment(&env, &mut_shipment);
+
         Ok(())
     }
 
@@ -2084,6 +2128,8 @@ impl NavinShipment {
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+        require_not_finalized(&shipment)?;
+
         if caller != shipment.sender && caller != admin {
             return Err(NavinError::Unauthorized);
         }
@@ -2115,6 +2161,8 @@ impl NavinShipment {
             storage::remove_escrow_balance(&env, shipment_id);
             events::emit_escrow_released(&env, shipment_id, &shipment.sender, escrow_amount);
         }
+        finalize_if_settled(&env, &mut shipment);
+        storage::set_shipment(&env, &shipment);
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_shipment_cancelled(&env, shipment_id, &caller, &reason_hash);
@@ -2178,6 +2226,8 @@ impl NavinShipment {
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+        require_not_finalized(&shipment)?;
+
         // Terminal states cannot be force-cancelled.
         match shipment.status {
             ShipmentStatus::Delivered | ShipmentStatus::Cancelled => {
@@ -2208,7 +2258,6 @@ impl NavinShipment {
         shipment.updated_at = env.ledger().timestamp();
         shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
-        storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
         storage::increment_status_count(&env, &ShipmentStatus::Cancelled);
 
@@ -2216,6 +2265,9 @@ impl NavinShipment {
         // non-active state (Cancelled is the only non-active non-terminal state
         // that can't reach here, so this is always safe).
         storage::decrement_active_shipment_count(&env, &shipment.sender);
+
+        finalize_if_settled(&env, &mut shipment);
+        storage::set_shipment(&env, &shipment);
 
         extend_shipment_ttl(&env, shipment_id);
 
@@ -2295,6 +2347,8 @@ impl NavinShipment {
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+        require_not_finalized(&shipment)?;
+
         if caller != shipment.receiver && caller != admin {
             return Err(NavinError::Unauthorized);
         }
@@ -2309,6 +2363,8 @@ impl NavinShipment {
         }
 
         internal_release_escrow(&env, &mut shipment, escrow_amount)?;
+        finalize_if_settled(&env, &mut shipment);
+        storage::set_shipment(&env, &shipment);
         events::emit_notification(
             &env,
             &shipment.sender,
@@ -2358,6 +2414,8 @@ impl NavinShipment {
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+        require_not_finalized(&shipment)?;
+
         if caller != shipment.sender && caller != admin {
             return Err(NavinError::Unauthorized);
         }
@@ -2390,6 +2448,7 @@ impl NavinShipment {
         shipment.updated_at = env.ledger().timestamp();
         shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
+        finalize_if_settled(&env, &mut shipment);
         storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
         storage::increment_status_count(&env, &ShipmentStatus::Cancelled);
@@ -2441,6 +2500,8 @@ impl NavinShipment {
 
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        require_not_finalized(&shipment)?;
 
         if caller != shipment.sender && caller != shipment.receiver && caller != shipment.carrier {
             return Err(NavinError::Unauthorized);
@@ -2529,6 +2590,8 @@ impl NavinShipment {
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+        require_not_finalized(&shipment)?;
+
         if shipment.status != ShipmentStatus::Disputed {
             return Err(NavinError::InvalidStatus);
         }
@@ -2557,6 +2620,7 @@ impl NavinShipment {
         storage::increment_status_count(&env, &shipment.status);
         storage::decrement_active_shipment_count(&env, &shipment.sender);
 
+        finalize_if_settled(&env, &mut shipment);
         storage::set_shipment(&env, &shipment);
         storage::remove_escrow_balance(&env, shipment_id);
         extend_shipment_ttl(&env, shipment_id);
@@ -2639,6 +2703,8 @@ impl NavinShipment {
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+        require_not_finalized(&shipment)?;
+
         // Verify current carrier is the assigned carrier
         if shipment.carrier != current_carrier {
             return Err(NavinError::Unauthorized);
@@ -2719,6 +2785,8 @@ impl NavinShipment {
 
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        require_not_finalized(&shipment)?;
 
         // Only the assigned carrier for this shipment may report
         if shipment.carrier != carrier {
