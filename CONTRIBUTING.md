@@ -254,7 +254,7 @@ To ensure our contracts remain deployable on-chain, we enforce strict size limit
    // Good
    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) -> Result<(), Error> {
        if amount <= 0 {
-           return Err(VaultError::InvalidAmount.into());
+            return Err(Error::InvalidAmount);
        }
        Ok(())
    }
@@ -336,8 +336,8 @@ To ensure our contracts remain deployable on-chain, we enforce strict size limit
 #[test]
 fn test_withdraw_insufficient_funds() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, SecureAssetVault);
-    let client = SecureAssetVaultClient::new(&env, &contract_id);
+   let contract_id = env.register_contract(None, NavinShipment);
+   let client = NavinShipmentClient::new(&env, &contract_id);
 
     let user = Address::generate(&env);
 
