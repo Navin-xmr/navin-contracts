@@ -3158,7 +3158,7 @@ impl NavinShipment {
         // Auto-open dispute on Critical breaches when the config toggle is enabled.
         // Skips silently if the shipment is already Disputed or Cancelled.
         let cfg = config::get_config(&env);
-        if cfg.auto_dispute_critical_breach && severity == Severity::Critical {
+        if cfg.auto_dispute_breach && severity == Severity::Critical {
             if shipment.status != ShipmentStatus::Cancelled
                 && shipment.status != ShipmentStatus::Disputed
             {

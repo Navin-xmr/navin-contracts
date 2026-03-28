@@ -11,15 +11,8 @@
 
 extern crate std;
 
-use crate::{
-    config::ContractConfig, BreachType, NavinShipment, NavinShipmentClient, Severity,
-    ShipmentStatus,
-};
-use soroban_sdk::{
-    contract, contractimpl,
-    testutils::Address as _,
-    Address, BytesN, Env,
-};
+use crate::{BreachType, NavinShipment, NavinShipmentClient, Severity, ShipmentStatus};
+use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env};
 
 // ── Minimal mock token ────────────────────────────────────────────────────────
 
@@ -41,14 +34,10 @@ fn setup() -> (Env, NavinShipmentClient<'static>, Address, Address) {
     (env, client, admin, token)
 }
 
-/// Enable `auto_dispute_critical_breach` by calling `update_config`.
-fn enable_auto_dispute(
-    env: &Env,
-    client: &NavinShipmentClient,
-    admin: &Address,
-) {
+/// Enable `auto_dispute_breach` by calling `update_config`.
+fn enable_auto_dispute(client: &NavinShipmentClient, admin: &Address) {
     let mut cfg = client.get_contract_config();
-    cfg.auto_dispute_critical_breach = true;
+    cfg.auto_dispute_breach = true;
     client.update_config(admin, &cfg);
 }
 
@@ -89,7 +78,7 @@ fn create_test_shipment(
 fn test_auto_dispute_opens_on_critical_breach_when_enabled() {
     let (env, client, admin, token) = setup();
     let (id, _company, _receiver, carrier) = create_test_shipment(&env, &client, &admin, &token);
-    enable_auto_dispute(&env, &client, &admin);
+    enable_auto_dispute(&client, &admin);
 
     let breach_hash = BytesN::from_array(&env, &[42u8; 32]);
     client.report_condition_breach(
@@ -133,7 +122,7 @@ fn test_auto_dispute_disabled_critical_breach_leaves_status_unchanged() {
 fn test_auto_dispute_ignores_non_critical_breach() {
     let (env, client, admin, token) = setup();
     let (id, _company, _receiver, carrier) = create_test_shipment(&env, &client, &admin, &token);
-    enable_auto_dispute(&env, &client, &admin);
+    enable_auto_dispute(&client, &admin);
 
     let breach_hash = BytesN::from_array(&env, &[44u8; 32]);
 
@@ -174,7 +163,7 @@ fn test_auto_dispute_ignores_non_critical_breach() {
 fn test_auto_dispute_skips_already_disputed_shipment() {
     let (env, client, admin, token) = setup();
     let (id, company, _receiver, carrier) = create_test_shipment(&env, &client, &admin, &token);
-    enable_auto_dispute(&env, &client, &admin);
+    enable_auto_dispute(&client, &admin);
 
     // Manually raise a dispute first
     let reason_hash = BytesN::from_array(&env, &[50u8; 32]);
@@ -210,7 +199,7 @@ fn test_auto_dispute_skips_already_disputed_shipment() {
 fn test_auto_dispute_skips_cancelled_shipment() {
     let (env, client, admin, token) = setup();
     let (id, _company, _receiver, carrier) = create_test_shipment(&env, &client, &admin, &token);
-    enable_auto_dispute(&env, &client, &admin);
+    enable_auto_dispute(&client, &admin);
 
     // Force shipment to Cancelled without going through cancel_shipment
     // (which would finalize the shipment and block breach reporting entirely)
@@ -241,30 +230,30 @@ fn test_auto_dispute_skips_cancelled_shipment() {
 /// Verify the auto-dispute toggle is stored/retrieved correctly via get_contract_config.
 #[test]
 fn test_auto_dispute_toggle_persisted_in_config() {
-    let (env, client, admin, token) = setup();
+    let (_env, client, admin, token) = setup();
     client.initialize(&admin, &token);
 
     // Default: disabled
     assert!(
-        !client.get_contract_config().auto_dispute_critical_breach,
+        !client.get_contract_config().auto_dispute_breach,
         "Toggle must be false by default"
     );
 
     // Enable
     let mut cfg = client.get_contract_config();
-    cfg.auto_dispute_critical_breach = true;
+    cfg.auto_dispute_breach = true;
     client.update_config(&admin, &cfg);
     assert!(
-        client.get_contract_config().auto_dispute_critical_breach,
+        client.get_contract_config().auto_dispute_breach,
         "Toggle must be true after enabling"
     );
 
     // Disable again
     let mut cfg = client.get_contract_config();
-    cfg.auto_dispute_critical_breach = false;
+    cfg.auto_dispute_breach = false;
     client.update_config(&admin, &cfg);
     assert!(
-        !client.get_contract_config().auto_dispute_critical_breach,
+        !client.get_contract_config().auto_dispute_breach,
         "Toggle must be false after disabling"
     );
 }
@@ -276,9 +265,9 @@ fn test_no_regression_when_toggle_re_disabled() {
     let (id, _company, _receiver, carrier) = create_test_shipment(&env, &client, &admin, &token);
 
     // Enable then immediately disable
-    enable_auto_dispute(&env, &client, &admin);
+    enable_auto_dispute(&client, &admin);
     let mut cfg = client.get_contract_config();
-    cfg.auto_dispute_critical_breach = false;
+    cfg.auto_dispute_breach = false;
     client.update_config(&admin, &cfg);
 
     let breach_hash = BytesN::from_array(&env, &[70u8; 32]);
@@ -302,7 +291,7 @@ fn test_no_regression_when_toggle_re_disabled() {
 fn test_auto_dispute_increments_total_disputes() {
     let (env, client, admin, token) = setup();
     let (id, _company, _receiver, carrier) = create_test_shipment(&env, &client, &admin, &token);
-    enable_auto_dispute(&env, &client, &admin);
+    enable_auto_dispute(&client, &admin);
 
     let before = client.get_analytics().total_disputes;
     let breach_hash = BytesN::from_array(&env, &[80u8; 32]);

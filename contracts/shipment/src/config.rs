@@ -100,7 +100,7 @@ pub struct ContractConfig {
     /// Has no effect on non-critical breaches or on shipments that are already
     /// `Disputed` or `Cancelled`.
     /// Default: `false` (disabled — existing behavior preserved).
-    pub auto_dispute_on_critical_breach: bool,
+    pub auto_dispute_breach: bool,
 }
 
 impl Default for ContractConfig {
@@ -121,10 +121,10 @@ impl Default for ContractConfig {
             default_shipment_limit: 100,      // 100 shipments
             multisig_min_admins: 2,           // 2 admins
             multisig_max_admins: 10,          // 10 admins
-            proposal_expiry_seconds: 604_800,        // 7 days
-            deadline_grace_seconds: 0,               // no grace period
-            idempotency_window_seconds: 300,         // 5 minutes
-            auto_dispute_on_critical_breach: false,  // disabled by default
+            proposal_expiry_seconds: 604_800, // 7 days
+            deadline_grace_seconds: 0,        // no grace period
+            idempotency_window_seconds: 300,  // 5 minutes
+            auto_dispute_breach: false,       // disabled by default
         }
     }
 }
@@ -274,7 +274,7 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// 8. multisig_max_admins (u32, 4 bytes, big-endian)
 /// 9. proposal_expiry_seconds (u64, 8 bytes, big-endian)
 /// 10. deadline_grace_seconds (u64, 8 bytes, big-endian)
-/// 11. auto_dispute_on_critical_breach (bool, 1 byte: 1 = true, 0 = false)
+/// 11. auto_dispute_breach (bool, 1 byte: 1 = true, 0 = false)
 ///
 /// Total: 53 bytes serialized, hashed to 32-byte SHA-256 digest.
 ///
@@ -336,8 +336,8 @@ pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32>
     bytes[offset..offset + 8].copy_from_slice(&config.deadline_grace_seconds.to_be_bytes());
     offset += 8;
 
-    // 11. auto_dispute_on_critical_breach (bool, 1 byte)
-    bytes[offset] = if config.auto_dispute_on_critical_breach { 1 } else { 0 };
+    // 11. auto_dispute_breach (bool, 1 byte)
+    bytes[offset] = if config.auto_dispute_breach { 1 } else { 0 };
 
     // Compute SHA-256 hash and convert to BytesN<32>
     let hash = env
@@ -601,11 +601,11 @@ mod tests {
         );
 
         let mut config = config_original.clone();
-        config.auto_dispute_on_critical_breach = true;
+        config.auto_dispute_breach = true;
         let checksum = compute_config_checksum(&config, &env);
         assert_ne!(
             checksum, checksum_original,
-            "Changing auto_dispute_on_critical_breach must change checksum"
+            "Changing auto_dispute_breach must change checksum"
         );
     }
 
@@ -647,7 +647,7 @@ mod tests {
             proposal_expiry_seconds: 864_000,
             deadline_grace_seconds: 43_200,
             idempotency_window_seconds: 300,
-            auto_dispute_on_critical_breach: false,
+            auto_dispute_breach: false,
         };
 
         let checksums = [
@@ -730,7 +730,7 @@ mod tests {
             proposal_expiry_seconds: 3_600,
             deadline_grace_seconds: 0,
             idempotency_window_seconds: 0,
-            auto_dispute_on_critical_breach: false,
+            auto_dispute_breach: false,
         };
 
         let config_max = ContractConfig {
@@ -745,7 +745,7 @@ mod tests {
             proposal_expiry_seconds: 2_592_000,
             deadline_grace_seconds: 604_800,
             idempotency_window_seconds: 86_400,
-            auto_dispute_on_critical_breach: true,
+            auto_dispute_breach: true,
         };
 
         let checksum_min = compute_config_checksum(&config_min, &env);
