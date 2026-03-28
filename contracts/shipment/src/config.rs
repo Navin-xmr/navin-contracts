@@ -92,6 +92,15 @@ pub struct ContractConfig {
     /// storage to reject duplicate external triggers.
     /// Default: 300 seconds (5 minutes).
     pub idempotency_window_seconds: u64,
+
+    /// When `true`, any `Critical`-severity condition breach reported by a carrier
+    /// automatically opens a dispute for that shipment (equivalent to calling
+    /// `raise_dispute` with the breach data hash as the reason).
+    ///
+    /// Has no effect on non-critical breaches or on shipments that are already
+    /// `Disputed` or `Cancelled`.
+    /// Default: `false` (disabled — existing behavior preserved).
+    pub auto_dispute_on_critical_breach: bool,
 }
 
 impl Default for ContractConfig {
@@ -112,9 +121,10 @@ impl Default for ContractConfig {
             default_shipment_limit: 100,      // 100 shipments
             multisig_min_admins: 2,           // 2 admins
             multisig_max_admins: 10,          // 10 admins
-            proposal_expiry_seconds: 604_800, // 7 days
-            deadline_grace_seconds: 0,        // no grace period
-            idempotency_window_seconds: 300,  // 5 minutes
+            proposal_expiry_seconds: 604_800,        // 7 days
+            deadline_grace_seconds: 0,               // no grace period
+            idempotency_window_seconds: 300,         // 5 minutes
+            auto_dispute_on_critical_breach: false,  // disabled by default
         }
     }
 }
@@ -264,8 +274,9 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// 8. multisig_max_admins (u32, 4 bytes, big-endian)
 /// 9. proposal_expiry_seconds (u64, 8 bytes, big-endian)
 /// 10. deadline_grace_seconds (u64, 8 bytes, big-endian)
+/// 11. auto_dispute_on_critical_breach (bool, 1 byte: 1 = true, 0 = false)
 ///
-/// Total: 52 bytes serialized, hashed to 32-byte SHA-256 digest.
+/// Total: 53 bytes serialized, hashed to 32-byte SHA-256 digest.
 ///
 /// # Arguments
 /// * `config` - The configuration to checksum.
@@ -281,8 +292,8 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// assert_eq!(checksum1, checksum2); // Deterministic
 /// ```
 pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32> {
-    // Serialize all fields in fixed order (52 bytes total)
-    let mut bytes: [u8; 52] = [0; 52];
+    // Serialize all fields in fixed order (53 bytes total)
+    let mut bytes: [u8; 53] = [0; 53];
     let mut offset = 0;
 
     // 1. shipment_ttl_threshold (u32, big-endian)
@@ -323,6 +334,10 @@ pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32>
 
     // 10. deadline_grace_seconds (u64, big-endian)
     bytes[offset..offset + 8].copy_from_slice(&config.deadline_grace_seconds.to_be_bytes());
+    offset += 8;
+
+    // 11. auto_dispute_on_critical_breach (bool, 1 byte)
+    bytes[offset] = if config.auto_dispute_on_critical_breach { 1 } else { 0 };
 
     // Compute SHA-256 hash and convert to BytesN<32>
     let hash = env
@@ -584,6 +599,14 @@ mod tests {
             checksum, checksum_original,
             "Changing deadline_grace_seconds must change checksum"
         );
+
+        let mut config = config_original.clone();
+        config.auto_dispute_on_critical_breach = true;
+        let checksum = compute_config_checksum(&config, &env);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing auto_dispute_on_critical_breach must change checksum"
+        );
     }
 
     #[test]
@@ -624,6 +647,7 @@ mod tests {
             proposal_expiry_seconds: 864_000,
             deadline_grace_seconds: 43_200,
             idempotency_window_seconds: 300,
+            auto_dispute_on_critical_breach: false,
         };
 
         let checksums = [
@@ -706,6 +730,7 @@ mod tests {
             proposal_expiry_seconds: 3_600,
             deadline_grace_seconds: 0,
             idempotency_window_seconds: 0,
+            auto_dispute_on_critical_breach: false,
         };
 
         let config_max = ContractConfig {
@@ -720,6 +745,7 @@ mod tests {
             proposal_expiry_seconds: 2_592_000,
             deadline_grace_seconds: 604_800,
             idempotency_window_seconds: 86_400,
+            auto_dispute_on_critical_breach: true,
         };
 
         let checksum_min = compute_config_checksum(&config_min, &env);
