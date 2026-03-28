@@ -1,0 +1,4075 @@
+[
+  {
+    "function_v0": {
+      "doc": "Pause the contract, disabling all state-changing operations.\\nOnly the admin can pause the contract. Read-only queries still work.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - The admin address pausing the contract.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok if successfully paused.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If caller is not the admin.\\n\\n# Examples\\n```rust\\n// contract.pause(&env, &admin);\\n```",
+      "name": "pause",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Unpause the contract, re-enabling state-changing operations.\\nOnly the admin can unpause the contract.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - The admin address unpausing the contract.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok if successfully unpaused.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If caller is not the admin.\\n\\n# Examples\\n```rust\\n// contract.unpause(&env, &admin);\\n```",
+      "name": "unpause",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Upgrade the contract to a new WASM implementation.\\nOnly the admin can trigger upgrades. State is preserved.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Contract admin executing the upgrade.\\n* `new_wasm_hash` - Hash pointer to the new WASM instance loaded on network.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful deployment upgrade instance.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If caller isn't contract admin instance.\\n* `NavinError::CounterOverflow` - If total tracking version identifier pointer triggers overflow.\\n\\n# Examples\\n```rust\\n// contract.upgrade(env, admin, new_wasm_hash);\\n```",
+      "name": "upgrade",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "new_wasm_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Returns the role assigned to a given address.\\nReturns Role::Unassigned if no role is assigned.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `address` - The address to check.\\n\\n# Returns\\n* `Result<Role, NavinError>` - The role assigned to the address.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n\\n# Examples\\n```rust\\n// let role = contract.get_role(&env, &address);\\n```",
+      "name": "get_role",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "address",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "udt": {
+                "name": "Role"
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get the contract admin address.\\n\\n# Arguments\\n* `env` - Execution environment.\\n\\n# Returns\\n* `Result<Address, NavinError>` - The current admin address.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n\\n# Examples\\n```rust\\n// let admin = contract.get_admin(&env);\\n```",
+      "name": "get_admin",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "address",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Check if the contract is currently paused.\\nRead-only function, no authentication required.\\n\\n# Arguments\\n* `env` - Execution environment.\\n\\n# Returns\\n* `Result<bool, NavinError>` - True if paused, false otherwise.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n\\n# Examples\\n```rust\\n// let paused = contract.is_paused(&env)?;\\n```",
+      "name": "is_paused",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "bool",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Initialize the contract with an admin address and token contract address.\\nCan only be called once. Sets the admin and shipment counter to 0.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - The address designated as the administrator.\\n* `token_contract` - The address of the token contract used for escrow.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok if initialized.\\n\\n# Errors\\n* `NavinError::AlreadyInitialized` - If called when already initialized.\\n\\n# Examples\\n```rust\\n// contract.initialize(&env, &admin_addr, &token_addr);\\n```",
+      "name": "initialize",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "token_contract",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Update ETA for a shipment.\\nOnly the designated registered carrier can update ETA.\\nETA must be strictly in the future.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `carrier` - Active assigned carrier modifying ETA.\\n* `shipment_id` - Identifiable tracker mapping to shipment.\\n* `eta_timestamp` - The estimated timestamp prediction in the future.\\n* `data_hash` - The mapped hash associated with the update.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful ETA registry.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If caller isn't the assigned carrier.\\n* `NavinError::ShipmentNotFound` - If shipment instance targets missing entry.\\n* `NavinError::InvalidTimestamp` - If provided ETA is strictly in the past or present.\\n\\n# Examples\\n```rust\\n// contract.update_eta(&env, &carrier, 1, new_eta, &hash);\\n```",
+      "name": "update_eta",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "carrier",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "eta_timestamp",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "data_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Allow admin to grant Carrier role.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Contract admin executing the role grant.\\n* `carrier` - The address receiving the carrier role.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful role assignment.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If called by a non-admin.\\n\\n# Examples\\n```rust\\n// contract.add_carrier(&env, &admin, &new_carrier_addr);\\n```",
+      "name": "add_carrier",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "carrier",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Allow admin to grant Company role.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Contract admin executing the role grant.\\n* `company` - The address receiving the company role.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful role assignment.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If called by a non-admin.\\n\\n# Examples\\n```rust\\n// contract.add_company(&env, &admin, &new_company_addr);\\n```",
+      "name": "add_company",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "company",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get the contract version number.\\n\\n# Arguments\\n* `env` - Execution environment.\\n\\n# Returns\\n* `Result<u32, NavinError>` - The version number of the contract.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n\\n# Examples\\n```rust\\n// let version = contract.get_version(&env);\\n```",
+      "name": "get_version",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "u32",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Revoke a previously assigned role from an address.\\n\\nOnly the admin can revoke roles. The admin cannot revoke their own role;\\nuse `transfer_admin` instead.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Contract admin executing the revocation.\\n* `target` - The address whose role is being revoked.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful role revocation.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If called by a non-admin.\\n* `NavinError::CannotSelfRevoke` - If admin tries to revoke their own role.\\n\\n# Examples\\n```rust\\n// contract.revoke_role(&env, &admin, &target_addr);\\n```",
+      "name": "revoke_role",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "target",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get a proposal by ID.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `proposal_id` - ID of the proposal.\\n\\n# Returns\\n* `Result<Proposal, NavinError>` - The proposal data.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ProposalNotFound` - If proposal doesn't exist.\\n\\n# Examples\\n```rust\\n// let proposal = contract.get_proposal(&env, 1);\\n```",
+      "name": "get_proposal",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "proposal_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "udt": {
+                "name": "Proposal"
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Retrieve shipment details by ID.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `shipment_id` - ID of the shipment to fetch.\\n\\n# Returns\\n* `Result<Shipment, NavinError>` - Reconstructed shipment struct.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ShipmentNotFound` - If shipment does not exist.\\n\\n# Examples\\n```rust\\n// let shipment = contract.get_shipment(&env, 1);\\n```",
+      "name": "get_shipment",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "udt": {
+                "name": "Shipment"
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Suspend a role temporarily (e.g., for investigation or compliance review).\\n\\nOnly the admin can suspend roles. Suspended addresses retain their role\\nassignment but cannot perform role-gated actions until reactivated.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Contract admin executing the suspension.\\n* `target` - The address whose role is being suspended.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful suspension.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If called by a non-admin.\\n* `NavinError::CannotSelfRevoke` - If admin tries to suspend their own role.\\n\\n# Examples\\n```rust\\n// contract.suspend_role(&env, &admin, &target_addr);\\n```",
+      "name": "suspend_role",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "target",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get aggregated analytics for the contract.\\n\\n# Arguments\\n* `env` - Execution environment.\\n\\n# Returns\\n* `Result<Analytics, NavinError>` - Aggregated analytics data.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.",
+      "name": "get_analytics",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "udt": {
+                "name": "Analytics"
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get a specific note hash for a shipment by its sequence index.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `shipment_id` - ID of the shipment.\\n* `index` - The 0-based index of the note.\\n\\n# Returns\\n* `Result<Option<BytesN<32>>, NavinError>` - The note hash if found.",
+      "name": "get_note_hash",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "index",
+          "type_": "u32"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "option": {
+                "value_type": {
+                  "bytes_n": {
+                    "n": 32
+                  }
+                }
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Initialize multi-signature configuration for critical admin actions.\\nOnly the current admin can call this. Must be called after contract initialization.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Current administrator address.\\n* `admins` - List of admin addresses for multi-sig (2-10 addresses).\\n* `threshold` - Number of approvals required (must be <= admin count).\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok if multi-sig is configured.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If caller is not the admin.\\n* `NavinError::InvalidMultiSigConfig` - If config is invalid.\\n\\n# Examples\\n```rust\\n// let admins = vec![&env, admin1, admin2, admin3];\\n// contract.init_multisig(&env, &admin, &admins, 2);\\n```",
+      "name": "init_multisig",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "admins",
+          "type_": {
+            "vec": {
+              "element_type": "address"
+            }
+          }
+        },
+        {
+          "doc": "",
+          "name": "threshold",
+          "type_": "u32"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Raise a dispute for a shipment.\\nOnly the sender, receiver, or carrier can raise a dispute.\\nShipment must not be Cancelled or already Disputed.\\n\\n# Arguments\\n* `env` - Execution environment tracking context.\\n* `caller` - Identity specifying resolution event raising instances configuration contexts.\\n* `shipment_id` - Object tracker index identifying execution scope handlers.\\n* `reason_hash` - Encoded offchain metadata representation parameter validation identifier limits strings pointers.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful dispute registry logging.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ShipmentNotFound` - If parameters index unresolvable target references configurations identifiers constraints matches.\\n* `NavinError::Unauthorized` - If resolving constraints mapping fails identifiers scopes validations check mapping instances boundaries checks definitions roles mapping assignments properties permissions restrictions validations pointers ide",
+      "name": "raise_dispute",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "caller",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "reason_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Refund escrowed funds to the company if shipment is cancelled.\\nOnly the sender (Company) or admin can trigger refund.\\nShipment must be in Created or Cancelled status.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `caller` - Reference mapping handler execution triggers for scope access control checks.\\n* `shipment_id` - Identification marker mapping.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful refund sequence generation.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ShipmentNotFound` - If valid identifiers track undefined mappings instances.\\n* `NavinError::Unauthorized` - If execution identity doesn't resolve matching configurations contexts mappings.\\n* `NavinError::InvalidStatus` - If mapping resolves illegal flow mappings configuration combinations triggers.\\n* `NavinError::InsufficientFunds` - If token escrow state points map uninitialized quantities values scope checks.\\n\\n# Examples\\n```rust\\n// contract.refund_escrow(env, sender, 1);\\n```",
+      "name": "refund_escrow",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "caller",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Update the contract configuration.\\nOnly the admin can update the configuration.\\nEmits a `config_updated` event on success.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Contract admin address.\\n* `new_config` - The new configuration to apply.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok if successfully updated.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If caller is not the admin.\\n* `NavinError::InvalidConfig` - If the configuration is invalid.\\n\\n# Examples\\n```rust\\n// let mut config = ContractConfig::default();\\n// config.batch_operation_limit = 20;\\n// contract.update_config(&env, &admin, config);\\n```",
+      "name": "update_config",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "new_config",
+          "type_": {
+            "udt": {
+              "name": "ContractConfig"
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Update shipment status with transition validation.\\nOnly the carrier or admin can update the status.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `caller` - Carrier or admin address making the update.\\n* `shipment_id` - Current shipment identifier.\\n* `new_status` - The destination transitional status.\\n* `data_hash` - The off-chain data hash tracking context for update.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on valid transition.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ShipmentNotFound` - If shipment doesn't exist.\\n* `NavinError::Unauthorized` - If caller is neither the carrier nor admin.\\n* `NavinError::CarrierSuspended` - If the assigned carrier is suspended.\\n* `NavinError::RateLimitExceeded` - If status was updated too recently (unless Admin).\\n* `NavinError::InvalidStatus` - If transitioning to an improperly sequenced state.\\n\\n# Examples\\n```rust\\n// contract.update_status(&env, &carrier, 1, ShipmentStatus::InTransit, &hash);\\n```",
+      "name": "update_status",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "caller",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "new_status",
+          "type_": {
+            "udt": {
+              "name": "ShipmentStatus"
+            }
+          }
+        },
+        {
+          "doc": "",
+          "name": "data_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Approve a pending proposal. Only admins in the admin list can approve.\\nSame admin cannot approve twice.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `approver` - Admin address approving the proposal.\\n* `proposal_id` - ID of the proposal to approve.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok if approved successfully.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::NotAnAdmin` - If caller is not in the admin list.\\n* `NavinError::ProposalNotFound` - If proposal doesn't exist.\\n* `NavinError::ProposalExpired` - If proposal has expired.\\n* `NavinError::ProposalAlreadyExecuted` - If proposal was already executed.\\n* `NavinError::AlreadyApproved` - If admin already approved this proposal.\\n\\n# Examples\\n```rust\\n// contract.approve_action(&env, &admin2, 1);\\n```",
+      "name": "approve_action",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "approver",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "proposal_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Cancel a shipment and auto-refund escrow if its delivery deadline has passed.\\nPermissionless design \\xe2\\x80\\x94 can be triggered by any caller (e.g., automated cron/crank).\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `shipment_id` - ID of the target shipment.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok if successfully cancelled and escrow refunded.\\n\\n# Errors\\n* `NavinError::NotExpired` - If the current ledger time hasn't passed the deadline.\\n* `NavinError::ShipmentAlreadyCompleted` - If the shipment is already in a terminal state.",
+      "name": "check_deadline",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Deposit escrow funds for a shipment.\\nOnly a Company can deposit, and the shipment must be in Created status.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `from` - Company address providing escrow.\\n* `shipment_id` - Target shipment.\\n* `amount` - Balance of tokens deposited into escrow.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful deposit.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If caller isn't a Company.\\n* `NavinError::InvalidAmount` - If amount is zero, negative, or exceeds the maximum.\\n* `NavinError::ShipmentNotFound` - If shipment is untracked.\\n* `NavinError::InvalidStatus` - If shipment is not in `Created` status.\\n* `NavinError::EscrowLocked` - If escrow is already deposited for shipment.\\n\\n# Examples\\n```rust\\n// contract.deposit_escrow(&env, &company, 1, 5000000);\\n```",
+      "name": "deposit_escrow",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "from",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "amount",
+          "type_": "i128"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get the total number of notes appended to a shipment.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `shipment_id` - ID of the shipment.\\n\\n# Returns\\n* `Result<u32, NavinError>` - Number of notes for the shipment.",
+      "name": "get_note_count",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "u32",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Propose a critical admin action that requires multi-sig approval.\\nOnly admins in the admin list can propose actions.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `proposer` - Admin address creating the proposal.\\n* `action` - The action to be executed after approval.\\n\\n# Returns\\n* `Result<u64, NavinError>` - The proposal ID.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::NotAnAdmin` - If caller is not in the admin list.\\n\\n# Examples\\n```rust\\n// let action = AdminAction::Upgrade(new_wasm_hash);\\n// let proposal_id = contract.propose_action(&env, &admin, &action);\\n```",
+      "name": "propose_action",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "proposer",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "action",
+          "type_": {
+            "udt": {
+              "name": "AdminAction"
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "u64",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Release escrowed funds to the carrier after delivery confirmation.\\nOnly the receiver or admin can trigger release.\\nShipment must be in Delivered status.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `caller` - Originating user triggering escrow delivery (receiver/admin).\\n* `shipment_id` - Tracking assignment associated with delivery payload instances.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful asset delivery.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ShipmentNotFound` - If tracking context specifies an invalid shipment.\\n* `NavinError::Unauthorized` - If caller isn't receiver or admin.\\n* `NavinError::InvalidStatus` - If contract expects specific lifecycle constraint and differs.\\n* `NavinError::InsufficientFunds` - If payload is fully released and balances are zeroed out.\\n\\n# Examples\\n```rust\\n// contract.release_escrow(env, receiver, 1);\\n```",
+      "name": "release_escrow",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "caller",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Propose a new admin for the contract. Only the current admin can call this.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Current administrator address.\\n* `new_admin` - Address proposed as the new administrator.",
+      "name": "transfer_admin",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "new_admin",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Cancel a shipment before it is delivered.\\nOnly the Company (sender) or Admin can cancel.\\nShipment must not be Delivered or Disputed.\\nIf escrow exists, triggers automatic refund to the Company.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `caller` - Executing Company or Admin address.\\n* `shipment_id` - ID specifying cancelled shipment instance.\\n* `reason_hash` - The mapped hash associated to the cancellation context.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on cancellation.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ShipmentNotFound` - If tracking context is invalid list element.\\n* `NavinError::Unauthorized` - If called by unauthorized accounts.\\n* `NavinError::ShipmentAlreadyCompleted` - If tracking context specified reached terminal states.\\n\\n# Examples\\n```rust\\n// contract.cancel_shipment(&env, &admin, 1, &hash);\\n```",
+      "name": "cancel_shipment",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "caller",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "reason_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Create a shipment and emit the shipment_created event.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `sender` - Company address creating the shipment.\\n* `receiver` - Destination address for the shipment.\\n* `carrier` - Carrier address assigned to the shipment.\\n* `data_hash` - Off-chain data hash of shipment details.\\n* `payment_milestones` - Schedule for escrow releases based on checkpoints.\\n* `deadline` - Timestamp after which shipment is considered expired and can be auto-cancelled.\\n\\n# Returns\\n* `Result<u64, NavinError>` - Newly created shipment ID.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If caller isn't a Company.\\n* `NavinError::InvalidHash` - If data_hash is all zeros.\\n* `NavinError::MilestoneSumInvalid` - If milestone percentages do not equal 100%.\\n* `NavinError::CounterOverflow` - If total shipment count overflows max u64.\\n* `NavinError::InvalidTimestamp` - If the deadline is not strictly in the future.\\n\\n# Examples\\n```rust\\n// let id = con",
+      "name": "create_shipment",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "sender",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "receiver",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "carrier",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "data_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        },
+        {
+          "doc": "",
+          "name": "payment_milestones",
+          "type_": {
+            "vec": {
+              "element_type": {
+                "tuple": {
+                  "value_types": [
+                    "symbol",
+                    "u32"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": "",
+          "name": "deadline",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "u64",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get the event count for a shipment.\\nReturns the number of events emitted for this shipment.\\nReturns 0 for brand-new shipments or shipments with no events yet.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `shipment_id` - ID of the shipment.\\n\\n# Returns\\n* `Result<u32, NavinError>` - The number of events emitted for this shipment.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ShipmentNotFound` - If shipment does not exist.\\n\\n# Examples\\n```rust\\n// let event_count = contract.get_event_count(&env, 1);\\n```",
+      "name": "get_event_count",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "u32",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get the status hash for a shipment at a specific status point.\\nRead-only function, no authentication required.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `shipment_id` - The ID of the shipment.\\n* `status` - The status to retrieve the hash for.\\n\\n# Returns\\n* `Result<BytesN<32>, NavinError>` - The data hash recorded at that status.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ShipmentNotFound` - If the shipment doesn't exist.\\n* `NavinError::StatusHashNotFound` - If no hash was recorded for that status.\\n\\n# Examples\\n```rust\\n// let hash = contract.get_status_hash(&env, 1, &ShipmentStatus::InTransit)?;\\n```",
+      "name": "get_status_hash",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "status",
+          "type_": {
+            "udt": {
+              "name": "ShipmentStatus"
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "bytes_n": {
+                "n": 32
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Reactivate a previously suspended role.\\n\\nOnly the admin can reactivate roles. This restores the address's\\nability to perform role-gated actions.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Contract admin executing the reactivation.\\n* `target` - The address whose role is being reactivated.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful reactivation.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If called by a non-admin or target not suspended.\\n\\n# Examples\\n```rust\\n// contract.reactivate_role(&env, &admin, &target_addr);\\n```",
+      "name": "reactivate_role",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "target",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Resolve a shipment dispute. Only the admin can call this.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Contract admin address.\\n* `shipment_id` - ID of the shipment.\\n* `resolution` - Target resolution (Release to Carrier or Refund to Company).\\n* `reason_hash` - SHA-256 hash of the off-chain justification document.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok if successfully resolved.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ShipmentNotFound` - If the shipment doesn't exist.\\n* `NavinError::Unauthorized` - If called by a non-admin.\\n* `NavinError::DisputeResolutionReasonHashMissing` - If reason_hash is all zeros.",
+      "name": "resolve_dispute",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "resolution",
+          "type_": {
+            "udt": {
+              "name": "DisputeResolution"
+            }
+          }
+        },
+        {
+          "doc": "",
+          "name": "reason_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Suspend a carrier from carrier-only operations.\\n\\nOnly the admin can call this function.",
+      "name": "suspend_carrier",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "carrier",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Suspend a company from creating or updating shipments.",
+      "name": "suspend_company",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "company",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Append a hash-only note to a shipment for commentary.\\nOnly the sender, receiver, assigned carrier, or admin can append notes.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `reporter` - The address appending the note.\\n* `shipment_id` - ID of the shipment.\\n* `note_hash` - SHA-256 hash of the off-chain note text.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok if successfully appended.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ShipmentNotFound` - If the shipment doesn't exist.\\n* `NavinError::Unauthorized` - If the caller is not involved in the shipment or admin.",
+      "name": "append_note_hash",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "reporter",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "note_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Archive a shipment by moving it from persistent to temporary storage.\\nThis reduces state rent costs for completed shipments.\\nOnly admin can archive, and shipment must be in a terminal state (Delivered or Cancelled).\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Admin address performing the archival.\\n* `shipment_id` - ID of the shipment to archive.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok if successfully archived.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If caller is not the admin.\\n* `NavinError::ShipmentNotFound` - If shipment does not exist.\\n* `NavinError::InvalidStatus` - If shipment is not in a terminal state (Delivered or Cancelled).\\n\\n# Examples\\n```rust\\n// contract.archive_shipment(&env, &admin, 1);\\n```",
+      "name": "archive_shipment",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Confirm delivery of a shipment.\\nOnly the designated receiver can call this function.\\nShipment must be in InTransit or AtCheckpoint status.\\nStores the confirmation_hash (hash of proof-of-delivery data) and\\ntransitions the shipment status to Delivered.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `receiver` - Receiver address confirming the delivery.\\n* `shipment_id` - Identifier of delivered shipment.\\n* `confirmation_hash` - The proof-of-delivery hash.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful confirmation.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ShipmentNotFound` - If shipment does not exist.\\n* `NavinError::Unauthorized` - If called by an address other than the shipment receiver.\\n* `NavinError::InvalidStatus` - If shipment is not in a transitable status to Delivered.\\n\\n# Examples\\n```rust\\n// contract.confirm_delivery(&env, &receiver_addr, 1, 5000000);\\n```",
+      "name": "confirm_delivery",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "receiver",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "confirmation_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Execute a proposal that has met the approval threshold.\\nCan be called by anyone once threshold is met.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `proposal_id` - ID of the proposal to execute.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok if executed successfully.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ProposalNotFound` - If proposal doesn't exist.\\n* `NavinError::ProposalExpired` - If proposal has expired.\\n* `NavinError::ProposalAlreadyExecuted` - If proposal was already executed.\\n* `NavinError::InsufficientApprovals` - If not enough approvals.\\n\\n# Examples\\n```rust\\n// contract.execute_proposal(&env, 1);\\n```",
+      "name": "execute_proposal",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "proposal_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Handoff a shipment from current carrier to a new carrier.\\nOnly the current assigned carrier can initiate the handoff.\\nNew carrier must have Carrier role.\\n\\n# Arguments\\n* `env` - Execution environment context mapped tracking handler.\\n* `current_carrier` - Identity specifying event originating handlers instance.\\n* `new_carrier` - New carrier targeted parameter taking responsibility.\\n* `shipment_id` - Key object specifying mapping configurations instance sequence.\\n* `handoff_hash` - Validation mapping properties verification arrays format parameters payload.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful tracker identity assignment switch.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If resolving executing bounds maps invalid permissions constraints checking.\\n* `NavinError::ShipmentNotFound` - If bound key identifiers specify missing pointer entries array fields values references maps values definitions constraints boundary pointers boundaries",
+      "name": "handoff_shipment",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "current_carrier",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "new_carrier",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "handoff_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Record a milestone for a shipment.\\nOnly registered carriers can record milestones.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `carrier` - Assigned carrier address triggering the recording.\\n* `shipment_id` - ID of the tracked shipment.\\n* `checkpoint` - Representation of progress milestone achieved.\\n* `data_hash` - Integrity hash associated with offchain progress indicators.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful tracking record update.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If called by unassigned identity.\\n* `NavinError::CarrierSuspended` - If the carrier is suspended.\\n* `NavinError::ShipmentNotFound` - If shipment instance targets missing entry.\\n* `NavinError::InvalidStatus` - If tracked instance is not `InTransit`.\\n\\n# Examples\\n```rust\\n// contract.record_milestone(&env, &carrier, 1, Symbol::new(&env, \"warehouse\"), &hash);\\n```",
+      "name": "record_milestone",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "carrier",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "checkpoint",
+          "type_": "symbol"
+        },
+        {
+          "doc": "",
+          "name": "data_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Verify that a given data hash matches what was recorded on-chain for a\\nshipment at a specific status point.\\nRead-only function, no authentication required.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `shipment_id` - The ID of the shipment.\\n* `status` - The status to verify against.\\n* `expected_hash` - The hash to verify.\\n\\n# Returns\\n* `Result<bool, NavinError>` - True if the hash matches, false otherwise.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ShipmentNotFound` - If the shipment doesn't exist.\\n* `NavinError::StatusHashNotFound` - If no hash was recorded for that status.\\n\\n# Examples\\n```rust\\n// let verified = contract.verify_data_hash(&env, 1, &ShipmentStatus::InTransit, &hash)?;\\n```",
+      "name": "verify_data_hash",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "status",
+          "type_": {
+            "udt": {
+              "name": "ShipmentStatus"
+            }
+          }
+        },
+        {
+          "doc": "",
+          "name": "expected_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "bool",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Returns the current escrowed amount for a specific shipment.\\nReturns 0 if no escrow has been deposited.\\nReturns ShipmentNotFound if the shipment does not exist.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `shipment_id` - ID of the shipment.\\n\\n# Returns\\n* `Result<i128, NavinError>` - Amount stored in escrow.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ShipmentNotFound` - If shipment does not exist.\\n\\n# Examples\\n```rust\\n// let balance = contract.get_escrow_balance(&env, 1);\\n```",
+      "name": "get_escrow_balance",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "i128",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Returns the total number of shipments created on the platform.\\nReturns 0 if the contract has not been initialized.\\n\\n# Arguments\\n* `env` - Execution environment.\\n\\n# Returns\\n* `u64` - Overall total shipments registered.\\n\\n# Examples\\n```rust\\n// let total = contract.get_shipment_count(&env);\\n```",
+      "name": "get_shipment_count",
+      "inputs": [],
+      "outputs": [
+        "u64"
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get the current shipment limit.",
+      "name": "get_shipment_limit",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "u32",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Reactivate a previously suspended carrier.\\n\\nOnly the admin can call this function.",
+      "name": "reactivate_carrier",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "carrier",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Reactivate a suspended company.",
+      "name": "reactivate_company",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "company",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Set the configurable limit on the number of active shipments a company can have.\\nOnly the admin can call this.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Contract admin address.\\n* `limit` - The new active shipment limit.",
+      "name": "set_shipment_limit",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "limit",
+          "type_": "u32"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Extend the TTL of a shipment's persistent storage entries.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `shipment_id` - Shipment ID to renew TTL.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on success.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n\\n# Examples\\n```rust\\n// contract.extend_shipment_ttl(env, 1);\\n```",
+      "name": "extend_shipment_ttl",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get the deterministic SHA-256 checksum of critical config fields.\\n\\nThis query exposes the config checksum to help indexers and operators\\ndetect unintended configuration drift. The checksum is computed from\\nall config fields serialized in a fixed order and is automatically\\nupdated whenever the config changes.\\n\\n# Serialization Order\\nFields are serialized in declaration order:\\n1. shipment_ttl_threshold (u32)\\n2. shipment_ttl_extension (u32)\\n3. min_status_update_interval (u64)\\n4. batch_operation_limit (u32)\\n5. max_metadata_entries (u32)\\n6. default_shipment_limit (u32)\\n7. multisig_min_admins (u32)\\n8. multisig_max_admins (u32)\\n9. proposal_expiry_seconds (u64)\\n10. deadline_grace_seconds (u64)\\n\\n# Arguments\\n* `env` - Execution environment.\\n\\n# Returns\\n* `Result<BytesN<32>, NavinError>` - The SHA-256 checksum of the config.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n\\n# Examples\\n```rust\\n// let checksum = contract.get_config_checksum(&env)?;\\n// Indexer can verify: checksum == sha256(serializ",
+      "name": "get_config_checksum",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "bytes_n": {
+                "n": 32
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get the current contract configuration.\\n\\n# Arguments\\n* `env` - Execution environment.\\n\\n# Returns\\n* `Result<ContractConfig, NavinError>` - The current configuration.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n\\n# Examples\\n```rust\\n// let config = contract.get_config(&env);\\n```",
+      "name": "get_contract_config",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "udt": {
+                "name": "ContractConfig"
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get the multi-sig configuration.\\n\\n# Arguments\\n* `env` - Execution environment.\\n\\n# Returns\\n* `Result<(Vec<Address>, u32), NavinError>` - Tuple of (admin list, threshold).\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n\\n# Examples\\n```rust\\n// let (admins, threshold) = contract.get_multisig_config(&env);\\n```",
+      "name": "get_multisig_config",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": [
+                  {
+                    "vec": {
+                      "element_type": "address"
+                    }
+                  },
+                  "u32"
+                ]
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get the current shipment counter.\\n\\n# Arguments\\n* `env` - Execution environment.\\n\\n# Returns\\n* `Result<u64, NavinError>` - The total number of shipments created.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n\\n# Examples\\n```rust\\n// let count = contract.get_shipment_counter(&env);\\n```",
+      "name": "get_shipment_counter",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "u64",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Retrieve the immutable creator identity for a shipment.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `shipment_id` - ID of the shipment.\\n\\n# Returns\\n* `Result<Address, NavinError>` - Address that originally created the shipment.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ShipmentNotFound` - If shipment does not exist.",
+      "name": "get_shipment_creator",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "address",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Return whether a carrier is currently suspended.",
+      "name": "is_carrier_suspended",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "carrier",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "bool",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Accept the admin role transfer. Only the proposed admin can call this.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `new_admin` - The proposed administrator address accepting the role.",
+      "name": "accept_admin_transfer",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "new_admin",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Emergency admin-only force-cancel for a shipment.\\n\\nThis is a privileged override that bypasses the normal cancellation rules.\\nIt can cancel a shipment in **any non-terminal state** (including Disputed),\\nand it requires a mandatory, non-zero `reason_hash` to ensure an immutable\\naudit trail is always present.\\n\\nEscrow behaviour is deterministic:\\n- If escrow is held, the full remaining balance is refunded to the company\\nvia the token contract before the shipment is marked Cancelled.\\n- If no escrow is held, the shipment is cancelled with no token transfer.\\n\\nOnly the single admin or a multi-sig admin (via `propose_action` /\\n`approve_action`) may call this function directly. Regular companies and\\ncarriers are rejected with `Unauthorized`.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Admin address executing the force-cancel.\\n* `shipment_id` - ID of the shipment to force-cancel.\\n* `reason_hash` - Mandatory SHA-256 hash of the off-chain reason document.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on success",
+      "name": "force_cancel_shipment",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "reason_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get on-chain metadata for this contract.\\nReturns version, admin, shipment count, and initialization status.\\nRead-only \\xe2\\x80\\x94 no authentication required.\\n\\n# Arguments\\n* `env` - Execution environment.\\n\\n# Returns\\n* `Result<ContractMetadata, NavinError>` - Snapshot of contract metadata.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n\\n# Examples\\n```rust\\n// let metadata = contract.get_contract_metadata(&env);\\n```",
+      "name": "get_contract_metadata",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "udt": {
+                "name": "ContractMetadata"
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get the current integration nonce for a shipment.\\nNonce increments on critical transitions like status changes and escrow movements.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `shipment_id` - ID of the shipment.\\n\\n# Returns\\n* `Result<u32, NavinError>` - The current nonce.",
+      "name": "get_integration_nonce",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "u32",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Retrieve the immutable receiver identity for a shipment.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `shipment_id` - ID of the shipment.\\n\\n# Returns\\n* `Result<Address, NavinError>` - Address designated as shipment receiver at creation.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ShipmentNotFound` - If shipment does not exist.",
+      "name": "get_shipment_receiver",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "address",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Report a geofence event for a shipment.\\nOnly registered carriers can report geofence events.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `carrier` - Carrier address reporting the event.\\n* `shipment_id` - ID of the tracked shipment.\\n* `zone_type` - Type of geofence event crossed.\\n* `data_hash` - Encrypted off-chain location data representation.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful report tracking.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If caller isn't a Carrier role.\\n* `NavinError::ShipmentNotFound` - If tracking context specifies an invalid shipment.\\n\\n# Examples\\n```rust\\n// contract.report_geofence_event(&env, &carrier, 1, GeofenceEvent::ZoneEntry, &hash);\\n```",
+      "name": "report_geofence_event",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "carrier",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "zone_type",
+          "type_": {
+            "udt": {
+              "name": "GeofenceEvent"
+            }
+          }
+        },
+        {
+          "doc": "",
+          "name": "data_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Set metadata key-value pair for a shipment. Only Company (sender) or Admin can set.\\nMax 5 metadata entries allowed.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `caller` - The address attempting to set the metadata.\\n* `shipment_id` - ID of the shipment.\\n* `key` - The metadata key (max 32 chars).\\n* `value` - The metadata value (max 32 chars).\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok if successfully set.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ShipmentNotFound` - If the shipment doesn't exist.\\n* `NavinError::Unauthorized` - If the caller is not the sender or admin.\\n* `NavinError::MetadataLimitExceeded` - If adding would exceed the 5 key limit.\\n\\n# Examples\\n```rust\\n// contract.set_shipment_metadata(&env, &caller, 1, &Symbol::new(&env, \"weight\"), &Symbol::new(&env, \"kg_100\"));\\n```",
+      "name": "set_shipment_metadata",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "caller",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "key",
+          "type_": "symbol"
+        },
+        {
+          "doc": "",
+          "name": "value",
+          "type_": "symbol"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Verify a proof-of-delivery hash against the stored confirmation hash.\\n\\nReturns `true` if `proof_hash` matches the hash stored during delivery confirmation,\\n`false` if delivered but hashes differ, and errors if the shipment does not exist.\\n\\n# Arguments\\n* `env` - Execution environment tracking mapped instances validation variables maps format boundary values fields mapped contexts matching references size parameter pointer definition format contexts.\\n* `shipment_id` - Identifying tracker mapping definitions arrays limits constraints binding values parameters mappings matches values matching variables scope sizes context properties configuration sequences format context rules bindings sequences arrays.\\n* `proof_hash` - Encrypted target references validating properties identifiers scope scopes variables.\\n\\n# Returns\\n* `Result<bool, NavinError>` - A boolean wrapper validating conditions logic identifiers values mappings rules limit format parameters checking sizes rules instances bindings context definitions matche",
+      "name": "verify_delivery_proof",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "proof_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "bool",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Create multiple shipments in a single atomic transaction.\\nLimit: 10 shipments per batch.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `sender` - Company address creating shipments.\\n* `shipments` - Vector of shipment inputs.\\n\\n# Returns\\n* `Result<Vec<u64>, NavinError>` - Vector of newly created shipment IDs.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If caller isn't a Company.\\n* `NavinError::BatchTooLarge` - If more than 10 shipments are submitted.\\n* `NavinError::InvalidShipmentInput` - If receiver matches carrier for any shipment.\\n* `NavinError::InvalidHash` - If any data_hash is all zeros.\\n* `NavinError::MilestoneSumInvalid` - If payment milestones are invalid per item.\\n* `NavinError::InvalidTimestamp` - If the deadline is not strictly in the future.\\n\\n# Examples\\n```rust\\n// let ids = contract.create_shipments_batch(&env, &sender, inputs_vec);\\n```",
+      "name": "create_shipments_batch",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "sender",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipments",
+          "type_": {
+            "vec": {
+              "element_type": {
+                "udt": {
+                  "name": "ShipmentInput"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "vec": {
+                "element_type": "u64"
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Generate a deterministic shipment reference string for cross-system interoperability.\\nThe reference is derived from: SHA-256(NetworkIdentifier | ContractAddress | ShipmentID).",
+      "name": "get_shipment_reference",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "string",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Check if a carrier is whitelisted for a company.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `company` - The company address.\\n* `carrier` - The carrier address in question.\\n\\n# Returns\\n* `Result<bool, NavinError>` - True if the carrier is whitelisted.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n\\n# Examples\\n```rust\\n// let is_whitelisted = contract.is_carrier_whitelisted(&env, &company, &carrier);\\n```",
+      "name": "is_carrier_whitelisted",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "company",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "carrier",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "bool",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Return read-only diagnostics that help operators triage restore requirements.\\n\\nThis query does not mutate state. It classifies the shipment ID as active,\\narchived-expected, missing, or inconsistent (both active and archived present).",
+      "name": "get_restore_diagnostics",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "udt": {
+                "name": "PersistentRestoreDiagnostics"
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Record multiple milestones for a shipment in a single atomic transaction.\\nAllows a carrier to record multiple checkpoints at once, reducing gas costs.\\nLimit: 10 milestones per batch.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `carrier` - Assigned carrier address triggering the recording.\\n* `shipment_id` - ID of the tracked shipment.\\n* `milestones` - Vector of (checkpoint, data_hash) tuples.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful batch recording.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If called by unassigned identity.\\n* `NavinError::CarrierSuspended` - If the carrier is suspended.\\n* `NavinError::ShipmentNotFound` - If shipment instance targets missing entry.\\n* `NavinError::InvalidStatus` - If tracked instance is not `InTransit`.\\n* `NavinError::BatchTooLarge` - If more than 10 milestones are submitted.\\n\\n# Examples\\n```rust\\n// let milestones = vec![\\n//     (Symbol::new(&env, \"warehouse\"), hash1),\\n//     (Symbol::new(&env, \"p",
+      "name": "record_milestones_batch",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "carrier",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "milestones",
+          "type_": {
+            "vec": {
+              "element_type": {
+                "tuple": {
+                  "value_types": [
+                    "symbol",
+                    {
+                      "bytes_n": {
+                        "n": 32
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Report a condition breach for a shipment (temperature, humidity, impact, tamper).\\n\\nOnly the assigned carrier can report a breach. This is purely informational:\\nshipment status is **not** changed. The full sensor payload stays off-chain;\\nonly its `data_hash` is emitted on-chain following the Hash-and-Emit pattern.\\n\\n# Arguments\\n* `env` - Execution environment wrapper contexts instances format variables arrays mapped fields parameters bindings mappings validation matching variables references format map rules scopes mappings targets scopes properties bindings mappings context references format bindings sizes arrays values.\\n* `carrier` - Tracking address specifying mapped context boundaries mapped assignments limits pointer validations constraints checking identifiers boundaries limits pointer configurations constraints context values references formats map matching arrays instances string definitions parameters matches checks limits permissions rules string formats limits rules scopes configurations maps tokens ",
+      "name": "report_condition_breach",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "carrier",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "breach_type",
+          "type_": {
+            "udt": {
+              "name": "BreachType"
+            }
+          }
+        },
+        {
+          "doc": "",
+          "name": "severity",
+          "type_": {
+            "udt": {
+              "name": "Severity"
+            }
+          }
+        },
+        {
+          "doc": "",
+          "name": "data_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Add a carrier to a company's whitelist.\\nOnly the company can add carriers to their own whitelist.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `company` - The company's address acting as caller.\\n* `carrier` - The carrier address to whitelist.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok if successfully registered.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n\\n# Examples\\n```rust\\n// contract.add_carrier_to_whitelist(&env, &company, &carrier);\\n```",
+      "name": "add_carrier_to_whitelist",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "company",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "carrier",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Add an evidence hash to an active shipment dispute.\\nOnly in Disputed state. Authorization: Sender, Receiver, Carrier, or Admin.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `reporter` - The address adding the evidence.\\n* `shipment_id` - ID of the shipment.\\n* `evidence_hash` - SHA-256 hash of the off-chain evidence.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok if successfully added.",
+      "name": "add_dispute_evidence_hash",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "reporter",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "evidence_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get the current active shipment count for a company.",
+      "name": "get_active_shipment_count",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "company",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "u32",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get a specific evidence hash for a shipment dispute by its sequence index.",
+      "name": "get_dispute_evidence_hash",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "index",
+          "type_": "u32"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "option": {
+                "value_type": {
+                  "bytes_n": {
+                    "n": 32
+                  }
+                }
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get the total number of evidence hashes for a shipment dispute.",
+      "name": "get_dispute_evidence_count",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "u32",
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Cursor-based search for shipment IDs by status.\\n\\nResults are returned in ascending shipment ID order for deterministic pagination.\\n`cursor` is the last seen shipment ID from a previous page.",
+      "name": "search_shipments_by_status",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "status",
+          "type_": {
+            "udt": {
+              "name": "ShipmentStatus"
+            }
+          }
+        },
+        {
+          "doc": "",
+          "name": "cursor",
+          "type_": {
+            "option": {
+              "value_type": "u64"
+            }
+          }
+        },
+        {
+          "doc": "",
+          "name": "page_size",
+          "type_": "u32"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "udt": {
+                "name": "ShipmentStatusCursorPage"
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Remove a carrier from a company's whitelist.\\nOnly the company can remove carriers from their own whitelist.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `company` - The company address removing the carrier.\\n* `carrier` - The carrier address to be removed.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok if successfully removed.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n\\n# Examples\\n```rust\\n// contract.remove_carrier_from_whitelist(&env, &company, &carrier);\\n```",
+      "name": "remove_carrier_from_whitelist",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "company",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "carrier",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "udt_union_v0": {
+      "doc": "Supported user roles.\\n\\n# Examples\\n```rust\\nuse crate::types::Role;\\nlet role = Role::Company;\\n```",
+      "lib": "",
+      "name": "Role",
+      "cases": [
+        {
+          "void_v0": {
+            "doc": "A registered company that can create shipments.",
+            "name": "Company"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "A registered carrier that can transport shipments and report geofence events.",
+            "name": "Carrier"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "No role assigned.",
+            "name": "Unassigned"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "udt_union_v0": {
+      "doc": "Storage keys for contract data.\\n\\n# Examples\\n```rust\\nuse crate::types::DataKey;\\nlet key = DataKey::Admin;\\n```",
+      "lib": "",
+      "name": "DataKey",
+      "cases": [
+        {
+          "void_v0": {
+            "doc": "The contract admin address.",
+            "name": "Admin"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Contract version number, incremented on each upgrade.",
+            "name": "Version"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Counter tracking total shipments created.",
+            "name": "ShipmentCount"
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Addresses with Company role.",
+            "name": "Company",
+            "type_": [
+              "address"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Addresses with Carrier role.",
+            "name": "Carrier",
+            "type_": [
+              "address"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Carrier suspension flag (carrier -> bool).",
+            "name": "CarrierSuspended",
+            "type_": [
+              "address"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Company suspension flag (company -> bool).",
+            "name": "CompanySuspended",
+            "type_": [
+              "address"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Individual shipment data keyed by ID.",
+            "name": "Shipment",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Carrier whitelist for a company \\xe2\\x80\\x94 (company, carrier) -> bool.",
+            "name": "CarrierWhitelist",
+            "type_": [
+              "address",
+              "address"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Role assigned to an address \\xe2\\x80\\x94 (address, role) -> bool.",
+            "name": "UserRole",
+            "type_": [
+              "address",
+              {
+                "udt": {
+                  "name": "Role"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Role suspension status \\xe2\\x80\\x94 (address, role) -> bool.",
+            "name": "RoleSuspended",
+            "type_": [
+              "address",
+              {
+                "udt": {
+                  "name": "Role"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Escrow balance for a shipment.",
+            "name": "Escrow",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Legacy single-role storage key for compatibility.",
+            "name": "Role",
+            "type_": [
+              "address"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Hash of proof-of-delivery data for a shipment.",
+            "name": "ConfirmationHash",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Token contract address for payments.",
+            "name": "TokenContract"
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Timestamp of the last status update for a shipment (used for rate limiting).",
+            "name": "LastStatusUpdate",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Proposed new administrator address.",
+            "name": "ProposedAdmin"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "List of admin addresses for multi-sig.",
+            "name": "AdminList"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Multi-sig threshold (number of approvals required).",
+            "name": "MultiSigThreshold"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Counter for proposal IDs.",
+            "name": "ProposalCounter"
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Individual proposal data keyed by ID.",
+            "name": "Proposal",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Total escrow volume processed by the contract.",
+            "name": "TotalEscrowVolume"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Total number of disputes raised.",
+            "name": "TotalDisputes"
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Count of shipments with a specific status.",
+            "name": "StatusCount",
+            "type_": [
+              {
+                "udt": {
+                  "name": "ShipmentStatus"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Configurable limit on active shipments per company.",
+            "name": "ShipmentLimit"
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Counter for active shipments per company.",
+            "name": "ActiveShipmentCount",
+            "type_": [
+              "address"
+            ]
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Contract configuration parameters.",
+            "name": "ContractConfig"
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Event counter for a shipment (tracks number of events emitted).",
+            "name": "EventCount",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Archived shipment data in temporary storage (for terminal state shipments).",
+            "name": "ArchivedShipment",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Append-only note hashes for shipment commentary (shipment_id, index) -> hash.",
+            "name": "ShipmentNote",
+            "type_": [
+              "u64",
+              "u32"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Total number of notes appended to a shipment.",
+            "name": "ShipmentNoteCount",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Append-only evidence hashes for shipment disputes (shipment_id, index) -> hash.",
+            "name": "DisputeEvidence",
+            "type_": [
+              "u64",
+              "u32"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Total number of evidence hashes appended to a shipment dispute.",
+            "name": "DisputeEvidenceCount",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "SHA-256 checksum of critical config fields for drift detection.",
+            "name": "ConfigChecksum"
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Temporary idempotency window key \\xe2\\x80\\x94 present while the action hash is within its window.",
+            "name": "IdempotencyWindow",
+            "type_": [
+              {
+                "bytes_n": {
+                  "n": 32
+                }
+              }
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "IoT sensor data hash stored per shipment status transition.",
+            "name": "StatusHash",
+            "type_": [
+              "u64",
+              {
+                "udt": {
+                  "name": "ShipmentStatus"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Contract pause state flag.",
+            "name": "IsPaused"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "udt_struct_v0": {
+      "doc": "Multi-signature proposal for critical admin actions.\\n\\n# Examples\\n```rust\\n// Struct represents a pending multi-sig proposal.\\n```",
+      "lib": "",
+      "name": "Proposal",
+      "fields": [
+        {
+          "doc": "The action to be executed.",
+          "name": "action",
+          "type_": {
+            "udt": {
+              "name": "AdminAction"
+            }
+          }
+        },
+        {
+          "doc": "List of addresses that have approved this proposal.",
+          "name": "approvals",
+          "type_": {
+            "vec": {
+              "element_type": "address"
+            }
+          }
+        },
+        {
+          "doc": "Ledger timestamp when the proposal was created.",
+          "name": "created_at",
+          "type_": "u64"
+        },
+        {
+          "doc": "Whether the proposal has been executed.",
+          "name": "executed",
+          "type_": "bool"
+        },
+        {
+          "doc": "Ledger timestamp when the proposal expires.",
+          "name": "expires_at",
+          "type_": "u64"
+        },
+        {
+          "doc": "Unique proposal identifier.",
+          "name": "id",
+          "type_": "u64"
+        },
+        {
+          "doc": "Address that created the proposal.",
+          "name": "proposer",
+          "type_": "address"
+        }
+      ]
+    }
+  },
+  {
+    "udt_union_v0": {
+      "doc": "Severity levels for condition breach events used for downstream analytics and alerting.\\n\\n# Examples\\n```rust\\nuse crate::types::Severity;\\nlet severity = Severity::High;\\n```",
+      "lib": "",
+      "name": "Severity",
+      "cases": [
+        {
+          "void_v0": {
+            "doc": "Minor deviation with minimal impact on shipment integrity.",
+            "name": "Low"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Moderate deviation requiring attention but not critical.",
+            "name": "Medium"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Significant deviation that may compromise shipment quality.",
+            "name": "High"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Critical deviation requiring immediate intervention.",
+            "name": "Critical"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "udt_struct_v0": {
+      "doc": "Core shipment data stored on-chain.\\nRaw payload is off-chain; only the hash is stored.\\n\\n# Examples\\n```rust\\n// Struct represents the full shipment payload tracked on-chain.\\n```",
+      "lib": "",
+      "name": "Shipment",
+      "fields": [
+        {
+          "doc": "Carrier responsible for transport.",
+          "name": "carrier",
+          "type_": "address"
+        },
+        {
+          "doc": "Ledger timestamp when the shipment was created.",
+          "name": "created_at",
+          "type_": "u64"
+        },
+        {
+          "doc": "SHA-256 hash of the off-chain shipment data.",
+          "name": "data_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        },
+        {
+          "doc": "Timestamp after which the shipment is considered expired and can be auto-cancelled.",
+          "name": "deadline",
+          "type_": "u64"
+        },
+        {
+          "doc": "Amount held in escrow for this shipment.",
+          "name": "escrow_amount",
+          "type_": "i128"
+        },
+        {
+          "doc": "Whether the shipment is finalized (terminal state reached and escrow cleared).",
+          "name": "finalized",
+          "type_": "bool"
+        },
+        {
+          "doc": "Unique shipment identifier.",
+          "name": "id",
+          "type_": "u64"
+        },
+        {
+          "doc": "Counter to prevent replay of external actions and correlate off-chain integrations.",
+          "name": "integration_nonce",
+          "type_": "u32"
+        },
+        {
+          "doc": "Optional metadata for storing small key-value pairs (e.g., weight category, priority).",
+          "name": "metadata",
+          "type_": {
+            "option": {
+              "value_type": {
+                "map": {
+                  "key_type": "symbol",
+                  "value_type": "symbol"
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": "List of symbols for milestones that have already been paid.",
+          "name": "paid_milestones",
+          "type_": {
+            "vec": {
+              "element_type": "symbol"
+            }
+          }
+        },
+        {
+          "doc": "Milestone-based payment schedule: (checkpoint name, percentage).",
+          "name": "payment_milestones",
+          "type_": {
+            "vec": {
+              "element_type": {
+                "tuple": {
+                  "value_types": [
+                    "symbol",
+                    "u32"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": "Intended recipient of the shipment.",
+          "name": "receiver",
+          "type_": "address"
+        },
+        {
+          "doc": "Address that created the shipment.",
+          "name": "sender",
+          "type_": "address"
+        },
+        {
+          "doc": "Current status in the shipment lifecycle.",
+          "name": "status",
+          "type_": {
+            "udt": {
+              "name": "ShipmentStatus"
+            }
+          }
+        },
+        {
+          "doc": "Total amount deposited in escrow.",
+          "name": "total_escrow",
+          "type_": "i128"
+        },
+        {
+          "doc": "Ledger timestamp of the last status update.",
+          "name": "updated_at",
+          "type_": "u64"
+        }
+      ]
+    }
+  },
+  {
+    "udt_struct_v0": {
+      "doc": "Aggregated on-chain analytics data.\\n\\n# Examples\\n```rust\\n// Struct represents basic analytics counters for the contract.\\n```",
+      "lib": "",
+      "name": "Analytics",
+      "fields": [
+        {
+          "doc": "Number of shipments currently in 'AtCheckpoint' state.",
+          "name": "at_checkpoint_count",
+          "type_": "u64"
+        },
+        {
+          "doc": "Number of shipments currently in 'Cancelled' state.",
+          "name": "cancelled_count",
+          "type_": "u64"
+        },
+        {
+          "doc": "Number of shipments currently in 'Created' state.",
+          "name": "created_count",
+          "type_": "u64"
+        },
+        {
+          "doc": "Number of shipments currently in 'Delivered' state.",
+          "name": "delivered_count",
+          "type_": "u64"
+        },
+        {
+          "doc": "Number of shipments currently in 'Disputed' state.",
+          "name": "disputed_count",
+          "type_": "u64"
+        },
+        {
+          "doc": "Number of shipments currently in 'InTransit' state.",
+          "name": "in_transit_count",
+          "type_": "u64"
+        },
+        {
+          "doc": "Total number of disputes raised.",
+          "name": "total_disputes",
+          "type_": "u64"
+        },
+        {
+          "doc": "Total volume of funds moved into escrow.",
+          "name": "total_escrow_volume",
+          "type_": "i128"
+        },
+        {
+          "doc": "Total number of shipments created.",
+          "name": "total_shipments",
+          "type_": "u64"
+        }
+      ]
+    }
+  },
+  {
+    "udt_struct_v0": {
+      "doc": "A checkpoint milestone recorded during shipment transit.\\nOnly the data hash is stored; full details live off-chain.\\n\\n# Examples\\n```rust\\n// Struct represents a milestone reached by a shipment.\\n```",
+      "lib": "",
+      "name": "Milestone",
+      "fields": [
+        {
+          "doc": "Symbolic name of the checkpoint (e.g. \"warehouse\", \"port\").",
+          "name": "checkpoint",
+          "type_": "symbol"
+        },
+        {
+          "doc": "SHA-256 hash of the off-chain milestone data.",
+          "name": "data_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        },
+        {
+          "doc": "Address that reported this milestone.",
+          "name": "reporter",
+          "type_": "address"
+        },
+        {
+          "doc": "ID of the shipment this milestone belongs to.",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "Ledger timestamp when the milestone was recorded.",
+          "name": "timestamp",
+          "type_": "u64"
+        }
+      ]
+    }
+  },
+  {
+    "udt_union_v0": {
+      "doc": "Condition breach types reported by carriers for out-of-range sensor readings.\\n\\n# Examples\\n```rust\\nuse crate::types::BreachType;\\nlet breach = BreachType::TemperatureHigh;\\n```",
+      "lib": "",
+      "name": "BreachType",
+      "cases": [
+        {
+          "void_v0": {
+            "doc": "Temperature exceeded the upper acceptable limit.",
+            "name": "TemperatureHigh"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Temperature dropped below the lower acceptable limit.",
+            "name": "TemperatureLow"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Humidity exceeded the upper acceptable limit.",
+            "name": "HumidityHigh"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Physical impact detected (shock/drop event).",
+            "name": "Impact"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Tamper detection triggered.",
+            "name": "TamperDetected"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "udt_union_v0": {
+      "doc": "Admin action types for multi-signature proposals.\\n\\n# Examples\\n```rust\\nuse crate::types::AdminAction;\\nlet action = AdminAction::Upgrade(hash);\\n```",
+      "lib": "",
+      "name": "AdminAction",
+      "cases": [
+        {
+          "tuple_v0": {
+            "doc": "Upgrade contract to new WASM hash.",
+            "name": "Upgrade",
+            "type_": [
+              {
+                "bytes_n": {
+                  "n": 32
+                }
+              }
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Transfer admin role to new address.",
+            "name": "TransferAdmin",
+            "type_": [
+              "address"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Force release escrow for a shipment to carrier.",
+            "name": "ForceRelease",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Force refund escrow for a shipment to company.",
+            "name": "ForceRefund",
+            "type_": [
+              "u64"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "udt_union_v0": {
+      "doc": "Geofence event types for tracking shipment location events.\\n\\n# Examples\\n```rust\\nuse crate::types::GeofenceEvent;\\nlet event = GeofenceEvent::ZoneEntry;\\n```",
+      "lib": "",
+      "name": "GeofenceEvent",
+      "cases": [
+        {
+          "void_v0": {
+            "doc": "Shipment entered a predefined geographical zone.",
+            "name": "ZoneEntry"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Shipment exited a predefined geographical zone.",
+            "name": "ZoneExit"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Shipment deviated from the expected route.",
+            "name": "RouteDeviation"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "udt_struct_v0": {
+      "doc": "Input data for creating a shipment in a batch.\\n\\n# Examples\\n```rust\\n// Struct represents batch creation parameters for a shipment.\\n```",
+      "lib": "",
+      "name": "ShipmentInput",
+      "fields": [
+        {
+          "doc": "",
+          "name": "carrier",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "data_hash",
+          "type_": {
+            "bytes_n": {
+              "n": 32
+            }
+          }
+        },
+        {
+          "doc": "",
+          "name": "deadline",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "payment_milestones",
+          "type_": {
+            "vec": {
+              "element_type": {
+                "tuple": {
+                  "value_types": [
+                    "symbol",
+                    "u32"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": "",
+          "name": "receiver",
+          "type_": "address"
+        }
+      ]
+    }
+  },
+  {
+    "udt_union_v0": {
+      "doc": "Shipment status lifecycle.\\n\\n# Examples\\n```rust\\nuse crate::types::ShipmentStatus;\\nlet status = ShipmentStatus::Created;\\n```",
+      "lib": "",
+      "name": "ShipmentStatus",
+      "cases": [
+        {
+          "void_v0": {
+            "doc": "Shipment has been created but not yet picked up.",
+            "name": "Created"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Shipment is in transit between checkpoints.",
+            "name": "InTransit"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Shipment has arrived at an intermediate checkpoint.",
+            "name": "AtCheckpoint"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Shipment has been delivered to the receiver.",
+            "name": "Delivered"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Shipment is under dispute.",
+            "name": "Disputed"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Shipment has been cancelled.",
+            "name": "Cancelled"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "udt_struct_v0": {
+      "doc": "On-chain introspection snapshot of the contract state.\\n\\n# Examples\\n```rust\\n// Struct holds metadata about the contract state itself.\\n```",
+      "lib": "",
+      "name": "ContractMetadata",
+      "fields": [
+        {
+          "doc": "Address of the contract administrator.",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "Whether the contract has been initialized.",
+          "name": "initialized",
+          "type_": "bool"
+        },
+        {
+          "doc": "Total number of shipments created since initialization.",
+          "name": "shipment_count",
+          "type_": "u64"
+        },
+        {
+          "doc": "Current contract version (starts at 1, incremented on each upgrade).",
+          "name": "version",
+          "type_": "u32"
+        }
+      ]
+    }
+  },
+  {
+    "udt_union_v0": {
+      "doc": "Notification types for backend indexing and push notifications.\\n\\n# Examples\\n```rust\\nuse crate::types::NotificationType;\\nlet notif = NotificationType::ShipmentCreated;\\n```",
+      "lib": "",
+      "name": "NotificationType",
+      "cases": [
+        {
+          "void_v0": {
+            "doc": "Shipment was created.",
+            "name": "ShipmentCreated"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Shipment status changed.",
+            "name": "StatusChanged"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Delivery was confirmed.",
+            "name": "DeliveryConfirmed"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Escrow was released.",
+            "name": "EscrowReleased"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Dispute was raised.",
+            "name": "DisputeRaised"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Dispute was resolved.",
+            "name": "DisputeResolved"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Deadline is approaching.",
+            "name": "DeadlineApproaching"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "udt_union_v0": {
+      "doc": "Role change actions for RBAC audit trail.\\n\\n# Examples\\n```rust\\nuse crate::types::RoleChangeAction;\\nlet action = RoleChangeAction::Assigned;\\n```",
+      "lib": "",
+      "name": "RoleChangeAction",
+      "cases": [
+        {
+          "void_v0": {
+            "doc": "Role was assigned to an address.",
+            "name": "Assigned"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Role was revoked from an address.",
+            "name": "Revoked"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Role was temporarily suspended.",
+            "name": "Suspended"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Role was reactivated after suspension.",
+            "name": "Reactivated"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "udt_union_v0": {
+      "doc": "Dispute resolution options for admin.\\n\\n# Examples\\n```rust\\nuse crate::types::DisputeResolution;\\nlet resolution = DisputeResolution::RefundToCompany;\\n```",
+      "lib": "",
+      "name": "DisputeResolution",
+      "cases": [
+        {
+          "void_v0": {
+            "doc": "Release escrowed funds to the carrier.",
+            "name": "ReleaseToCarrier"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Refund escrowed funds to the company.",
+            "name": "RefundToCompany"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "udt_union_v0": {
+      "doc": "Storage presence classification used for restore triage.",
+      "lib": "",
+      "name": "StoragePresenceState",
+      "cases": [
+        {
+          "void_v0": {
+            "doc": "Canonical active path: shipment exists in persistent storage.",
+            "name": "ActivePersistent"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Archived path: shipment is no longer persistent and exists in temporary storage.",
+            "name": "ArchivedExpected"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Neither active nor archived entries were found for this shipment ID.",
+            "name": "Missing"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Both active and archived entries exist; operators should investigate.",
+            "name": "InconsistentDualPresence"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "udt_struct_v0": {
+      "doc": "Cursor page result for searching shipment IDs by status.",
+      "lib": "",
+      "name": "ShipmentStatusCursorPage",
+      "fields": [
+        {
+          "doc": "",
+          "name": "next_cursor",
+          "type_": {
+            "option": {
+              "value_type": "u64"
+            }
+          }
+        },
+        {
+          "doc": "",
+          "name": "shipment_ids",
+          "type_": {
+            "vec": {
+              "element_type": "u64"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "udt_struct_v0": {
+      "doc": "Read-only diagnostics to determine whether restore flow is needed.",
+      "lib": "",
+      "name": "PersistentRestoreDiagnostics",
+      "fields": [
+        {
+          "doc": "",
+          "name": "archived_shipment_present",
+          "type_": "bool"
+        },
+        {
+          "doc": "",
+          "name": "confirmation_hash_present",
+          "type_": "bool"
+        },
+        {
+          "doc": "",
+          "name": "escrow_present",
+          "type_": "bool"
+        },
+        {
+          "doc": "",
+          "name": "event_count_present",
+          "type_": "bool"
+        },
+        {
+          "doc": "",
+          "name": "last_status_update_present",
+          "type_": "bool"
+        },
+        {
+          "doc": "",
+          "name": "persistent_shipment_present",
+          "type_": "bool"
+        },
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "state",
+          "type_": {
+            "udt": {
+              "name": "StoragePresenceState"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "udt_struct_v0": {
+      "doc": "Contract configuration parameters stored in instance storage.\\n\\nAll fields use sensible defaults that can be overridden by the admin\\npost-deployment via the `update_config` function.\\n\\n# Examples\\n```rust\\nlet config = ContractConfig::default();\\nassert_eq!(config.shipment_ttl_threshold, 17_280);\\n```",
+      "lib": "",
+      "name": "ContractConfig",
+      "fields": [
+        {
+          "doc": "When `true`, any `Critical`-severity condition breach reported by a carrier\\nautomatically opens a dispute for that shipment (equivalent to calling\\n`raise_dispute` with the breach data hash as the reason).\\n\\nHas no effect on non-critical breaches or on shipments that are already\\n`Disputed` or `Cancelled`.\\nDefault: `false` (disabled \\xe2\\x80\\x94 existing behavior preserved).",
+          "name": "auto_dispute_breach",
+          "type_": "bool"
+        },
+        {
+          "doc": "Maximum number of items allowed in batch operations (shipments, milestones).\\nDefault: 10 items per batch.",
+          "name": "batch_operation_limit",
+          "type_": "u32"
+        },
+        {
+          "doc": "Grace window (in seconds) added to a shipment's deadline before expiry\\nlogic fires. A caller invoking `check_deadline` must wait until\\n`ledger_timestamp >= deadline + deadline_grace_seconds`.\\n\\nSetting this to 0 (the default) preserves the original behaviour where\\nexpiry triggers the moment the deadline timestamp is reached.\\nDefault: 0 seconds (no grace period).",
+          "name": "deadline_grace_seconds",
+          "type_": "u64"
+        },
+        {
+          "doc": "Default limit on active shipments per company.\\nCan be overridden per-company via `set_shipment_limit`.\\nDefault: 100 active shipments.",
+          "name": "default_shipment_limit",
+          "type_": "u32"
+        },
+        {
+          "doc": "Duration (in seconds) for which an action hash is held in temporary\\nstorage to reject duplicate external triggers.\\nDefault: 300 seconds (5 minutes).",
+          "name": "idempotency_window_seconds",
+          "type_": "u64"
+        },
+        {
+          "doc": "Maximum number of metadata key-value pairs per shipment.\\nDefault: 5 entries.",
+          "name": "max_metadata_entries",
+          "type_": "u32"
+        },
+        {
+          "doc": "Minimum seconds that must pass between status updates on the same shipment.\\nAdmin is exempt from this restriction.\\nDefault: 60 seconds (~10 ledgers).",
+          "name": "min_status_update_interval",
+          "type_": "u64"
+        },
+        {
+          "doc": "Maximum number of admins allowed for multi-sig configuration.\\nDefault: 10 admins.",
+          "name": "multisig_max_admins",
+          "type_": "u32"
+        },
+        {
+          "doc": "Minimum number of admins required for multi-sig configuration.\\nDefault: 2 admins.",
+          "name": "multisig_min_admins",
+          "type_": "u32"
+        },
+        {
+          "doc": "Number of seconds before a multi-sig proposal expires.\\nDefault: 604,800 seconds (7 days).",
+          "name": "proposal_expiry_seconds",
+          "type_": "u64"
+        },
+        {
+          "doc": "Number of ledgers to extend TTL by when threshold is reached.\\nDefault: 518,400 ledgers (~30 days at 5s/ledger).",
+          "name": "shipment_ttl_extension",
+          "type_": "u32"
+        },
+        {
+          "doc": "Minimum ledgers remaining before TTL extension is triggered.\\nDefault: 17,280 ledgers (~1 day at 5s/ledger).",
+          "name": "shipment_ttl_threshold",
+          "type_": "u32"
+        }
+      ]
+    }
+  },
+  {
+    "udt_error_enum_v0": {
+      "doc": "Domain-specific error type for the Navin shipment contract.\\n\\nEach variant is assigned a unique `u32` discriminant starting from 1\\nso that the Soroban host can surface the code to clients without ambiguity.\\n\\n# Examples\\n```rust\\nuse crate::errors::NavinError;\\nlet error = NavinError::ShipmentNotFound;\\n```",
+      "lib": "",
+      "name": "NavinError",
+      "cases": [
+        {
+          "doc": "Contract is already initialized.",
+          "name": "AlreadyInitialized",
+          "value": 1
+        },
+        {
+          "doc": "Contract has not been initialized.",
+          "name": "NotInitialized",
+          "value": 2
+        },
+        {
+          "doc": "Caller does not have the required permissions.",
+          "name": "Unauthorized",
+          "value": 3
+        },
+        {
+          "doc": "Shipment ID doesn't exist.",
+          "name": "ShipmentNotFound",
+          "value": 4
+        },
+        {
+          "doc": "Invalid state transition for the shipment.",
+          "name": "InvalidStatus",
+          "value": 5
+        },
+        {
+          "doc": "Provided data hash does not match expectation.",
+          "name": "InvalidHash",
+          "value": 6
+        },
+        {
+          "doc": "Escrow is locked and cannot be removed/modified.",
+          "name": "EscrowLocked",
+          "value": 7
+        },
+        {
+          "doc": "Caller doesn't have sufficient funds for escrow deposit.",
+          "name": "InsufficientFunds",
+          "value": 8
+        },
+        {
+          "doc": "Action cannot be performed on completed shipment (Delivered/Disputed).",
+          "name": "ShipmentAlreadyCompleted",
+          "value": 9
+        },
+        {
+          "doc": "Invalid timestamp provided (e.g., ETA is in the past).",
+          "name": "InvalidTimestamp",
+          "value": 10
+        },
+        {
+          "doc": "Counter value overflowed the maximum capacity.",
+          "name": "CounterOverflow",
+          "value": 11
+        },
+        {
+          "doc": "Carrier is not listed in the company's whitelist.",
+          "name": "CarrierNotWhitelisted",
+          "value": 12
+        },
+        {
+          "doc": "Carrier is not authorized to perform the action.",
+          "name": "CarrierNotAuthorized",
+          "value": 13
+        },
+        {
+          "doc": "Amount provided is invalid (zero or negative).",
+          "name": "InvalidAmount",
+          "value": 14
+        },
+        {
+          "doc": "Escrow for shipment has already been deposited.",
+          "name": "EscrowAlreadyDeposited",
+          "value": 15
+        },
+        {
+          "doc": "Batch creation array exceeds maximum allowed item limit.",
+          "name": "BatchTooLarge",
+          "value": 16
+        },
+        {
+          "doc": "Shipment input contained invalid parameters (e.g., receiver equals carrier).",
+          "name": "InvalidShipmentInput",
+          "value": 17
+        },
+        {
+          "doc": "Milestone percentages do not sum to 100%.",
+          "name": "MilestoneSumInvalid",
+          "value": 18
+        },
+        {
+          "doc": "Attempting to pay a milestone that was already paid.",
+          "name": "MilestoneAlreadyPaid",
+          "value": 19
+        },
+        {
+          "doc": "Attempted to store more than the allowed maximum metadata entries (5).",
+          "name": "MetadataLimitExceeded",
+          "value": 20
+        },
+        {
+          "doc": "Status update rejected because the minimum time interval has not elapsed.",
+          "name": "RateLimitExceeded",
+          "value": 21
+        },
+        {
+          "doc": "Proposal ID doesn't exist.",
+          "name": "ProposalNotFound",
+          "value": 22
+        },
+        {
+          "doc": "Proposal has already been executed.",
+          "name": "ProposalAlreadyExecuted",
+          "value": 23
+        },
+        {
+          "doc": "Proposal has expired and can no longer be approved or executed.",
+          "name": "ProposalExpired",
+          "value": 24
+        },
+        {
+          "doc": "Admin has already approved this proposal.",
+          "name": "AlreadyApproved",
+          "value": 25
+        },
+        {
+          "doc": "Not enough approvals to execute the proposal.",
+          "name": "InsufficientApprovals",
+          "value": 26
+        },
+        {
+          "doc": "Caller is not in the admin list.",
+          "name": "NotAnAdmin",
+          "value": 27
+        },
+        {
+          "doc": "Invalid multi-sig configuration (e.g., threshold > admin count).",
+          "name": "InvalidMultiSigConfig",
+          "value": 28
+        },
+        {
+          "doc": "Shipment deadline has not yet expired.",
+          "name": "NotExpired",
+          "value": 29
+        },
+        {
+          "doc": "The company has reached its active shipment limit.",
+          "name": "ShipmentLimitReached",
+          "value": 30
+        },
+        {
+          "doc": "Invalid configuration parameters provided.",
+          "name": "InvalidConfig",
+          "value": 31
+        },
+        {
+          "doc": "Admin cannot revoke their own role; use `transfer_admin` instead.",
+          "name": "CannotSelfRevoke",
+          "value": 32
+        },
+        {
+          "doc": "Carrier account is suspended from carrier action handlers.",
+          "name": "CarrierSuspended",
+          "value": 33
+        },
+        {
+          "doc": "Force-cancel requires a non-zero reason hash.",
+          "name": "ForceCancelReasonHashMissing",
+          "value": 34
+        },
+        {
+          "doc": "Arithmetic overflow/underflow encountered during escrow math operations.",
+          "name": "ArithmeticError",
+          "value": 35
+        },
+        {
+          "doc": "Dispute resolution requires a reason hash.",
+          "name": "DisputeResolutionReasonHashMissing",
+          "value": 36
+        },
+        {
+          "doc": "Company account is suspended from creating or updating shipments.",
+          "name": "CompanySuspended",
+          "value": 37
+        },
+        {
+          "doc": "Action rejected because the shipment is finalized and locked.",
+          "name": "ShipmentFinalized",
+          "value": 38
+        },
+        {
+          "doc": "A cross-contract token transfer failed.",
+          "name": "TokenTransferFailed",
+          "value": 39
+        },
+        {
+          "doc": "A cross-contract token mint failed.",
+          "name": "TokenMintFailed",
+          "value": 40
+        },
+        {
+          "doc": "Action hash was already processed within the idempotency window.",
+          "name": "DuplicateAction",
+          "value": 41
+        },
+        {
+          "doc": "Shipment state is unavailable due to archival or expiration.",
+          "name": "ShipmentUnavailable",
+          "value": 42
+        },
+        {
+          "doc": "Contract is paused; state-changing operations are disabled.",
+          "name": "ContractPaused",
+          "value": 43
+        },
+        {
+          "doc": "Status hash not found for the given shipment and status.",
+          "name": "StatusHashNotFound",
+          "value": 44
+        },
+        {
+          "doc": "Data hash verification failed; provided hash does not match stored hash.",
+          "name": "DataHashMismatch",
+          "value": 45
+        }
+      ]
+    }
+  }
+]
