@@ -3158,46 +3158,46 @@ impl NavinShipment {
         // Auto-open dispute on Critical breaches when the config toggle is enabled.
         // Skips silently if the shipment is already Disputed or Cancelled.
         let cfg = config::get_config(&env);
-        if cfg.auto_dispute_breach && severity == Severity::Critical {
-            if shipment.status != ShipmentStatus::Cancelled
-                && shipment.status != ShipmentStatus::Disputed
-            {
-                let old_status = shipment.status.clone();
-                let mut s = shipment;
-                s.status = ShipmentStatus::Disputed;
-                s.updated_at = env.ledger().timestamp();
-                s.integration_nonce = s.integration_nonce.saturating_add(1);
-                let sender = s.sender.clone();
-                let receiver = s.receiver.clone();
-                storage::set_shipment(&env, &s);
-                storage::decrement_status_count(&env, &old_status);
-                storage::increment_status_count(&env, &ShipmentStatus::Disputed);
-                storage::increment_total_disputes(&env);
-                extend_shipment_ttl(&env, shipment_id);
-                // Use the breach data hash as the dispute reason so indexers can correlate
-                events::emit_dispute_raised(&env, shipment_id, &carrier, &data_hash);
-                events::emit_notification(
-                    &env,
-                    &sender,
-                    NotificationType::DisputeRaised,
-                    shipment_id,
-                    &data_hash,
-                );
-                events::emit_notification(
-                    &env,
-                    &receiver,
-                    NotificationType::DisputeRaised,
-                    shipment_id,
-                    &data_hash,
-                );
-                events::emit_notification(
-                    &env,
-                    &carrier,
-                    NotificationType::DisputeRaised,
-                    shipment_id,
-                    &data_hash,
-                );
-            }
+        if cfg.auto_dispute_breach
+            && severity == Severity::Critical
+            && shipment.status != ShipmentStatus::Cancelled
+            && shipment.status != ShipmentStatus::Disputed
+        {
+            let old_status = shipment.status.clone();
+            let mut s = shipment;
+            s.status = ShipmentStatus::Disputed;
+            s.updated_at = env.ledger().timestamp();
+            s.integration_nonce = s.integration_nonce.saturating_add(1);
+            let sender = s.sender.clone();
+            let receiver = s.receiver.clone();
+            storage::set_shipment(&env, &s);
+            storage::decrement_status_count(&env, &old_status);
+            storage::increment_status_count(&env, &ShipmentStatus::Disputed);
+            storage::increment_total_disputes(&env);
+            extend_shipment_ttl(&env, shipment_id);
+            // Use the breach data hash as the dispute reason so indexers can correlate
+            events::emit_dispute_raised(&env, shipment_id, &carrier, &data_hash);
+            events::emit_notification(
+                &env,
+                &sender,
+                NotificationType::DisputeRaised,
+                shipment_id,
+                &data_hash,
+            );
+            events::emit_notification(
+                &env,
+                &receiver,
+                NotificationType::DisputeRaised,
+                shipment_id,
+                &data_hash,
+            );
+            events::emit_notification(
+                &env,
+                &carrier,
+                NotificationType::DisputeRaised,
+                shipment_id,
+                &data_hash,
+            );
         }
 
         Ok(())
