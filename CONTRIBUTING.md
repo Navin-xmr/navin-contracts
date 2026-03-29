@@ -222,6 +222,20 @@ cargo audit
 # Checks for known security vulnerabilities in dependencies
 ```
 
+### 6. WASM Size Budget
+
+To ensure our contracts remain deployable on-chain, we enforce strict size limits on the generated WASM files.
+
+```bash
+# Command run by CI:
+./scripts/check_wasm_size.sh
+```
+
+**Budget Update Policy:**
+- **Thresholds**: Currently 192KB for `shipment` and 25KB for `token`.
+- **Increases**: Budget increases must be justified in the PR description (e.g., due to critical new features) and approved by a maintainer.
+- **Optimization**: Always attempt to optimize the code or reduce dependencies before requesting a budget increase.
+
 ## Code Standards
 
 ### Rust Style Guide
@@ -240,7 +254,7 @@ cargo audit
    // Good
    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) -> Result<(), Error> {
        if amount <= 0 {
-           return Err(VaultError::InvalidAmount.into());
+            return Err(Error::InvalidAmount);
        }
        Ok(())
    }
@@ -322,8 +336,8 @@ cargo audit
 #[test]
 fn test_withdraw_insufficient_funds() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, SecureAssetVault);
-    let client = SecureAssetVaultClient::new(&env, &contract_id);
+   let contract_id = env.register_contract(None, NavinShipment);
+   let client = NavinShipmentClient::new(&env, &contract_id);
 
     let user = Address::generate(&env);
 

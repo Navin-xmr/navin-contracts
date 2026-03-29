@@ -1,7 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractimpl, symbol_short, Address, BytesN, Env, IntoVal, Map, Symbol, Vec,
+    contract, contractimpl, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal, Map, Symbol,
+    Vec,
 };
 
 mod config;
@@ -11,8 +12,25 @@ mod events;
 mod storage;
 mod stress_test;
 mod test;
+#[cfg(test)]
+mod test_finalization;
 mod types;
 mod validation;
+
+#[cfg(test)]
+mod test_auth;
+#[cfg(test)]
+mod test_auto_dispute;
+#[cfg(test)]
+mod test_iot_verification;
+#[cfg(test)]
+mod test_pause;
+#[cfg(test)]
+mod test_preflight;
+#[cfg(test)]
+mod test_suspension;
+#[cfg(test)]
+mod test_utils;
 
 pub use config::*;
 pub use errors::*;
@@ -29,10 +47,14 @@ fn extend_shipment_ttl(env: &Env, shipment_id: u64) {
     );
 }
 
-fn validate_milestones(_env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(), NavinError> {
+fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(), NavinError> {
     if milestones.is_empty() {
         return Ok(());
     }
+
+    // Validate all milestone symbols for bounded usage
+    validation::validate_milestone_symbols(env, milestones)?;
+
     let mut total_percentage = 0;
     for milestone in milestones.iter() {
         total_percentage += milestone.1;
@@ -45,9 +67,129 @@ fn validate_milestones(_env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<()
     Ok(())
 }
 
-fn internal_release_escrow(env: &Env, shipment: &mut Shipment, amount: i128) {
+fn checked_add_i128(a: i128, b: i128) -> Result<i128, NavinError> {
+    a.checked_add(b).ok_or(NavinError::ArithmeticError)
+}
+
+fn checked_sub_i128(a: i128, b: i128) -> Result<i128, NavinError> {
+    a.checked_sub(b).ok_or(NavinError::ArithmeticError)
+}
+
+fn checked_mul_div_i128(value: i128, multiplier: i128, divisor: i128) -> Result<i128, NavinError> {
+    if divisor == 0 {
+        return Err(NavinError::ArithmeticError);
+    }
+    let product = value
+        .checked_mul(multiplier)
+        .ok_or(NavinError::ArithmeticError)?;
+    Ok(product / divisor)
+}
+
+fn finalize_if_settled(_env: &Env, shipment: &mut Shipment) {
+    if (shipment.status == ShipmentStatus::Delivered
+        || shipment.status == ShipmentStatus::Cancelled)
+        && shipment.escrow_amount == 0
+    {
+        shipment.finalized = true;
+    }
+}
+
+fn require_not_finalized(shipment: &Shipment) -> Result<(), NavinError> {
+    if shipment.finalized {
+        return Err(NavinError::ShipmentFinalized);
+    }
+    Ok(())
+}
+
+/// Build a 32-byte action hash from arbitrary bytes and check/set the idempotency window.
+/// Returns `DuplicateAction` if the hash is already present in temporary storage.
+fn check_idempotency(env: &Env, payload: soroban_sdk::Bytes) -> Result<(), NavinError> {
+    let action_hash: BytesN<32> = env.crypto().sha256(&payload).into();
+    if storage::has_idempotency_window(env, &action_hash) {
+        return Err(NavinError::DuplicateAction);
+    }
+    let window = config::get_config(env).idempotency_window_seconds;
+    storage::set_idempotency_window(env, &action_hash, window);
+    Ok(())
+}
+
+#[derive(Copy, Clone)]
+enum TokenOperation {
+    Transfer,
+    #[cfg(test)]
+    Mint,
+}
+
+impl TokenOperation {
+    fn symbol(self) -> Symbol {
+        match self {
+            TokenOperation::Transfer => symbol_short!("transfer"),
+            #[cfg(test)]
+            TokenOperation::Mint => symbol_short!("mint"),
+        }
+    }
+
+    fn error(self) -> NavinError {
+        match self {
+            TokenOperation::Transfer => NavinError::TokenTransferFailed,
+            #[cfg(test)]
+            TokenOperation::Mint => NavinError::TokenMintFailed,
+        }
+    }
+}
+
+fn invoke_token_operation(
+    env: &Env,
+    token_contract: &Address,
+    operation: TokenOperation,
+    args: Vec<soroban_sdk::Val>,
+) -> Result<(), NavinError> {
+    match env.try_invoke_contract::<(), soroban_sdk::Error>(
+        token_contract,
+        &operation.symbol(),
+        args,
+    ) {
+        Ok(Ok(())) => Ok(()),
+        _ => Err(operation.error()),
+    }
+}
+
+fn invoke_token_transfer(
+    env: &Env,
+    token_contract: &Address,
+    from: &Address,
+    to: &Address,
+    amount: i128,
+) -> Result<(), NavinError> {
+    let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(env);
+    args.push_back(from.clone().into_val(env));
+    args.push_back(to.clone().into_val(env));
+    args.push_back(amount.into_val(env));
+    invoke_token_operation(env, token_contract, TokenOperation::Transfer, args)
+}
+
+#[cfg(test)]
+fn invoke_token_mint(
+    env: &Env,
+    token_contract: &Address,
+    admin: &Address,
+    to: &Address,
+    amount: i128,
+) -> Result<(), NavinError> {
+    let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(env);
+    args.push_back(admin.clone().into_val(env));
+    args.push_back(to.clone().into_val(env));
+    args.push_back(amount.into_val(env));
+    invoke_token_operation(env, token_contract, TokenOperation::Mint, args)
+}
+
+fn internal_release_escrow(
+    env: &Env,
+    shipment: &mut Shipment,
+    amount: i128,
+) -> Result<(), NavinError> {
     if amount <= 0 {
-        return;
+        return Ok(());
     }
     let actual_release = if amount > shipment.escrow_amount {
         shipment.escrow_amount
@@ -56,28 +198,40 @@ fn internal_release_escrow(env: &Env, shipment: &mut Shipment, amount: i128) {
     };
 
     if actual_release > 0 {
-        shipment.escrow_amount -= actual_release;
+        shipment.escrow_amount = checked_sub_i128(shipment.escrow_amount, actual_release)?;
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
         storage::set_shipment(env, shipment);
 
         // Get token contract address
         if let Some(token_contract) = storage::get_token_contract(env) {
             // Transfer tokens from this contract to carrier
             let contract_address = env.current_contract_address();
-            let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(env);
-            args.push_back(contract_address.into_val(env));
-            args.push_back(shipment.carrier.clone().into_val(env));
-            args.push_back(actual_release.into_val(env));
-            env.invoke_contract::<()>(&token_contract, &symbol_short!("transfer"), args);
+            invoke_token_transfer(
+                env,
+                &token_contract,
+                &contract_address,
+                &shipment.carrier,
+                actual_release,
+            )?;
         }
 
         events::emit_escrow_released(env, shipment.id, &shipment.carrier, actual_release);
     }
+
+    Ok(())
 }
 
 fn require_initialized(env: &Env) -> Result<(), NavinError> {
     if !storage::is_initialized(env) {
         return Err(NavinError::NotInitialized);
+    }
+    Ok(())
+}
+
+fn require_not_paused(env: &Env) -> Result<(), NavinError> {
+    if storage::is_paused(env) {
+        return Err(NavinError::ContractPaused);
     }
     Ok(())
 }
@@ -88,6 +242,14 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinErr
     match role {
         Role::Company => {
             if storage::has_company_role(env, address) {
+                // Check if role is suspended via generic role suspension
+                if storage::is_role_suspended(env, address, &Role::Company) {
+                    return Err(NavinError::Unauthorized);
+                }
+                // Check if company specifically is suspended
+                if storage::is_company_suspended(env, address) {
+                    return Err(NavinError::CompanySuspended);
+                }
                 Ok(())
             } else {
                 Err(NavinError::Unauthorized)
@@ -95,6 +257,14 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinErr
         }
         Role::Carrier => {
             if storage::has_carrier_role(env, address) {
+                // Check if role is suspended
+                if storage::is_role_suspended(env, address, &Role::Carrier) {
+                    return Err(NavinError::Unauthorized);
+                }
+                // Also check legacy carrier-specific suspension
+                if storage::is_carrier_suspended(env, address) {
+                    return Err(NavinError::CarrierSuspended);
+                }
                 Ok(())
             } else {
                 Err(NavinError::Unauthorized)
@@ -102,6 +272,28 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinErr
         }
         Role::Unassigned => Err(NavinError::Unauthorized),
     }
+}
+
+fn require_active_company(env: &Env, company: &Address) -> Result<(), NavinError> {
+    if storage::is_company_suspended(env, company) {
+        return Err(NavinError::CompanySuspended);
+    }
+    // Also check generic role suspension for completeness
+    if storage::is_role_suspended(env, company, &Role::Company) {
+        return Err(NavinError::Unauthorized);
+    }
+    Ok(())
+}
+
+fn require_active_carrier(env: &Env, carrier: &Address) -> Result<(), NavinError> {
+    if storage::is_carrier_suspended(env, carrier) {
+        return Err(NavinError::CarrierSuspended);
+    }
+    // Also check generic role suspension
+    if storage::is_role_suspended(env, carrier, &Role::Carrier) {
+        return Err(NavinError::Unauthorized);
+    }
+    Ok(())
 }
 
 #[contract]
@@ -140,13 +332,23 @@ impl NavinShipment {
         value: Symbol,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         caller.require_auth();
+
+        // Validate metadata symbols for bounded usage before storage
+        validation::validate_metadata_symbols(&env, &key, &value)?;
+
         let admin = storage::get_admin(&env);
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        require_not_finalized(&shipment)?;
         // Only sender or admin can set
         if caller != shipment.sender && caller != admin {
             return Err(NavinError::Unauthorized);
+        }
+        // If caller is the company (sender), check for suspension
+        if caller == shipment.sender {
+            require_active_company(&env, &caller)?;
         }
         // Initialize metadata map if not present
         let mut metadata = shipment.metadata.unwrap_or(Map::new(&env));
@@ -158,8 +360,206 @@ impl NavinShipment {
         metadata.set(key.clone(), value.clone());
         shipment.metadata = Some(metadata);
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
         storage::set_shipment(&env, &shipment);
         Ok(())
+    }
+
+    /// Append a hash-only note to a shipment for commentary.
+    /// Only the sender, receiver, assigned carrier, or admin can append notes.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `reporter` - The address appending the note.
+    /// * `shipment_id` - ID of the shipment.
+    /// * `note_hash` - SHA-256 hash of the off-chain note text.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if successfully appended.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
+    /// * `NavinError::Unauthorized` - If the caller is not involved in the shipment or admin.
+    pub fn append_note_hash(
+        env: Env,
+        reporter: Address,
+        shipment_id: u64,
+        note_hash: BytesN<32>,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        reporter.require_auth();
+
+        // Validate hash before storage
+        validation::validate_hash(&note_hash)?;
+
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        require_not_finalized(&shipment)?;
+        let admin = storage::get_admin(&env);
+
+        // Authorization: Sender, Receiver, Carrier, or Admin
+        if reporter != shipment.sender
+            && reporter != shipment.receiver
+            && reporter != shipment.carrier
+            && reporter != admin
+        {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // If reporter is the company (sender), check for suspension
+        if reporter == shipment.sender {
+            require_active_company(&env, &reporter)?;
+        }
+
+        // notes are append-only; we just increment the counter and store at the next index.
+        let index = storage::increment_note_count(&env, shipment_id);
+        storage::set_note_hash(&env, shipment_id, index, &note_hash);
+
+        // Emit the event following the Hash-and-Emit pattern.
+        events::emit_note_appended(&env, shipment_id, index, &note_hash, &reporter);
+
+        Ok(())
+    }
+
+    /// Add an evidence hash to an active shipment dispute.
+    /// Only in Disputed state. Authorization: Sender, Receiver, Carrier, or Admin.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `reporter` - The address adding the evidence.
+    /// * `shipment_id` - ID of the shipment.
+    /// * `evidence_hash` - SHA-256 hash of the off-chain evidence.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if successfully added.
+    pub fn add_dispute_evidence_hash(
+        env: Env,
+        reporter: Address,
+        shipment_id: u64,
+        evidence_hash: BytesN<32>,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        reporter.require_auth();
+
+        // Validate hash before storage
+        validation::validate_hash(&evidence_hash)?;
+
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        require_not_finalized(&shipment)?;
+        let admin = storage::get_admin(&env);
+
+        // State check: Only in Disputed state
+        if shipment.status != ShipmentStatus::Disputed {
+            return Err(NavinError::InvalidStatus);
+        }
+
+        // Authorization: Sender, Receiver, Carrier, or Admin
+        if reporter != shipment.sender
+            && reporter != shipment.receiver
+            && reporter != shipment.carrier
+            && reporter != admin
+        {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // If reporter is the company (sender), check for suspension
+        if reporter == shipment.sender {
+            require_active_company(&env, &reporter)?;
+        }
+
+        // Increment counter and store hash
+        let index = storage::increment_evidence_count(&env, shipment_id);
+        storage::set_evidence_hash(&env, shipment_id, index, &evidence_hash);
+
+        // Increment integration nonce
+        let mut shipment_mut = shipment;
+        shipment_mut.integration_nonce = shipment_mut.integration_nonce.saturating_add(1);
+        storage::set_shipment(&env, &shipment_mut);
+
+        // Emit event
+        events::emit_evidence_added(&env, shipment_id, index, &evidence_hash, &reporter);
+
+        Ok(())
+    }
+
+    /// Get the total number of evidence hashes for a shipment dispute.
+    pub fn get_dispute_evidence_count(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+        Ok(storage::get_evidence_count(&env, shipment_id))
+    }
+
+    /// Get a specific evidence hash for a shipment dispute by its sequence index.
+    pub fn get_dispute_evidence_hash(
+        env: Env,
+        shipment_id: u64,
+        index: u32,
+    ) -> Result<Option<BytesN<32>>, NavinError> {
+        require_initialized(&env)?;
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+        Ok(storage::get_evidence_hash(&env, shipment_id, index))
+    }
+
+    /// Get the current integration nonce for a shipment.
+    /// Nonce increments on critical transitions like status changes and escrow movements.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - The current nonce.
+    pub fn get_integration_nonce(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        Ok(shipment.integration_nonce)
+    }
+
+    /// Get the total number of notes appended to a shipment.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - Number of notes for the shipment.
+    pub fn get_note_count(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        // Verify existence or check archived
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+        Ok(storage::get_note_count(&env, shipment_id))
+    }
+
+    /// Get a specific note hash for a shipment by its sequence index.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    /// * `index` - The 0-based index of the note.
+    ///
+    /// # Returns
+    /// * `Result<Option<BytesN<32>>, NavinError>` - The note hash if found.
+    pub fn get_note_hash(
+        env: Env,
+        shipment_id: u64,
+        index: u32,
+    ) -> Result<Option<BytesN<32>>, NavinError> {
+        require_initialized(&env)?;
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+        Ok(storage::get_note_hash(&env, shipment_id, index))
     }
     /// Initialize the contract with an admin address and token contract address.
     /// Can only be called once. Sets the admin and shipment counter to 0.
@@ -351,6 +751,54 @@ impl NavinShipment {
         })
     }
 
+    /// Get the deterministic SHA-256 checksum of critical config fields.
+    ///
+    /// This query exposes the config checksum to help indexers and operators
+    /// detect unintended configuration drift. The checksum is computed from
+    /// all config fields serialized in a fixed order and is automatically
+    /// updated whenever the config changes.
+    ///
+    /// # Serialization Order
+    /// Fields are serialized in declaration order:
+    /// 1. shipment_ttl_threshold (u32)
+    /// 2. shipment_ttl_extension (u32)
+    /// 3. min_status_update_interval (u64)
+    /// 4. batch_operation_limit (u32)
+    /// 5. max_metadata_entries (u32)
+    /// 6. default_shipment_limit (u32)
+    /// 7. multisig_min_admins (u32)
+    /// 8. multisig_max_admins (u32)
+    /// 9. proposal_expiry_seconds (u64)
+    /// 10. deadline_grace_seconds (u64)
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    ///
+    /// # Returns
+    /// * `Result<BytesN<32>, NavinError>` - The SHA-256 checksum of the config.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let checksum = contract.get_config_checksum(&env)?;
+    /// // Indexer can verify: checksum == sha256(serialized_config)
+    /// ```
+    pub fn get_config_checksum(env: Env) -> Result<BytesN<32>, NavinError> {
+        require_initialized(&env)?;
+
+        // Retrieve stored checksum, or compute it if not yet stored
+        match config::get_config_checksum(&env) {
+            Some(checksum) => Ok(checksum),
+            None => {
+                // Fallback: compute checksum from current config
+                let current_config = config::get_config(&env);
+                Ok(config::compute_config_checksum(&current_config, &env))
+            }
+        }
+    }
+
     /// Add a carrier to a company's whitelist.
     /// Only the company can add carriers to their own whitelist.
     ///
@@ -375,6 +823,7 @@ impl NavinShipment {
         carrier: Address,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         company.require_auth();
         require_role(&env, &company, Role::Company)?;
 
@@ -412,6 +861,7 @@ impl NavinShipment {
         carrier: Address,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         company.require_auth();
         require_role(&env, &company, Role::Company)?;
 
@@ -494,6 +944,7 @@ impl NavinShipment {
     /// ```
     pub fn add_company(env: Env, admin: Address, company: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -501,6 +952,16 @@ impl NavinShipment {
         }
 
         storage::set_company_role(&env, &company);
+
+        // Emit role history event
+        events::emit_role_changed(
+            &env,
+            &RoleChangeAction::Assigned,
+            &admin,
+            &company,
+            &Role::Company,
+        );
+
         Ok(())
     }
 
@@ -524,6 +985,7 @@ impl NavinShipment {
     /// ```
     pub fn add_carrier(env: Env, admin: Address, carrier: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -531,6 +993,284 @@ impl NavinShipment {
         }
 
         storage::set_carrier_role(&env, &carrier);
+
+        // Emit role history event
+        events::emit_role_changed(
+            &env,
+            &RoleChangeAction::Assigned,
+            &admin,
+            &carrier,
+            &Role::Carrier,
+        );
+
+        Ok(())
+    }
+
+    /// Suspend a carrier from carrier-only operations.
+    ///
+    /// Only the admin can call this function.
+    pub fn suspend_carrier(env: Env, admin: Address, carrier: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::suspend_carrier(&env, &carrier);
+        env.events()
+            .publish((Symbol::new(&env, "carrier_suspended"),), (admin, carrier));
+        Ok(())
+    }
+
+    /// Reactivate a previously suspended carrier.
+    ///
+    /// Only the admin can call this function.
+    pub fn reactivate_carrier(
+        env: Env,
+        admin: Address,
+        carrier: Address,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::reactivate_carrier(&env, &carrier);
+        env.events().publish(
+            (Symbol::new(&env, "carrier_reactivated"),),
+            (admin, carrier),
+        );
+        Ok(())
+    }
+
+    /// Return whether a carrier is currently suspended.
+    pub fn is_carrier_suspended(env: Env, carrier: Address) -> Result<bool, NavinError> {
+        require_initialized(&env)?;
+        Ok(storage::is_carrier_suspended(&env, &carrier))
+    }
+
+    /// Revoke a previously assigned role from an address.
+    ///
+    /// Only the admin can revoke roles. The admin cannot revoke their own role;
+    /// use `transfer_admin` instead.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Contract admin executing the revocation.
+    /// * `target` - The address whose role is being revoked.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok on successful role revocation.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If called by a non-admin.
+    /// * `NavinError::CannotSelfRevoke` - If admin tries to revoke their own role.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // contract.revoke_role(&env, &admin, &target_addr);
+    /// ```
+    pub fn revoke_role(env: Env, admin: Address, target: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        if admin == target {
+            return Err(NavinError::CannotSelfRevoke);
+        }
+
+        let current_role = storage::get_role(&env, &target).unwrap_or(Role::Unassigned);
+
+        match current_role {
+            Role::Company => storage::revoke_role(&env, &target, &Role::Company),
+            Role::Carrier => storage::revoke_role(&env, &target, &Role::Carrier),
+            Role::Unassigned => {}
+        }
+
+        events::emit_role_revoked(&env, &admin, &target, &current_role);
+
+        // Emit role history event for audit trail
+        events::emit_role_changed(
+            &env,
+            &RoleChangeAction::Revoked,
+            &admin,
+            &target,
+            &current_role,
+        );
+
+        Ok(())
+    }
+
+    /// Suspend a role temporarily (e.g., for investigation or compliance review).
+    ///
+    /// Only the admin can suspend roles. Suspended addresses retain their role
+    /// assignment but cannot perform role-gated actions until reactivated.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Contract admin executing the suspension.
+    /// * `target` - The address whose role is being suspended.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok on successful suspension.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If called by a non-admin.
+    /// * `NavinError::CannotSelfRevoke` - If admin tries to suspend their own role.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // contract.suspend_role(&env, &admin, &target_addr);
+    /// ```
+    pub fn suspend_role(env: Env, admin: Address, target: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        if admin == target {
+            return Err(NavinError::CannotSelfRevoke);
+        }
+
+        let current_role = storage::get_role(&env, &target).unwrap_or(Role::Unassigned);
+
+        if current_role == Role::Unassigned {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // Mark as suspended in storage
+        storage::suspend_role(&env, &target, &current_role);
+
+        // Emit role history event
+        events::emit_role_changed(
+            &env,
+            &RoleChangeAction::Suspended,
+            &admin,
+            &target,
+            &current_role,
+        );
+
+        Ok(())
+    }
+
+    /// Reactivate a previously suspended role.
+    ///
+    /// Only the admin can reactivate roles. This restores the address's
+    /// ability to perform role-gated actions.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Contract admin executing the reactivation.
+    /// * `target` - The address whose role is being reactivated.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok on successful reactivation.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If called by a non-admin or target not suspended.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // contract.reactivate_role(&env, &admin, &target_addr);
+    /// ```
+    pub fn reactivate_role(env: Env, admin: Address, target: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        let current_role = storage::get_role(&env, &target).unwrap_or(Role::Unassigned);
+
+        if current_role == Role::Unassigned {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // Reactivate the role
+        storage::reactivate_role(&env, &target, &current_role);
+
+        // Emit role history event
+        events::emit_role_changed(
+            &env,
+            &RoleChangeAction::Reactivated,
+            &admin,
+            &target,
+            &current_role,
+        );
+
+        Ok(())
+    }
+
+    /// Suspend a company from creating or updating shipments.
+    pub fn suspend_company(env: Env, admin: Address, company: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        if !storage::has_company_role(&env, &company) {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::suspend_company(&env, &company);
+
+        // Emit role history event (reusing Reactive/Suspended for audit)
+        events::emit_role_changed(
+            &env,
+            &RoleChangeAction::Suspended,
+            &admin,
+            &company,
+            &Role::Company,
+        );
+
+        Ok(())
+    }
+
+    /// Reactivate a suspended company.
+    pub fn reactivate_company(
+        env: Env,
+        admin: Address,
+        company: Address,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::reactivate_company(&env, &company);
+
+        // Emit role history event
+        events::emit_role_changed(
+            &env,
+            &RoleChangeAction::Reactivated,
+            &admin,
+            &company,
+            &Role::Company,
+        );
+
         Ok(())
     }
 
@@ -570,10 +1310,17 @@ impl NavinShipment {
         deadline: u64,
     ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         sender.require_auth();
         require_role(&env, &sender, Role::Company)?;
         validate_milestones(&env, &payment_milestones)?;
         validate_hash(&data_hash)?;
+
+        // Idempotency: reject duplicate (sender, data_hash) within the window.
+        let mut payload = soroban_sdk::Bytes::new(&env);
+        payload.append(&sender.clone().to_xdr(&env));
+        payload.append(&data_hash.clone().into());
+        check_idempotency(&env, payload)?;
 
         let now = env.ledger().timestamp();
         if deadline <= now {
@@ -606,6 +1353,8 @@ impl NavinShipment {
             paid_milestones: Vec::new(&env),
             metadata: None,
             deadline,
+            integration_nonce: 0,
+            finalized: false,
         };
 
         storage::set_shipment(&env, &shipment);
@@ -663,6 +1412,7 @@ impl NavinShipment {
         shipments: Vec<ShipmentInput>,
     ) -> Result<Vec<u64>, NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         sender.require_auth();
         require_role(&env, &sender, Role::Company)?;
 
@@ -711,6 +1461,8 @@ impl NavinShipment {
                 paid_milestones: Vec::new(&env),
                 metadata: None,
                 deadline: shipment_input.deadline,
+                integration_nonce: 0,
+                finalized: false,
             };
 
             storage::set_shipment(&env, &shipment);
@@ -768,6 +1520,79 @@ impl NavinShipment {
         storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)
     }
 
+    /// Retrieve the immutable creator identity for a shipment.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    ///
+    /// # Returns
+    /// * `Result<Address, NavinError>` - Address that originally created the shipment.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
+    pub fn get_shipment_creator(env: Env, shipment_id: u64) -> Result<Address, NavinError> {
+        require_initialized(&env)?;
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        Ok(shipment.sender)
+    }
+
+    /// Retrieve the immutable receiver identity for a shipment.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    ///
+    /// # Returns
+    /// * `Result<Address, NavinError>` - Address designated as shipment receiver at creation.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
+    pub fn get_shipment_receiver(env: Env, shipment_id: u64) -> Result<Address, NavinError> {
+        require_initialized(&env)?;
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        Ok(shipment.receiver)
+    }
+
+    /// Return read-only diagnostics that help operators triage restore requirements.
+    ///
+    /// This query does not mutate state. It classifies the shipment ID as active,
+    /// archived-expected, missing, or inconsistent (both active and archived present).
+    pub fn get_restore_diagnostics(
+        env: Env,
+        shipment_id: u64,
+    ) -> Result<PersistentRestoreDiagnostics, NavinError> {
+        require_initialized(&env)?;
+
+        let persistent_shipment_present = storage::has_persistent_shipment(&env, shipment_id);
+        let archived_shipment_present = storage::is_shipment_archived(&env, shipment_id);
+
+        let state = if persistent_shipment_present && archived_shipment_present {
+            StoragePresenceState::InconsistentDualPresence
+        } else if persistent_shipment_present {
+            StoragePresenceState::ActivePersistent
+        } else if archived_shipment_present {
+            StoragePresenceState::ArchivedExpected
+        } else {
+            StoragePresenceState::Missing
+        };
+
+        Ok(PersistentRestoreDiagnostics {
+            shipment_id,
+            state,
+            persistent_shipment_present,
+            archived_shipment_present,
+            escrow_present: storage::has_escrow_entry(&env, shipment_id),
+            confirmation_hash_present: storage::has_confirmation_hash_entry(&env, shipment_id),
+            last_status_update_present: storage::has_last_status_update_entry(&env, shipment_id),
+            event_count_present: storage::has_event_count_entry(&env, shipment_id),
+        })
+    }
+
     /// Deposit escrow funds for a shipment.
     /// Only a Company can deposit, and the shipment must be in Created status.
     ///
@@ -799,6 +1624,7 @@ impl NavinShipment {
         amount: i128,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         from.require_auth();
         require_role(&env, &from, Role::Company)?;
 
@@ -806,6 +1632,8 @@ impl NavinShipment {
 
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        require_not_finalized(&shipment)?;
 
         if shipment.status != ShipmentStatus::Created {
             return Err(NavinError::InvalidStatus);
@@ -820,17 +1648,14 @@ impl NavinShipment {
 
         // Transfer tokens from user to this contract
         let contract_address = env.current_contract_address();
-        let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(&env);
-        args.push_back(from.clone().into_val(&env));
-        args.push_back(contract_address.into_val(&env));
-        args.push_back(amount.into_val(&env));
-        env.invoke_contract::<()>(&token_contract, &symbol_short!("transfer"), args);
+        invoke_token_transfer(&env, &token_contract, &from, &contract_address, amount)?;
 
-        shipment.escrow_amount = amount;
-        shipment.total_escrow = amount;
+        shipment.escrow_amount = checked_add_i128(0, amount)?;
+        shipment.total_escrow = checked_add_i128(0, amount)?;
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
         storage::set_shipment(&env, &shipment);
-        storage::add_total_escrow_volume(&env, amount);
+        storage::add_total_escrow_volume(&env, amount)?;
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_escrow_deposited(&env, shipment_id, &from, amount);
@@ -855,6 +1680,7 @@ impl NavinShipment {
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::ShipmentNotFound` - If shipment doesn't exist.
     /// * `NavinError::Unauthorized` - If caller is neither the carrier nor admin.
+    /// * `NavinError::CarrierSuspended` - If the assigned carrier is suspended.
     /// * `NavinError::RateLimitExceeded` - If status was updated too recently (unless Admin).
     /// * `NavinError::InvalidStatus` - If transitioning to an improperly sequenced state.
     ///
@@ -870,6 +1696,7 @@ impl NavinShipment {
         data_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         caller.require_auth();
 
         let admin = storage::get_admin(&env);
@@ -879,6 +1706,20 @@ impl NavinShipment {
         if caller != shipment.carrier && caller != admin {
             return Err(NavinError::Unauthorized);
         }
+        require_not_finalized(&shipment)?;
+        if caller == shipment.carrier {
+            require_active_carrier(&env, &caller)?;
+        }
+
+        // Idempotency: reject duplicate (shipment_id, new_status, data_hash) within the window.
+        let mut payload = soroban_sdk::Bytes::new(&env);
+        payload.append(&soroban_sdk::Bytes::from_array(
+            &env,
+            &shipment_id.to_be_bytes(),
+        ));
+        payload.append(&new_status.clone().to_xdr(&env));
+        payload.append(&data_hash.clone().into());
+        check_idempotency(&env, payload)?;
 
         // Rate-limit check: admin bypasses; all other callers must wait the minimum interval.
         if caller != admin {
@@ -899,10 +1740,13 @@ impl NavinShipment {
         shipment.status = new_status.clone();
         shipment.data_hash = data_hash.clone();
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
-        storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
         storage::increment_status_count(&env, &shipment.status);
+
+        finalize_if_settled(&env, &mut shipment);
+        storage::set_shipment(&env, &shipment);
 
         if shipment.status == ShipmentStatus::Disputed {
             storage::increment_total_disputes(&env);
@@ -910,6 +1754,9 @@ impl NavinShipment {
 
         storage::set_last_status_update(&env, shipment_id, env.ledger().timestamp());
         extend_shipment_ttl(&env, shipment_id);
+
+        // Store the data hash for this status transition (IoT verification)
+        storage::set_status_hash(&env, shipment_id, &new_status, &data_hash);
 
         events::emit_status_updated(&env, shipment_id, &old_status, &new_status, &data_hash);
         events::emit_notification(
@@ -972,6 +1819,50 @@ impl NavinShipment {
     /// ```
     pub fn get_shipment_count(env: Env) -> u64 {
         storage::get_shipment_counter(&env)
+    }
+
+    /// Cursor-based search for shipment IDs by status.
+    ///
+    /// Results are returned in ascending shipment ID order for deterministic pagination.
+    /// `cursor` is the last seen shipment ID from a previous page.
+    pub fn search_shipments_by_status(
+        env: Env,
+        status: ShipmentStatus,
+        cursor: Option<u64>,
+        page_size: u32,
+    ) -> Result<ShipmentStatusCursorPage, NavinError> {
+        require_initialized(&env)?;
+
+        let config = config::get_config(&env);
+        if page_size == 0 || page_size > config.batch_operation_limit {
+            return Err(NavinError::InvalidConfig);
+        }
+
+        let mut shipment_ids = Vec::new(&env);
+        let mut current_id = cursor.unwrap_or(0);
+        let total_shipments = storage::get_shipment_counter(&env);
+        let mut next_cursor = None;
+
+        while current_id < total_shipments {
+            current_id = current_id.saturating_add(1);
+
+            if let Some(shipment) = storage::get_shipment(&env, current_id) {
+                if shipment.status == status {
+                    shipment_ids.push_back(current_id);
+                    if shipment_ids.len() == page_size {
+                        if current_id < total_shipments {
+                            next_cursor = Some(current_id);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(ShipmentStatusCursorPage {
+            shipment_ids,
+            next_cursor,
+        })
     }
 
     /// Get the event count for a shipment.
@@ -1083,6 +1974,7 @@ impl NavinShipment {
         confirmation_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         receiver.require_auth();
 
         let mut shipment =
@@ -1092,6 +1984,7 @@ impl NavinShipment {
         if shipment.receiver != receiver {
             return Err(NavinError::Unauthorized);
         }
+        require_not_finalized(&shipment)?;
 
         // Validate transition to Delivered
         if !shipment
@@ -1106,16 +1999,17 @@ impl NavinShipment {
         shipment.status = ShipmentStatus::Delivered;
         shipment.updated_at = now;
 
-        storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
         storage::increment_status_count(&env, &ShipmentStatus::Delivered);
-
         storage::set_confirmation_hash(&env, shipment_id, &confirmation_hash);
         storage::decrement_active_shipment_count(&env, &shipment.sender);
         extend_shipment_ttl(&env, shipment_id);
 
         let remaining_escrow = shipment.escrow_amount;
-        internal_release_escrow(&env, &mut shipment, remaining_escrow);
+        internal_release_escrow(&env, &mut shipment, remaining_escrow)?;
+
+        finalize_if_settled(&env, &mut shipment);
+        storage::set_shipment(&env, &shipment);
 
         env.events().publish(
             (Symbol::new(&env, "delivery_confirmed"),),
@@ -1202,6 +2096,8 @@ impl NavinShipment {
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+        require_not_finalized(&shipment)?;
+
         if shipment.carrier != carrier {
             return Err(NavinError::Unauthorized);
         }
@@ -1254,6 +2150,8 @@ impl NavinShipment {
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+        require_not_finalized(&shipment)?;
+
         if shipment.carrier != carrier {
             return Err(NavinError::Unauthorized);
         }
@@ -1286,6 +2184,7 @@ impl NavinShipment {
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::Unauthorized` - If called by unassigned identity.
+    /// * `NavinError::CarrierSuspended` - If the carrier is suspended.
     /// * `NavinError::ShipmentNotFound` - If shipment instance targets missing entry.
     /// * `NavinError::InvalidStatus` - If tracked instance is not `InTransit`.
     ///
@@ -1301,12 +2200,16 @@ impl NavinShipment {
         data_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
+        require_active_carrier(&env, &carrier)?;
 
         // Verify shipment exists, carrier is assigned, and status
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        require_not_finalized(&shipment)?;
 
         if shipment.carrier != carrier {
             return Err(NavinError::Unauthorized);
@@ -1351,11 +2254,15 @@ impl NavinShipment {
 
             if !already_paid {
                 let milestone = mut_shipment.payment_milestones.get(idx as u32).unwrap();
-                let release_amount = (mut_shipment.total_escrow * milestone.1 as i128) / 100;
+                let release_amount =
+                    checked_mul_div_i128(mut_shipment.total_escrow, milestone.1 as i128, 100)?;
                 mut_shipment.paid_milestones.push_back(checkpoint.clone());
-                internal_release_escrow(&env, &mut mut_shipment, release_amount);
+                internal_release_escrow(&env, &mut mut_shipment, release_amount)?;
             }
         }
+
+        finalize_if_settled(&env, &mut mut_shipment);
+        storage::set_shipment(&env, &mut_shipment);
 
         Ok(())
     }
@@ -1376,6 +2283,7 @@ impl NavinShipment {
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::Unauthorized` - If called by unassigned identity.
+    /// * `NavinError::CarrierSuspended` - If the carrier is suspended.
     /// * `NavinError::ShipmentNotFound` - If shipment instance targets missing entry.
     /// * `NavinError::InvalidStatus` - If tracked instance is not `InTransit`.
     /// * `NavinError::BatchTooLarge` - If more than 10 milestones are submitted.
@@ -1395,8 +2303,10 @@ impl NavinShipment {
         milestones: Vec<(Symbol, BytesN<32>)>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
+        require_active_carrier(&env, &carrier)?;
 
         // Validate batch size
         let config = config::get_config(&env);
@@ -1407,6 +2317,8 @@ impl NavinShipment {
         // Verify shipment exists, carrier is assigned, and status
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        require_not_finalized(&shipment)?;
 
         if shipment.carrier != carrier {
             return Err(NavinError::Unauthorized);
@@ -1467,13 +2379,19 @@ impl NavinShipment {
                 if !already_paid {
                     let payment_milestone =
                         mut_shipment.payment_milestones.get(idx as u32).unwrap();
-                    let release_amount =
-                        (mut_shipment.total_escrow * payment_milestone.1 as i128) / 100;
+                    let release_amount = checked_mul_div_i128(
+                        mut_shipment.total_escrow,
+                        payment_milestone.1 as i128,
+                        100,
+                    )?;
                     mut_shipment.paid_milestones.push_back(checkpoint.clone());
-                    internal_release_escrow(&env, &mut mut_shipment, release_amount);
+                    internal_release_escrow(&env, &mut mut_shipment, release_amount)?;
                 }
             }
         }
+
+        finalize_if_settled(&env, &mut mut_shipment);
+        storage::set_shipment(&env, &mut_shipment);
 
         Ok(())
     }
@@ -1531,14 +2449,22 @@ impl NavinShipment {
         reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         caller.require_auth();
 
         let admin = storage::get_admin(&env);
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+        require_not_finalized(&shipment)?;
+
         if caller != shipment.sender && caller != admin {
             return Err(NavinError::Unauthorized);
+        }
+
+        // Check for suspension if caller is the sender (company)
+        if caller == shipment.sender {
+            require_active_company(&env, &caller)?;
         }
 
         match shipment.status {
@@ -1553,6 +2479,7 @@ impl NavinShipment {
         shipment.status = ShipmentStatus::Cancelled;
         shipment.escrow_amount = 0;
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
         storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
@@ -1567,9 +2494,121 @@ impl NavinShipment {
             storage::remove_escrow_balance(&env, shipment_id);
             events::emit_escrow_released(&env, shipment_id, &shipment.sender, escrow_amount);
         }
+        finalize_if_settled(&env, &mut shipment);
+        storage::set_shipment(&env, &shipment);
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_shipment_cancelled(&env, shipment_id, &caller, &reason_hash);
+
+        Ok(())
+    }
+
+    /// Emergency admin-only force-cancel for a shipment.
+    ///
+    /// This is a privileged override that bypasses the normal cancellation rules.
+    /// It can cancel a shipment in **any non-terminal state** (including Disputed),
+    /// and it requires a mandatory, non-zero `reason_hash` to ensure an immutable
+    /// audit trail is always present.
+    ///
+    /// Escrow behaviour is deterministic:
+    /// - If escrow is held, the full remaining balance is refunded to the company
+    ///   via the token contract before the shipment is marked Cancelled.
+    /// - If no escrow is held, the shipment is cancelled with no token transfer.
+    ///
+    /// Only the single admin or a multi-sig admin (via `propose_action` /
+    /// `approve_action`) may call this function directly. Regular companies and
+    /// carriers are rejected with `Unauthorized`.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Admin address executing the force-cancel.
+    /// * `shipment_id` - ID of the shipment to force-cancel.
+    /// * `reason_hash` - Mandatory SHA-256 hash of the off-chain reason document.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok on success.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - Contract not initialized.
+    /// * `NavinError::Unauthorized` - Caller is not the admin.
+    /// * `NavinError::ShipmentNotFound` - Shipment does not exist.
+    /// * `NavinError::ForceCancelReasonHashMissing` - `reason_hash` is all-zero.
+    /// * `NavinError::ShipmentAlreadyCompleted` - Shipment is already Delivered or Cancelled.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // contract.force_cancel_shipment(&env, &admin, 1, &reason_hash);
+    /// ```
+    pub fn force_cancel_shipment(
+        env: Env,
+        admin: Address,
+        shipment_id: u64,
+        reason_hash: BytesN<32>,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        admin.require_auth();
+
+        // Strict admin-only gate — no company/carrier bypass.
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // Reason hash is mandatory and must be non-zero.
+        validate_hash(&reason_hash).map_err(|_| NavinError::ForceCancelReasonHashMissing)?;
+
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        require_not_finalized(&shipment)?;
+
+        // Terminal states cannot be force-cancelled.
+        match shipment.status {
+            ShipmentStatus::Delivered | ShipmentStatus::Cancelled => {
+                return Err(NavinError::ShipmentAlreadyCompleted);
+            }
+            _ => {}
+        }
+
+        let old_status = shipment.status.clone();
+        let escrow_amount = shipment.escrow_amount;
+
+        // Deterministic escrow refund: always refund to company if escrow is held.
+        if escrow_amount > 0 {
+            let token_contract =
+                storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
+            let contract_address = env.current_contract_address();
+            invoke_token_transfer(
+                &env,
+                &token_contract,
+                &contract_address,
+                &shipment.sender,
+                escrow_amount,
+            )?;
+
+            shipment.escrow_amount = 0;
+            events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
+        }
+
+        shipment.status = ShipmentStatus::Cancelled;
+        shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
+
+        storage::decrement_status_count(&env, &old_status);
+        storage::increment_status_count(&env, &ShipmentStatus::Cancelled);
+
+        // Decrement active count only if the shipment was not already in a
+        // non-active state (Cancelled is the only non-active non-terminal state
+        // that can't reach here, so this is always safe).
+        storage::decrement_active_shipment_count(&env, &shipment.sender);
+
+        finalize_if_settled(&env, &mut shipment);
+        storage::set_shipment(&env, &shipment);
+
+        extend_shipment_ttl(&env, shipment_id);
+
+        // Emit the dedicated force-cancel event — distinct from shipment_cancelled.
+        events::emit_force_cancelled(&env, shipment_id, &admin, &reason_hash, escrow_amount);
 
         Ok(())
     }
@@ -1644,6 +2683,8 @@ impl NavinShipment {
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+        require_not_finalized(&shipment)?;
+
         if caller != shipment.receiver && caller != admin {
             return Err(NavinError::Unauthorized);
         }
@@ -1657,7 +2698,9 @@ impl NavinShipment {
             return Err(NavinError::InsufficientFunds);
         }
 
-        internal_release_escrow(&env, &mut shipment, escrow_amount);
+        internal_release_escrow(&env, &mut shipment, escrow_amount)?;
+        finalize_if_settled(&env, &mut shipment);
+        storage::set_shipment(&env, &shipment);
         events::emit_notification(
             &env,
             &shipment.sender,
@@ -1707,8 +2750,15 @@ impl NavinShipment {
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+        require_not_finalized(&shipment)?;
+
         if caller != shipment.sender && caller != admin {
             return Err(NavinError::Unauthorized);
+        }
+
+        // Check for suspension if caller is the sender (company)
+        if caller == shipment.sender {
+            require_active_company(&env, &caller)?;
         }
 
         if shipment.status != ShipmentStatus::Created
@@ -1727,17 +2777,21 @@ impl NavinShipment {
 
         // Transfer tokens from this contract to company
         let contract_address = env.current_contract_address();
-        let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(&env);
-        args.push_back(contract_address.into_val(&env));
-        args.push_back(shipment.sender.clone().into_val(&env));
-        args.push_back(escrow_amount.into_val(&env));
-        env.invoke_contract::<soroban_sdk::Val>(&token_contract, &symbol_short!("transfer"), args);
+        invoke_token_transfer(
+            &env,
+            &token_contract,
+            &contract_address,
+            &shipment.sender,
+            escrow_amount,
+        )?;
 
         shipment.escrow_amount = 0;
         let old_status = shipment.status.clone();
         shipment.status = ShipmentStatus::Cancelled;
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
+        finalize_if_settled(&env, &mut shipment);
         storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
         storage::increment_status_count(&env, &ShipmentStatus::Cancelled);
@@ -1785,13 +2839,21 @@ impl NavinShipment {
         reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         caller.require_auth();
 
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+        require_not_finalized(&shipment)?;
+
         if caller != shipment.sender && caller != shipment.receiver && caller != shipment.carrier {
             return Err(NavinError::Unauthorized);
+        }
+
+        // Check for suspension if caller is the sender (company)
+        if caller == shipment.sender {
+            require_active_company(&env, &caller)?;
         }
 
         if shipment.status == ShipmentStatus::Cancelled
@@ -1803,6 +2865,7 @@ impl NavinShipment {
         let old_status = shipment.status.clone();
         shipment.status = ShipmentStatus::Disputed;
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
         storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
@@ -1837,44 +2900,47 @@ impl NavinShipment {
         Ok(())
     }
 
-    /// Resolve a dispute by releasing funds to carrier or refunding to company.
-    /// Only admin can resolve disputes.
+    /// Resolve a shipment dispute. Only the admin can call this.
     ///
     /// # Arguments
-    /// * `env` - Execution environment tracking context.
-    /// * `admin` - Contract admin executing the resolution.
-    /// * `shipment_id` - ID specifying tracked shipment sequence.
-    /// * `resolution` - Target outcome assigned by platform resolving admin.
+    /// * `env` - Execution environment.
+    /// * `admin` - Contract admin address.
+    /// * `shipment_id` - ID of the shipment.
+    /// * `resolution` - Target resolution (Release to Carrier or Refund to Company).
+    /// * `reason_hash` - SHA-256 hash of the off-chain justification document.
     ///
     /// # Returns
-    /// * `Result<(), NavinError>` - Ok on successful resolution instance.
+    /// * `Result<(), NavinError>` - Ok if successfully resolved.
     ///
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::Unauthorized` - If caller isn't contract admin mapping.
-    /// * `NavinError::ShipmentNotFound` - If parameters track undefined mappings.
-    /// * `NavinError::InvalidStatus` - If tracked instance is not `Disputed`.
-    /// * `NavinError::InsufficientFunds` - If linked balance mapped values reflect unset tracking.
-    ///
-    /// # Examples
-    /// ```rust
-    /// // contract.resolve_dispute(env, admin, 1, DisputeResolution::ReleaseToCarrier);
-    /// ```
+    /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
+    /// * `NavinError::Unauthorized` - If called by a non-admin.
+    /// * `NavinError::DisputeResolutionReasonHashMissing` - If reason_hash is all zeros.
     pub fn resolve_dispute(
         env: Env,
         admin: Address,
         shipment_id: u64,
         resolution: DisputeResolution,
+        reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
             return Err(NavinError::Unauthorized);
         }
 
+        // Validate reason hash is not empty
+        if reason_hash == BytesN::from_array(&env, &[0u8; 32]) {
+            return Err(NavinError::DisputeResolutionReasonHashMissing);
+        }
+
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        require_not_finalized(&shipment)?;
 
         if shipment.status != ShipmentStatus::Disputed {
             return Err(NavinError::InvalidStatus);
@@ -1887,6 +2953,7 @@ impl NavinShipment {
 
         shipment.escrow_amount = 0;
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
         let recipient = match resolution {
             DisputeResolution::ReleaseToCarrier => {
@@ -1903,6 +2970,7 @@ impl NavinShipment {
         storage::increment_status_count(&env, &shipment.status);
         storage::decrement_active_shipment_count(&env, &shipment.sender);
 
+        finalize_if_settled(&env, &mut shipment);
         storage::set_shipment(&env, &shipment);
         storage::remove_escrow_balance(&env, shipment_id);
         extend_shipment_ttl(&env, shipment_id);
@@ -1918,26 +2986,29 @@ impl NavinShipment {
             }
         }
 
+        // Emit specialized resolution event with context
+        events::emit_dispute_resolved(&env, shipment_id, &resolution, &reason_hash, &admin);
+
         events::emit_notification(
             &env,
             &shipment.sender,
             NotificationType::DisputeResolved,
             shipment_id,
-            &BytesN::from_array(&env, &[0u8; 32]),
+            &reason_hash,
         );
         events::emit_notification(
             &env,
             &shipment.receiver,
             NotificationType::DisputeResolved,
             shipment_id,
-            &BytesN::from_array(&env, &[0u8; 32]),
+            &reason_hash,
         );
         events::emit_notification(
             &env,
             &shipment.carrier,
             NotificationType::DisputeResolved,
             shipment_id,
-            &BytesN::from_array(&env, &[0u8; 32]),
+            &reason_hash,
         );
 
         Ok(())
@@ -1982,6 +3053,8 @@ impl NavinShipment {
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+        require_not_finalized(&shipment)?;
+
         // Verify current carrier is the assigned carrier
         if shipment.carrier != current_carrier {
             return Err(NavinError::Unauthorized);
@@ -1999,6 +3072,7 @@ impl NavinShipment {
         let old_carrier = shipment.carrier.clone();
         shipment.carrier = new_carrier.clone();
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
         storage::set_shipment(&env, &shipment);
         extend_shipment_ttl(&env, shipment_id);
@@ -2032,6 +3106,7 @@ impl NavinShipment {
     /// * `carrier` - Tracking address specifying mapped context boundaries mapped assignments limits pointer validations constraints checking identifiers boundaries limits pointer configurations constraints context values references formats map matching arrays instances string definitions parameters matches checks limits permissions rules string formats limits rules scopes configurations maps tokens contexts scopes mapping instances matches.
     /// * `shipment_id` - Execution identifier reference binding sequence parameters formatting properties matches checking definitions sizes boundary arrays fields values bindings tracking identifier sequences parameters mapping limits bounds validation context limits formats values.
     /// * `breach_type` - Parameter tracking mapped enum values binding sequence identifier maps pointers validations checking mapped roles parameters mapped map matching pointer formats parameters mapping context limits keys.
+    /// * `severity` - Severity level for downstream analytics and alerting (Low/Medium/High/Critical).
     /// * `data_hash` - Configuration identifier string pointers limits bounds values matches arrays validation mapped strings format properties rules context bindings format array scopes references definitions maps matches validation sizes limits permissions validations.
     ///
     /// # Returns
@@ -2044,13 +3119,14 @@ impl NavinShipment {
     ///
     /// # Examples
     /// ```rust
-    /// // contract.report_condition_breach(&env, &carrier, 1, BreachType::TemperatureHigh, &hash);
+    /// // contract.report_condition_breach(&env, &carrier, 1, BreachType::TemperatureHigh, Severity::High, &hash);
     /// ```
     pub fn report_condition_breach(
         env: Env,
         carrier: Address,
         shipment_id: u64,
         breach_type: BreachType,
+        severity: Severity,
         data_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
@@ -2060,15 +3136,69 @@ impl NavinShipment {
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+        require_not_finalized(&shipment)?;
+
         // Only the assigned carrier for this shipment may report
         if shipment.carrier != carrier {
             return Err(NavinError::Unauthorized);
         }
 
-        events::emit_condition_breach(&env, shipment_id, &carrier, &breach_type, &data_hash);
+        events::emit_condition_breach(
+            &env,
+            shipment_id,
+            &carrier,
+            &breach_type,
+            &severity,
+            &data_hash,
+        );
 
         // Reputation: record breach against carrier
-        events::emit_carrier_breach(&env, &carrier, shipment_id, &breach_type);
+        events::emit_carrier_breach(&env, &carrier, shipment_id, &breach_type, &severity);
+
+        // Auto-open dispute on Critical breaches when the config toggle is enabled.
+        // Skips silently if the shipment is already Disputed or Cancelled.
+        let cfg = config::get_config(&env);
+        if cfg.auto_dispute_breach
+            && severity == Severity::Critical
+            && shipment.status != ShipmentStatus::Cancelled
+            && shipment.status != ShipmentStatus::Disputed
+        {
+            let old_status = shipment.status.clone();
+            let mut s = shipment;
+            s.status = ShipmentStatus::Disputed;
+            s.updated_at = env.ledger().timestamp();
+            s.integration_nonce = s.integration_nonce.saturating_add(1);
+            let sender = s.sender.clone();
+            let receiver = s.receiver.clone();
+            storage::set_shipment(&env, &s);
+            storage::decrement_status_count(&env, &old_status);
+            storage::increment_status_count(&env, &ShipmentStatus::Disputed);
+            storage::increment_total_disputes(&env);
+            extend_shipment_ttl(&env, shipment_id);
+            // Use the breach data hash as the dispute reason so indexers can correlate
+            events::emit_dispute_raised(&env, shipment_id, &carrier, &data_hash);
+            events::emit_notification(
+                &env,
+                &sender,
+                NotificationType::DisputeRaised,
+                shipment_id,
+                &data_hash,
+            );
+            events::emit_notification(
+                &env,
+                &receiver,
+                NotificationType::DisputeRaised,
+                shipment_id,
+                &data_hash,
+            );
+            events::emit_notification(
+                &env,
+                &carrier,
+                NotificationType::DisputeRaised,
+                shipment_id,
+                &data_hash,
+            );
+        }
 
         Ok(())
     }
@@ -2428,20 +3558,18 @@ impl NavinShipment {
                     if let Some(token_contract) = storage::get_token_contract(&env) {
                         // Transfer tokens from this contract to carrier
                         let contract_address = env.current_contract_address();
-                        let mut args: soroban_sdk::Vec<soroban_sdk::Val> =
-                            soroban_sdk::Vec::new(&env);
-                        args.push_back(contract_address.into_val(&env));
-                        args.push_back(shipment.carrier.clone().into_val(&env));
-                        args.push_back(escrow_amount.into_val(&env));
-                        env.invoke_contract::<()>(
+                        invoke_token_transfer(
+                            &env,
                             &token_contract,
-                            &symbol_short!("transfer"),
-                            args,
-                        );
+                            &contract_address,
+                            &shipment.carrier,
+                            escrow_amount,
+                        )?;
                     }
 
                     shipment.escrow_amount = 0;
                     shipment.updated_at = env.ledger().timestamp();
+                    shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
                     storage::set_shipment(&env, &shipment);
 
                     events::emit_escrow_released(
@@ -2462,20 +3590,18 @@ impl NavinShipment {
                     if let Some(token_contract) = storage::get_token_contract(&env) {
                         // Transfer tokens from this contract to company
                         let contract_address = env.current_contract_address();
-                        let mut args: soroban_sdk::Vec<soroban_sdk::Val> =
-                            soroban_sdk::Vec::new(&env);
-                        args.push_back(contract_address.into_val(&env));
-                        args.push_back(shipment.sender.clone().into_val(&env));
-                        args.push_back(escrow_amount.into_val(&env));
-                        env.invoke_contract::<()>(
+                        invoke_token_transfer(
+                            &env,
                             &token_contract,
-                            &symbol_short!("transfer"),
-                            args,
-                        );
+                            &contract_address,
+                            &shipment.sender,
+                            escrow_amount,
+                        )?;
                     }
 
                     shipment.escrow_amount = 0;
                     shipment.updated_at = env.ledger().timestamp();
+                    shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
                     storage::set_shipment(&env, &shipment);
 
                     events::emit_escrow_refunded(
@@ -2625,7 +3751,12 @@ impl NavinShipment {
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
-        if env.ledger().timestamp() < shipment.deadline {
+        let config = config::get_config(&env);
+        let expiry_threshold = shipment
+            .deadline
+            .saturating_add(config.deadline_grace_seconds);
+
+        if env.ledger().timestamp() < expiry_threshold {
             return Err(NavinError::NotExpired);
         }
 
@@ -2641,6 +3772,7 @@ impl NavinShipment {
         shipment.status = ShipmentStatus::Cancelled;
         shipment.escrow_amount = 0;
         shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
         storage::set_shipment(&env, &shipment);
         storage::decrement_status_count(&env, &old_status);
@@ -2653,16 +3785,13 @@ impl NavinShipment {
             let token_contract =
                 storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
             let contract_address = env.current_contract_address();
-            let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(&env);
-
-            args.push_back(contract_address.into_val(&env));
-            args.push_back(shipment.sender.clone().into_val(&env));
-            args.push_back(escrow_amount.into_val(&env));
-            env.invoke_contract::<soroban_sdk::Val>(
+            invoke_token_transfer(
+                &env,
                 &token_contract,
-                &symbol_short!("transfer"),
-                args,
-            );
+                &contract_address,
+                &shipment.sender,
+                escrow_amount,
+            )?;
             events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
         }
 
@@ -2670,5 +3799,201 @@ impl NavinShipment {
         events::emit_shipment_expired(&env, shipment_id);
 
         Ok(())
+    }
+
+    /// Generate a deterministic shipment reference string for cross-system interoperability.
+    /// The reference is derived from: SHA-256(NetworkIdentifier | ContractAddress | ShipmentID).
+    pub fn get_shipment_reference(
+        env: Env,
+        shipment_id: u64,
+    ) -> Result<soroban_sdk::String, NavinError> {
+        require_initialized(&env)?;
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+
+        let network_id = env.ledger().network_id();
+        let contract_address = env.current_contract_address();
+
+        let mut payload = soroban_sdk::Bytes::new(&env);
+        payload.append(&network_id.into());
+        payload.append(&contract_address.to_xdr(&env));
+        payload.append(&soroban_sdk::Bytes::from_array(
+            &env,
+            &shipment_id.to_be_bytes(),
+        ));
+
+        let hash_array = env.crypto().sha256(&payload).to_array();
+        let mut hex_chars = [0u8; 64];
+        let alphabet = b"0123456789abcdef";
+        for i in 0..32 {
+            hex_chars[i * 2] = alphabet[(hash_array[i] >> 4) as usize];
+            hex_chars[i * 2 + 1] = alphabet[(hash_array[i] & 0x0f) as usize];
+        }
+
+        Ok(soroban_sdk::String::from_str(&env, unsafe {
+            core::str::from_utf8_unchecked(&hex_chars)
+        }))
+    }
+
+    /// Pause the contract, disabling all state-changing operations.
+    /// Only the admin can pause the contract. Read-only queries still work.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - The admin address pausing the contract.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if successfully paused.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not the admin.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // contract.pause(&env, &admin);
+    /// ```
+    pub fn pause(env: Env, admin: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::set_paused(&env, true);
+        events::emit_contract_paused(&env, &admin);
+
+        Ok(())
+    }
+
+    /// Unpause the contract, re-enabling state-changing operations.
+    /// Only the admin can unpause the contract.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - The admin address unpausing the contract.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if successfully unpaused.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not the admin.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // contract.unpause(&env, &admin);
+    /// ```
+    pub fn unpause(env: Env, admin: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::set_paused(&env, false);
+        events::emit_contract_unpaused(&env, &admin);
+
+        Ok(())
+    }
+
+    /// Check if the contract is currently paused.
+    /// Read-only function, no authentication required.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    ///
+    /// # Returns
+    /// * `Result<bool, NavinError>` - True if paused, false otherwise.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let paused = contract.is_paused(&env)?;
+    /// ```
+    pub fn is_paused(env: Env) -> Result<bool, NavinError> {
+        require_initialized(&env)?;
+        Ok(storage::is_paused(&env))
+    }
+
+    /// Get the status hash for a shipment at a specific status point.
+    /// Read-only function, no authentication required.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - The ID of the shipment.
+    /// * `status` - The status to retrieve the hash for.
+    ///
+    /// # Returns
+    /// * `Result<BytesN<32>, NavinError>` - The data hash recorded at that status.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
+    /// * `NavinError::StatusHashNotFound` - If no hash was recorded for that status.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let hash = contract.get_status_hash(&env, 1, &ShipmentStatus::InTransit)?;
+    /// ```
+    pub fn get_status_hash(
+        env: Env,
+        shipment_id: u64,
+        status: ShipmentStatus,
+    ) -> Result<BytesN<32>, NavinError> {
+        require_initialized(&env)?;
+
+        // Verify shipment exists
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+
+        storage::get_status_hash(&env, shipment_id, &status).ok_or(NavinError::StatusHashNotFound)
+    }
+
+    /// Verify that a given data hash matches what was recorded on-chain for a
+    /// shipment at a specific status point.
+    /// Read-only function, no authentication required.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - The ID of the shipment.
+    /// * `status` - The status to verify against.
+    /// * `expected_hash` - The hash to verify.
+    ///
+    /// # Returns
+    /// * `Result<bool, NavinError>` - True if the hash matches, false otherwise.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
+    /// * `NavinError::StatusHashNotFound` - If no hash was recorded for that status.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let verified = contract.verify_data_hash(&env, 1, &ShipmentStatus::InTransit, &hash)?;
+    /// ```
+    pub fn verify_data_hash(
+        env: Env,
+        shipment_id: u64,
+        status: ShipmentStatus,
+        expected_hash: BytesN<32>,
+    ) -> Result<bool, NavinError> {
+        require_initialized(&env)?;
+
+        // Verify shipment exists
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+
+        let stored_hash = storage::get_status_hash(&env, shipment_id, &status)
+            .ok_or(NavinError::StatusHashNotFound)?;
+
+        Ok(stored_hash == expected_hash)
     }
 }

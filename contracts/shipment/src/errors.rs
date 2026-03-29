@@ -76,4 +76,32 @@ pub enum NavinError {
     ShipmentLimitReached = 30,
     /// Invalid configuration parameters provided.
     InvalidConfig = 31,
+    /// Admin cannot revoke their own role; use `transfer_admin` instead.
+    CannotSelfRevoke = 32,
+    /// Carrier account is suspended from carrier action handlers.
+    CarrierSuspended = 33,
+    /// Force-cancel requires a non-zero reason hash.
+    ForceCancelReasonHashMissing = 34,
+    /// Arithmetic overflow/underflow encountered during escrow math operations.
+    ArithmeticError = 35,
+    /// Dispute resolution requires a reason hash.
+    DisputeResolutionReasonHashMissing = 36,
+    /// Company account is suspended from creating or updating shipments.
+    CompanySuspended = 37,
+    /// Action rejected because the shipment is finalized and locked.
+    ShipmentFinalized = 38,
+    /// A cross-contract token transfer failed.
+    TokenTransferFailed = 39,
+    /// A cross-contract token mint failed.
+    TokenMintFailed = 40,
+    /// Action hash was already processed within the idempotency window.
+    DuplicateAction = 41,
+    /// Shipment state is unavailable due to archival or expiration.
+    ShipmentUnavailable = 42,
+    /// Contract is paused; state-changing operations are disabled.
+    ContractPaused = 43,
+    /// Status hash not found for the given shipment and status.
+    StatusHashNotFound = 44,
+    /// Data hash verification failed; provided hash does not match stored hash.
+    DataHashMismatch = 45,
 }

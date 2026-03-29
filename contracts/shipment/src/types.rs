@@ -19,12 +19,18 @@ pub enum DataKey {
     Company(Address),
     /// Addresses with Carrier role.
     Carrier(Address),
+    /// Carrier suspension flag (carrier -> bool).
+    CarrierSuspended(Address),
+    /// Company suspension flag (company -> bool).
+    CompanySuspended(Address),
     /// Individual shipment data keyed by ID.
     Shipment(u64),
     /// Carrier whitelist for a company — (company, carrier) -> bool.
     CarrierWhitelist(Address, Address),
     /// Role assigned to an address — (address, role) -> bool.
     UserRole(Address, Role),
+    /// Role suspension status — (address, role) -> bool.
+    RoleSuspended(Address, Role),
     /// Escrow balance for a shipment.
     Escrow(u64),
     /// Legacy single-role storage key for compatibility.
@@ -61,6 +67,22 @@ pub enum DataKey {
     EventCount(u64),
     /// Archived shipment data in temporary storage (for terminal state shipments).
     ArchivedShipment(u64),
+    /// Append-only note hashes for shipment commentary (shipment_id, index) -> hash.
+    ShipmentNote(u64, u32),
+    /// Total number of notes appended to a shipment.
+    ShipmentNoteCount(u64),
+    /// Append-only evidence hashes for shipment disputes (shipment_id, index) -> hash.
+    DisputeEvidence(u64, u32),
+    /// Total number of evidence hashes appended to a shipment dispute.
+    DisputeEvidenceCount(u64),
+    /// SHA-256 checksum of critical config fields for drift detection.
+    ConfigChecksum,
+    /// Temporary idempotency window key — present while the action hash is within its window.
+    IdempotencyWindow(BytesN<32>),
+    /// IoT sensor data hash stored per shipment status transition.
+    StatusHash(u64, ShipmentStatus),
+    /// Contract pause state flag.
+    IsPaused,
 }
 
 /// Supported user roles.
@@ -79,6 +101,26 @@ pub enum Role {
     Carrier,
     /// No role assigned.
     Unassigned,
+}
+
+/// Role change actions for RBAC audit trail.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::RoleChangeAction;
+/// let action = RoleChangeAction::Assigned;
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum RoleChangeAction {
+    /// Role was assigned to an address.
+    Assigned,
+    /// Role was revoked from an address.
+    Revoked,
+    /// Role was temporarily suspended.
+    Suspended,
+    /// Role was reactivated after suspension.
+    Reactivated,
 }
 
 /// Shipment status lifecycle.
@@ -205,6 +247,10 @@ pub struct Shipment {
     pub paid_milestones: Vec<Symbol>,
     /// Timestamp after which the shipment is considered expired and can be auto-cancelled.
     pub deadline: u64,
+    /// Counter to prevent replay of external actions and correlate off-chain integrations.
+    pub integration_nonce: u32,
+    /// Whether the shipment is finalized (terminal state reached and escrow cleared).
+    pub finalized: bool,
 }
 
 /// A checkpoint milestone recorded during shipment transit.
@@ -251,6 +297,26 @@ pub enum BreachType {
     TamperDetected,
 }
 
+/// Severity levels for condition breach events used for downstream analytics and alerting.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::Severity;
+/// let severity = Severity::High;
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum Severity {
+    /// Minor deviation with minimal impact on shipment integrity.
+    Low,
+    /// Moderate deviation requiring attention but not critical.
+    Medium,
+    /// Significant deviation that may compromise shipment quality.
+    High,
+    /// Critical deviation requiring immediate intervention.
+    Critical,
+}
+
 /// Geofence event types for tracking shipment location events.
 ///
 /// # Examples
@@ -283,6 +349,42 @@ pub struct ShipmentInput {
     pub data_hash: BytesN<32>,
     pub payment_milestones: Vec<(Symbol, u32)>,
     pub deadline: u64,
+}
+
+/// Cursor page result for searching shipment IDs by status.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShipmentStatusCursorPage {
+    pub shipment_ids: Vec<u64>,
+    pub next_cursor: Option<u64>,
+}
+
+/// Storage presence classification used for restore triage.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum StoragePresenceState {
+    /// Canonical active path: shipment exists in persistent storage.
+    ActivePersistent,
+    /// Archived path: shipment is no longer persistent and exists in temporary storage.
+    ArchivedExpected,
+    /// Neither active nor archived entries were found for this shipment ID.
+    Missing,
+    /// Both active and archived entries exist; operators should investigate.
+    InconsistentDualPresence,
+}
+
+/// Read-only diagnostics to determine whether restore flow is needed.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PersistentRestoreDiagnostics {
+    pub shipment_id: u64,
+    pub state: StoragePresenceState,
+    pub persistent_shipment_present: bool,
+    pub archived_shipment_present: bool,
+    pub escrow_present: bool,
+    pub confirmation_hash_present: bool,
+    pub last_status_update_present: bool,
+    pub event_count_present: bool,
 }
 
 /// On-chain introspection snapshot of the contract state.

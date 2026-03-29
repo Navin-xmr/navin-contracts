@@ -14,7 +14,7 @@
 
 extern crate std;
 
-use crate::{NavinShipment, NavinShipmentClient, ShipmentStatus};
+use crate::{test_utils::setup_env, NavinShipment, NavinShipmentClient, ShipmentStatus};
 use navin_token::{NavinToken, NavinTokenClient};
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger as _},
@@ -90,10 +90,8 @@ fn has_event(env: &Env, name: &str) -> bool {
 
 #[test]
 fn test_debug_event_structure() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let (env, admin) = setup_env();
 
-    let admin = Address::generate(&env);
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -144,11 +142,9 @@ fn test_debug_event_structure() {
 // =============================================================================
 #[test]
 fn test_e2e_happy_path_with_milestones_and_token_balances() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let (env, admin) = setup_env();
 
     // ── Actors ────────────────────────────────────────────────────────────────
-    let admin = Address::generate(&env);
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -340,10 +336,8 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
 // =============================================================================
 #[test]
 fn test_e2e_cancel_refund_path_with_token_balances() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let (env, admin) = setup_env();
 
-    let admin = Address::generate(&env);
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -431,10 +425,8 @@ fn test_e2e_cancel_refund_path_with_token_balances() {
 // =============================================================================
 #[test]
 fn test_e2e_partial_milestones_then_cancel_via_deadline() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let (env, admin) = setup_env();
 
-    let admin = Address::generate(&env);
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -571,10 +563,8 @@ fn test_e2e_partial_milestones_then_cancel_via_deadline() {
 // =============================================================================
 #[test]
 fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let (env, admin) = setup_env();
 
-    let admin = Address::generate(&env);
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);

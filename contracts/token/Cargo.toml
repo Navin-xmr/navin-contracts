@@ -14,6 +14,5 @@ soroban-sdk = { workspace = true }
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
 
-# THIS IS THE MISSING PIECE — add this features section:
 [features]
 testutils = ["soroban-sdk/testutils"]

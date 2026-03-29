@@ -1,4 +1,4 @@
-use crate::types::*;
+use crate::{errors::NavinError, types::*};
 use soroban_sdk::{Address, BytesN, Env};
 
 /// Check if the contract has been initialized (admin set).
@@ -369,19 +369,70 @@ pub fn set_carrier_role(env: &Env, carrier: &Address) {
     set_role(env, carrier, &Role::Carrier);
 }
 
-/// Check whether an address has the `Company` role.
+/// Revoke a role from an address in instance storage.
+///
+/// Removes the `UserRole(address, role)` key and resets the legacy
+/// `Role(address)` key to `Unassigned`.
 ///
 /// # Arguments
 /// * `env` - The execution environment.
-/// * `address` - The address to check.
-///
-/// # Returns
-/// * `bool` - True if the address has the Company role.
+/// * `address` - The address whose role is being revoked.
+/// * `role` - The role to revoke.
 ///
 /// # Examples
 /// ```rust
-/// // let is_company = storage::has_company_role(&env, &addr);
+/// // storage::revoke_role(&env, &user_addr, &Role::Company);
 /// ```
+pub fn revoke_role(env: &Env, address: &Address, role: &Role) {
+    let key = DataKey::UserRole(address.clone(), role.clone());
+    env.storage().instance().remove(&key);
+    // Reset legacy single-role slot to Unassigned
+    env.storage()
+        .instance()
+        .set(&DataKey::Role(address.clone()), &Role::Unassigned);
+}
+
+/// Suspend a role temporarily. The role is retained but marked as suspended.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `address` - The address whose role is being suspended.
+/// * `role` - The role to suspend.
+///
+/// # Examples
+/// ```rust
+/// // storage::suspend_role(&env, &user_addr, &Role::Company);
+/// ```
+pub fn suspend_role(env: &Env, address: &Address, role: &Role) {
+    // Mark as suspended using a separate key
+    let suspend_key = DataKey::RoleSuspended(address.clone(), role.clone());
+    env.storage().instance().set(&suspend_key, &true);
+}
+
+/// Reactivate a suspended role.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `address` - The address whose role is being reactivated.
+/// * `role` - The role to reactivate.
+///
+/// # Examples
+/// ```rust
+/// // storage::reactivate_role(&env, &user_addr, &Role::Company);
+/// ```
+pub fn reactivate_role(env: &Env, address: &Address, role: &Role) {
+    // Remove suspension flag
+    let suspend_key = DataKey::RoleSuspended(address.clone(), role.clone());
+    env.storage().instance().remove(&suspend_key);
+}
+
+/// Check if a role is suspended
+pub fn is_role_suspended(env: &Env, address: &Address, role: &Role) -> bool {
+    let suspend_key = DataKey::RoleSuspended(address.clone(), role.clone());
+    env.storage().instance().get(&suspend_key).unwrap_or(false)
+}
+
+/// Check whether an address has Company role (legacy compatibility)
 #[allow(dead_code)]
 pub fn has_company_role(env: &Env, address: &Address) -> bool {
     has_role(env, address, &Role::Company)
@@ -405,20 +456,51 @@ pub fn has_carrier_role(env: &Env, address: &Address) -> bool {
     has_role(env, address, &Role::Carrier)
 }
 
-/// Retrieve a shipment by ID, checking persistent storage first,
-/// then falling back to temporary (archived) storage.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `shipment_id` - The ID of the shipment to retrieve.
-///
-/// # Returns
-/// * `Option<Shipment>` - The shipment if found in either storage tier.
-///
-/// # Examples
-/// ```rust
-/// // let shipment = storage::get_shipment(&env, 1);
-/// ```
+/// Mark a carrier as suspended in instance storage.
+pub fn suspend_carrier(env: &Env, carrier: &Address) {
+    env.storage()
+        .instance()
+        .set(&DataKey::CarrierSuspended(carrier.clone()), &true);
+}
+
+/// Remove a carrier suspension flag from instance storage.
+pub fn reactivate_carrier(env: &Env, carrier: &Address) {
+    env.storage()
+        .instance()
+        .remove(&DataKey::CarrierSuspended(carrier.clone()));
+}
+
+/// Returns true when the carrier has an active suspension flag.
+pub fn is_carrier_suspended(env: &Env, carrier: &Address) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::CarrierSuspended(carrier.clone()))
+        .unwrap_or(false)
+}
+
+/// Mark a company as suspended in instance storage.
+pub fn suspend_company(env: &Env, company: &Address) {
+    env.storage()
+        .instance()
+        .set(&DataKey::CompanySuspended(company.clone()), &true);
+}
+
+/// Remove a company suspension flag from instance storage.
+pub fn reactivate_company(env: &Env, company: &Address) {
+    env.storage()
+        .instance()
+        .remove(&DataKey::CompanySuspended(company.clone()));
+}
+
+/// Returns true when the company has an active suspension flag.
+pub fn is_company_suspended(env: &Env, company: &Address) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::CompanySuspended(company.clone()))
+        .unwrap_or(false)
+}
+
+/// Get shipment by ID
 pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
     // First check persistent storage
     if let Some(shipment) = env
@@ -433,6 +515,41 @@ pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
     env.storage()
         .temporary()
         .get(&DataKey::ArchivedShipment(shipment_id))
+}
+
+/// Check whether shipment payload exists in persistent storage.
+pub fn has_persistent_shipment(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::Shipment(shipment_id))
+}
+
+/// Check whether escrow entry exists in persistent storage.
+pub fn has_escrow_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::Escrow(shipment_id))
+}
+
+/// Check whether confirmation hash exists in persistent storage.
+pub fn has_confirmation_hash_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::ConfirmationHash(shipment_id))
+}
+
+/// Check whether last status update timestamp exists in persistent storage.
+pub fn has_last_status_update_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::LastStatusUpdate(shipment_id))
+}
+
+/// Check whether event count entry exists in persistent storage.
+pub fn has_event_count_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::EventCount(shipment_id))
 }
 
 /// Persist a shipment to persistent storage (survives TTL extension).
@@ -911,21 +1028,16 @@ pub fn get_total_escrow_volume(env: &Env) -> i128 {
         .unwrap_or(0)
 }
 
-/// Add an amount to the total escrow volume in instance storage.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `amount` - The escrow amount to add to the running total.
-///
-/// # Examples
-/// ```rust
-/// // storage::add_total_escrow_volume(&env, 5000);
-/// ```
-pub fn add_total_escrow_volume(env: &Env, amount: i128) {
+/// Add an amount to the total escrow volume.
+pub fn add_total_escrow_volume(env: &Env, amount: i128) -> Result<(), NavinError> {
     let current = get_total_escrow_volume(env);
+    let updated = current
+        .checked_add(amount)
+        .ok_or(NavinError::ArithmeticError)?;
     env.storage()
         .instance()
-        .set(&DataKey::TotalEscrowVolume, &(current + amount));
+        .set(&DataKey::TotalEscrowVolume, &updated);
+    Ok(())
 }
 
 /// Get the total number of disputes raised from instance storage.
@@ -1240,4 +1352,235 @@ pub fn is_shipment_archived(env: &Env, shipment_id: u64) -> bool {
     env.storage()
         .temporary()
         .has(&DataKey::ArchivedShipment(shipment_id))
+}
+
+// ============= Shipment Note Storage Functions =============
+
+/// Get the total number of notes appended to a shipment.
+pub fn get_note_count(env: &Env, shipment_id: u64) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ShipmentNoteCount(shipment_id))
+        .unwrap_or(0)
+}
+
+/// Increment the note count for a shipment and return the new index.
+pub fn increment_note_count(env: &Env, shipment_id: u64) -> u32 {
+    let current = get_note_count(env, shipment_id);
+    let next = current.checked_add(1).expect("Note count overflow");
+    env.storage()
+        .persistent()
+        .set(&DataKey::ShipmentNoteCount(shipment_id), &next);
+    current // Return 0-based index for storage
+}
+
+/// Store a note hash for a shipment at a specific index.
+pub fn set_note_hash(env: &Env, shipment_id: u64, index: u32, hash: &BytesN<32>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ShipmentNote(shipment_id, index), hash);
+}
+
+/// Retrieve a note hash for a shipment by its index.
+#[allow(dead_code)]
+pub fn get_note_hash(env: &Env, shipment_id: u64, index: u32) -> Option<BytesN<32>> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ShipmentNote(shipment_id, index))
+}
+
+// ============= Dispute Evidence Storage Functions =============
+
+/// Get the total number of evidence hashes appended to a shipment dispute.
+pub fn get_evidence_count(env: &Env, shipment_id: u64) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::DisputeEvidenceCount(shipment_id))
+        .unwrap_or(0)
+}
+
+/// Increment the evidence count for a shipment dispute and return the new index.
+pub fn increment_evidence_count(env: &Env, shipment_id: u64) -> u32 {
+    let current = get_evidence_count(env, shipment_id);
+    let next = current.checked_add(1).expect("Evidence count overflow");
+    env.storage()
+        .persistent()
+        .set(&DataKey::DisputeEvidenceCount(shipment_id), &next);
+    current // Return 0-based index for storage
+}
+
+/// Store an evidence hash for a shipment dispute at a specific index.
+pub fn set_evidence_hash(env: &Env, shipment_id: u64, index: u32, hash: &BytesN<32>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::DisputeEvidence(shipment_id, index), hash);
+}
+
+/// Retrieve an evidence hash for a shipment dispute by its index.
+pub fn get_evidence_hash(env: &Env, shipment_id: u64, index: u32) -> Option<BytesN<32>> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::DisputeEvidence(shipment_id, index))
+}
+
+// ============= Idempotency Window Storage Functions =============
+
+/// Returns true if the action hash is already within an active idempotency window.
+pub fn has_idempotency_window(env: &Env, action_hash: &BytesN<32>) -> bool {
+    env.storage()
+        .temporary()
+        .has(&DataKey::IdempotencyWindow(action_hash.clone()))
+}
+
+/// Record an action hash in temporary storage for `window_seconds`.
+/// The key expires naturally when the ledger TTL elapses - no cleanup needed.
+pub fn set_idempotency_window(env: &Env, action_hash: &BytesN<32>, window_seconds: u64) {
+    let key = DataKey::IdempotencyWindow(action_hash.clone());
+    // Soroban temporary storage TTL is in ledgers. At ~5 s/ledger we convert
+    // seconds to ledgers (rounding up, minimum 1).
+    let ledgers = window_seconds.div_ceil(5).max(1) as u32;
+    env.storage().temporary().set(&key, &true);
+    env.storage().temporary().extend_ttl(&key, 0, ledgers);
+}
+
+// ============= Pause/Unpause Storage Functions =============
+
+/// Check if the contract is paused.
+pub fn is_paused(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::IsPaused)
+        .unwrap_or(false)
+}
+
+/// Set the contract pause state.
+pub fn set_paused(env: &Env, paused: bool) {
+    env.storage().instance().set(&DataKey::IsPaused, &paused);
+}
+
+// ============= IoT Hash Verification Storage Functions =============
+
+/// Store the data hash for a specific shipment status transition.
+pub fn set_status_hash(env: &Env, shipment_id: u64, status: &ShipmentStatus, hash: &BytesN<32>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::StatusHash(shipment_id, status.clone()), hash);
+}
+
+/// Retrieve the data hash for a specific shipment status transition.
+pub fn get_status_hash(env: &Env, shipment_id: u64, status: &ShipmentStatus) -> Option<BytesN<32>> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::StatusHash(shipment_id, status.clone()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils;
+    use soroban_sdk::testutils::Address as _;
+
+    fn with_contract_env() -> (Env, Address) {
+        let (env, _) = test_utils::setup_env();
+        let contract_id = env.register(crate::NavinShipment, ());
+        (env, contract_id)
+    }
+
+    #[test]
+    fn carrier_whitelist_tuple_key_round_trip_and_order_regression() {
+        let (env, contract_id) = with_contract_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            add_carrier_to_whitelist(&env, &company, &carrier);
+
+            assert!(is_carrier_whitelisted(&env, &company, &carrier));
+            assert!(!is_carrier_whitelisted(&env, &carrier, &company));
+
+            let canonical_key = DataKey::CarrierWhitelist(company.clone(), carrier.clone());
+            let reversed_key = DataKey::CarrierWhitelist(carrier.clone(), company.clone());
+            assert!(env.storage().instance().has(&canonical_key));
+            assert!(!env.storage().instance().has(&reversed_key));
+        });
+    }
+
+    #[test]
+    fn user_role_tuple_key_round_trip() {
+        let (env, contract_id) = with_contract_env();
+        let user = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            set_role(&env, &user, &Role::Carrier);
+
+            assert!(has_role(&env, &user, &Role::Carrier));
+            assert!(!has_role(&env, &user, &Role::Company));
+        });
+    }
+
+    #[test]
+    fn role_suspended_tuple_key_round_trip() {
+        let (env, contract_id) = with_contract_env();
+        let user = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            suspend_role(&env, &user, &Role::Company);
+            assert!(is_role_suspended(&env, &user, &Role::Company));
+
+            reactivate_role(&env, &user, &Role::Company);
+            assert!(!is_role_suspended(&env, &user, &Role::Company));
+        });
+    }
+
+    #[test]
+    fn shipment_note_tuple_key_round_trip_and_component_regression() {
+        let (env, contract_id) = with_contract_env();
+        let shipment_id = 77_u64;
+        let note_idx_0 = 0_u32;
+        let note_idx_1 = 1_u32;
+        let note_0 = BytesN::from_array(&env, &[0x11; 32]);
+        let note_1 = BytesN::from_array(&env, &[0x22; 32]);
+
+        env.as_contract(&contract_id, || {
+            set_note_hash(&env, shipment_id, note_idx_0, &note_0);
+            set_note_hash(&env, shipment_id, note_idx_1, &note_1);
+
+            assert_eq!(get_note_hash(&env, shipment_id, note_idx_0), Some(note_0));
+            assert_eq!(get_note_hash(&env, shipment_id, note_idx_1), Some(note_1));
+            assert_eq!(get_note_hash(&env, shipment_id + 1, note_idx_0), None);
+            assert_eq!(get_note_hash(&env, shipment_id, note_idx_1 + 1), None);
+        });
+    }
+
+    #[test]
+    fn dispute_evidence_tuple_key_round_trip_and_component_regression() {
+        let (env, contract_id) = with_contract_env();
+        let shipment_id = 900_u64;
+        let evidence_idx_0 = 0_u32;
+        let evidence_idx_1 = 1_u32;
+        let evidence_0 = BytesN::from_array(&env, &[0x33; 32]);
+        let evidence_1 = BytesN::from_array(&env, &[0x44; 32]);
+
+        env.as_contract(&contract_id, || {
+            set_evidence_hash(&env, shipment_id, evidence_idx_0, &evidence_0);
+            set_evidence_hash(&env, shipment_id, evidence_idx_1, &evidence_1);
+
+            assert_eq!(
+                get_evidence_hash(&env, shipment_id, evidence_idx_0),
+                Some(evidence_0)
+            );
+            assert_eq!(
+                get_evidence_hash(&env, shipment_id, evidence_idx_1),
+                Some(evidence_1)
+            );
+            assert_eq!(
+                get_evidence_hash(&env, shipment_id + 1, evidence_idx_0),
+                None
+            );
+            assert_eq!(
+                get_evidence_hash(&env, shipment_id, evidence_idx_1 + 1),
+                None
+            );
+        });
+    }
 }

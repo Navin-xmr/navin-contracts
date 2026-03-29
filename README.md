@@ -29,15 +29,21 @@ This repository contains Soroban smart contracts for the Navin platform:
 ```text
 .
 ├── contracts
-│   └── example-contract    # Core delivery tracking contract
+│   ├── shipment            # Core logistics and escrow contract
+│   │   ├── src
+│   │   │   ├── lib.rs      # Main shipment logic
+│   │   │   ├── storage.rs  # Data persistence helpers
+│   │   │   ├── events.rs   # Hash-and-Emit event publishing
+│   │   │   ├── types.rs    # Domain models and storage keys
+│   │   │   └── test.rs     # Contract tests
+│   │   └── Cargo.toml
+│   └── token               # Payment token contract
 │       ├── src
-│       │   ├── lib.rs      # Main contract logic
-│       │   ├── storage.rs  # Data persistence layer
-│       │   ├── transactions.rs  # Transaction handling
-│       │   ├── types.rs    # Type definitions
-│       │   └── test.rs     # Contract tests
-│       ├── Cargo.toml
-│       └── Makefile
+│       │   ├── lib.rs      # Token entrypoints
+│       │   ├── storage.rs  # Balance and allowance storage
+│       │   ├── types.rs    # Token types
+│       │   └── test.rs     # Token tests
+│       └── Cargo.toml
 ├── Cargo.toml              # Workspace configuration
 ├── Makefile                # Build and test commands
 ├── CONTRIBUTING.md         # Contribution guidelines
