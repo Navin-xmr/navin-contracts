@@ -82,7 +82,8 @@ mod tests {
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
 
-        client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+        client.create_shipment(&company, &receiver, &carrier,
+        &token_contract, &hash, &milestones, &deadline);
     }
 
     #[test]
@@ -103,7 +104,8 @@ mod tests {
         let deadline = future_deadline(&env, 86400);
 
         let shipment_id =
-            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+            client.create_shipment(&company, &receiver, &carrier,
+        &token_contract, &hash, &milestones, &deadline);
 
         // Pause the contract
         client.pause(&admin);
@@ -135,7 +137,8 @@ mod tests {
         let deadline = future_deadline(&env, 86400);
 
         let shipment_id =
-            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+            client.create_shipment(&company, &receiver, &carrier,
+        &token_contract, &hash, &milestones, &deadline);
 
         // Pause the contract
         client.pause(&admin);
@@ -171,6 +174,7 @@ mod tests {
             &company,
             &receiver,
             &carrier,
+                        &token_contract,
             &hash1,
             &milestones,
             &deadline,
@@ -190,6 +194,7 @@ mod tests {
             &company,
             &receiver,
             &carrier,
+                        &token_contract,
             &hash2,
             &milestones,
             &deadline,
