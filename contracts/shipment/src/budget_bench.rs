@@ -408,6 +408,7 @@ fn bench_resolve_dispute() {
         &admin,
         &shipment_id,
         &crate::DisputeResolution::RefundToCompany,
+        &BytesN::from_array(&env, &[14u8; 32]),
     );
     let (cpu, mem) = read_budget(&env);
 

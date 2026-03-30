@@ -80,6 +80,14 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "auto_dispute_breach"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "batch_operation_limit"
                       },
                       "val": {
@@ -617,7 +625,7 @@
                           ]
                         },
                         "val": {
-                          "bytes": "8b3e99e4ed2598176bb6a4e02a23579069bf978ec8c459fc6c9efc5873d6e82f"
+                          "bytes": "b5fccb46aa2ae03753352f3981f8c935b824107dfe8587452d29cdae8de12651"
                         }
                       },
                       {
@@ -630,6 +638,14 @@
                         },
                         "val": {
                           "map": [
+                            {
+                              "key": {
+                                "symbol": "auto_dispute_breach"
+                              },
+                              "val": {
+                                "bool": false
+                              }
+                            },
                             {
                               "key": {
                                 "symbol": "batch_operation_limit"
