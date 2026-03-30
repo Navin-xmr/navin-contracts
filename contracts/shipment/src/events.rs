@@ -244,7 +244,7 @@ pub fn emit_milestone_recorded(
 /// // events::emit_escrow_deposited(&env, 1, &company_addr, 1000);
 /// ```
 #[allow(dead_code)]
-pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount: i128) {
+pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount: i128, token_address: &Address) {
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key =
         generate_idempotency_key(env, shipment_id, "escrow_deposited", event_counter);
@@ -254,6 +254,7 @@ pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount
             shipment_id,
             from.clone(),
             amount,
+            token_address.clone(),
             EVENT_SCHEMA_VERSION,
             event_counter,
             idempotency_key,
@@ -290,7 +291,7 @@ pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount
 /// ```rust
 /// // events::emit_escrow_released(&env, 1, &carrier_addr, 1000);
 /// ```
-pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i128) {
+pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i128, token_address: &Address) {
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key =
         generate_idempotency_key(env, shipment_id, "escrow_released", event_counter);
@@ -300,6 +301,7 @@ pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i
             shipment_id,
             to.clone(),
             amount,
+            token_address.clone(),
             EVENT_SCHEMA_VERSION,
             event_counter,
             idempotency_key,
@@ -336,7 +338,7 @@ pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i
 /// ```rust
 /// // events::emit_escrow_refunded(&env, 1, &company_addr, 1000);
 /// ```
-pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i128) {
+pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i128, token_address: &Address) {
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key =
         generate_idempotency_key(env, shipment_id, "escrow_refunded", event_counter);
@@ -346,6 +348,7 @@ pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i
             shipment_id,
             to.clone(),
             amount,
+            token_address.clone(),
             EVENT_SCHEMA_VERSION,
             event_counter,
             idempotency_key,
