@@ -63,6 +63,7 @@ fn create_test_shipment(
         &company,
         &receiver,
         &carrier,
+        token,
         &data_hash,
         &soroban_sdk::Vec::new(env),
         &deadline,
