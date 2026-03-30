@@ -46,7 +46,7 @@ use crate::{
 };
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::{Address as _, Events, Ledger as _},
+    testutils::{Address as _, Events},
     Address, BytesN, Env, Symbol, TryFromVal, Vec as SorobanVec,
 };
 
@@ -243,11 +243,7 @@ fn compat_dispute_resolution_variants_exist() {
         DisputeResolution::ReleaseToCarrier,
         DisputeResolution::RefundToCompany,
     ];
-    assert_eq!(
-        variants.len(),
-        2,
-        "DisputeResolution variant count changed"
-    );
+    assert_eq!(variants.len(), 2, "DisputeResolution variant count changed");
 }
 
 // ===========================================================================
@@ -295,11 +291,7 @@ fn compat_notification_type_variants_exist() {
         NotificationType::DisputeResolved,
         NotificationType::DeadlineApproaching,
     ];
-    assert_eq!(
-        variants.len(),
-        7,
-        "NotificationType variant count changed"
-    );
+    assert_eq!(variants.len(), 7, "NotificationType variant count changed");
 }
 
 // ===========================================================================
@@ -515,11 +507,7 @@ fn compat_event_topic_dispute_raised() {
         &ShipmentStatus::InTransit,
         &BytesN::from_array(&env, &[2u8; 32]),
     );
-    client.raise_dispute(
-        &receiver,
-        &id,
-        &BytesN::from_array(&env, &[9u8; 32]),
-    );
+    client.raise_dispute(&receiver, &id, &BytesN::from_array(&env, &[9u8; 32]));
 
     assert!(
         has_event_topic(&env, "dispute_raised"),
@@ -580,11 +568,7 @@ fn compat_event_topic_delivery_success() {
         &ShipmentStatus::InTransit,
         &BytesN::from_array(&env, &[2u8; 32]),
     );
-    client.confirm_delivery(
-        &receiver,
-        &id,
-        &BytesN::from_array(&env, &[1u8; 32]),
-    );
+    client.confirm_delivery(&receiver, &id, &BytesN::from_array(&env, &[1u8; 32]));
 
     assert!(
         has_event_topic(&env, "delivery_success"),

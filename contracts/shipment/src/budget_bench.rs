@@ -36,7 +36,7 @@ extern crate std;
 use crate::{NavinShipment, NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::{budget::Budget, Address as _, Ledger as _},
+    testutils::{Address as _, Ledger as _},
     Address, BytesN, Env, Symbol, Vec as SorobanVec,
 };
 
@@ -72,8 +72,8 @@ fn setup_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
 
 /// Returns the current CPU-instruction and memory-byte counters for `env`.
 fn read_budget(env: &Env) -> (u64, u64) {
-    let cpu = env.budget().cpu_instruction_cost();
-    let mem = env.budget().memory_bytes_cost();
+    let cpu = env.cost_estimate().budget().cpu_instruction_cost();
+    let mem = env.cost_estimate().budget().memory_bytes_cost();
     (cpu, mem)
 }
 
@@ -90,7 +90,7 @@ fn print_budget(label: &str, cpu: u64, mem: u64) {
 fn bench_initialize() {
     let (env, client, admin, token_contract) = setup_env();
 
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     client.initialize(&admin, &token_contract);
     let (cpu, mem) = read_budget(&env);
 
@@ -115,11 +115,11 @@ fn bench_create_shipment() {
     let deadline = env.ledger().timestamp() + 3600;
 
     // Setup — not counted in the budget window
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
 
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     client.create_shipment(
         &company,
         &receiver,
@@ -132,8 +132,14 @@ fn bench_create_shipment() {
 
     print_budget("create_shipment (single)", cpu, mem);
 
-    assert!(cpu < 100_000_000, "create_shipment exceeded CPU limit: {cpu}");
-    assert!(mem < 41_943_040, "create_shipment exceeded memory limit: {mem}");
+    assert!(
+        cpu < 100_000_000,
+        "create_shipment exceeded CPU limit: {cpu}"
+    );
+    assert!(
+        mem < 41_943_040,
+        "create_shipment exceeded memory limit: {mem}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +152,7 @@ fn bench_create_shipments_batch() {
     let company = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 3600;
 
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
 
@@ -161,7 +167,7 @@ fn bench_create_shipments_batch() {
         });
     }
 
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     client.create_shipments_batch(&company, &inputs);
     let (cpu, mem) = read_budget(&env);
 
@@ -191,7 +197,7 @@ fn bench_update_status() {
     let update_hash = BytesN::from_array(&env, &[2u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     let shipment_id = client.create_shipment(
@@ -203,14 +209,22 @@ fn bench_update_status() {
         &deadline,
     );
 
-    env.budget().reset_default();
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &update_hash);
+    env.cost_estimate().budget().reset_default();
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &update_hash,
+    );
     let (cpu, mem) = read_budget(&env);
 
     print_budget("update_status (Created → InTransit)", cpu, mem);
 
     assert!(cpu < 100_000_000, "update_status exceeded CPU limit: {cpu}");
-    assert!(mem < 41_943_040, "update_status exceeded memory limit: {mem}");
+    assert!(
+        mem < 41_943_040,
+        "update_status exceeded memory limit: {mem}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -226,7 +240,7 @@ fn bench_deposit_escrow() {
     let data_hash = BytesN::from_array(&env, &[3u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     let shipment_id = client.create_shipment(
@@ -238,14 +252,20 @@ fn bench_deposit_escrow() {
         &deadline,
     );
 
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     client.deposit_escrow(&company, &shipment_id, &500_000i128);
     let (cpu, mem) = read_budget(&env);
 
     print_budget("deposit_escrow", cpu, mem);
 
-    assert!(cpu < 100_000_000, "deposit_escrow exceeded CPU limit: {cpu}");
-    assert!(mem < 41_943_040, "deposit_escrow exceeded memory limit: {mem}");
+    assert!(
+        cpu < 100_000_000,
+        "deposit_escrow exceeded CPU limit: {cpu}"
+    );
+    assert!(
+        mem < 41_943_040,
+        "deposit_escrow exceeded memory limit: {mem}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +281,7 @@ fn bench_release_escrow() {
     let data_hash = BytesN::from_array(&env, &[4u8; 32]);
     let deadline = env.ledger().timestamp() + 7200;
 
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     let shipment_id = client.create_shipment(
@@ -280,14 +300,20 @@ fn bench_release_escrow() {
         crate::storage::set_shipment(&env, &s);
     });
 
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     client.release_escrow(&admin, &shipment_id);
     let (cpu, mem) = read_budget(&env);
 
     print_budget("release_escrow", cpu, mem);
 
-    assert!(cpu < 100_000_000, "release_escrow exceeded CPU limit: {cpu}");
-    assert!(mem < 41_943_040, "release_escrow exceeded memory limit: {mem}");
+    assert!(
+        cpu < 100_000_000,
+        "release_escrow exceeded CPU limit: {cpu}"
+    );
+    assert!(
+        mem < 41_943_040,
+        "release_escrow exceeded memory limit: {mem}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -303,7 +329,7 @@ fn bench_refund_escrow() {
     let data_hash = BytesN::from_array(&env, &[7u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     let shipment_id = client.create_shipment(
@@ -317,14 +343,17 @@ fn bench_refund_escrow() {
     // Deposit escrow; refund_escrow works from Created state and cancels internally
     client.deposit_escrow(&company, &shipment_id, &500_000i128);
 
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     client.refund_escrow(&company, &shipment_id);
     let (cpu, mem) = read_budget(&env);
 
     print_budget("refund_escrow", cpu, mem);
 
     assert!(cpu < 100_000_000, "refund_escrow exceeded CPU limit: {cpu}");
-    assert!(mem < 41_943_040, "refund_escrow exceeded memory limit: {mem}");
+    assert!(
+        mem < 41_943_040,
+        "refund_escrow exceeded memory limit: {mem}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -341,7 +370,7 @@ fn bench_raise_dispute() {
     let reason_hash = BytesN::from_array(&env, &[9u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     let shipment_id = client.create_shipment(
@@ -359,14 +388,17 @@ fn bench_raise_dispute() {
         &BytesN::from_array(&env, &[10u8; 32]),
     );
 
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     client.raise_dispute(&receiver, &shipment_id, &reason_hash);
     let (cpu, mem) = read_budget(&env);
 
     print_budget("raise_dispute", cpu, mem);
 
     assert!(cpu < 100_000_000, "raise_dispute exceeded CPU limit: {cpu}");
-    assert!(mem < 41_943_040, "raise_dispute exceeded memory limit: {mem}");
+    assert!(
+        mem < 41_943_040,
+        "raise_dispute exceeded memory limit: {mem}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -383,7 +415,7 @@ fn bench_resolve_dispute() {
     let reason_hash = BytesN::from_array(&env, &[12u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     let shipment_id = client.create_shipment(
@@ -403,7 +435,7 @@ fn bench_resolve_dispute() {
     );
     client.raise_dispute(&receiver, &shipment_id, &reason_hash);
 
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     client.resolve_dispute(
         &admin,
         &shipment_id,
@@ -437,7 +469,7 @@ fn bench_record_milestone() {
     let data_hash = BytesN::from_array(&env, &[14u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
@@ -456,7 +488,7 @@ fn bench_record_milestone() {
         crate::storage::set_shipment(&env, &s);
     });
 
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     client.record_milestone(
         &carrier,
         &shipment_id,
@@ -490,7 +522,7 @@ fn bench_confirm_delivery() {
     let data_hash = BytesN::from_array(&env, &[17u8; 32]);
     let deadline = env.ledger().timestamp() + 7200;
 
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     let shipment_id = client.create_shipment(
@@ -509,7 +541,7 @@ fn bench_confirm_delivery() {
         &BytesN::from_array(&env, &[18u8; 32]),
     );
 
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     client.confirm_delivery(
         &receiver,
         &shipment_id,
@@ -542,7 +574,7 @@ fn bench_cancel_shipment() {
     let data_hash = BytesN::from_array(&env, &[20u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     let shipment_id = client.create_shipment(
@@ -554,8 +586,12 @@ fn bench_cancel_shipment() {
         &deadline,
     );
 
-    env.budget().reset_default();
-    client.cancel_shipment(&company, &shipment_id, &BytesN::from_array(&env, &[99u8; 32]));
+    env.cost_estimate().budget().reset_default();
+    client.cancel_shipment(
+        &company,
+        &shipment_id,
+        &BytesN::from_array(&env, &[99u8; 32]),
+    );
     let (cpu, mem) = read_budget(&env);
 
     print_budget("cancel_shipment", cpu, mem);
@@ -584,7 +620,7 @@ fn bench_handoff_shipment() {
     let data_hash = BytesN::from_array(&env, &[21u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier_a);
@@ -604,7 +640,7 @@ fn bench_handoff_shipment() {
         &BytesN::from_array(&env, &[22u8; 32]),
     );
 
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     client.handoff_shipment(
         &carrier_a,
         &carrier_b,
@@ -644,17 +680,17 @@ fn bench_full_lifecycle_summary() {
     let deadline = env.ledger().timestamp() + 7200;
 
     // ---- initialize (measured) ----
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     client.initialize(&admin, &token_contract);
     let (cpu, mem) = read_budget(&env);
     print_budget("summary::initialize", cpu, mem);
 
     // ---- setup (not measured) ----
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     client.add_company(&admin, &company);
 
     // ---- create_shipment (measured) ----
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     let id = client.create_shipment(
         &company,
         &receiver,
@@ -667,13 +703,13 @@ fn bench_full_lifecycle_summary() {
     print_budget("summary::create_shipment", cpu, mem);
 
     // ---- deposit_escrow (measured) ----
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     client.deposit_escrow(&company, &id, &1_000_000i128);
     let (cpu, mem) = read_budget(&env);
     print_budget("summary::deposit_escrow", cpu, mem);
 
     // ---- update_status Created → InTransit (measured) ----
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     client.update_status(
         &carrier,
         &id,
@@ -686,12 +722,8 @@ fn bench_full_lifecycle_summary() {
     // ---- confirm_delivery InTransit → Delivered (measured)
     //      confirm_delivery performs the → Delivered transition internally.
     // ----
-    env.budget().reset_default();
-    client.confirm_delivery(
-        &receiver,
-        &id,
-        &BytesN::from_array(&env, &[1u8; 32]),
-    );
+    env.cost_estimate().budget().reset_default();
+    client.confirm_delivery(&receiver, &id, &BytesN::from_array(&env, &[1u8; 32]));
     let (cpu, mem) = read_budget(&env);
     print_budget("summary::confirm_delivery (InTransit→Delivered)", cpu, mem);
 
@@ -699,7 +731,7 @@ fn bench_full_lifecycle_summary() {
     //      Create a fresh shipment in Delivered state with escrow for this
     //      benchmark; confirm_delivery already cleared escrow on shipment `id`.
     // ----
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     let id2 = client.create_shipment(
         &company,
         &receiver,
@@ -715,7 +747,7 @@ fn bench_full_lifecycle_summary() {
         crate::storage::set_shipment(&env, &s);
     });
 
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     client.release_escrow(&admin, &id2);
     let (cpu, mem) = read_budget(&env);
     print_budget("summary::release_escrow", cpu, mem);
