@@ -500,7 +500,7 @@
                           ]
                         },
                         "val": {
-                          "bytes": "87c10961dc8120dcddb75beea31aab7b9077cadf11b05e9b1ff48a4393988643"
+                          "bytes": "6a0efca8bd21d50a73455494417546197795ee66234c5b6b991bba0d714b17e4"
                         }
                       },
                       {
@@ -513,6 +513,14 @@
                         },
                         "val": {
                           "map": [
+                            {
+                              "key": {
+                                "symbol": "auto_dispute_breach"
+                              },
+                              "val": {
+                                "bool": false
+                              }
+                            },
                             {
                               "key": {
                                 "symbol": "batch_operation_limit"

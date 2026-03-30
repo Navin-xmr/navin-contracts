@@ -5,10 +5,12 @@ use soroban_sdk::{
     Vec,
 };
 
+mod budget_bench;
 mod config;
 mod e2e_test;
 mod errors;
 mod events;
+mod schema_compat;
 mod storage;
 mod stress_test;
 mod test;
