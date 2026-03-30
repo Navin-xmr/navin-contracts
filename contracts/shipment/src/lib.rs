@@ -5,11 +5,15 @@ use soroban_sdk::{
     Vec,
 };
 
+mod audit;
+mod circuit_breaker;
 mod config;
 mod e2e_test;
 mod errors;
 mod event_topics;
 mod events;
+mod rate_limit;
+mod recovery;
 mod storage;
 mod stress_test;
 mod test;
