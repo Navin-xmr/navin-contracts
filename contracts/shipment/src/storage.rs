@@ -588,7 +588,6 @@ pub fn remove_escrow_balance(env: &Env, shipment_id: u64) {
 pub fn set_confirmation_hash(env: &Env, shipment_id: u64, hash: &BytesN<32>) {
     let key = DataKey::ConfirmationHash(shipment_id);
     env.storage().persistent().set(&key, hash);
-    env.storage().persistent().set(&key, hash); // Redundant identical set, keeping original logic
 }
 
 /// Retrieve confirmation hash for a shipment from persistent storage.
@@ -1250,6 +1249,32 @@ pub fn get_status_hash(env: &Env, shipment_id: u64, status: &ShipmentStatus) -> 
     env.storage()
         .persistent()
         .get(&DataKey::StatusHash(shipment_id, status.clone()))
+}
+
+/// Store the token contract address for a shipment.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The shipment ID.
+/// * `token_address` - The token contract address.
+pub fn set_shipment_token(env: &Env, shipment_id: u64, token_address: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ShipmentToken(shipment_id), token_address);
+}
+
+/// Retrieve the token contract address for a shipment.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The shipment ID.
+///
+/// # Returns
+/// * `Option<Address>` - The token address if set.
+pub fn get_shipment_token(env: &Env, shipment_id: u64) -> Option<Address> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ShipmentToken(shipment_id))
 }
 
 #[cfg(test)]
