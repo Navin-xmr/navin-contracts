@@ -35,9 +35,8 @@ extern crate std;
 
 use crate::{NavinShipment, NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::{
-    contract, contractimpl,
-    testutils::{Address as _, Ledger as _},
-    Address, BytesN, Env, Symbol, Vec as SorobanVec,
+    contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Symbol,
+    Vec as SorobanVec,
 };
 
 // ---------------------------------------------------------------------------
