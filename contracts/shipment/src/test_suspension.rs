@@ -25,7 +25,7 @@ fn setup_test(env: &Env) -> (NavinShipmentClient<'static>, Address, Address) {
 fn test_company_suspension_blocks_create_shipment() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, admin, _) = setup_test(&env);
+    let (client, admin, token_contract) = setup_test(&env);
 
     let company = Address::generate(&env);
     client.add_company(&admin, &company);
@@ -44,6 +44,7 @@ fn test_company_suspension_blocks_create_shipment() {
         &company,
         &receiver,
         &carrier,
+        &token_contract,
         &data_hash,
         &milestones,
         &deadline,
@@ -57,7 +58,7 @@ fn test_company_suspension_blocks_create_shipment() {
 fn test_company_suspension_blocks_metadata_update() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, admin, _) = setup_test(&env);
+    let (client, admin, token_contract) = setup_test(&env);
 
     let company = Address::generate(&env);
     client.add_company(&admin, &company);
@@ -73,6 +74,7 @@ fn test_company_suspension_blocks_metadata_update() {
         &company,
         &receiver,
         &carrier,
+        &token_contract,
         &data_hash,
         &milestones,
         &deadline,
@@ -96,7 +98,7 @@ fn test_company_suspension_blocks_metadata_update() {
 fn test_company_reactivation_restores_access() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, admin, _) = setup_test(&env);
+    let (client, admin, token_contract) = setup_test(&env);
 
     let company = Address::generate(&env);
     client.add_company(&admin, &company);
@@ -116,6 +118,7 @@ fn test_company_reactivation_restores_access() {
             &company,
             &receiver,
             &carrier,
+        &token_contract,
             &data_hash,
             &milestones,
             &deadline,
@@ -130,6 +133,7 @@ fn test_company_reactivation_restores_access() {
         &company,
         &receiver,
         &carrier,
+        &token_contract,
         &data_hash,
         &milestones,
         &deadline,
@@ -141,7 +145,7 @@ fn test_company_reactivation_restores_access() {
 fn test_company_suspension_blocks_cancel_shipment() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, admin, _) = setup_test(&env);
+    let (client, admin, token_contract) = setup_test(&env);
 
     let company = Address::generate(&env);
     client.add_company(&admin, &company);
@@ -156,6 +160,7 @@ fn test_company_suspension_blocks_cancel_shipment() {
         &company,
         &receiver,
         &carrier,
+        &token_contract,
         &data_hash,
         &milestones,
         &deadline,
