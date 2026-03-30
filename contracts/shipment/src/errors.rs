@@ -104,4 +104,6 @@ pub enum NavinError {
     StatusHashNotFound = 44,
     /// Data hash verification failed; provided hash does not match stored hash.
     DataHashMismatch = 45,
+    /// Circuit breaker is open; token transfers are temporarily disabled.
+    CircuitBreakerOpen = 46,
 }

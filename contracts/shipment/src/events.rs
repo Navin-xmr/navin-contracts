@@ -1183,3 +1183,120 @@ pub fn emit_contract_unpaused(env: &Env, admin: &Address) {
         (admin.clone(), env.ledger().timestamp()),
     );
 }
+
+/// Emits a `recovery_event` when a shipment is recovered from a stuck state.
+///
+/// # Event Data
+///
+/// | Field       | Type             | Description                                    |
+/// |-------------|------------------|------------------------------------------------|
+/// | shipment_id | `u64`            | Shipment being recovered                        |
+/// | admin       | `Address`        | Admin performing the recovery                   |
+/// | old_status  | `ShipmentStatus` | Previous status before recovery                 |
+/// | new_status  | `ShipmentStatus` | New status after recovery                       |
+/// | reason_hash | `BytesN<32>`     | SHA-256 hash of recovery reason                 |
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `shipment_id` - ID of the recovered shipment.
+/// * `admin` - Admin address performing recovery.
+/// * `old_status` - Previous shipment status.
+/// * `new_status` - New shipment status.
+/// * `reason_hash` - Hash of recovery reason.
+///
+/// # Returns
+/// No value returned.
+pub fn emit_recovery_event(
+    env: &Env,
+    shipment_id: u64,
+    admin: &Address,
+    old_status: &ShipmentStatus,
+    new_status: &ShipmentStatus,
+    reason_hash: &BytesN<32>,
+) {
+    env.events().publish(
+        (Symbol::new(env, "recovery_event"),),
+        (
+            shipment_id,
+            admin.clone(),
+            old_status.clone(),
+            new_status.clone(),
+            reason_hash.clone(),
+            env.ledger().timestamp(),
+        ),
+    );
+}
+
+/// Emits an `escrow_unlock_event` when escrow is unlocked during recovery.
+///
+/// # Event Data
+///
+/// | Field       | Type         | Description                                    |
+/// |-------------|--------------|------------------------------------------------|
+/// | shipment_id | `u64`        | Shipment with unlocked escrow                   |
+/// | admin       | `Address`    | Admin performing the unlock                     |
+/// | old_amount  | `i128`       | Previous escrow amount                          |
+/// | reason_hash | `BytesN<32>` | SHA-256 hash of unlock reason                   |
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `shipment_id` - ID of the shipment.
+/// * `admin` - Admin address performing unlock.
+/// * `old_amount` - Previous escrow amount.
+/// * `reason_hash` - Hash of unlock reason.
+///
+/// # Returns
+/// No value returned.
+pub fn emit_escrow_unlock_event(
+    env: &Env,
+    shipment_id: u64,
+    admin: &Address,
+    old_amount: i128,
+    reason_hash: &BytesN<32>,
+) {
+    env.events().publish(
+        (Symbol::new(env, "escrow_unlock_event"),),
+        (
+            shipment_id,
+            admin.clone(),
+            old_amount,
+            reason_hash.clone(),
+            env.ledger().timestamp(),
+        ),
+    );
+}
+
+/// Emits a `finalization_clear_event` when finalization flag is cleared.
+///
+/// # Event Data
+///
+/// | Field       | Type         | Description                                    |
+/// |-------------|--------------|------------------------------------------------|
+/// | shipment_id | `u64`        | Shipment with cleared finalization              |
+/// | admin       | `Address`    | Admin performing the clear                      |
+/// | reason_hash | `BytesN<32>` | SHA-256 hash of clear reason                    |
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `shipment_id` - ID of the shipment.
+/// * `admin` - Admin address performing clear.
+/// * `reason_hash` - Hash of clear reason.
+///
+/// # Returns
+/// No value returned.
+pub fn emit_finalization_clear_event(
+    env: &Env,
+    shipment_id: u64,
+    admin: &Address,
+    reason_hash: &BytesN<32>,
+) {
+    env.events().publish(
+        (Symbol::new(env, "finalization_clear_event"),),
+        (
+            shipment_id,
+            admin.clone(),
+            reason_hash.clone(),
+            env.ledger().timestamp(),
+        ),
+    );
+}

@@ -83,6 +83,14 @@ pub enum DataKey {
     StatusHash(u64, ShipmentStatus),
     /// Contract pause state flag.
     IsPaused,
+    /// Rate limit quota tracker per actor (company/carrier).
+    ActorQuota(Address),
+    /// Circuit breaker state for token transfers.
+    CircuitBreakerState,
+    /// Audit log entry keyed by entry ID.
+    AuditEntry(u64),
+    /// Total count of audit log entries.
+    AuditEntryCount,
 }
 
 /// Supported user roles.
