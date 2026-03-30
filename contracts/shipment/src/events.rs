@@ -84,10 +84,14 @@ pub fn emit_shipment_created(
     data_hash: &BytesN<32>,
 ) {
     let event_counter = next_event_counter(env, shipment_id);
-    let idempotency_key =
-        generate_idempotency_key(env, shipment_id, "shipment_created", event_counter);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        shipment_id,
+        crate::event_topics::SHIPMENT_CREATED,
+        event_counter,
+    );
     env.events().publish(
-        (Symbol::new(env, "shipment_created"),),
+        (Symbol::new(env, crate::event_topics::SHIPMENT_CREATED),),
         (
             shipment_id,
             sender.clone(),
@@ -139,10 +143,14 @@ pub fn emit_status_updated(
     data_hash: &BytesN<32>,
 ) {
     let event_counter = next_event_counter(env, shipment_id);
-    let idempotency_key =
-        generate_idempotency_key(env, shipment_id, "status_updated", event_counter);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        shipment_id,
+        crate::event_topics::STATUS_UPDATED,
+        event_counter,
+    );
     env.events().publish(
-        (Symbol::new(env, "status_updated"),),
+        (Symbol::new(env, crate::event_topics::STATUS_UPDATED),),
         (
             shipment_id,
             old_status.clone(),
@@ -198,10 +206,14 @@ pub fn emit_milestone_recorded(
     reporter: &Address,
 ) {
     let event_counter = next_event_counter(env, shipment_id);
-    let idempotency_key =
-        generate_idempotency_key(env, shipment_id, "milestone_recorded", event_counter);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        shipment_id,
+        crate::event_topics::MILESTONE_RECORDED,
+        event_counter,
+    );
     env.events().publish(
-        (Symbol::new(env, "milestone_recorded"),),
+        (Symbol::new(env, crate::event_topics::MILESTONE_RECORDED),),
         (
             shipment_id,
             checkpoint.clone(),
@@ -246,10 +258,14 @@ pub fn emit_milestone_recorded(
 #[allow(dead_code)]
 pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount: i128) {
     let event_counter = next_event_counter(env, shipment_id);
-    let idempotency_key =
-        generate_idempotency_key(env, shipment_id, "escrow_deposited", event_counter);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        shipment_id,
+        crate::event_topics::ESCROW_DEPOSITED,
+        event_counter,
+    );
     env.events().publish(
-        (Symbol::new(env, "escrow_deposited"),),
+        (Symbol::new(env, crate::event_topics::ESCROW_DEPOSITED),),
         (
             shipment_id,
             from.clone(),
@@ -292,10 +308,14 @@ pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount
 /// ```
 pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i128) {
     let event_counter = next_event_counter(env, shipment_id);
-    let idempotency_key =
-        generate_idempotency_key(env, shipment_id, "escrow_released", event_counter);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        shipment_id,
+        crate::event_topics::ESCROW_RELEASED,
+        event_counter,
+    );
     env.events().publish(
-        (Symbol::new(env, "escrow_released"),),
+        (Symbol::new(env, crate::event_topics::ESCROW_RELEASED),),
         (
             shipment_id,
             to.clone(),
@@ -338,10 +358,14 @@ pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i
 /// ```
 pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i128) {
     let event_counter = next_event_counter(env, shipment_id);
-    let idempotency_key =
-        generate_idempotency_key(env, shipment_id, "escrow_refunded", event_counter);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        shipment_id,
+        crate::event_topics::ESCROW_REFUNDED,
+        event_counter,
+    );
     env.events().publish(
-        (Symbol::new(env, "escrow_refunded"),),
+        (Symbol::new(env, crate::event_topics::ESCROW_REFUNDED),),
         (
             shipment_id,
             to.clone(),
@@ -393,7 +417,7 @@ pub fn emit_dispute_raised(
     reason_hash: &BytesN<32>,
 ) {
     env.events().publish(
-        (Symbol::new(env, "dispute_raised"),),
+        (Symbol::new(env, crate::event_topics::DISPUTE_RAISED),),
         (shipment_id, raised_by.clone(), reason_hash.clone()),
     );
 }
@@ -428,10 +452,14 @@ pub fn emit_shipment_cancelled(
     reason_hash: &BytesN<32>,
 ) {
     let event_counter = next_event_counter(env, shipment_id);
-    let idempotency_key =
-        generate_idempotency_key(env, shipment_id, "shipment_cancelled", event_counter);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        shipment_id,
+        crate::event_topics::SHIPMENT_CANCELLED,
+        event_counter,
+    );
     env.events().publish(
-        (Symbol::new(env, "shipment_cancelled"),),
+        (Symbol::new(env, crate::event_topics::SHIPMENT_CANCELLED),),
         (
             shipment_id,
             caller.clone(),
@@ -474,7 +502,7 @@ pub fn emit_contract_upgraded(
     version: u32,
 ) {
     env.events().publish(
-        (Symbol::new(env, "contract_upgraded"),),
+        (Symbol::new(env, crate::event_topics::CONTRACT_UPGRADED),),
         (admin.clone(), new_wasm_hash.clone(), version),
     );
 }
@@ -517,7 +545,7 @@ pub fn emit_carrier_handoff(
     handoff_hash: &BytesN<32>,
 ) {
     env.events().publish(
-        (Symbol::new(env, "carrier_handoff"),),
+        (Symbol::new(env, crate::event_topics::CARRIER_HANDOFF),),
         (
             shipment_id,
             from_carrier.clone(),
@@ -571,7 +599,7 @@ pub fn emit_condition_breach(
     data_hash: &BytesN<32>,
 ) {
     env.events().publish(
-        (Symbol::new(env, "condition_breach"),),
+        (Symbol::new(env, crate::event_topics::CONDITION_BREACH),),
         (
             shipment_id,
             carrier.clone(),
@@ -585,7 +613,7 @@ pub fn emit_condition_breach(
 /// Emits an `admin_proposed` event when a new administrator is proposed.
 pub fn emit_admin_proposed(env: &Env, current_admin: &Address, proposed_admin: &Address) {
     env.events().publish(
-        (Symbol::new(env, "admin_proposed"),),
+        (Symbol::new(env, crate::event_topics::ADMIN_PROPOSED),),
         (current_admin.clone(), proposed_admin.clone()),
     );
 }
@@ -593,7 +621,7 @@ pub fn emit_admin_proposed(env: &Env, current_admin: &Address, proposed_admin: &
 /// Emits an `admin_transferred` event when the administrator role is successfully transferred.
 pub fn emit_admin_transferred(env: &Env, old_admin: &Address, new_admin: &Address) {
     env.events().publish(
-        (Symbol::new(env, "admin_transferred"),),
+        (Symbol::new(env, crate::event_topics::ADMIN_TRANSFERRED),),
         (old_admin.clone(), new_admin.clone()),
     );
 }
@@ -607,10 +635,14 @@ pub fn emit_admin_transferred(env: &Env, old_admin: &Address, new_admin: &Addres
 /// | shipment_id | `u64`  | Cancelled shipment identifier                   |
 pub fn emit_shipment_expired(env: &Env, shipment_id: u64) {
     let event_counter = next_event_counter(env, shipment_id);
-    let idempotency_key =
-        generate_idempotency_key(env, shipment_id, "shipment_expired", event_counter);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        shipment_id,
+        crate::event_topics::SHIPMENT_EXPIRED,
+        event_counter,
+    );
     env.events().publish(
-        (Symbol::new(env, "shipment_expired"),),
+        (Symbol::new(env, crate::event_topics::SHIPMENT_EXPIRED),),
         (
             shipment_id,
             EVENT_SCHEMA_VERSION,
@@ -640,10 +672,14 @@ pub fn emit_shipment_expired(env: &Env, shipment_id: u64) {
 /// - **Express backend**: Increments on-time delivery counter in carrier reputation index.
 pub fn emit_delivery_success(env: &Env, carrier: &Address, shipment_id: u64, delivery_time: u64) {
     let event_counter = next_event_counter(env, shipment_id);
-    let idempotency_key =
-        generate_idempotency_key(env, shipment_id, "delivery_success", event_counter);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        shipment_id,
+        crate::event_topics::DELIVERY_SUCCESS,
+        event_counter,
+    );
     env.events().publish(
-        (Symbol::new(env, "delivery_success"),),
+        (Symbol::new(env, crate::event_topics::DELIVERY_SUCCESS),),
         (
             carrier.clone(),
             shipment_id,
@@ -681,7 +717,7 @@ pub fn emit_carrier_breach(
     severity: &Severity,
 ) {
     env.events().publish(
-        (Symbol::new(env, "carrier_breach"),),
+        (Symbol::new(env, crate::event_topics::CARRIER_BREACH),),
         (
             carrier.clone(),
             shipment_id,
@@ -707,7 +743,7 @@ pub fn emit_carrier_breach(
 /// - **Express backend**: Increments dispute-loss counter in carrier reputation index.
 pub fn emit_carrier_dispute_loss(env: &Env, carrier: &Address, shipment_id: u64) {
     env.events().publish(
-        (Symbol::new(env, "carrier_dispute_loss"),),
+        (Symbol::new(env, crate::event_topics::CARRIER_DISPUTE_LOSS),),
         (carrier.clone(), shipment_id),
     );
 }
@@ -749,7 +785,7 @@ pub fn emit_notification(
     data_hash: &BytesN<32>,
 ) {
     env.events().publish(
-        (Symbol::new(env, "notification"),),
+        (Symbol::new(env, crate::event_topics::NOTIFICATION),),
         (
             recipient.clone(),
             notification_type,
@@ -785,7 +821,7 @@ pub fn emit_notification(
 /// ```
 pub fn emit_shipment_archived(env: &Env, shipment_id: u64, timestamp: u64) {
     env.events().publish(
-        (Symbol::new(env, "shipment_archived"),),
+        (Symbol::new(env, crate::event_topics::SHIPMENT_ARCHIVED),),
         (shipment_id, timestamp),
     );
 }
@@ -799,7 +835,7 @@ pub fn emit_carrier_late_delivery(
     actual_delivery_time: u64,
 ) {
     env.events().publish(
-        (Symbol::new(env, "carrier_late_delivery"),),
+        (Symbol::new(env, crate::event_topics::CARRIER_LATE_DELIVERY),),
         (carrier.clone(), shipment_id, deadline, actual_delivery_time),
     );
 }
@@ -807,7 +843,10 @@ pub fn emit_carrier_late_delivery(
 /// Emits a `carrier_on_time_delivery` event when a carrier completes delivery on or before the deadline.
 pub fn emit_carrier_on_time_delivery(env: &Env, carrier: &Address, shipment_id: u64) {
     env.events().publish(
-        (Symbol::new(env, "carrier_on_time_delivery"),),
+        (Symbol::new(
+            env,
+            crate::event_topics::CARRIER_ON_TIME_DELIVERY,
+        ),),
         (carrier.clone(), shipment_id),
     );
 }
@@ -820,7 +859,10 @@ pub fn emit_carrier_handoff_completed(
     shipment_id: u64,
 ) {
     env.events().publish(
-        (Symbol::new(env, "carrier_handoff_completed"),),
+        (Symbol::new(
+            env,
+            crate::event_topics::CARRIER_HANDOFF_COMPLETED,
+        ),),
         (from_carrier.clone(), to_carrier.clone(), shipment_id),
     );
 }
@@ -850,7 +892,7 @@ pub fn emit_carrier_handoff_completed(
 /// ```
 pub fn emit_role_revoked(env: &Env, admin: &Address, target: &Address, role: &crate::types::Role) {
     env.events().publish(
-        (Symbol::new(env, "role_revoked"),),
+        (Symbol::new(env, crate::event_topics::ROLE_REVOKED),),
         (admin.clone(), target.clone(), role.clone()),
     );
 }
@@ -900,7 +942,7 @@ pub fn emit_role_changed(
     role: &Role,
 ) {
     env.events().publish(
-        (Symbol::new(env, "role_changed"),),
+        (Symbol::new(env, crate::event_topics::ROLE_CHANGED),),
         (
             action.clone(),
             admin.clone(),
@@ -920,7 +962,10 @@ pub fn emit_carrier_milestone_rate(
     total_milestones: u32,
 ) {
     env.events().publish(
-        (Symbol::new(env, "carrier_milestone_rate"),),
+        (Symbol::new(
+            env,
+            crate::event_topics::CARRIER_MILESTONE_RATE,
+        ),),
         (
             carrier.clone(),
             shipment_id,
@@ -963,7 +1008,7 @@ pub fn emit_force_cancelled(
     escrow_refunded: i128,
 ) {
     env.events().publish(
-        (Symbol::new(env, "force_cancelled"),),
+        (Symbol::new(env, crate::event_topics::FORCE_CANCELLED),),
         (
             shipment_id,
             admin.clone(),
@@ -1003,7 +1048,7 @@ pub fn emit_note_appended(
     reporter: &Address,
 ) {
     env.events().publish(
-        (Symbol::new(env, "note_appended"),),
+        (Symbol::new(env, crate::event_topics::NOTE_APPENDED),),
         (shipment_id, note_index, note_hash.clone(), reporter.clone()),
     );
     crate::storage::increment_event_count(env, shipment_id);
@@ -1027,7 +1072,7 @@ pub fn emit_evidence_added(
     reporter: &Address,
 ) {
     env.events().publish(
-        (Symbol::new(env, "evidence_added"),),
+        (Symbol::new(env, crate::event_topics::EVIDENCE_ADDED),),
         (
             shipment_id,
             evidence_index,
@@ -1056,10 +1101,14 @@ pub fn emit_dispute_resolved(
     admin: &Address,
 ) {
     let event_counter = next_event_counter(env, shipment_id);
-    let idempotency_key =
-        generate_idempotency_key(env, shipment_id, "dispute_resolved", event_counter);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        shipment_id,
+        crate::event_topics::DISPUTE_RESOLVED,
+        event_counter,
+    );
     env.events().publish(
-        (Symbol::new(env, "dispute_resolved"),),
+        (Symbol::new(env, crate::event_topics::DISPUTE_RESOLVED),),
         (
             shipment_id,
             resolution.clone(),
@@ -1099,7 +1148,7 @@ pub fn emit_dispute_resolved(
 /// ```
 pub fn emit_contract_paused(env: &Env, admin: &Address) {
     env.events().publish(
-        (Symbol::new(env, "contract_paused"),),
+        (Symbol::new(env, crate::event_topics::CONTRACT_PAUSED),),
         (admin.clone(), env.ledger().timestamp()),
     );
 }
@@ -1130,7 +1179,7 @@ pub fn emit_contract_paused(env: &Env, admin: &Address) {
 /// ```
 pub fn emit_contract_unpaused(env: &Env, admin: &Address) {
     env.events().publish(
-        (Symbol::new(env, "contract_unpaused"),),
+        (Symbol::new(env, crate::event_topics::CONTRACT_UNPAUSED),),
         (admin.clone(), env.ledger().timestamp()),
     );
 }
