@@ -731,7 +731,8 @@ fn test_auth_add_guardian_fails_without_auth() {
     env.ledger().with_mut(|li| {
         li.protocol_version = crate::test_utils::DEFAULT_PROTOCOL_VERSION;
     });
-    env.ledger().set_timestamp(crate::test_utils::DEFAULT_TIMESTAMP);
+    env.ledger()
+        .set_timestamp(crate::test_utils::DEFAULT_TIMESTAMP);
 
     let admin = Address::generate(&env);
     let guardian = Address::generate(&env);
@@ -755,7 +756,8 @@ fn test_auth_add_operator_fails_without_auth() {
     env.ledger().with_mut(|li| {
         li.protocol_version = crate::test_utils::DEFAULT_PROTOCOL_VERSION;
     });
-    env.ledger().set_timestamp(crate::test_utils::DEFAULT_TIMESTAMP);
+    env.ledger()
+        .set_timestamp(crate::test_utils::DEFAULT_TIMESTAMP);
 
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);

@@ -28,6 +28,8 @@ mod test_auth;
 #[cfg(test)]
 mod test_auto_dispute;
 #[cfg(test)]
+mod test_diagnostics;
+#[cfg(test)]
 mod test_iot_verification;
 #[cfg(test)]
 mod test_pause;
@@ -35,8 +37,6 @@ mod test_pause;
 mod test_preflight;
 #[cfg(test)]
 mod test_suspension;
-#[cfg(test)]
-mod test_diagnostics;
 #[cfg(test)]
 mod test_utils;
 
@@ -251,7 +251,9 @@ fn require_admin_or_guardian(env: &Env, address: &Address) -> Result<(), NavinEr
     if storage::get_admin(env) == *address {
         return Ok(());
     }
-    if storage::has_role(env, address, &Role::Guardian) && !storage::is_role_suspended(env, address, &Role::Guardian) {
+    if storage::has_role(env, address, &Role::Guardian)
+        && !storage::is_role_suspended(env, address, &Role::Guardian)
+    {
         return Ok(());
     }
     Err(NavinError::Unauthorized)
@@ -262,7 +264,9 @@ fn require_admin_or_operator(env: &Env, address: &Address) -> Result<(), NavinEr
     if storage::get_admin(env) == *address {
         return Ok(());
     }
-    if storage::has_role(env, address, &Role::Operator) && !storage::is_role_suspended(env, address, &Role::Operator) {
+    if storage::has_role(env, address, &Role::Operator)
+        && !storage::is_role_suspended(env, address, &Role::Operator)
+    {
         return Ok(());
     }
     Err(NavinError::Unauthorized)
