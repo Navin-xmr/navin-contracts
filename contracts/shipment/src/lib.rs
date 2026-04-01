@@ -8,6 +8,7 @@ use soroban_sdk::{
 mod audit;
 mod circuit_breaker;
 mod config;
+pub mod diagnostics;
 mod e2e_test;
 mod errors;
 mod event_topics;
@@ -35,9 +36,12 @@ mod test_preflight;
 #[cfg(test)]
 mod test_suspension;
 #[cfg(test)]
+mod test_diagnostics;
+#[cfg(test)]
 mod test_utils;
 
 pub use config::*;
+pub use diagnostics::*;
 pub use errors::*;
 pub use types::*;
 pub use validation::*;
@@ -207,6 +211,7 @@ fn internal_release_escrow(
         shipment.updated_at = env.ledger().timestamp();
         shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
         storage::set_shipment(env, shipment);
+        storage::set_escrow(env, shipment.id, shipment.escrow_amount);
 
         // Get token contract address
         if let Some(token_contract) = storage::get_token_contract(env) {
@@ -1754,6 +1759,7 @@ impl NavinShipment {
         shipment.updated_at = env.ledger().timestamp();
         shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
         storage::set_shipment(&env, &shipment);
+        storage::set_escrow(&env, shipment_id, amount);
         storage::add_total_escrow_volume(&env, amount)?;
         extend_shipment_ttl(&env, shipment_id);
 
@@ -2595,6 +2601,7 @@ impl NavinShipment {
         }
         finalize_if_settled(&env, &mut shipment);
         storage::set_shipment(&env, &shipment);
+        storage::remove_escrow_balance(&env, shipment_id);
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_shipment_cancelled(&env, shipment_id, &caller, &reason_hash);
@@ -4088,5 +4095,17 @@ impl NavinShipment {
             .ok_or(NavinError::StatusHashNotFound)?;
 
         Ok(stored_hash == expected_hash)
+    }
+
+    /// Check the health of the contract data.
+    pub fn check_contract_health(
+        env: Env,
+        admin: Address,
+    ) -> Result<SystemHealthStatus, NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+        require_admin_or_operator(&env, &admin)?;
+
+        Ok(diagnostics::run_system_health_check(&env))
     }
 }
