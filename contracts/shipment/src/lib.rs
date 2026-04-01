@@ -241,6 +241,28 @@ fn require_not_paused(env: &Env) -> Result<(), NavinError> {
     Ok(())
 }
 
+fn require_admin_or_guardian(env: &Env, address: &Address) -> Result<(), NavinError> {
+    require_initialized(env)?;
+    if storage::get_admin(env) == *address {
+        return Ok(());
+    }
+    if storage::has_role(env, address, &Role::Guardian) && !storage::is_role_suspended(env, address, &Role::Guardian) {
+        return Ok(());
+    }
+    Err(NavinError::Unauthorized)
+}
+
+fn require_admin_or_operator(env: &Env, address: &Address) -> Result<(), NavinError> {
+    require_initialized(env)?;
+    if storage::get_admin(env) == *address {
+        return Ok(());
+    }
+    if storage::has_role(env, address, &Role::Operator) && !storage::is_role_suspended(env, address, &Role::Operator) {
+        return Ok(());
+    }
+    Err(NavinError::Unauthorized)
+}
+
 fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinError> {
     require_initialized(env)?;
 
@@ -269,6 +291,26 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinErr
                 // Also check legacy carrier-specific suspension
                 if storage::is_carrier_suspended(env, address) {
                     return Err(NavinError::CarrierSuspended);
+                }
+                Ok(())
+            } else {
+                Err(NavinError::Unauthorized)
+            }
+        }
+        Role::Guardian => {
+            if storage::has_role(env, address, &Role::Guardian) {
+                if storage::is_role_suspended(env, address, &Role::Guardian) {
+                    return Err(NavinError::Unauthorized);
+                }
+                Ok(())
+            } else {
+                Err(NavinError::Unauthorized)
+            }
+        }
+        Role::Operator => {
+            if storage::has_role(env, address, &Role::Operator) {
+                if storage::is_role_suspended(env, address, &Role::Operator) {
+                    return Err(NavinError::Unauthorized);
                 }
                 Ok(())
             } else {
@@ -952,9 +994,7 @@ impl NavinShipment {
         require_not_paused(&env)?;
         admin.require_auth();
 
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
-        }
+        require_admin_or_operator(&env, &admin)?;
 
         storage::set_company_role(&env, &company);
 
@@ -993,9 +1033,7 @@ impl NavinShipment {
         require_not_paused(&env)?;
         admin.require_auth();
 
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
-        }
+        require_admin_or_operator(&env, &admin)?;
 
         storage::set_carrier_role(&env, &carrier);
 
@@ -1011,6 +1049,68 @@ impl NavinShipment {
         Ok(())
     }
 
+    /// Allow admin to grant Guardian role.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Contract admin executing the role grant.
+    /// * `guardian` - The address receiving the guardian role.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok on successful role assignment.
+    pub fn add_guardian(env: Env, admin: Address, guardian: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::set_role(&env, &guardian, &Role::Guardian);
+
+        events::emit_role_changed(
+            &env,
+            &RoleChangeAction::Assigned,
+            &admin,
+            &guardian,
+            &Role::Guardian,
+        );
+
+        Ok(())
+    }
+
+    /// Allow admin to grant Operator role.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Contract admin executing the role grant.
+    /// * `operator` - The address receiving the operator role.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok on successful role assignment.
+    pub fn add_operator(env: Env, admin: Address, operator: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::set_role(&env, &operator, &Role::Operator);
+
+        events::emit_role_changed(
+            &env,
+            &RoleChangeAction::Assigned,
+            &admin,
+            &operator,
+            &Role::Operator,
+        );
+
+        Ok(())
+    }
+
     /// Suspend a carrier from carrier-only operations.
     ///
     /// Only the admin can call this function.
@@ -1019,9 +1119,7 @@ impl NavinShipment {
         require_not_paused(&env)?;
         admin.require_auth();
 
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
-        }
+        require_admin_or_operator(&env, &admin)?;
 
         storage::suspend_carrier(&env, &carrier);
         env.events()
@@ -1041,9 +1139,7 @@ impl NavinShipment {
         require_not_paused(&env)?;
         admin.require_auth();
 
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
-        }
+        require_admin_or_operator(&env, &admin)?;
 
         storage::reactivate_carrier(&env, &carrier);
         env.events().publish(
@@ -1099,6 +1195,8 @@ impl NavinShipment {
         match current_role {
             Role::Company => storage::revoke_role(&env, &target, &Role::Company),
             Role::Carrier => storage::revoke_role(&env, &target, &Role::Carrier),
+            Role::Guardian => storage::revoke_role(&env, &target, &Role::Guardian),
+            Role::Operator => storage::revoke_role(&env, &target, &Role::Operator),
             Role::Unassigned => {}
         }
 
@@ -1229,9 +1327,7 @@ impl NavinShipment {
         require_not_paused(&env)?;
         admin.require_auth();
 
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
-        }
+        require_admin_or_operator(&env, &admin)?;
 
         if !storage::has_company_role(&env, &company) {
             return Err(NavinError::Unauthorized);
@@ -1261,9 +1357,7 @@ impl NavinShipment {
         require_not_paused(&env)?;
         admin.require_auth();
 
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
-        }
+        require_admin_or_operator(&env, &admin)?;
 
         storage::reactivate_company(&env, &company);
 
@@ -2933,9 +3027,7 @@ impl NavinShipment {
         require_not_paused(&env)?;
         admin.require_auth();
 
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
-        }
+        require_admin_or_guardian(&env, &admin)?;
 
         // Validate reason hash is not empty
         if reason_hash == BytesN::from_array(&env, &[0u8; 32]) {
@@ -3863,9 +3955,7 @@ impl NavinShipment {
         require_initialized(&env)?;
         admin.require_auth();
 
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
-        }
+        require_admin_or_guardian(&env, &admin)?;
 
         storage::set_paused(&env, true);
         events::emit_contract_paused(&env, &admin);
@@ -3895,9 +3985,7 @@ impl NavinShipment {
         require_initialized(&env)?;
         admin.require_auth();
 
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
-        }
+        require_admin_or_guardian(&env, &admin)?;
 
         storage::set_paused(&env, false);
         events::emit_contract_unpaused(&env, &admin);

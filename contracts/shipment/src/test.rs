@@ -9834,3 +9834,66 @@ fn test_metadata_symbols_multiple_entries() {
     let metadata = shipment.metadata.unwrap();
     assert_eq!(metadata.len(), 3);
 }
+
+#[test]
+fn test_operator_can_manage_roles() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    
+    let operator = Address::generate(&env);
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    
+    client.add_operator(&admin, &operator);
+    
+    client.add_company(&operator, &company);
+    client.suspend_company(&operator, &company);
+    client.reactivate_company(&operator, &company);
+    
+    client.add_carrier(&operator, &carrier);
+    client.suspend_carrier(&operator, &carrier);
+    client.reactivate_carrier(&operator, &carrier);
+    
+    let outsider = Address::generate(&env);
+    let result = client.try_add_company(&outsider, &Address::generate(&env));
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+}
+
+#[test]
+fn test_guardian_can_resolve_disputes() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    
+    let guardian = Address::generate(&env);
+    client.add_guardian(&admin, &guardian);
+    
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+    
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    
+    // Deposit escrow so resolve_dispute doesn't fail with InsufficientFunds
+    client.deposit_escrow(&company, &shipment_id, &1000);
+    
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    
+    client.raise_dispute(&company, &shipment_id, &data_hash);
+    
+    client.resolve_dispute(&guardian, &shipment_id, &crate::DisputeResolution::RefundToCompany, &data_hash);
+    
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+}

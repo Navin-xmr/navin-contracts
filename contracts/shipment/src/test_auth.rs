@@ -671,3 +671,103 @@ fn test_auth_force_cancel_fails_without_auth() {
         "force_cancel_shipment must fail when admin auth is not provided"
     );
 }
+
+/// `add_guardian` must record an auth invocation for the admin address with the
+/// correct function name and argument list.
+#[test]
+fn test_auth_tree_add_guardian() {
+    let (env, client, admin, _token) = setup_env();
+    let guardian = Address::generate(&env);
+    let cid = contract_id(&client);
+
+    client.add_guardian(&admin, &guardian);
+
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    cid,
+                    Symbol::new(&env, "add_guardian"),
+                    (admin.clone(), guardian.clone()).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            }
+        )]
+    );
+}
+
+/// `add_operator` must record an auth invocation for the admin address with the
+/// correct function name and argument list.
+#[test]
+fn test_auth_tree_add_operator() {
+    let (env, client, admin, _token) = setup_env();
+    let operator = Address::generate(&env);
+    let cid = contract_id(&client);
+
+    client.add_operator(&admin, &operator);
+
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    cid,
+                    Symbol::new(&env, "add_operator"),
+                    (admin.clone(), operator.clone()).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            }
+        )]
+    );
+}
+
+/// `add_guardian` must fail when no auth mock is provided for the admin address.
+#[test]
+fn test_auth_add_guardian_fails_without_auth() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| {
+        li.protocol_version = crate::test_utils::DEFAULT_PROTOCOL_VERSION;
+    });
+    env.ledger().set_timestamp(crate::test_utils::DEFAULT_TIMESTAMP);
+
+    let admin = Address::generate(&env);
+    let guardian = Address::generate(&env);
+    let token = env.register(MockToken {}, ());
+    let cid = env.register(NavinShipment, ());
+    let client = NavinShipmentClient::new(&env, &cid);
+
+    client.initialize(&admin, &token);
+
+    let result = client.try_add_guardian(&admin, &guardian);
+    assert!(
+        result.is_err(),
+        "add_guardian must fail when admin auth is not provided"
+    );
+}
+
+/// `add_operator` must fail when no auth mock is provided for the admin address.
+#[test]
+fn test_auth_add_operator_fails_without_auth() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| {
+        li.protocol_version = crate::test_utils::DEFAULT_PROTOCOL_VERSION;
+    });
+    env.ledger().set_timestamp(crate::test_utils::DEFAULT_TIMESTAMP);
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let token = env.register(MockToken {}, ());
+    let cid = env.register(NavinShipment, ());
+    let client = NavinShipmentClient::new(&env, &cid);
+
+    client.initialize(&admin, &token);
+
+    let result = client.try_add_operator(&admin, &operator);
+    assert!(
+        result.is_err(),
+        "add_operator must fail when admin auth is not provided"
+    );
+}

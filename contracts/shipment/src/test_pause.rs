@@ -197,4 +197,35 @@ mod tests {
 
         assert_eq!(shipment_id2, shipment_id1 + 1);
     }
+
+    #[test]
+    fn test_pause_guardian_success() {
+        let (_env, client, admin, token_contract) = setup_test_env();
+        let guardian = Address::generate(&_env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_guardian(&admin, &guardian);
+
+        // Guardian pauses the contract
+        client.pause(&guardian);
+
+        // Verify contract is paused
+        assert!(client.is_paused());
+    }
+
+    #[test]
+    fn test_unpause_guardian_success() {
+        let (_env, client, admin, token_contract) = setup_test_env();
+        let guardian = Address::generate(&_env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_guardian(&admin, &guardian);
+
+        // Pause then unpause by Guardian
+        client.pause(&guardian);
+        assert!(client.is_paused());
+
+        client.unpause(&guardian);
+        assert!(!client.is_paused());
+    }
 }
