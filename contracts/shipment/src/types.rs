@@ -107,6 +107,10 @@ pub enum Role {
     Company,
     /// A registered carrier that can transport shipments and report geofence events.
     Carrier,
+    /// A guardian that can approve emergency operations.
+    Guardian,
+    /// An operator that can perform operational tasks.
+    Operator,
     /// No role assigned.
     Unassigned,
 }
