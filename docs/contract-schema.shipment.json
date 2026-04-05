@@ -1,5 +1,169 @@
 [
   {
+    "udt_struct_v0": {
+      "doc": "Rate limit quota tracking for an actor",
+      "lib": "",
+      "name": "QuotaTracker",
+      "fields": [
+        {
+          "doc": "Number of operations in current window",
+          "name": "operations_count",
+          "type_": "u32"
+        },
+        {
+          "doc": "Timestamp when current window started",
+          "name": "window_start",
+          "type_": "u64"
+        }
+      ]
+    }
+  },
+  {
+    "udt_struct_v0": {
+      "doc": "Rate limit configuration for an actor (company or carrier)",
+      "lib": "",
+      "name": "RateLimitConfig",
+      "fields": [
+        {
+          "doc": "Maximum operations allowed per window",
+          "name": "max_operations",
+          "type_": "u32"
+        },
+        {
+          "doc": "Time window in seconds",
+          "name": "window_seconds",
+          "type_": "u64"
+        }
+      ]
+    }
+  },
+  {
+    "udt_struct_v0": {
+      "doc": "Reusable response object representing the state of the contract's health.",
+      "lib": "",
+      "name": "SystemHealthStatus",
+      "fields": [
+        {
+          "doc": "",
+          "name": "active_shipments_counted",
+          "type_": "u32"
+        },
+        {
+          "doc": "",
+          "name": "anomalous_shipment_ids",
+          "type_": {
+            "vec": {
+              "element_type": "u64"
+            }
+          }
+        },
+        {
+          "doc": "",
+          "name": "storage_inconsistencies",
+          "type_": {
+            "vec": {
+              "element_type": "u64"
+            }
+          }
+        },
+        {
+          "doc": "",
+          "name": "sum_of_escrow_balances",
+          "type_": "i128"
+        },
+        {
+          "doc": "",
+          "name": "total_shipments",
+          "type_": "u64"
+        }
+      ]
+    }
+  },
+  {
+    "udt_union_v0": {
+      "doc": "Circuit breaker states",
+      "lib": "",
+      "name": "CircuitBreakerState",
+      "cases": [
+        {
+          "void_v0": {
+            "doc": "Normal operation, requests pass through",
+            "name": "Closed"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Failures exceeded threshold, requests rejected",
+            "name": "Open"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Recovery window active, testing recovery",
+            "name": "HalfOpen"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "udt_struct_v0": {
+      "doc": "Circuit breaker configuration",
+      "lib": "",
+      "name": "CircuitBreakerConfig",
+      "fields": [
+        {
+          "doc": "Number of consecutive failures before opening",
+          "name": "failure_threshold",
+          "type_": "u32"
+        },
+        {
+          "doc": "Maximum requests allowed in HalfOpen state",
+          "name": "half_open_max_requests",
+          "type_": "u32"
+        },
+        {
+          "doc": "Time window in seconds before attempting recovery",
+          "name": "recovery_timeout",
+          "type_": "u64"
+        }
+      ]
+    }
+  },
+  {
+    "udt_struct_v0": {
+      "doc": "Circuit breaker state tracker",
+      "lib": "",
+      "name": "CircuitBreakerTracker",
+      "fields": [
+        {
+          "doc": "Number of consecutive failures",
+          "name": "failure_count",
+          "type_": "u32"
+        },
+        {
+          "doc": "Number of requests in HalfOpen state",
+          "name": "half_open_requests",
+          "type_": "u32"
+        },
+        {
+          "doc": "Timestamp when breaker was opened",
+          "name": "opened_at",
+          "type_": "u64"
+        },
+        {
+          "doc": "Current state",
+          "name": "state",
+          "type_": {
+            "udt": {
+              "name": "CircuitBreakerState"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
     "function_v0": {
       "doc": "Pause the contract, disabling all state-changing operations.\\nOnly the admin can pause the contract. Read-only queries still work.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - The admin address pausing the contract.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok if successfully paused.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If caller is not the admin.\\n\\n# Examples\\n```rust\\n// contract.pause(&env, &admin);\\n```",
       "name": "pause",
@@ -344,6 +508,74 @@
         {
           "doc": "",
           "name": "target",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Allow admin to grant Guardian role.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Contract admin executing the role grant.\\n* `guardian` - The address receiving the guardian role.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful role assignment.",
+      "name": "add_guardian",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "guardian",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Allow admin to grant Operator role.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Contract admin executing the role grant.\\n* `operator` - The address receiving the operator role.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on successful role assignment.",
+      "name": "add_operator",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        },
+        {
+          "doc": "",
+          "name": "operator",
           "type_": "address"
         }
       ],
@@ -1931,6 +2163,35 @@
   },
   {
     "function_v0": {
+      "doc": "Check the health of the contract data.",
+      "name": "check_contract_health",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "udt": {
+                "name": "SystemHealthStatus"
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
       "doc": "Emergency admin-only force-cancel for a shipment.\\n\\nThis is a privileged override that bypasses the normal cancellation rules.\\nIt can cancel a shipment in **any non-terminal state** (including Disputed),\\nand it requires a mandatory, non-zero `reason_hash` to ensure an immutable\\naudit trail is always present.\\n\\nEscrow behaviour is deterministic:\\n- If escrow is held, the full remaining balance is refunded to the company\\nvia the token contract before the shipment is marked Cancelled.\\n- If no escrow is held, the shipment is cancelled with no token transfer.\\n\\nOnly the single admin or a multi-sig admin (via `propose_action` /\\n`approve_action`) may call this function directly. Regular companies and\\ncarriers are rejected with `Unauthorized`.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Admin address executing the force-cancel.\\n* `shipment_id` - ID of the shipment to force-cancel.\\n* `reason_hash` - Mandatory SHA-256 hash of the off-chain reason document.\\n\\n# Returns\\n* `Result<(), NavinError>` - Ok on success",
       "name": "force_cancel_shipment",
       "inputs": [
@@ -2077,6 +2338,35 @@
               "n": 32
             }
           }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Manually reset the circuit breaker after resolving a token contract issue.\\n\\nOnly callable by the admin. Use after confirming the token contract is healthy\\nfollowing a run of consecutive transfer failures.",
+      "name": "reset_circuit_breaker",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
         }
       ],
       "outputs": [
@@ -2663,6 +2953,119 @@
     }
   },
   {
+    "udt_struct_v0": {
+      "doc": "Audit log entry for role and permission changes",
+      "lib": "",
+      "name": "AuditLogEntry",
+      "fields": [
+        {
+          "doc": "Actor performing the action (admin)",
+          "name": "actor",
+          "type_": "address"
+        },
+        {
+          "doc": "Unique entry ID",
+          "name": "entry_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "Type of audit event",
+          "name": "event_type",
+          "type_": {
+            "udt": {
+              "name": "AuditEventType"
+            }
+          }
+        },
+        {
+          "doc": "Target of the action (user whose role changed)",
+          "name": "target",
+          "type_": "address"
+        },
+        {
+          "doc": "Timestamp of the event",
+          "name": "timestamp",
+          "type_": "u64"
+        }
+      ]
+    }
+  },
+  {
+    "udt_union_v0": {
+      "doc": "Audit event types for role and permission operations",
+      "lib": "",
+      "name": "AuditEventType",
+      "cases": [
+        {
+          "void_v0": {
+            "doc": "Role was assigned to an address",
+            "name": "RoleAssigned"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Role was revoked from an address",
+            "name": "RoleRevoked"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Role was suspended",
+            "name": "RoleSuspended"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Role was reactivated",
+            "name": "RoleReactivated"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Admin transferred",
+            "name": "AdminTransferred"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Carrier whitelisted",
+            "name": "CarrierWhitelisted"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Carrier removed from whitelist",
+            "name": "CarrierUnwhitelisted"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Company suspended",
+            "name": "CompanySuspended"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Company reactivated",
+            "name": "CompanyReactivated"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Carrier suspended",
+            "name": "CarrierSuspended"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Carrier reactivated",
+            "name": "CarrierReactivated"
+          }
+        }
+      ]
+    }
+  },
+  {
     "udt_union_v0": {
       "doc": "Supported user roles.\\n\\n# Examples\\n```rust\\nuse crate::types::Role;\\nlet role = Role::Company;\\n```",
       "lib": "",
@@ -2678,6 +3081,18 @@
           "void_v0": {
             "doc": "A registered carrier that can transport shipments and report geofence events.",
             "name": "Carrier"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "A guardian that can approve emergency operations.",
+            "name": "Guardian"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "An operator that can perform operational tasks.",
+            "name": "Operator"
           }
         },
         {
@@ -3010,6 +3425,36 @@
           "void_v0": {
             "doc": "Contract pause state flag.",
             "name": "IsPaused"
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Rate limit quota tracker per actor (company/carrier).",
+            "name": "ActorQuota",
+            "type_": [
+              "address"
+            ]
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Circuit breaker state for token transfers.",
+            "name": "CircuitBreakerState"
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Audit log entry keyed by entry ID.",
+            "name": "AuditEntry",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Total count of audit log entries.",
+            "name": "AuditEntryCount"
           }
         }
       ]
@@ -4068,6 +4513,11 @@
           "doc": "Data hash verification failed; provided hash does not match stored hash.",
           "name": "DataHashMismatch",
           "value": 45
+        },
+        {
+          "doc": "Circuit breaker is open; token transfers are temporarily disabled.",
+          "name": "CircuitBreakerOpen",
+          "value": 46
         }
       ]
     }

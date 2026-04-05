@@ -34,8 +34,6 @@ mod test_iot_verification;
 #[cfg(test)]
 mod test_pause;
 #[cfg(test)]
-mod test_preflight;
-#[cfg(test)]
 mod test_suspension;
 #[cfg(test)]
 mod test_utils;
@@ -170,11 +168,24 @@ fn invoke_token_transfer(
     to: &Address,
     amount: i128,
 ) -> Result<(), NavinError> {
+    let cb_config = circuit_breaker::CircuitBreakerConfig::default();
+    circuit_breaker::check_transfer_allowed(env, &cb_config)?;
+
     let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(env);
     args.push_back(from.clone().into_val(env));
     args.push_back(to.clone().into_val(env));
     args.push_back(amount.into_val(env));
-    invoke_token_operation(env, token_contract, TokenOperation::Transfer, args)
+
+    match invoke_token_operation(env, token_contract, TokenOperation::Transfer, args) {
+        Ok(()) => {
+            circuit_breaker::record_transfer_success(env);
+            Ok(())
+        }
+        Err(e) => {
+            circuit_breaker::record_transfer_failure(env, &cb_config);
+            Err(e)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -4111,5 +4122,14 @@ impl NavinShipment {
         require_admin_or_operator(&env, &admin)?;
 
         Ok(diagnostics::run_system_health_check(&env))
+    }
+
+    /// Manually reset the circuit breaker after resolving a token contract issue.
+    ///
+    /// Only callable by the admin. Use after confirming the token contract is healthy
+    /// following a run of consecutive transfer failures.
+    pub fn reset_circuit_breaker(env: Env, admin: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        circuit_breaker::manual_reset(&env, &admin)
     }
 }

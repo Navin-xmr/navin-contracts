@@ -44,7 +44,7 @@ fn test_clean_health_check() {
 
     let deadline = env.ledger().timestamp() + 3600;
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let shipment_id = client.create_shipment(
+    let _shipment_id = client.create_shipment(
         &company,
         &receiver,
         &carrier,

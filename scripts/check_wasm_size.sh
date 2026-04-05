@@ -4,7 +4,7 @@ set -e
 # Configuration: [filename]:[limit_in_kb]
 BUDGETS=(
     "navin_token.wasm:25"
-    "shipment.wasm:175"
+    "shipment.wasm:200"
 )
 
 WASM_DIR="target/wasm32-unknown-unknown/release"

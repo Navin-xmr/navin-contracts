@@ -215,7 +215,6 @@ impl CircuitBreakerTracker {
 /// # Returns
 /// * `Ok(())` if operation should proceed
 /// * `Err(NavinError::CircuitBreakerOpen)` if breaker is open
-#[allow(dead_code)]
 pub fn check_transfer_allowed(env: &Env, config: &CircuitBreakerConfig) -> Result<(), NavinError> {
     let current_time = env.ledger().timestamp();
     let breaker_key = DataKey::CircuitBreakerState;
@@ -238,7 +237,6 @@ pub fn check_transfer_allowed(env: &Env, config: &CircuitBreakerConfig) -> Resul
 ///
 /// # Arguments
 /// * `env` - The execution environment
-#[allow(dead_code)]
 pub fn record_transfer_success(env: &Env) {
     let breaker_key = DataKey::CircuitBreakerState;
 
@@ -259,7 +257,6 @@ pub fn record_transfer_success(env: &Env) {
 /// # Arguments
 /// * `env` - The execution environment
 /// * `config` - Circuit breaker configuration
-#[allow(dead_code)]
 pub fn record_transfer_failure(env: &Env, config: &CircuitBreakerConfig) {
     let current_time = env.ledger().timestamp();
     let breaker_key = DataKey::CircuitBreakerState;
@@ -290,7 +287,6 @@ pub fn record_transfer_failure(env: &Env, config: &CircuitBreakerConfig) {
 /// # Returns
 /// * `Ok(())` on success
 /// * `Err(NavinError)` if not authorized
-#[allow(dead_code)]
 pub fn manual_reset(env: &Env, admin: &Address) -> Result<(), NavinError> {
     // Verify admin authorization
     admin.require_auth();
