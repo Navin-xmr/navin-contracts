@@ -856,6 +856,18 @@ impl NavinShipment {
         Ok(storage::get_version(&env))
     }
 
+    /// Get the current hash algorithm version used for data verification.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - The hash algorithm version constant.
+    pub fn get_hash_algo_version(env: Env) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        Ok(DEFAULT_HASH_ALGO)
+    }
+
     /// Get on-chain metadata for this contract.
     /// Returns version, admin, shipment count, and initialization status.
     /// Read-only — no authentication required.
@@ -880,6 +892,7 @@ impl NavinShipment {
             admin: storage::get_admin(&env),
             shipment_count: storage::get_shipment_counter(&env),
             initialized: true,
+            hash_algo_version: DEFAULT_HASH_ALGO,
         })
     }
 
@@ -3116,7 +3129,12 @@ impl NavinShipment {
     /// ```rust
     /// // contract.upgrade(env, admin, new_wasm_hash);
     /// ```
-    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) -> Result<(), NavinError> {
+    pub fn upgrade(
+        env: Env,
+        admin: Address,
+        new_wasm_hash: BytesN<32>,
+        target_version: u32,
+    ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         admin.require_auth();
 
@@ -3124,15 +3142,54 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
 
-        let new_version = storage::get_version(&env)
-            .checked_add(1)
-            .ok_or(NavinError::CounterOverflow)?;
+        let current_version = storage::get_version(&env);
 
-        storage::set_version(&env, new_version);
-        events::emit_contract_upgraded(&env, &admin, &new_wasm_hash, new_version);
+        // Enforce one-way migration guardrails and allowed edges
+        if !is_allowed_migration(current_version, target_version) {
+            return Err(NavinError::InvalidMigrationEdge);
+        }
+
+        let shipment_count = storage::get_shipment_counter(&env);
+
+        let report = MigrationReport {
+            current_version,
+            target_version,
+            affected_shipments: shipment_count,
+        };
+
+        storage::set_version(&env, target_version);
+        events::emit_contract_upgraded(&env, &admin, &new_wasm_hash, target_version);
+        events::emit_migration_report(&env, &report);
+
         env.deployer().update_current_contract_wasm(new_wasm_hash);
 
         Ok(())
+    }
+
+    /// Read-only dry-run for a proposed migration to estimate impact and validate edges.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `target_version` - The version to simulate migrating to.
+    ///
+    /// # Returns
+    /// * `Result<MigrationReport, NavinError>` - Summary of the migration impact.
+    pub fn dry_run_migration(env: Env, target_version: u32) -> Result<MigrationReport, NavinError> {
+        require_initialized(&env)?;
+
+        let current_version = storage::get_version(&env);
+
+        if !is_allowed_migration(current_version, target_version) {
+            return Err(NavinError::InvalidMigrationEdge);
+        }
+
+        let shipment_count = storage::get_shipment_counter(&env);
+
+        Ok(MigrationReport {
+            current_version,
+            target_version,
+            affected_shipments: shipment_count,
+        })
     }
 
     /// Release escrowed funds to the carrier after delivery confirmation.
@@ -3421,7 +3478,7 @@ impl NavinShipment {
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
     /// * `NavinError::Unauthorized` - If called by a non-admin.
-    /// * `NavinError::DisputeResolutionReasonHashMissing` - If reason_hash is all zeros.
+    /// * `NavinError::DisputeReasonHashMissing` - If reason_hash is all zeros.
     pub fn resolve_dispute(
         env: Env,
         admin: Address,
@@ -3437,8 +3494,29 @@ impl NavinShipment {
 
         // Validate reason hash is not empty
         if reason_hash == BytesN::from_array(&env, &[0u8; 32]) {
-            return Err(NavinError::DisputeResolutionReasonHashMissing);
+            return Err(NavinError::DisputeReasonHashMissing);
         }
+
+        // Idempotency check: prevent duplicate resolutions within the window
+        let mut action_payload: Vec<soroban_sdk::Val> = Vec::new(&env);
+        action_payload.push_back(Symbol::new(&env, "resolve_dispute").into_val(&env));
+        action_payload.push_back(shipment_id.into_val(&env));
+        action_payload.push_back(resolution.clone().into_val(&env));
+        action_payload.push_back(reason_hash.clone().into_val(&env));
+
+        let action_hash: BytesN<32> = env.crypto().sha256(&action_payload.to_xdr(&env)).into();
+
+        if storage::has_idempotency_window(&env, &action_hash) {
+            return Err(NavinError::DuplicateAction);
+        }
+
+        // Set the idempotency window (using config-specified duration)
+        let config = config::get_config(&env);
+        storage::set_idempotency_window(
+            &env,
+            &action_hash,
+            config.idempotency_window_seconds as u64,
+        );
 
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
@@ -4549,4 +4627,27 @@ impl NavinShipment {
         require_admin_or_operator(&env, &admin)?;
         Ok(consistency::check_all_consistency(&env))
     }
+}
+
+/// Validates whether a version transition is permitted.
+///
+/// Standard upgrades are always allowed (current + 1).
+/// Backward migrations or jump migrations must be explicitly defined.
+fn is_allowed_migration(current: u32, target: u32) -> bool {
+    // Forward progression is the standard case
+    if target == current + 1 {
+        return true;
+    }
+
+    // Explicitly allowed edges (e.g. for emergency rollback or skip-version migrations)
+    // Format: &[(from_version, to_version)]
+    let allowed_edges: &[(u32, u32)] = &[];
+
+    for &(from, to) in allowed_edges {
+        if from == current && to == target {
+            return true;
+        }
+    }
+
+    false
 }

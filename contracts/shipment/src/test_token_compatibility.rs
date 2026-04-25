@@ -117,7 +117,7 @@ fn get_balance(ctx: &TestContext, address: &Address) -> i128 {
     )
 }
 
-fn dummy_hash(env: &Env) -> BytesN<32> {
+pub fn dummy_hash(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &[1u8; 32])
 }
 

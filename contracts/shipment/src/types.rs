@@ -1,5 +1,8 @@
 use soroban_sdk::{contracttype, Address, BytesN, Map, Symbol, Vec};
 
+pub const HASH_ALGO_SHA256: u32 = 1;
+pub const DEFAULT_HASH_ALGO: u32 = HASH_ALGO_SHA256;
+
 /// Storage keys for contract data.
 ///
 /// # Examples
@@ -496,6 +499,20 @@ pub struct ContractMetadata {
     pub shipment_count: u64,
     /// Whether the contract has been initialized.
     pub initialized: bool,
+    /// Current hash algorithm version used for verification.
+    pub hash_algo_version: u32,
+}
+
+/// Structured migration report emitted on upgrade completion.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct MigrationReport {
+    /// Contract version before migration.
+    pub current_version: u32,
+    /// Contract version after migration.
+    pub target_version: u32,
+    /// Number of shipment entries affected or estimated.
+    pub affected_shipments: u64,
 }
 
 /// Dispute resolution options for admin.
