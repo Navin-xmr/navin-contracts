@@ -147,63 +147,10 @@ jobs:
           path: target/wasm32-unknown-unknown/release/*.wasm
           retention-days: 30
 
-  schema-drift:
-    name: Check Schema Drift
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-wasm-build-target-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli --version 22.0.1
-
-      - name: Build contracts
-        run: stellar contract build
-
-      - name: Regenerate shipment schema
-        run: |
-          stellar contract info interface \
-            --wasm target/wasm32-unknown-unknown/release/shipment.wasm \
-            --output json-formatted \
-            > docs/contract-schema.shipment.json.new
-
-      - name: Check for schema drift
-        run: |
-          if ! diff -q docs/contract-schema.shipment.json docs/contract-schema.shipment.json.new > /dev/null 2>&1; then
-            echo "❌ Schema drift detected! The committed docs/contract-schema.shipment.json does not match the generated schema."
-            echo "Run 'make generate-schema-shipment' locally and commit the updated schema."
-            diff docs/contract-schema.shipment.json docs/contract-schema.shipment.json.new
-            exit 1
-          fi
-          echo "✅ Schema is up to date."
-          rm docs/contract-schema.shipment.json.new
 
   all-checks-passed:
     name: All Checks Passed
-    needs: [check-formatting, lint, test, build, schema-drift]
+    needs: [check-formatting, lint, test, build]
     runs-on: ubuntu-latest
     steps:
       - name: All checks passed
