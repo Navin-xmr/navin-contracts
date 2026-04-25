@@ -38,6 +38,87 @@
     }
   },
   {
+    "udt_union_v0": {
+      "doc": "A detected violation of a consistency invariant.\\n\\nEach variant carries the `shipment_id` of the offending shipment so that\\nan admin can correlate the report back to storage for manual correction.",
+      "lib": "",
+      "name": "ConsistencyViolation",
+      "cases": [
+        {
+          "tuple_v0": {
+            "doc": "`shipment.escrow_amount` does not match the escrow storage entry.",
+            "name": "EscrowMismatch",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "`finalized == true` but status is not terminal, or escrow balance is non-zero.",
+            "name": "InvalidFinalization",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "A symbol in `paid_milestones` is not present in `payment_milestones`.",
+            "name": "MilestoneViolation",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "`updated_at < created_at` \\xe2\\x80\\x94 clock went backwards or fields were corrupted.",
+            "name": "TimestampAnomaly",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "`deadline <= created_at` \\xe2\\x80\\x94 deadline was set in the past relative to creation.",
+            "name": "DeadlineAnomaly",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Shipment ID is tracked by the counter but no storage entry exists.",
+            "name": "MissingShipment",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Batch member has a different `sender` than the first shipment in the batch.",
+            "name": "BatchSenderMismatch",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Batch member has a different `created_at` than the first shipment in the batch.",
+            "name": "BatchTimestampMismatch",
+            "type_": [
+              "u64"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
     "udt_struct_v0": {
       "doc": "Reusable response object representing the state of the contract's health.",
       "lib": "",
@@ -2936,6 +3017,39 @@
             "ok_type": {
               "udt": {
                 "name": "ShipmentStatusCursorPage"
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Scan all tracked shipments and return every consistency violation found.\\n\\nChecks per-shipment invariants across the full ledger:\\n- Escrow amounts match storage\\n- Finalized flag is only set on terminal shipments with zero escrow\\n- Paid milestones are a subset of the payment schedule\\n- Timestamps are non-decreasing\\n- Deadlines are strictly after creation time\\n\\nIntended for periodic admin audits; not safe to call on hot paths\\ndue to the O(n) scan over all shipments.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Admin or operator address (auth required).\\n\\n# Returns\\n* `Result<Vec<ConsistencyViolation>, NavinError>` - List of detected violations.\\nAn empty vec means all invariants hold.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If caller is not admin or operator.",
+      "name": "check_consistency_violations",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "vec": {
+                "element_type": {
+                  "udt": {
+                    "name": "ConsistencyViolation"
+                  }
+                }
               }
             },
             "error_type": {
