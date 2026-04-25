@@ -9979,8 +9979,10 @@ fn test_report_condition_breach_limit_exceeded() {
     );
 
     // Update config to have a small breach limit for testing
-    let mut config = crate::ContractConfig::default();
-    config.max_breaches_per_shipment = 2;
+    let config = crate::ContractConfig {
+        max_breaches_per_shipment: 2,
+        ..crate::ContractConfig::default()
+    };
     client.update_config(&admin, &config);
 
     // First breach - OK

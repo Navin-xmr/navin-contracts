@@ -400,7 +400,6 @@ pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32>
 
     // 15. max_breaches_per_shipment (u32, big-endian)
     bytes[offset..offset + 4].copy_from_slice(&config.max_breaches_per_shipment.to_be_bytes());
-    offset += 4;
 
     // Compute SHA-256 hash and convert to BytesN<32>
     let hash = env

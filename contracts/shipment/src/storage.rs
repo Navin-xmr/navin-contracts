@@ -1316,8 +1316,6 @@ pub fn increment_breach_event_count(env: &Env, shipment_id: u64) {
 // ============= Event Counter Storage Functions =============
 
 /// Get the event count for a shipment.
-
-/// Get the event count for a shipment.
 /// Returns 0 if no events have been emitted yet.
 ///
 /// # Arguments

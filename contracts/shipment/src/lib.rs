@@ -947,7 +947,7 @@ impl NavinShipment {
             &env,
             &shipment_id.to_be_bytes(),
         ));
-        payload.append(&event_type.to_xdr(&env));
+        payload.append(&event_type.clone().to_xdr(&env));
         payload.append(&soroban_sdk::Bytes::from_array(
             &env,
             &event_counter.to_be_bytes(),
@@ -2563,7 +2563,7 @@ impl NavinShipment {
 
         // Enforce milestone event payload size guard
         let current_milestone_count = storage::get_milestone_event_count(&env, shipment_id);
-        let new_milestones = milestones.len() as u32;
+        let new_milestones = milestones.len();
         if current_milestone_count
             .checked_add(new_milestones)
             .ok_or(NavinError::ArithmeticError)?
@@ -3219,7 +3219,7 @@ impl NavinShipment {
             &env,
             &shipment_id.to_be_bytes(),
         ));
-        payload.append(&resolution.to_xdr(&env));
+        payload.append(&resolution.clone().to_xdr(&env));
         payload.append(&reason_hash.clone().into());
         check_idempotency(&env, payload)?;
 
