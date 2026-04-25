@@ -36,10 +36,10 @@ pub enum NavinError {
     InvalidTimestamp = 10,
     /// Counter value overflowed the maximum capacity.
     CounterOverflow = 11,
-    /// Carrier is not listed in the company's whitelist.
-    CarrierNotWhitelisted = 12,
-    /// Carrier is not authorized to perform the action.
-    CarrierNotAuthorized = 13,
+    //    /// Carrier is not listed in the company's whitelist.
+    //    CarrierNotWhitelisted = 12,
+    //    /// Carrier is not authorized to perform the action.
+    //    CarrierNotAuthorized = 13,
     /// Amount provided is invalid (zero or negative).
     InvalidAmount = 14,
     /// Escrow for shipment has already been deposited.
@@ -85,7 +85,7 @@ pub enum NavinError {
     /// Arithmetic overflow/underflow encountered during escrow math operations.
     ArithmeticError = 35,
     /// Dispute resolution requires a reason hash.
-    DisputeResolutionReasonHashMissing = 36,
+    DisputeReasonHashMissing = 36,
     /// Company account is suspended from creating or updating shipments.
     CompanySuspended = 37,
     /// Action rejected because the shipment is finalized and locked.

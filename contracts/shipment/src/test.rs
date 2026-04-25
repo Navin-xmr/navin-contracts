@@ -6022,10 +6022,7 @@ fn test_resolve_dispute_fails_without_reason_hash() {
         &crate::DisputeResolution::ReleaseToCarrier,
         &empty_hash,
     );
-    assert_eq!(
-        res,
-        Err(Ok(crate::NavinError::DisputeResolutionReasonHashMissing))
-    );
+    assert_eq!(res, Err(Ok(crate::NavinError::DisputeReasonHashMissing)));
 }
 
 #[test]
