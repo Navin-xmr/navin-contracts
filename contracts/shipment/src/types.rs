@@ -94,12 +94,10 @@ pub enum DataKey {
     AuditEntry(u64),
     /// Total count of audit log entries.
     AuditEntryCount,
-    /// Settlement counter for generating unique settlement IDs.
-    SettlementCounter,
-    /// Settlement record keyed by settlement ID.
-    Settlement(u64),
-    /// Active settlement ID for a shipment (only one active settlement per shipment).
-    ActiveSettlement(u64),
+    /// Counter for milestone events emitted for a shipment.
+    MilestoneEventCount(u64),
+    /// Counter for condition breach events emitted for a shipment.
+    BreachEventCount(u64),
 }
 
 /// Supported user roles.
@@ -338,80 +336,6 @@ pub enum Severity {
     Critical,
 }
 
-/// Settlement state for tracking token transfer lifecycle.
-///
-/// Provides explicit in-flight state tracking for payment operations
-/// to improve observability and failure handling.
-///
-/// # Examples
-/// ```rust
-/// use crate::types::SettlementState;
-/// let state = SettlementState::Pending;
-/// ```
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum SettlementState {
-    /// No settlement operation in progress.
-    None,
-    /// Settlement operation initiated, awaiting token transfer.
-    Pending,
-    /// Token transfer completed successfully.
-    Completed,
-    /// Token transfer failed, requires investigation or retry.
-    Failed,
-}
-
-/// Settlement operation type for tracking different payment flows.
-///
-/// # Examples
-/// ```rust
-/// use crate::types::SettlementOperation;
-/// let op = SettlementOperation::Deposit;
-/// ```
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum SettlementOperation {
-    /// Escrow deposit from company to contract.
-    Deposit,
-    /// Escrow release from contract to carrier.
-    Release,
-    /// Escrow refund from contract to company.
-    Refund,
-    /// Milestone payment from contract to carrier.
-    MilestonePayment,
-}
-
-/// Settlement record for tracking token transfer operations.
-///
-/// # Examples
-/// ```rust
-/// // Struct represents a settlement operation record.
-/// ```
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct SettlementRecord {
-    /// Unique settlement identifier.
-    pub settlement_id: u64,
-    /// Associated shipment ID.
-    pub shipment_id: u64,
-    /// Type of settlement operation.
-    pub operation: SettlementOperation,
-    /// Current state of the settlement.
-    pub state: SettlementState,
-    /// Amount being transferred.
-    pub amount: i128,
-    /// Source address of the transfer.
-    pub from: Address,
-    /// Destination address of the transfer.
-    pub to: Address,
-    /// Ledger timestamp when settlement was initiated.
-    pub initiated_at: u64,
-    /// Ledger timestamp when settlement was completed or failed.
-    pub completed_at: Option<u64>,
-    /// Optional error message for failed settlements.
-    pub error_code: Option<u32>,
-}
-
 /// Geofence event types for tracking shipment location events.
 ///
 /// # Examples
@@ -629,48 +553,4 @@ pub struct Analytics {
     pub disputed_count: u64,
     /// Number of shipments currently in 'Cancelled' state.
     pub cancelled_count: u64,
-}
-
-/// TTL health summary for active datasets.
-///
-/// Provides aggregated metrics for proactive archival risk monitoring.
-/// Supports operations dashboards and indexers to detect datasets approaching
-/// expiration and trigger preventive TTL extension or archival workflows.
-///
-/// **Note on TTL Metrics**: Direct TTL values are not queryable from within
-/// Soroban contracts in production. This summary provides observable metrics
-/// about persistent storage presence and configuration parameters that operators
-/// can use to assess TTL health externally.
-///
-/// # Examples
-/// ```rust
-/// // Struct represents TTL health metrics for the contract.
-/// ```
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct TtlHealthSummary {
-    /// Total number of shipments created (from counter).
-    pub total_shipment_count: u64,
-    /// Number of shipments sampled for health check.
-    /// Due to gas constraints, only a representative sample is checked.
-    pub sampled_count: u32,
-    /// Number of sampled shipments found in persistent storage.
-    /// Shipments not in persistent storage may be archived or expired.
-    pub persistent_count: u32,
-    /// Number of sampled shipments not found in persistent storage.
-    /// These may be archived in temporary storage or fully expired.
-    pub missing_or_archived_count: u32,
-    /// Percentage of sampled shipments in persistent storage (0-100).
-    /// High percentage indicates good TTL health.
-    pub persistent_percentage: u32,
-    /// Configured TTL threshold (in ledgers) from contract config.
-    /// Shipments with TTL below this value should be extended.
-    pub ttl_threshold: u32,
-    /// Configured TTL extension (in ledgers) from contract config.
-    /// This is the amount by which TTL is extended when threshold is reached.
-    pub ttl_extension: u32,
-    /// Current ledger sequence number at the time of query.
-    pub current_ledger: u32,
-    /// Timestamp of the query for correlation with external monitoring.
-    pub query_timestamp: u64,
 }

@@ -168,7 +168,7 @@ pub fn emit_status_updated(
 ///
 /// Milestones are **never stored on-chain** — this is the canonical example
 /// of the Hash-and-Emit pattern. The full milestone payload (GPS coordinates,
-/// temperature readings, photos) lives off-chain; only its hash is emitted.
+/// temperature readings, photos) lives off-chain; only its hash is published.
 ///
 /// # Event Data
 ///
@@ -225,6 +225,8 @@ pub fn emit_milestone_recorded(
         ),
     );
     crate::storage::increment_event_count(env, shipment_id);
+    // Also track milestone-specific count for payload size guard
+    crate::storage::increment_milestone_event_count(env, shipment_id);
 }
 
 /// Emits an `escrow_deposited` event when funds are locked for a shipment.
