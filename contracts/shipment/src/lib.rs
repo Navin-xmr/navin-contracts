@@ -2434,7 +2434,7 @@ impl NavinShipment {
             return Err(NavinError::InvalidStatus);
         }
 
-        // Enforce milestone payload size guard
+        // Enforce milestone event payload size guard
         let config = config::get_config(&env);
         let current_milestone_count = storage::get_milestone_event_count(&env, shipment_id);
         if current_milestone_count >= config.max_milestones_per_shipment {
@@ -2562,6 +2562,7 @@ impl NavinShipment {
         }
 
         // Enforce milestone event payload size guard
+        let config = config::get_config(&env);
         let current_milestone_count = storage::get_milestone_event_count(&env, shipment_id);
         let new_milestones = milestones.len();
         if current_milestone_count

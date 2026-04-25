@@ -1495,6 +1495,8 @@ pub fn get_evidence_hash(env: &Env, shipment_id: u64, index: u32) -> Option<Byte
         .get(&DataKey::DisputeEvidence(shipment_id, index))
 }
 
+// ============= Milestone Event Counter Storage Functions =============
+
 // ============= Idempotency Window Storage Functions =============
 
 /// Returns true if the action hash is already within an active idempotency window.

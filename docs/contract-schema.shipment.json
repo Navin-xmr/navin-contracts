@@ -3426,6 +3426,15 @@
         },
         {
           "tuple_v0": {
+            "doc": "Counter for milestone events emitted for a shipment.",
+            "name": "MilestoneEventCount",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
             "doc": "Temporary idempotency window key \\xe2\\x80\\x94 present while the action hash is within its window.",
             "name": "IdempotencyWindow",
             "type_": [
@@ -3485,15 +3494,6 @@
           "void_v0": {
             "doc": "Total count of audit log entries.",
             "name": "AuditEntryCount"
-          }
-        },
-        {
-          "tuple_v0": {
-            "doc": "Counter for milestone events emitted for a shipment.",
-            "name": "MilestoneEventCount",
-            "type_": [
-              "u64"
-            ]
           }
         },
         {

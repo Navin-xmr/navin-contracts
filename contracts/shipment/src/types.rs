@@ -80,6 +80,8 @@ pub enum DataKey {
     DisputeEvidenceCount(u64),
     /// SHA-256 checksum of critical config fields for drift detection.
     ConfigChecksum,
+    /// Counter for milestone events emitted for a shipment.
+    MilestoneEventCount(u64),
     /// Temporary idempotency window key — present while the action hash is within its window.
     IdempotencyWindow(BytesN<32>),
     /// IoT sensor data hash stored per shipment status transition.
@@ -94,8 +96,6 @@ pub enum DataKey {
     AuditEntry(u64),
     /// Total count of audit log entries.
     AuditEntryCount,
-    /// Counter for milestone events emitted for a shipment.
-    MilestoneEventCount(u64),
     /// Counter for condition breach events emitted for a shipment.
     BreachEventCount(u64),
 }
