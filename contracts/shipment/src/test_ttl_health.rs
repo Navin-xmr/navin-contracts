@@ -8,15 +8,32 @@
 
 #![cfg(test)]
 
-use crate::test_utils;
-use crate::types::*;
-use crate::NavinShipment;
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
+use crate::{NavinShipment, NavinShipmentClient};
+use soroban_sdk::{
+    contract, contractimpl, testutils::Address as _, Address, BytesN, Env,
+};
+
+#[contract]
+struct MockToken;
+
+#[contractimpl]
+impl MockToken {
+    pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {
+        // Mock implementation - always succeeds
+    }
+}
+
+fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
+    let (env, admin) = super::test_utils::setup_env();
+    let token_contract = env.register(MockToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    (env, client, admin, token_contract)
+}
 
 /// Helper to create a shipment with default values
 fn create_test_shipment(
+    client: &NavinShipmentClient,
     env: &Env,
-    contract_id: &Address,
     company: &Address,
     carrier: &Address,
 ) -> u64 {
@@ -24,29 +41,26 @@ fn create_test_shipment(
     let data_hash = BytesN::from_array(env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 86400; // 1 day from now
 
-    let shipment_id = NavinShipment::create_shipment(
-        env.clone(),
-        company.clone(),
-        receiver,
-        carrier.clone(),
-        data_hash,
-        soroban_sdk::Vec::new(env),
-        deadline,
-    )
-    .unwrap();
-
-    shipment_id
+    client
+        .create_shipment(
+            company,
+            &receiver,
+            carrier,
+            &data_hash,
+            &soroban_sdk::Vec::new(env),
+            &deadline,
+        )
 }
 
 #[test]
 fn test_ttl_health_summary_no_shipments() {
-    let (env, contract_id, admin, token_contract) = test_utils::setup();
+    let (_env, client, admin, token_contract) = setup_shipment_env();
 
     // Initialize contract
-    NavinShipment::initialize(env.clone(), admin.clone(), token_contract).unwrap();
+    client.initialize(&admin, &token_contract);
 
     // Query TTL health with no shipments
-    let health = NavinShipment::get_ttl_health_summary(env.clone()).unwrap();
+    let health = client.get_ttl_health_summary();
 
     assert_eq!(health.total_shipment_count, 0);
     assert_eq!(health.sampled_count, 0);
@@ -61,22 +75,22 @@ fn test_ttl_health_summary_no_shipments() {
 
 #[test]
 fn test_ttl_health_summary_single_shipment() {
-    let (env, contract_id, admin, token_contract) = test_utils::setup();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     // Initialize contract
-    NavinShipment::initialize(env.clone(), admin.clone(), token_contract).unwrap();
+    client.initialize(&admin, &token_contract);
 
     // Add company and carrier
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
-    NavinShipment::add_company(env.clone(), admin.clone(), company.clone()).unwrap();
-    NavinShipment::add_carrier(env.clone(), admin.clone(), carrier.clone()).unwrap();
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
 
     // Create a single shipment
-    create_test_shipment(&env, &contract_id, &company, &carrier);
+    create_test_shipment(&client, &env, &company, &carrier);
 
     // Query TTL health
-    let health = NavinShipment::get_ttl_health_summary(env.clone()).unwrap();
+    let health = client.get_ttl_health_summary();
 
     assert_eq!(health.total_shipment_count, 1);
     assert_eq!(health.sampled_count, 1);
@@ -87,24 +101,24 @@ fn test_ttl_health_summary_single_shipment() {
 
 #[test]
 fn test_ttl_health_summary_multiple_shipments() {
-    let (env, contract_id, admin, token_contract) = test_utils::setup();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     // Initialize contract
-    NavinShipment::initialize(env.clone(), admin.clone(), token_contract).unwrap();
+    client.initialize(&admin, &token_contract);
 
     // Add company and carrier
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
-    NavinShipment::add_company(env.clone(), admin.clone(), company.clone()).unwrap();
-    NavinShipment::add_carrier(env.clone(), admin.clone(), carrier.clone()).unwrap();
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
 
     // Create 5 shipments
     for _ in 0..5 {
-        create_test_shipment(&env, &contract_id, &company, &carrier);
+        create_test_shipment(&client, &env, &company, &carrier);
     }
 
     // Query TTL health
-    let health = NavinShipment::get_ttl_health_summary(env.clone()).unwrap();
+    let health = client.get_ttl_health_summary();
 
     assert_eq!(health.total_shipment_count, 5);
     assert_eq!(health.sampled_count, 5); // All should be sampled (< 20)
@@ -115,25 +129,25 @@ fn test_ttl_health_summary_multiple_shipments() {
 
 #[test]
 fn test_ttl_health_summary_deterministic() {
-    let (env, contract_id, admin, token_contract) = test_utils::setup();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     // Initialize contract
-    NavinShipment::initialize(env.clone(), admin.clone(), token_contract).unwrap();
+    client.initialize(&admin, &token_contract);
 
     // Add company and carrier
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
-    NavinShipment::add_company(env.clone(), admin.clone(), company.clone()).unwrap();
-    NavinShipment::add_carrier(env.clone(), admin.clone(), carrier.clone()).unwrap();
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
 
     // Create 10 shipments
     for _ in 0..10 {
-        create_test_shipment(&env, &contract_id, &company, &carrier);
+        create_test_shipment(&client, &env, &company, &carrier);
     }
 
     // Query TTL health multiple times
-    let health1 = NavinShipment::get_ttl_health_summary(env.clone()).unwrap();
-    let health2 = NavinShipment::get_ttl_health_summary(env.clone()).unwrap();
+    let health1 = client.get_ttl_health_summary();
+    let health2 = client.get_ttl_health_summary();
 
     // Results should be deterministic (same ledger, same state)
     assert_eq!(health1.total_shipment_count, health2.total_shipment_count);
@@ -144,25 +158,25 @@ fn test_ttl_health_summary_deterministic() {
 
 #[test]
 fn test_ttl_health_summary_config_values() {
-    let (env, contract_id, admin, token_contract) = test_utils::setup();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     // Initialize contract
-    NavinShipment::initialize(env.clone(), admin.clone(), token_contract).unwrap();
+    client.initialize(&admin, &token_contract);
 
     // Get config to verify values
-    let config = NavinShipment::get_contract_config(env.clone()).unwrap();
+    let config = client.get_contract_config();
 
     // Add company and carrier
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
-    NavinShipment::add_company(env.clone(), admin.clone(), company.clone()).unwrap();
-    NavinShipment::add_carrier(env.clone(), admin.clone(), carrier.clone()).unwrap();
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
 
     // Create a shipment
-    create_test_shipment(&env, &contract_id, &company, &carrier);
+    create_test_shipment(&client, &env, &company, &carrier);
 
     // Query TTL health
-    let health = NavinShipment::get_ttl_health_summary(env.clone()).unwrap();
+    let health = client.get_ttl_health_summary();
 
     // Verify config values are included in summary
     assert_eq!(health.ttl_threshold, config.shipment_ttl_threshold);
@@ -172,38 +186,35 @@ fn test_ttl_health_summary_config_values() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #2)")]
 fn test_ttl_health_summary_not_initialized() {
-    let env = Env::default();
-    let contract_id = env.register(NavinShipment, ());
+    let (env, _client, _admin, _token_contract) = setup_shipment_env();
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
 
-    env.as_contract(&contract_id, || {
-        // Try to query TTL health without initialization
-        let result = NavinShipment::get_ttl_health_summary(env.clone());
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), NavinError::NotInitialized);
-    });
+    // Try to query TTL health without initialization - should panic with NotInitialized
+    client.get_ttl_health_summary();
 }
 
 #[test]
 fn test_ttl_health_summary_edge_case_exactly_20_shipments() {
-    let (env, contract_id, admin, token_contract) = test_utils::setup();
+    let (env, client, admin, token_contract) = setup_shipment_env();
 
     // Initialize contract
-    NavinShipment::initialize(env.clone(), admin.clone(), token_contract).unwrap();
+    client.initialize(&admin, &token_contract);
 
     // Add company and carrier
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
-    NavinShipment::add_company(env.clone(), admin.clone(), company.clone()).unwrap();
-    NavinShipment::add_carrier(env.clone(), admin.clone(), carrier.clone()).unwrap();
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
 
     // Create exactly 20 shipments (boundary case)
     for _ in 0..20 {
-        create_test_shipment(&env, &contract_id, &company, &carrier);
+        create_test_shipment(&client, &env, &company, &carrier);
     }
 
     // Query TTL health
-    let health = NavinShipment::get_ttl_health_summary(env.clone()).unwrap();
+    let health = client.get_ttl_health_summary();
 
     assert_eq!(health.total_shipment_count, 20);
     assert_eq!(health.sampled_count, 20); // All should be sampled
