@@ -18,7 +18,7 @@ mod rate_limit;
 mod recovery;
 mod storage;
 mod stress_test;
-mod test;
+pub mod test;
 #[cfg(test)]
 mod test_consistency;
 #[cfg(test)]
@@ -31,6 +31,10 @@ mod test_finalization;
 mod test_performance;
 #[cfg(test)]
 mod test_settlement;
+#[cfg(test)]
+mod test_settlement_machine;
+#[cfg(test)]
+mod test_settlement_transitions;
 mod types;
 mod validation;
 
@@ -131,6 +135,12 @@ fn create_settlement(
     from: &Address,
     to: &Address,
 ) -> Result<u64, NavinError> {
+    if let Some(active_id) = storage::get_active_settlement(env, shipment_id) {
+        let settlement = storage::get_settlement(env, active_id).ok_or(NavinError::ShipmentNotFound)?;
+        if settlement.state == SettlementState::Pending {
+            return Err(NavinError::SettlementInProgress);
+        }
+    }
     let settlement_id = storage::increment_settlement_counter(env);
     let settlement = SettlementRecord {
         settlement_id,
@@ -164,7 +174,7 @@ fn complete_settlement(env: &Env, settlement_id: u64, shipment_id: u64) -> Resul
 fn fail_settlement(
     env: &Env,
     settlement_id: u64,
-    shipment_id: u64,
+    _shipment_id: u64,
     error_code: u32,
 ) -> Result<(), NavinError> {
     let mut settlement = storage::get_settlement(env, settlement_id)
@@ -173,7 +183,7 @@ fn fail_settlement(
     settlement.completed_at = Some(env.ledger().timestamp());
     settlement.error_code = Some(error_code);
     storage::set_settlement(env, &settlement);
-    storage::clear_active_settlement(env, shipment_id);
+    // Note: We do NOT clear the active settlement here so it can be retried or investigated.
     Ok(())
 }
 
@@ -2020,8 +2030,9 @@ impl NavinShipment {
                 Ok(())
             }
             Err(e) => {
-                // Mark settlement as failed
+                // Mark settlement as failed and persist the failure state
                 fail_settlement(&env, settlement_id, shipment_id, e as u32)?;
+                // Return the error to propagate failure to caller
                 Err(e)
             }
         }
@@ -2209,6 +2220,54 @@ impl NavinShipment {
     pub fn get_active_settlement(env: Env, shipment_id: u64) -> Result<Option<u64>, NavinError> {
         require_initialized(&env)?;
         Ok(storage::get_active_settlement(&env, shipment_id))
+    }
+
+    /// Explicitly cancel a failed active settlement to unblock the shipment.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `caller` - Address authorizing the cancellation (sender, receiver, or admin).
+    /// * `shipment_id` - ID of the shipment.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok on success.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not authorized.
+    /// * `NavinError::SettlementNotFailed` - If the active settlement is not in a failed state.
+    pub fn cancel_active_settlement(
+        env: Env,
+        caller: Address,
+        shipment_id: u64,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        caller.require_auth();
+
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        let admin = storage::get_admin(&env);
+
+        if caller != shipment.sender && caller != shipment.receiver && caller != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        let active_id = storage::get_active_settlement(&env, shipment_id)
+            .ok_or(NavinError::ShipmentNotFound)?;
+        let settlement = storage::get_settlement(&env, active_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        if settlement.state != SettlementState::Failed {
+            return Err(NavinError::SettlementNotFailed);
+        }
+
+        storage::clear_active_settlement(&env, shipment_id);
+
+        env.events().publish(
+            (Symbol::new(&env, "settlement_cancelled"),),
+            (shipment_id, active_id, caller),
+        );
+
+        Ok(())
     }
 
     /// Get the total number of settlements created.
