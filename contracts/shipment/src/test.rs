@@ -8,8 +8,8 @@ use crate::{
 };
 use soroban_sdk::{
     contract, contracterror, contractimpl,
-    testutils::{storage::Persistent, Address as _, Events},
-    Address, BytesN, Env, Symbol, TryFromVal,
+    testutils::{storage::Persistent, Address as _, Events, Ledger as _},
+    Address, BytesN, Env, Symbol, TryFromVal, Vec,
 };
 
 #[contract]
@@ -9946,3 +9946,73 @@ fn test_guardian_can_resolve_disputes() {
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, ShipmentStatus::Cancelled);
 }
+
+#[test]
+fn test_resolve_dispute_idempotency() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let guardian = Address::generate(&env);
+    client.add_guardian(&admin, &guardian);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    client.deposit_escrow(&company, &shipment_id, &1000);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    client.raise_dispute(&company, &shipment_id, &data_hash);
+
+    // Set idempotency window to 300s
+    let mut config = crate::ContractConfig::default();
+    config.idempotency_window_seconds = 300;
+    client.update_config(&admin, &config);
+
+    // Resolve once - OK
+    client.resolve_dispute(
+        &guardian,
+        &shipment_id,
+        &crate::DisputeResolution::RefundToCompany,
+        &data_hash,
+    );
+
+    // Resolve again immediately - Should fail with DuplicateAction
+    let res = client.try_resolve_dispute(
+        &guardian,
+        &shipment_id,
+        &crate::DisputeResolution::RefundToCompany,
+        &data_hash,
+    );
+    assert_eq!(res, Err(Ok(crate::NavinError::DuplicateAction)));
+
+    // Advance time past the window
+    env.ledger().with_mut(|l| {
+        l.timestamp += 301;
+        l.sequence_number += 61; // 301 / 5 = ~60 ledgers
+    });
+
+    // Resolve again - Now it fails with ShipmentFinalized (because it's already resolved/cancelled/finalized)
+    // but NOT DuplicateAction anymore.
+    let res = client.try_resolve_dispute(
+        &guardian,
+        &shipment_id,
+        &crate::DisputeResolution::RefundToCompany,
+        &data_hash,
+    );
+    assert_eq!(res, Err(Ok(crate::NavinError::ShipmentFinalized)));
+}
+
