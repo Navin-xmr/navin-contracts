@@ -88,6 +88,24 @@ fn has_event(env: &Env, name: &str) -> bool {
     })
 }
 
+fn contract_event_topics_since(
+    env: &Env,
+    contract: &Address,
+) -> std::vec::Vec<std::string::String> {
+    let mut topics_out = std::vec::Vec::new();
+    for (event_contract, topics, _data) in env.events().all().iter() {
+        if event_contract != *contract {
+            continue;
+        }
+
+        if let Some(raw_topic) = topics.get(0) {
+            let symbol = soroban_sdk::Symbol::from_val(env, &raw_topic);
+            topics_out.push(symbol.to_string());
+        }
+    }
+    topics_out
+}
+
 #[test]
 fn test_debug_event_structure() {
     let (env, admin) = setup_env();
@@ -240,11 +258,18 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
     // STEP 3 — "warehouse" milestone → 30 % = 300 tokens released
     // =========================================================================
     advance_time(&env, 120);
+    let _ = env.events().all();
     shipment.record_milestone(
         &carrier,
         &shipment_id,
         &Symbol::new(&env, "warehouse"),
         &hash(&env, 0xCC),
+    );
+    let warehouse_topics = contract_event_topics_since(&env, &shipment.address);
+    assert_eq!(
+        warehouse_topics,
+        std::vec!["milestone_recorded".to_string(), "escrow_released".to_string()],
+        "record_milestone must emit milestone_recorded before escrow_released"
     );
     assert!(
         has_event(&env, "milestone_recorded"),
@@ -263,11 +288,18 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
     // STEP 4 — "port" milestone → 30 % = 300 more tokens released
     // =========================================================================
     advance_time(&env, 120);
+    let _ = env.events().all();
     shipment.record_milestone(
         &carrier,
         &shipment_id,
         &Symbol::new(&env, "port"),
         &hash(&env, 0xDD),
+    );
+    let port_topics = contract_event_topics_since(&env, &shipment.address);
+    assert_eq!(
+        port_topics,
+        std::vec!["milestone_recorded".to_string(), "escrow_released".to_string()],
+        "milestone payment ordering must stay deterministic"
     );
     assert!(
         has_event(&env, "milestone_recorded"),
@@ -286,7 +318,22 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
     // STEP 5 — Receiver confirms delivery → remaining 400 tokens released
     // =========================================================================
     let confirmation_hash = hash(&env, 0xEE);
+    let _ = env.events().all();
     shipment.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+    let confirm_topics = contract_event_topics_since(&env, &shipment.address);
+    assert_eq!(
+        confirm_topics,
+        std::vec![
+            "escrow_released".to_string(),
+            "delivery_confirmed".to_string(),
+            "delivery_success".to_string(),
+            "carrier_milestone_rate".to_string(),
+            "carrier_on_time_delivery".to_string(),
+            "notification".to_string(),
+            "notification".to_string(),
+        ],
+        "confirm_delivery event order must remain deterministic"
+    );
     assert!(
         has_event(&env, "delivery_confirmed"),
         "delivery_confirmed event"
@@ -530,7 +577,14 @@ fn test_e2e_partial_milestones_then_cancel_via_deadline() {
 
     // ── Advance past deadline and trigger permissionless expiry refund ────────
     advance_time(&env, 7_200);
+    let _ = env.events().all();
     shipment.check_deadline(&shipment_id);
+    let deadline_topics = contract_event_topics_since(&env, &shipment.address);
+    assert_eq!(
+        deadline_topics,
+        std::vec!["escrow_refunded".to_string(), "shipment_expired".to_string()],
+        "deadline expiry must emit refund before expired marker"
+    );
     assert!(
         has_event(&env, "shipment_expired"),
         "shipment_expired event"
@@ -618,7 +672,14 @@ fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
     advance_time(&env, 7_200);
 
     // ── Any caller triggers expiry ────────────────────────────────────────────
+    let _ = env.events().all();
     shipment.check_deadline(&shipment_id);
+    let deadline_topics = contract_event_topics_since(&env, &shipment.address);
+    assert_eq!(
+        deadline_topics,
+        std::vec!["escrow_refunded".to_string(), "shipment_expired".to_string()],
+        "deadline refund and expiry ordering must be deterministic"
+    );
     assert!(
         has_event(&env, "shipment_expired"),
         "shipment_expired event"
@@ -641,4 +702,93 @@ fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
     assert_eq!(s.escrow_amount, 0);
 
     std::println!("✅ Deadline expiry — balances and events verified");
+}
+
+#[test]
+fn test_regression_milestone_release_event_ordering() {
+    let (env, admin) = setup_env();
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    let (token_id, token) = deploy_token(&env, &admin);
+    let shipment = deploy_shipment(&env, &admin, &token_id);
+
+    shipment.add_company(&admin, &company);
+    shipment.add_carrier(&admin, &carrier);
+    token.mint(&admin, &company, &2_000_i128);
+
+    let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "pickup"), 100_u32));
+
+    let shipment_id = shipment.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &hash(&env, 0x31),
+        &milestones,
+        &(env.ledger().timestamp() + 86_400),
+    );
+
+    shipment.deposit_escrow(&company, &shipment_id, &1_000_i128);
+    shipment.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &hash(&env, 0x32),
+    );
+
+    advance_time(&env, 120);
+    let _ = env.events().all();
+    shipment.record_milestone(
+        &carrier,
+        &shipment_id,
+        &Symbol::new(&env, "pickup"),
+        &hash(&env, 0x33),
+    );
+
+    let topics = contract_event_topics_since(&env, &shipment.address);
+    assert_eq!(
+        topics,
+        std::vec!["milestone_recorded".to_string(), "escrow_released".to_string()],
+        "regression guard: milestone and escrow release emitters must not be reordered"
+    );
+}
+
+#[test]
+fn test_regression_deadline_refund_event_ordering() {
+    let (env, admin) = setup_env();
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    let (token_id, token) = deploy_token(&env, &admin);
+    let shipment = deploy_shipment(&env, &admin, &token_id);
+
+    shipment.add_company(&admin, &company);
+    shipment.add_carrier(&admin, &carrier);
+    token.mint(&admin, &company, &2_000_i128);
+
+    let shipment_id = shipment.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &hash(&env, 0x41),
+        &Vec::new(&env),
+        &(env.ledger().timestamp() + 1),
+    );
+    shipment.deposit_escrow(&company, &shipment_id, &1_000_i128);
+
+    advance_time(&env, 7_200);
+    let _ = env.events().all();
+    shipment.check_deadline(&shipment_id);
+
+    let topics = contract_event_topics_since(&env, &shipment.address);
+    assert_eq!(
+        topics,
+        std::vec!["escrow_refunded".to_string(), "shipment_expired".to_string()],
+        "regression guard: refund must be emitted before shipment_expired"
+    );
 }
