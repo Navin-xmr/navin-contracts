@@ -3472,7 +3472,7 @@ fn test_get_hash_algo_version() {
 fn test_dry_run_migration_success() {
     let (_env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
-    
+
     let report = client.dry_run_migration(&2);
     assert_eq!(report.current_version, 1);
     assert_eq!(report.target_version, 2);
@@ -3485,7 +3485,7 @@ fn test_upgrade_invalid_edge_fails() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
     client.initialize(&admin, &token_contract);
-    
+
     // Jump from 1 to 3 is not allowed
     client.upgrade(&admin, &new_wasm_hash, &3);
 }
@@ -3495,7 +3495,7 @@ fn test_upgrade_invalid_edge_fails() {
 fn test_dry_run_invalid_edge_fails() {
     let (_env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
-    
+
     // Rollback from 1 to 0 is not allowed
     client.dry_run_migration(&0);
 }

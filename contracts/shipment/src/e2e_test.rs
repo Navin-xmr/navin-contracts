@@ -268,7 +268,10 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
     let warehouse_topics = contract_event_topics_since(&env, &shipment.address);
     assert_eq!(
         warehouse_topics,
-        std::vec!["milestone_recorded".to_string(), "escrow_released".to_string()],
+        std::vec![
+            "milestone_recorded".to_string(),
+            "escrow_released".to_string()
+        ],
         "record_milestone must emit milestone_recorded before escrow_released"
     );
     assert!(
@@ -298,7 +301,10 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
     let port_topics = contract_event_topics_since(&env, &shipment.address);
     assert_eq!(
         port_topics,
-        std::vec!["milestone_recorded".to_string(), "escrow_released".to_string()],
+        std::vec![
+            "milestone_recorded".to_string(),
+            "escrow_released".to_string()
+        ],
         "milestone payment ordering must stay deterministic"
     );
     assert!(
@@ -582,7 +588,10 @@ fn test_e2e_partial_milestones_then_cancel_via_deadline() {
     let deadline_topics = contract_event_topics_since(&env, &shipment.address);
     assert_eq!(
         deadline_topics,
-        std::vec!["escrow_refunded".to_string(), "shipment_expired".to_string()],
+        std::vec![
+            "escrow_refunded".to_string(),
+            "shipment_expired".to_string()
+        ],
         "deadline expiry must emit refund before expired marker"
     );
     assert!(
@@ -677,7 +686,10 @@ fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
     let deadline_topics = contract_event_topics_since(&env, &shipment.address);
     assert_eq!(
         deadline_topics,
-        std::vec!["escrow_refunded".to_string(), "shipment_expired".to_string()],
+        std::vec![
+            "escrow_refunded".to_string(),
+            "shipment_expired".to_string()
+        ],
         "deadline refund and expiry ordering must be deterministic"
     );
     assert!(
@@ -751,7 +763,10 @@ fn test_regression_milestone_release_event_ordering() {
     let topics = contract_event_topics_since(&env, &shipment.address);
     assert_eq!(
         topics,
-        std::vec!["milestone_recorded".to_string(), "escrow_released".to_string()],
+        std::vec![
+            "milestone_recorded".to_string(),
+            "escrow_released".to_string()
+        ],
         "regression guard: milestone and escrow release emitters must not be reordered"
     );
 }
@@ -788,7 +803,10 @@ fn test_regression_deadline_refund_event_ordering() {
     let topics = contract_event_topics_since(&env, &shipment.address);
     assert_eq!(
         topics,
-        std::vec!["escrow_refunded".to_string(), "shipment_expired".to_string()],
+        std::vec![
+            "escrow_refunded".to_string(),
+            "shipment_expired".to_string()
+        ],
         "regression guard: refund must be emitted before shipment_expired"
     );
 }
