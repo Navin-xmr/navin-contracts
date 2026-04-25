@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use crate::{
     test_utils::{advance_ledger_time, setup_env},
     types::ShipmentStatus,

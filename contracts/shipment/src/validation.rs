@@ -410,8 +410,7 @@ mod tests {
             assert_eq!(
                 validate_symbol(&env, &symbol),
                 Ok(()),
-                "Symbol '{}' should be valid",
-                name
+                "Symbol '{name}' should be valid"
             );
         }
     }
@@ -508,9 +507,7 @@ mod tests {
             assert_eq!(
                 validate_metadata_symbols(&env, &key, &value),
                 Ok(()),
-                "Pair ({}, {}) should be valid",
-                key_str,
-                val_str
+                "Pair ({key_str}, {val_str}) should be valid"
             );
         }
     }
