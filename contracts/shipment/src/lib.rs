@@ -3117,7 +3117,7 @@ impl NavinShipment {
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
     /// * `NavinError::Unauthorized` - If called by a non-admin.
-    /// * `NavinError::DisputeResolutionReasonHashMissing` - If reason_hash is all zeros.
+    /// * `NavinError::DisputeReasonHashMissing` - If reason_hash is all zeros.
     pub fn resolve_dispute(
         env: Env,
         admin: Address,
@@ -3133,7 +3133,7 @@ impl NavinShipment {
 
         // Validate reason hash is not empty
         if reason_hash == BytesN::from_array(&env, &[0u8; 32]) {
-            return Err(NavinError::DisputeResolutionReasonHashMissing);
+            return Err(NavinError::DisputeReasonHashMissing);
         }
 
         let mut shipment =
