@@ -169,6 +169,23 @@ Quick deployment:
 ./scripts/init-testnet.sh
 ```
 
+## Documentation
+
+### Operational Guides
+
+- **[TTL Maintenance Playbook](contracts/shipment/docs/TTL_MAINTENANCE_PLAYBOOK.md)** - Complete operational procedures for maintaining contract state TTL health, including routine maintenance, monitoring, and emergency response
+- **[TTL Quick Reference](contracts/shipment/docs/TTL_QUICK_REFERENCE.md)** - Quick reference card for common TTL operations and emergency procedures
+- **[TTL Health Summary](contracts/shipment/docs/TTL_HEALTH_SUMMARY.md)** - Technical documentation for the TTL health monitoring query
+
+### For Operators
+
+If you're responsible for maintaining a deployed Navin contract:
+
+1. **Start here**: [TTL Quick Reference](contracts/shipment/docs/TTL_QUICK_REFERENCE.md) for common operations
+2. **Deep dive**: [TTL Maintenance Playbook](contracts/shipment/docs/TTL_MAINTENANCE_PLAYBOOK.md) for complete procedures
+3. **Set up monitoring**: Follow the automated monitoring setup in the playbook
+4. **Emergency response**: Keep the quick reference handy for incident response
+
 ## Architecture
 
 Navin's smart contracts handle:
@@ -177,6 +194,7 @@ Navin's smart contracts handle:
 - **Access Control**: Role-based permissions for different stakeholders
 - **Transaction Logging**: Immutable audit trail of all operations
 - **Asset Locking**: Time-based locks for escrow and guarantees
+- **TTL Management**: Automated state persistence with configurable TTL thresholds
 
 ## Technology Stack
 
