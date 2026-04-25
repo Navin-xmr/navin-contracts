@@ -9,9 +9,7 @@
 #![cfg(test)]
 
 use crate::{NavinShipment, NavinShipmentClient};
-use soroban_sdk::{
-    contract, contractimpl, testutils::Address as _, Address, BytesN, Env,
-};
+use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env};
 
 #[contract]
 struct MockToken;
@@ -41,15 +39,14 @@ fn create_test_shipment(
     let data_hash = BytesN::from_array(env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 86400; // 1 day from now
 
-    client
-        .create_shipment(
-            company,
-            &receiver,
-            carrier,
-            &data_hash,
-            &soroban_sdk::Vec::new(env),
-            &deadline,
-        )
+    client.create_shipment(
+        company,
+        &receiver,
+        carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(env),
+        &deadline,
+    )
 }
 
 #[test]
