@@ -2459,7 +2459,7 @@ fn test_record_milestones_batch_max_size() {
     let mut milestones = soroban_sdk::Vec::new(&env);
     for i in 0..10 {
         milestones.push_back((
-            Symbol::new(&env, &std::format!("checkpoint_{}", i)),
+            Symbol::new(&env, &std::format!("checkpoint_{i}")),
             BytesN::from_array(&env, &[i as u8; 32]),
         ));
     }
@@ -2510,7 +2510,7 @@ fn test_record_milestones_batch_oversized() {
     let mut milestones = soroban_sdk::Vec::new(&env);
     for i in 0..11 {
         milestones.push_back((
-            Symbol::new(&env, &std::format!("checkpoint_{}", i)),
+            Symbol::new(&env, &std::format!("checkpoint_{i}")),
             BytesN::from_array(&env, &[i as u8; 32]),
         ));
     }

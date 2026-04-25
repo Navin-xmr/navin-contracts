@@ -8,6 +8,7 @@ use soroban_sdk::{
 mod audit;
 mod circuit_breaker;
 mod config;
+pub mod consistency;
 pub mod diagnostics;
 mod e2e_test;
 mod errors;
@@ -19,7 +20,13 @@ mod storage;
 mod stress_test;
 mod test;
 #[cfg(test)]
+mod test_consistency;
+#[cfg(test)]
+mod test_cross_contract_integration;
+#[cfg(test)]
 mod test_finalization;
+#[cfg(test)]
+mod test_performance;
 mod types;
 mod validation;
 
@@ -39,6 +46,7 @@ mod test_suspension;
 mod test_utils;
 
 pub use config::*;
+pub use consistency::*;
 pub use diagnostics::*;
 pub use errors::*;
 pub use types::*;
@@ -52,6 +60,13 @@ fn extend_shipment_ttl(env: &Env, shipment_id: u64) {
         config.shipment_ttl_threshold,
         config.shipment_ttl_extension,
     );
+}
+
+/// Extend TTL using already-cached threshold/extension values, avoiding a
+/// redundant `get_config` storage read when called inside a batch loop.
+#[inline]
+fn extend_shipment_ttl_cached(env: &Env, shipment_id: u64, threshold: u32, extension: u32) {
+    storage::extend_shipment_ttl(env, shipment_id, threshold, extension);
 }
 
 fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(), NavinError> {
@@ -1588,7 +1603,13 @@ impl NavinShipment {
             storage::set_shipment_counter(&env, shipment_id);
             storage::increment_status_count(&env, &ShipmentStatus::Created);
             storage::increment_active_shipment_count(&env, &sender);
-            extend_shipment_ttl(&env, shipment_id);
+            // Use the cached-config variant to avoid re-reading config from storage per item.
+            extend_shipment_ttl_cached(
+                &env,
+                shipment_id,
+                config.shipment_ttl_threshold,
+                config.shipment_ttl_extension,
+            );
 
             events::emit_shipment_created(
                 &env,
@@ -4131,5 +4152,38 @@ impl NavinShipment {
     pub fn reset_circuit_breaker(env: Env, admin: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
         circuit_breaker::manual_reset(&env, &admin)
+    }
+
+    /// Scan all tracked shipments and return every consistency violation found.
+    ///
+    /// Checks per-shipment invariants across the full ledger:
+    /// - Escrow amounts match storage
+    /// - Finalized flag is only set on terminal shipments with zero escrow
+    /// - Paid milestones are a subset of the payment schedule
+    /// - Timestamps are non-decreasing
+    /// - Deadlines are strictly after creation time
+    ///
+    /// Intended for periodic admin audits; not safe to call on hot paths
+    /// due to the O(n) scan over all shipments.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Admin or operator address (auth required).
+    ///
+    /// # Returns
+    /// * `Result<Vec<ConsistencyViolation>, NavinError>` - List of detected violations.
+    ///   An empty vec means all invariants hold.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not admin or operator.
+    pub fn check_consistency_violations(
+        env: Env,
+        admin: Address,
+    ) -> Result<soroban_sdk::Vec<ConsistencyViolation>, NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+        require_admin_or_operator(&env, &admin)?;
+        Ok(consistency::check_all_consistency(&env))
     }
 }
