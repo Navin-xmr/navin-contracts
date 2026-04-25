@@ -295,7 +295,10 @@ pub fn preflight_check_shipment_available(
 /// fields.push_back(shipment_id.into_val(&env));
 /// let hash = compute_offchain_payload_hash(&env, fields);
 /// ```
-pub fn compute_offchain_payload_hash(env: &Env, fields: soroban_sdk::Vec<soroban_sdk::Val>) -> BytesN<32> {
+pub fn compute_offchain_payload_hash(
+    env: &Env,
+    fields: soroban_sdk::Vec<soroban_sdk::Val>,
+) -> BytesN<32> {
     env.crypto().sha256(&fields.to_xdr(env)).into()
 }
 

@@ -9960,7 +9960,7 @@ fn test_get_canonical_hash() {
     let hash2 = client.get_canonical_hash(&fields);
 
     assert_eq!(hash1, hash2);
-    
+
     // Ensure different fields result in different hash
     fields.push_back(456_u64.into_val(&env));
     let hash3 = client.get_canonical_hash(&fields);
