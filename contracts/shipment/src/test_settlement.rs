@@ -2,9 +2,31 @@
 
 use crate::test_utils::*;
 use crate::types::*;
-use crate::NavinShipmentClient;
+use crate::{NavinShipment, NavinShipmentClient};
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::{Address, BytesN, Env};
+
+fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
+    let (env, admin) = crate::test_utils::setup_env();
+    let token_contract = env.register_stellar_asset_contract(admin.clone());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+
+    (env, client, admin, token_contract)
+}
+
+fn setup_shipment_env_with_failing_token() -> (Env, NavinShipmentClient<'static>, Address, Address)
+{
+    let (env, admin) = crate::test_utils::setup_env();
+    // For simplicity in this test, we use a regular token but mock a failure if needed
+    let token_contract = env.register_stellar_asset_contract(admin.clone());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+
+    (env, client, admin, token_contract)
+}
+
+fn dummy_hash(env: &Env) -> BytesN<32> {
+    BytesN::from_array(env, &[1u8; 32])
+}
 
 /// Test that deposit_escrow creates a settlement record in Pending state
 /// and transitions to Completed on success.
@@ -15,8 +37,8 @@ fn test_deposit_escrow_settlement_success() {
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
 
-    client.set_company_role(&admin, &company);
-    client.set_carrier_role(&admin, &carrier);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
 
     let data_hash = dummy_hash(&env);
     let deadline = env.ledger().timestamp() + 86400;
@@ -64,8 +86,8 @@ fn test_deposit_escrow_settlement_failure() {
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
 
-    client.set_company_role(&admin, &company);
-    client.set_carrier_role(&admin, &carrier);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
 
     let data_hash = dummy_hash(&env);
     let deadline = env.ledger().timestamp() + 86400;
@@ -108,8 +130,8 @@ fn test_release_escrow_settlement_success() {
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
 
-    client.set_company_role(&admin, &company);
-    client.set_carrier_role(&admin, &carrier);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
 
     let data_hash = dummy_hash(&env);
     let deadline = env.ledger().timestamp() + 86400;
@@ -165,8 +187,8 @@ fn test_refund_escrow_settlement_success() {
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
 
-    client.set_company_role(&admin, &company);
-    client.set_carrier_role(&admin, &carrier);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
 
     let data_hash = dummy_hash(&env);
     let deadline = env.ledger().timestamp() + 86400;
@@ -215,8 +237,8 @@ fn test_refund_escrow_settlement_failure() {
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
 
-    client.set_company_role(&admin, &company);
-    client.set_carrier_role(&admin, &carrier);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
 
     let data_hash = dummy_hash(&env);
     let deadline = env.ledger().timestamp() + 86400;
@@ -265,8 +287,8 @@ fn test_settlement_full_lifecycle() {
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
 
-    client.set_company_role(&admin, &company);
-    client.set_carrier_role(&admin, &carrier);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
 
     let data_hash = dummy_hash(&env);
     let deadline = env.ledger().timestamp() + 86400;
@@ -314,8 +336,8 @@ fn test_settlement_record_metadata() {
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
 
-    client.set_company_role(&admin, &company);
-    client.set_carrier_role(&admin, &carrier);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
 
     let data_hash = dummy_hash(&env);
     let deadline = env.ledger().timestamp() + 86400;
@@ -355,8 +377,8 @@ fn test_multiple_shipments_independent_settlements() {
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
 
-    client.set_company_role(&admin, &company);
-    client.set_carrier_role(&admin, &carrier);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
 
     let data_hash = dummy_hash(&env);
     let deadline = env.ledger().timestamp() + 86400;
