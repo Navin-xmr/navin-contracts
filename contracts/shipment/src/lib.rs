@@ -3419,7 +3419,7 @@ impl NavinShipment {
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
     /// * `NavinError::Unauthorized` - If called by a non-admin.
-    /// * `NavinError::DisputeResolutionReasonHashMissing` - If reason_hash is all zeros.
+    /// * `NavinError::DisputeReasonHashMissing` - If reason_hash is all zeros.
     pub fn resolve_dispute(
         env: Env,
         admin: Address,
@@ -3435,8 +3435,29 @@ impl NavinShipment {
 
         // Validate reason hash is not empty
         if reason_hash == BytesN::from_array(&env, &[0u8; 32]) {
-            return Err(NavinError::DisputeResolutionReasonHashMissing);
+            return Err(NavinError::DisputeReasonHashMissing);
         }
+
+        // Idempotency check: prevent duplicate resolutions within the window
+        let mut action_payload: Vec<soroban_sdk::Val> = Vec::new(&env);
+        action_payload.push_back(Symbol::new(&env, "resolve_dispute").into_val(&env));
+        action_payload.push_back(shipment_id.into_val(&env));
+        action_payload.push_back(resolution.clone().into_val(&env));
+        action_payload.push_back(reason_hash.clone().into_val(&env));
+
+        let action_hash: BytesN<32> = env.crypto().sha256(&action_payload.to_xdr(&env)).into();
+
+        if storage::has_idempotency_window(&env, &action_hash) {
+            return Err(NavinError::DuplicateAction);
+        }
+
+        // Set the idempotency window (using config-specified duration)
+        let config = config::get_config(&env);
+        storage::set_idempotency_window(
+            &env,
+            &action_hash,
+            config.idempotency_window_seconds as u64,
+        );
 
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;

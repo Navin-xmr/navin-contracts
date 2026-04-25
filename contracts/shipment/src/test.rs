@@ -8,7 +8,7 @@ use crate::{
 };
 use soroban_sdk::{
     contract, contracterror, contractimpl,
-    testutils::{storage::Persistent, Address as _, Events},
+    testutils::{storage::Persistent, Address as _, Events, Ledger as _},
     Address, BytesN, Env, Symbol, TryFromVal,
 };
 
@@ -3472,7 +3472,7 @@ fn test_get_hash_algo_version() {
 fn test_dry_run_migration_success() {
     let (_env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
-    
+
     let report = client.dry_run_migration(&2);
     assert_eq!(report.current_version, 1);
     assert_eq!(report.target_version, 2);
@@ -3485,7 +3485,7 @@ fn test_upgrade_invalid_edge_fails() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
     client.initialize(&admin, &token_contract);
-    
+
     // Jump from 1 to 3 is not allowed
     client.upgrade(&admin, &new_wasm_hash, &3);
 }
@@ -3495,7 +3495,7 @@ fn test_upgrade_invalid_edge_fails() {
 fn test_dry_run_invalid_edge_fails() {
     let (_env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
-    
+
     // Rollback from 1 to 0 is not allowed
     client.dry_run_migration(&0);
 }
@@ -6022,10 +6022,7 @@ fn test_resolve_dispute_fails_without_reason_hash() {
         &crate::DisputeResolution::ReleaseToCarrier,
         &empty_hash,
     );
-    assert_eq!(
-        res,
-        Err(Ok(crate::NavinError::DisputeResolutionReasonHashMissing))
-    );
+    assert_eq!(res, Err(Ok(crate::NavinError::DisputeReasonHashMissing)));
 }
 
 #[test]
@@ -9945,4 +9942,80 @@ fn test_guardian_can_resolve_disputes() {
 
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+}
+
+#[test]
+fn test_resolve_dispute_idempotency() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let guardian = Address::generate(&env);
+    client.add_guardian(&admin, &guardian);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    client.deposit_escrow(&company, &shipment_id, &1000);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+    client.raise_dispute(&company, &shipment_id, &data_hash);
+
+    // Set idempotency window to 300s
+    let config = crate::ContractConfig {
+        idempotency_window_seconds: 300,
+        ..crate::ContractConfig::default()
+    };
+    client.update_config(&admin, &config);
+
+    // Resolve once - OK
+    client.resolve_dispute(
+        &guardian,
+        &shipment_id,
+        &crate::DisputeResolution::RefundToCompany,
+        &data_hash,
+    );
+
+    // Resolve again immediately - Should fail with DuplicateAction
+    let res = client.try_resolve_dispute(
+        &guardian,
+        &shipment_id,
+        &crate::DisputeResolution::RefundToCompany,
+        &data_hash,
+    );
+    assert_eq!(res, Err(Ok(crate::NavinError::DuplicateAction)));
+
+    // Advance time past the window
+    env.ledger().with_mut(|l| {
+        l.timestamp += 301;
+        l.sequence_number += 61; // 301 / 5 = ~60 ledgers
+    });
+
+    // Resolve again - Now it fails with ShipmentFinalized (because it's already resolved/cancelled/finalized)
+    // but NOT DuplicateAction anymore.
+    let res = client.try_resolve_dispute(
+        &guardian,
+        &shipment_id,
+        &crate::DisputeResolution::RefundToCompany,
+        &data_hash,
+    );
+    assert_eq!(res, Err(Ok(crate::NavinError::ShipmentFinalized)));
 }
