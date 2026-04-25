@@ -9,7 +9,7 @@ use crate::{
 use soroban_sdk::{
     contract, contracterror, contractimpl,
     testutils::{storage::Persistent, Address as _, Events, Ledger as _},
-    Address, BytesN, Env, Symbol, TryFromVal, Vec,
+    Address, BytesN, Env, Symbol, TryFromVal,
 };
 
 #[contract]
@@ -9974,12 +9974,19 @@ fn test_resolve_dispute_idempotency() {
     );
 
     client.deposit_escrow(&company, &shipment_id, &1000);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
     client.raise_dispute(&company, &shipment_id, &data_hash);
 
     // Set idempotency window to 300s
-    let mut config = crate::ContractConfig::default();
-    config.idempotency_window_seconds = 300;
+    let config = crate::ContractConfig {
+        idempotency_window_seconds: 300,
+        ..crate::ContractConfig::default()
+    };
     client.update_config(&admin, &config);
 
     // Resolve once - OK
@@ -10015,4 +10022,3 @@ fn test_resolve_dispute_idempotency() {
     );
     assert_eq!(res, Err(Ok(crate::NavinError::ShipmentFinalized)));
 }
-
