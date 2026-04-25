@@ -43,6 +43,8 @@ mod test_pause;
 #[cfg(test)]
 mod test_suspension;
 #[cfg(test)]
+mod test_ttl_health;
+#[cfg(test)]
 mod test_utils;
 
 pub use config::*;
@@ -892,6 +894,121 @@ impl NavinShipment {
                 Ok(config::compute_config_checksum(&current_config, &env))
             }
         }
+    }
+
+    /// Get TTL health summary for active datasets.
+    ///
+    /// Provides aggregated metrics for proactive archival risk monitoring.
+    /// Supports operations dashboards and indexers to detect datasets approaching
+    /// expiration and trigger preventive TTL extension or archival workflows.
+    ///
+    /// **Important**: Direct TTL values are not queryable from within Soroban
+    /// contracts. This function provides observable metrics about persistent
+    /// storage presence that operators can correlate with external TTL monitoring.
+    ///
+    /// # Sampling Strategy
+    /// Due to gas constraints, this function samples a representative subset of
+    /// shipments rather than checking all shipments. The sampling strategy:
+    /// - Samples up to 20 shipments evenly distributed across the ID range
+    /// - For contracts with <= 20 shipments, all are sampled
+    /// - For contracts with > 20 shipments, every Nth shipment is sampled
+    ///
+    /// # Health Metrics
+    /// - **persistent_count**: Number of sampled shipments in persistent storage
+    /// - **missing_or_archived_count**: Shipments not in persistent storage
+    /// - **persistent_percentage**: Percentage of sampled shipments still persistent
+    ///
+    /// A high persistent_percentage (e.g., >90%) indicates good TTL health.
+    /// A low percentage may indicate TTL expiration issues requiring attention.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    ///
+    /// # Returns
+    /// * `Result<TtlHealthSummary, NavinError>` - TTL health metrics.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let health = contract.get_ttl_health_summary(&env)?;
+    /// // if health.persistent_percentage < 90 {
+    /// //     // Investigate potential TTL issues
+    /// // }
+    /// ```
+    pub fn get_ttl_health_summary(env: Env) -> Result<TtlHealthSummary, NavinError> {
+        require_initialized(&env)?;
+
+        let config = config::get_config(&env);
+        let total_shipments = storage::get_shipment_counter(&env);
+        let current_ledger = env.ledger().sequence();
+        let query_timestamp = env.ledger().timestamp();
+
+        // If no shipments exist, return empty summary
+        if total_shipments == 0 {
+            return Ok(TtlHealthSummary {
+                total_shipment_count: 0,
+                sampled_count: 0,
+                persistent_count: 0,
+                missing_or_archived_count: 0,
+                persistent_percentage: 0,
+                ttl_threshold: config.shipment_ttl_threshold,
+                ttl_extension: config.shipment_ttl_extension,
+                current_ledger,
+                query_timestamp,
+            });
+        }
+
+        // Sampling strategy: check up to 20 shipments evenly distributed
+        const MAX_SAMPLE_SIZE: u32 = 20;
+        let sample_size = if total_shipments <= MAX_SAMPLE_SIZE as u64 {
+            total_shipments as u32
+        } else {
+            MAX_SAMPLE_SIZE
+        };
+
+        let step = if sample_size < MAX_SAMPLE_SIZE {
+            1
+        } else {
+            (total_shipments / sample_size as u64).max(1)
+        };
+
+        let mut persistent_count: u32 = 0;
+        let mut sampled_count: u32 = 0;
+
+        // Sample shipments across the ID range
+        let mut shipment_id = 1u64;
+        while shipment_id <= total_shipments && sampled_count < sample_size {
+            sampled_count += 1;
+
+            // Check if shipment exists in persistent storage
+            if storage::shipment_exists_in_persistent(&env, shipment_id) {
+                persistent_count += 1;
+            }
+
+            shipment_id += step;
+        }
+
+        // Calculate metrics
+        let missing_or_archived_count = sampled_count.saturating_sub(persistent_count);
+        let persistent_percentage = if sampled_count > 0 {
+            ((persistent_count as u64 * 100) / sampled_count as u64) as u32
+        } else {
+            0
+        };
+
+        Ok(TtlHealthSummary {
+            total_shipment_count: total_shipments,
+            sampled_count,
+            persistent_count,
+            missing_or_archived_count,
+            persistent_percentage,
+            ttl_threshold: config.shipment_ttl_threshold,
+            ttl_extension: config.shipment_ttl_extension,
+            current_ledger,
+            query_timestamp,
+        })
     }
 
     /// Add a carrier to a company's whitelist.

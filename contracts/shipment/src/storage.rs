@@ -1474,6 +1474,30 @@ pub fn get_status_hash(env: &Env, shipment_id: u64, status: &ShipmentStatus) -> 
         .get(&DataKey::StatusHash(shipment_id, status.clone()))
 }
 
+// ============= TTL Health Monitoring Functions =============
+
+/// Check if a shipment exists in persistent storage.
+///
+/// This is used for TTL health monitoring to determine which shipments
+/// are still active in persistent storage vs archived.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// * `bool` - True if the shipment exists in persistent storage.
+///
+/// # Examples
+/// ```rust
+/// // let exists = storage::shipment_exists_in_persistent(&env, 1);
+/// ```
+pub fn shipment_exists_in_persistent(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::Shipment(shipment_id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
