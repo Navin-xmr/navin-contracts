@@ -48,7 +48,13 @@ pub fn validate_hash(hash: &BytesN<32>) -> Result<(), NavinError> {
 /// - Metadata keys and values
 /// - Event topic names
 ///
+/// Stellar Symbol Constraints:
+/// - Length: 1-12 characters (enforced by Stellar protocol)
+/// - Format: Alphanumeric and underscore only (A-Z, a-z, 0-9, _)
+/// - Invalid: spaces, hyphens, special characters, unicode, null bytes
+///
 /// # Arguments
+/// * `env` - Execution environment.
 /// * `symbol` - The Symbol to validate.
 ///
 /// # Returns
@@ -57,15 +63,20 @@ pub fn validate_hash(hash: &BytesN<32>) -> Result<(), NavinError> {
 ///
 /// # Examples
 /// ```rust
-/// validate_symbol(&Symbol::new(&env, "warehouse"))?;
+/// validate_symbol(&env, &Symbol::new(&env, "warehouse"))?;
 /// ```
 pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
-    // Convert Symbol to XDR representation for length checking.
-    // In Soroban, we check the XDR-encoded length as a proxy for symbol size.
-    // Typical XDR overhead is ~8 bytes, so we allow up to 40 bytes for safety margin.
+    // XDR layout: 4-byte ScValType tag + 4-byte length field + content padded to 4-byte boundary.
+    // Byte counts by character count:
+    //   0 chars  →  8 bytes  (empty — rejected)
+    //   1–4 chars → 12 bytes
+    //   5–8 chars → 16 bytes
+    //   9–12 chars → 20 bytes  (12-char is the Stellar Symbol maximum)
+    //   13+ chars → 24+ bytes  (rejected)
     let symbol_bytes = symbol.to_xdr(env);
+    let len = symbol_bytes.len();
 
-    if symbol_bytes.len() > 40 {
+    if len < 12 || len > 20 {
         return Err(NavinError::InvalidShipmentInput);
     }
 
@@ -386,11 +397,11 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_symbol_valid_long_passes() {
+    fn test_validate_symbol_valid_max_length_passes() {
         let env = Env::default();
-        // Create a 32-character symbol (maximum safe length)
-        let long_name = "a".repeat(32);
-        let symbol = Symbol::new(&env, &long_name);
+        // Exactly 12 characters — the Stellar Symbol maximum
+        let max_name = "a".repeat(12);
+        let symbol = Symbol::new(&env, &max_name);
         assert_eq!(validate_symbol(&env, &symbol), Ok(()));
     }
 
@@ -404,7 +415,8 @@ mod tests {
     #[test]
     fn test_validate_symbol_common_names_pass() {
         let env = Env::default();
-        let test_names = ["port", "warehouse", "checkpoint", "final_destination"];
+        // All names are ≤ 12 chars (Stellar Symbol maximum)
+        let test_names = ["port", "warehouse", "checkpoint", "delivered"];
         for name in &test_names {
             let symbol = Symbol::new(&env, name);
             assert_eq!(
@@ -483,13 +495,11 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_metadata_symbols_long_names_pass() {
+    fn test_validate_metadata_symbols_max_length_names_pass() {
         let env = Env::default();
-        // Create long symbol names by concatenating strings
-        let long_key = "key_aaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let long_value = "val_bbbbbbbbbbbbbbbbbbbbbbbbbb";
-        let key = Symbol::new(&env, long_key);
-        let value = Symbol::new(&env, long_value);
+        // 12-character key and value — at the Stellar Symbol maximum
+        let key = Symbol::new(&env, "shipment_key");
+        let value = Symbol::new(&env, "shipment_val");
         assert_eq!(validate_metadata_symbols(&env, &key, &value), Ok(()));
     }
 
@@ -513,5 +523,214 @@ mod tests {
                 val_str
             );
         }
+    }
+}
+
+// ============================================================================
+// Additional Symbol Validation Tests - Comprehensive Coverage
+// ============================================================================
+
+#[cfg(test)]
+mod symbol_validation_tests {
+    extern crate std;
+
+    use super::*;
+    use soroban_sdk::{Env, Symbol, Vec};
+
+    // Boundary tests for symbol length
+    #[test]
+    fn test_symbol_length_boundary_12_chars() {
+        let env = Env::default();
+        
+        // Exactly 12 characters - maximum allowed by Stellar
+        let symbols_12_chars = std::vec![
+            "VERYLONGNAME",  // 12 uppercase
+            "verylongname",  // 12 lowercase
+            "VeryLongName",  // 12 mixed case
+            "SYMBOL123456",  // 12 alphanumeric
+            "symbol_12345",  // 12 with underscore
+            "ABCDEFGHIJKL",  // 12 letters
+            "123456789012",  // 12 digits
+        ];
+        
+        for name in symbols_12_chars {
+            let symbol = Symbol::new(&env, name);
+            let result = validate_symbol(&env, &symbol);
+            assert!(
+                result.is_ok(),
+                "12-character symbol '{}' should be valid",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn test_symbol_length_30_chars_rejected() {
+        let env = Env::default();
+        // 30 chars: within Soroban SDK's 32-char limit but above our 12-char max
+        let long_30 = "A".repeat(30);
+        let symbol = Symbol::new(&env, &long_30);
+        let result = validate_symbol(&env, &symbol);
+        assert!(
+            result.is_err(),
+            "Symbol of length 30 should be rejected (exceeds 12-char max)"
+        );
+    }
+
+    #[test]
+    fn test_symbol_length_25_chars_rejected() {
+        let env = Env::default();
+        let long_25 = "A".repeat(25);
+        let symbol = Symbol::new(&env, &long_25);
+        let result = validate_symbol(&env, &symbol);
+        assert!(
+            result.is_err(),
+            "Symbol of length 25 should be rejected (exceeds 12-char max)"
+        );
+    }
+
+    // Format validation tests
+    #[test]
+    fn test_symbol_alphanumeric_formats() {
+        let env = Env::default();
+        
+        let valid_formats = std::vec![
+            "SHIPMENT",      // uppercase
+            "shipment",      // lowercase
+            "Shipment",      // mixed case
+            "SHIP123",       // alphanumeric
+            "ship_123",      // with underscore
+            "ABC",           // short uppercase
+            "xyz",           // short lowercase
+            "A1B2C3",        // mixed alphanumeric
+            "_underscore",   // leading underscore
+            "trailing_",     // trailing underscore
+        ];
+        
+        for name in valid_formats {
+            let symbol = Symbol::new(&env, name);
+            let result = validate_symbol(&env, &symbol);
+            assert!(
+                result.is_ok(),
+                "Alphanumeric symbol '{}' should be valid",
+                name
+            );
+        }
+    }
+
+    // Milestone validation tests
+    #[test]
+    fn test_milestone_symbols_no_duplicates() {
+        let env = Env::default();
+        
+        let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+        milestones.push_back((Symbol::new(&env, "pickup"), 25));
+        milestones.push_back((Symbol::new(&env, "transit"), 25));
+        milestones.push_back((Symbol::new(&env, "delivery"), 50));
+        
+        let result = validate_milestone_symbols(&env, &milestones);
+        assert!(result.is_ok(), "Unique milestone symbols should be valid");
+    }
+
+    #[test]
+    fn test_milestone_symbols_with_duplicates_rejected() {
+        let env = Env::default();
+        
+        let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+        milestones.push_back((Symbol::new(&env, "warehouse"), 50));
+        milestones.push_back((Symbol::new(&env, "warehouse"), 50)); // Duplicate
+        
+        let result = validate_milestone_symbols(&env, &milestones);
+        assert_eq!(
+            result,
+            Err(NavinError::InvalidShipmentInput),
+            "Duplicate milestone symbols should be rejected"
+        );
+    }
+
+    #[test]
+    fn test_milestone_symbols_many_unique() {
+        let env = Env::default();
+        
+        let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+        let names = ["pickup", "warehouse", "port", "transit", "delivery"];
+        for name in &names {
+            milestones.push_back((Symbol::new(&env, name), 20));
+        }
+        
+        let result = validate_milestone_symbols(&env, &milestones);
+        assert!(result.is_ok(), "Many unique milestone symbols should be valid");
+    }
+
+    // Metadata validation tests
+    #[test]
+    fn test_metadata_symbols_various_pairs() {
+        let env = Env::default();
+        
+        let test_pairs = std::vec![
+            ("weight", "kg_100"),
+            ("priority", "high"),
+            ("category", "fragile"),
+            ("temp", "controlled"),
+            ("status", "active"),
+            ("tracking", "enabled"),
+        ];
+        
+        for (key_str, val_str) in test_pairs {
+            let key = Symbol::new(&env, key_str);
+            let value = Symbol::new(&env, val_str);
+            
+            let result = validate_metadata_symbols(&env, &key, &value);
+            assert!(
+                result.is_ok(),
+                "Metadata pair ({}, {}) should be valid",
+                key_str,
+                val_str
+            );
+        }
+    }
+
+    #[test]
+    fn test_metadata_symbols_max_length() {
+        let env = Env::default();
+        
+        // 12-character key and value (maximum)
+        let key = Symbol::new(&env, "verylongkey1");
+        let value = Symbol::new(&env, "verylongval1");
+        
+        let result = validate_metadata_symbols(&env, &key, &value);
+        assert!(result.is_ok(), "12-character metadata symbols should be valid");
+    }
+
+    // Error message tests
+    #[test]
+    fn test_validation_error_types() {
+        let env = Env::default();
+        // 30 chars: within Soroban SDK's 32-char limit but above our 12-char max
+        let oversized = "A".repeat(30);
+        let oversized_symbol = Symbol::new(&env, &oversized);
+        let result = validate_symbol(&env, &oversized_symbol);
+        assert_eq!(
+            result,
+            Err(NavinError::InvalidShipmentInput),
+            "Oversized symbol must return InvalidShipmentInput"
+        );
+    }
+
+    #[test]
+    fn test_duplicate_milestone_error_type() {
+        let env = Env::default();
+        
+        let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+        milestones.push_back((Symbol::new(&env, "checkpoint"), 50));
+        milestones.push_back((Symbol::new(&env, "checkpoint"), 50));
+        
+        let result = validate_milestone_symbols(&env, &milestones);
+        
+        assert_eq!(
+            result,
+            Err(NavinError::InvalidShipmentInput),
+            "Duplicate milestone should return InvalidShipmentInput"
+        );
     }
 }

@@ -36,6 +36,8 @@ mod test_pause;
 #[cfg(test)]
 mod test_suspension;
 #[cfg(test)]
+mod test_symbol_validation;
+#[cfg(test)]
 mod test_utils;
 
 pub use config::*;
