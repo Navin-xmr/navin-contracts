@@ -91,6 +91,12 @@ pub enum DataKey {
     AuditEntry(u64),
     /// Total count of audit log entries.
     AuditEntryCount,
+    /// Settlement counter for generating unique settlement IDs.
+    SettlementCounter,
+    /// Settlement record keyed by settlement ID.
+    Settlement(u64),
+    /// Active settlement ID for a shipment (only one active settlement per shipment).
+    ActiveSettlement(u64),
 }
 
 /// Supported user roles.
@@ -327,6 +333,80 @@ pub enum Severity {
     High,
     /// Critical deviation requiring immediate intervention.
     Critical,
+}
+
+/// Settlement state for tracking token transfer lifecycle.
+///
+/// Provides explicit in-flight state tracking for payment operations
+/// to improve observability and failure handling.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::SettlementState;
+/// let state = SettlementState::Pending;
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum SettlementState {
+    /// No settlement operation in progress.
+    None,
+    /// Settlement operation initiated, awaiting token transfer.
+    Pending,
+    /// Token transfer completed successfully.
+    Completed,
+    /// Token transfer failed, requires investigation or retry.
+    Failed,
+}
+
+/// Settlement operation type for tracking different payment flows.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::SettlementOperation;
+/// let op = SettlementOperation::Deposit;
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum SettlementOperation {
+    /// Escrow deposit from company to contract.
+    Deposit,
+    /// Escrow release from contract to carrier.
+    Release,
+    /// Escrow refund from contract to company.
+    Refund,
+    /// Milestone payment from contract to carrier.
+    MilestonePayment,
+}
+
+/// Settlement record for tracking token transfer operations.
+///
+/// # Examples
+/// ```rust
+/// // Struct represents a settlement operation record.
+/// ```
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct SettlementRecord {
+    /// Unique settlement identifier.
+    pub settlement_id: u64,
+    /// Associated shipment ID.
+    pub shipment_id: u64,
+    /// Type of settlement operation.
+    pub operation: SettlementOperation,
+    /// Current state of the settlement.
+    pub state: SettlementState,
+    /// Amount being transferred.
+    pub amount: i128,
+    /// Source address of the transfer.
+    pub from: Address,
+    /// Destination address of the transfer.
+    pub to: Address,
+    /// Ledger timestamp when settlement was initiated.
+    pub initiated_at: u64,
+    /// Ledger timestamp when settlement was completed or failed.
+    pub completed_at: Option<u64>,
+    /// Optional error message for failed settlements.
+    pub error_code: Option<u32>,
 }
 
 /// Geofence event types for tracking shipment location events.
