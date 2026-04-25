@@ -9,7 +9,7 @@ use crate::{
 use soroban_sdk::{
     contract, contracterror, contractimpl,
     testutils::{storage::Persistent, Address as _, Events},
-    Address, BytesN, Env, Symbol, TryFromVal,
+    Address, BytesN, Env, IntoVal, Symbol, TryFromVal,
 };
 
 #[contract]
@@ -9945,4 +9945,24 @@ fn test_guardian_can_resolve_disputes() {
 
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+}
+
+#[test]
+fn test_get_canonical_hash() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let mut fields = soroban_sdk::Vec::new(&env);
+    fields.push_back(Symbol::new(&env, "test").into_val(&env));
+    fields.push_back(123_u64.into_val(&env));
+
+    let hash1 = client.get_canonical_hash(&fields);
+    let hash2 = client.get_canonical_hash(&fields);
+
+    assert_eq!(hash1, hash2);
+    
+    // Ensure different fields result in different hash
+    fields.push_back(456_u64.into_val(&env));
+    let hash3 = client.get_canonical_hash(&fields);
+    assert_ne!(hash1, hash3);
 }

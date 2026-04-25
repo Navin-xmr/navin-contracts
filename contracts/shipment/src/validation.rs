@@ -268,6 +268,37 @@ pub fn preflight_check_shipment_available(
     Ok(shipment)
 }
 
+/// Compute a canonical hash for an off-chain payload.
+///
+/// This helper standardizes how off-chain data is hashed to ensure consistency
+/// between the contract and external backends/frontends. It uses a deterministic
+/// ordering and XDR encoding of the fields.
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `fields` - A vector of values to be included in the hash.
+///
+/// # Returns
+/// * `BytesN<32>` - The computed SHA-256 hash.
+///
+/// # Design Rationale
+///
+/// **Why XDR Encoding?**:
+/// - XDR is the native serialization format for Soroban.
+/// - It is deterministic and handles various types (Address, Symbol, u64, etc.) consistently.
+/// - Frontends can use the Stellar SDK to produce matching XDR blobs.
+///
+/// # Examples
+/// ```rust
+/// let mut fields = Vec::new(&env);
+/// fields.push_back(Symbol::new(&env, "event_type").into_val(&env));
+/// fields.push_back(shipment_id.into_val(&env));
+/// let hash = compute_offchain_payload_hash(&env, fields);
+/// ```
+pub fn compute_offchain_payload_hash(env: &Env, fields: soroban_sdk::Vec<soroban_sdk::Val>) -> BytesN<32> {
+    env.crypto().sha256(&fields.to_xdr(env)).into()
+}
+
 // Tests
 #[cfg(test)]
 mod tests {
