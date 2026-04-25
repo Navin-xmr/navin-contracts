@@ -1499,6 +1499,7 @@ pub fn shipment_exists_in_persistent(env: &Env, shipment_id: u64) -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use crate::test_utils;

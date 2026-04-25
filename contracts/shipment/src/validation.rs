@@ -76,7 +76,7 @@ pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
     let symbol_bytes = symbol.to_xdr(env);
     let len = symbol_bytes.len();
 
-    if len < 12 || len > 20 {
+    if !(12..=20).contains(&len) {
         return Err(NavinError::InvalidShipmentInput);
     }
 
@@ -538,18 +538,18 @@ mod symbol_validation_tests {
     #[test]
     fn test_symbol_length_boundary_12_chars() {
         let env = Env::default();
-        
+
         // Exactly 12 characters - maximum allowed by Stellar
         let symbols_12_chars = std::vec![
-            "VERYLONGNAME",  // 12 uppercase
-            "verylongname",  // 12 lowercase
-            "VeryLongName",  // 12 mixed case
-            "SYMBOL123456",  // 12 alphanumeric
-            "symbol_12345",  // 12 with underscore
-            "ABCDEFGHIJKL",  // 12 letters
-            "123456789012",  // 12 digits
+            "VERYLONGNAME", // 12 uppercase
+            "verylongname", // 12 lowercase
+            "VeryLongName", // 12 mixed case
+            "SYMBOL123456", // 12 alphanumeric
+            "symbol_12345", // 12 with underscore
+            "ABCDEFGHIJKL", // 12 letters
+            "123456789012", // 12 digits
         ];
-        
+
         for name in symbols_12_chars {
             let symbol = Symbol::new(&env, name);
             let result = validate_symbol(&env, &symbol);
@@ -590,20 +590,20 @@ mod symbol_validation_tests {
     #[test]
     fn test_symbol_alphanumeric_formats() {
         let env = Env::default();
-        
+
         let valid_formats = std::vec![
-            "SHIPMENT",      // uppercase
-            "shipment",      // lowercase
-            "Shipment",      // mixed case
-            "SHIP123",       // alphanumeric
-            "ship_123",      // with underscore
-            "ABC",           // short uppercase
-            "xyz",           // short lowercase
-            "A1B2C3",        // mixed alphanumeric
-            "_underscore",   // leading underscore
-            "trailing_",     // trailing underscore
+            "SHIPMENT",    // uppercase
+            "shipment",    // lowercase
+            "Shipment",    // mixed case
+            "SHIP123",     // alphanumeric
+            "ship_123",    // with underscore
+            "ABC",         // short uppercase
+            "xyz",         // short lowercase
+            "A1B2C3",      // mixed alphanumeric
+            "_underscore", // leading underscore
+            "trailing_",   // trailing underscore
         ];
-        
+
         for name in valid_formats {
             let symbol = Symbol::new(&env, name);
             let result = validate_symbol(&env, &symbol);
@@ -619,12 +619,12 @@ mod symbol_validation_tests {
     #[test]
     fn test_milestone_symbols_no_duplicates() {
         let env = Env::default();
-        
+
         let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
         milestones.push_back((Symbol::new(&env, "pickup"), 25));
         milestones.push_back((Symbol::new(&env, "transit"), 25));
         milestones.push_back((Symbol::new(&env, "delivery"), 50));
-        
+
         let result = validate_milestone_symbols(&env, &milestones);
         assert!(result.is_ok(), "Unique milestone symbols should be valid");
     }
@@ -632,11 +632,11 @@ mod symbol_validation_tests {
     #[test]
     fn test_milestone_symbols_with_duplicates_rejected() {
         let env = Env::default();
-        
+
         let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
         milestones.push_back((Symbol::new(&env, "warehouse"), 50));
         milestones.push_back((Symbol::new(&env, "warehouse"), 50)); // Duplicate
-        
+
         let result = validate_milestone_symbols(&env, &milestones);
         assert_eq!(
             result,
@@ -648,22 +648,25 @@ mod symbol_validation_tests {
     #[test]
     fn test_milestone_symbols_many_unique() {
         let env = Env::default();
-        
+
         let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
         let names = ["pickup", "warehouse", "port", "transit", "delivery"];
         for name in &names {
             milestones.push_back((Symbol::new(&env, name), 20));
         }
-        
+
         let result = validate_milestone_symbols(&env, &milestones);
-        assert!(result.is_ok(), "Many unique milestone symbols should be valid");
+        assert!(
+            result.is_ok(),
+            "Many unique milestone symbols should be valid"
+        );
     }
 
     // Metadata validation tests
     #[test]
     fn test_metadata_symbols_various_pairs() {
         let env = Env::default();
-        
+
         let test_pairs = std::vec![
             ("weight", "kg_100"),
             ("priority", "high"),
@@ -672,11 +675,11 @@ mod symbol_validation_tests {
             ("status", "active"),
             ("tracking", "enabled"),
         ];
-        
+
         for (key_str, val_str) in test_pairs {
             let key = Symbol::new(&env, key_str);
             let value = Symbol::new(&env, val_str);
-            
+
             let result = validate_metadata_symbols(&env, &key, &value);
             assert!(
                 result.is_ok(),
@@ -690,13 +693,16 @@ mod symbol_validation_tests {
     #[test]
     fn test_metadata_symbols_max_length() {
         let env = Env::default();
-        
+
         // 12-character key and value (maximum)
         let key = Symbol::new(&env, "verylongkey1");
         let value = Symbol::new(&env, "verylongval1");
-        
+
         let result = validate_metadata_symbols(&env, &key, &value);
-        assert!(result.is_ok(), "12-character metadata symbols should be valid");
+        assert!(
+            result.is_ok(),
+            "12-character metadata symbols should be valid"
+        );
     }
 
     // Error message tests
@@ -717,13 +723,13 @@ mod symbol_validation_tests {
     #[test]
     fn test_duplicate_milestone_error_type() {
         let env = Env::default();
-        
+
         let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
         milestones.push_back((Symbol::new(&env, "checkpoint"), 50));
         milestones.push_back((Symbol::new(&env, "checkpoint"), 50));
-        
+
         let result = validate_milestone_symbols(&env, &milestones);
-        
+
         assert_eq!(
             result,
             Err(NavinError::InvalidShipmentInput),
