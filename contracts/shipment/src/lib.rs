@@ -943,9 +943,15 @@ impl NavinShipment {
         event_counter: u32,
     ) -> BytesN<32> {
         let mut payload = soroban_sdk::Bytes::new(&env);
-        payload.append(&soroban_sdk::Bytes::from_array(&env, &shipment_id.to_be_bytes()));
+        payload.append(&soroban_sdk::Bytes::from_array(
+            &env,
+            &shipment_id.to_be_bytes(),
+        ));
         payload.append(&event_type.to_xdr(&env));
-        payload.append(&soroban_sdk::Bytes::from_array(&env, &event_counter.to_be_bytes()));
+        payload.append(&soroban_sdk::Bytes::from_array(
+            &env,
+            &event_counter.to_be_bytes(),
+        ));
         env.crypto().sha256(&payload).into()
     }
 
@@ -3209,7 +3215,10 @@ impl NavinShipment {
 
         // Idempotency: reject duplicate (shipment_id, resolution, reason_hash) within the window.
         let mut payload = soroban_sdk::Bytes::new(&env);
-        payload.append(&soroban_sdk::Bytes::from_array(&env, &shipment_id.to_be_bytes()));
+        payload.append(&soroban_sdk::Bytes::from_array(
+            &env,
+            &shipment_id.to_be_bytes(),
+        ));
         payload.append(&resolution.to_xdr(&env));
         payload.append(&reason_hash.clone().into());
         check_idempotency(&env, payload)?;

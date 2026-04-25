@@ -305,24 +305,24 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// their SHA-256 hash. The same config always produces the same checksum,
 /// enabling indexers and operators to detect unintended config drift.
 ///
-    /// # Serialization Order
-    /// Fields are serialized in declaration order (top-to-bottom in the struct):
-    /// 1. shipment_ttl_threshold (u32, 4 bytes, big-endian)
-    /// 2. shipment_ttl_extension (u32, 4 bytes, big-endian)
-    /// 3. min_status_update_interval (u64, 8 bytes, big-endian)
-    /// 4. batch_operation_limit (u32, 4 bytes, big-endian)
-    /// 5. max_metadata_entries (u32, 4 bytes, big-endian)
-    /// 6. default_shipment_limit (u32, 4 bytes, big-endian)
-    /// 7. multisig_min_admins (u32, 4 bytes, big-endian)
-    /// 8. multisig_max_admins (u32, 4 bytes, big-endian)
-    /// 9. proposal_expiry_seconds (u64, 8 bytes, big-endian)
-    /// 10. deadline_grace_seconds (u64, 8 bytes, big-endian)
-    /// 11. auto_dispute_breach (bool, 1 byte: 1 = true, 0 = false)
-    /// 12. max_milestones_per_shipment (u32, 4 bytes, big-endian)
-    /// 13. max_notes_per_shipment (u32, 4 bytes, big-endian)
-    /// 14. max_evidence_per_dispute (u32, 4 bytes, big-endian)
-    ///
-    /// Total: 65 bytes serialized, hashed to 32-byte SHA-256 digest.
+/// # Serialization Order
+/// Fields are serialized in declaration order (top-to-bottom in the struct):
+/// 1. shipment_ttl_threshold (u32, 4 bytes, big-endian)
+/// 2. shipment_ttl_extension (u32, 4 bytes, big-endian)
+/// 3. min_status_update_interval (u64, 8 bytes, big-endian)
+/// 4. batch_operation_limit (u32, 4 bytes, big-endian)
+/// 5. max_metadata_entries (u32, 4 bytes, big-endian)
+/// 6. default_shipment_limit (u32, 4 bytes, big-endian)
+/// 7. multisig_min_admins (u32, 4 bytes, big-endian)
+/// 8. multisig_max_admins (u32, 4 bytes, big-endian)
+/// 9. proposal_expiry_seconds (u64, 8 bytes, big-endian)
+/// 10. deadline_grace_seconds (u64, 8 bytes, big-endian)
+/// 11. auto_dispute_breach (bool, 1 byte: 1 = true, 0 = false)
+/// 12. max_milestones_per_shipment (u32, 4 bytes, big-endian)
+/// 13. max_notes_per_shipment (u32, 4 bytes, big-endian)
+/// 14. max_evidence_per_dispute (u32, 4 bytes, big-endian)
+///
+/// Total: 65 bytes serialized, hashed to 32-byte SHA-256 digest.
 ///
 /// # Arguments
 /// * `config` - The configuration to checksum.

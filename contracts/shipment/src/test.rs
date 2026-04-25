@@ -10012,4 +10012,3 @@ fn test_report_condition_breach_limit_exceeded() {
 
     assert_eq!(res, Err(Ok(crate::NavinError::BreachLimitExceeded)));
 }
-
