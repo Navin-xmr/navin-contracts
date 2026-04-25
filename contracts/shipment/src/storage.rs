@@ -1608,3 +1608,158 @@ mod tests {
         });
     }
 }
+
+// ============= Settlement State Storage Functions =============
+
+/// Get the current settlement counter.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+///
+/// # Returns
+/// * `u64` - The number of settlements created so far. Defaults to 0.
+///
+/// # Examples
+/// ```rust
+/// // let counter = storage::get_settlement_counter(&env);
+/// ```
+pub fn get_settlement_counter(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::SettlementCounter)
+        .unwrap_or(0)
+}
+
+/// Set the settlement counter.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `counter` - The new value for the settlement count.
+///
+/// # Returns
+/// No return value.
+///
+/// # Examples
+/// ```rust
+/// // storage::set_settlement_counter(&env, 10);
+/// ```
+pub fn set_settlement_counter(env: &Env, counter: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::SettlementCounter, &counter);
+}
+
+/// Increment the settlement counter by 1 and return the new value.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+///
+/// # Returns
+/// * `u64` - The incremented settlement count.
+///
+/// # Examples
+/// ```rust
+/// // let next_id = storage::increment_settlement_counter(&env);
+/// ```
+pub fn increment_settlement_counter(env: &Env) -> u64 {
+    let cur = get_settlement_counter(env);
+    let next = cur.checked_add(1).unwrap_or(cur);
+    set_settlement_counter(env, next);
+    next
+}
+
+/// Get a settlement record by ID from persistent storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `settlement_id` - The ID of the settlement.
+///
+/// # Returns
+/// * `Option<SettlementRecord>` - The settlement record if it exists.
+///
+/// # Examples
+/// ```rust
+/// // let settlement = storage::get_settlement(&env, 1);
+/// ```
+pub fn get_settlement(env: &Env, settlement_id: u64) -> Option<crate::types::SettlementRecord> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Settlement(settlement_id))
+}
+
+/// Persist a settlement record to persistent storage.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `settlement` - The settlement record to save.
+///
+/// # Returns
+/// No return value.
+///
+/// # Examples
+/// ```rust
+/// // storage::set_settlement(&env, &settlement);
+/// ```
+pub fn set_settlement(env: &Env, settlement: &crate::types::SettlementRecord) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Settlement(settlement.settlement_id), settlement);
+}
+
+/// Get the active settlement ID for a shipment.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// * `Option<u64>` - The active settlement ID if one exists.
+///
+/// # Examples
+/// ```rust
+/// // let active_id = storage::get_active_settlement(&env, 1);
+/// ```
+pub fn get_active_settlement(env: &Env, shipment_id: u64) -> Option<u64> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ActiveSettlement(shipment_id))
+}
+
+/// Set the active settlement ID for a shipment.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+/// * `settlement_id` - The settlement ID to mark as active.
+///
+/// # Returns
+/// No return value.
+///
+/// # Examples
+/// ```rust
+/// // storage::set_active_settlement(&env, 1, 100);
+/// ```
+pub fn set_active_settlement(env: &Env, shipment_id: u64, settlement_id: u64) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ActiveSettlement(shipment_id), &settlement_id);
+}
+
+/// Clear the active settlement for a shipment.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// No return value.
+///
+/// # Examples
+/// ```rust
+/// // storage::clear_active_settlement(&env, 1);
+/// ```
+pub fn clear_active_settlement(env: &Env, shipment_id: u64) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::ActiveSettlement(shipment_id));
+}
