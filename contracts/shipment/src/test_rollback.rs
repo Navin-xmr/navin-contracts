@@ -1,8 +1,4 @@
-#![cfg(test)]
-
-use crate::{
-    test_utils, types::ShipmentInput, NavinShipment, NavinShipmentClient, ShipmentStatus,
-};
+use crate::{test_utils, types::ShipmentInput, NavinShipment, NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::{
     contract, contractimpl,
     testutils::{Address as _, Events},
@@ -63,20 +59,26 @@ fn test_create_shipments_batch_rollback() {
 
     // Verify rollback: No shipments should exist
     assert_eq!(client.get_shipment_count(), 0);
-    
+
     // Verify event rollback
     let events = env.events().all();
     // Filter for shipment_created events
     // (Address, Vec<Val>, Val) where .1 is topics
-    let creation_events = events.iter().filter(|e| {
-        if let Some(topic) = e.1.get(0) {
-            if let Ok(symbol) = Symbol::try_from_val(&env, &topic) {
-                return symbol == Symbol::new(&env, "shipment_created");
+    let creation_events = events
+        .iter()
+        .filter(|e| {
+            if let Some(topic) = e.1.get(0) {
+                if let Ok(symbol) = Symbol::try_from_val(&env, &topic) {
+                    return symbol == Symbol::new(&env, "shipment_created");
+                }
             }
-        }
-        false
-    }).count();
-    assert_eq!(creation_events, 0, "No shipment_created events should be emitted if batch fails");
+            false
+        })
+        .count();
+    assert_eq!(
+        creation_events, 0,
+        "No shipment_created events should be emitted if batch fails"
+    );
 }
 
 #[test]
@@ -111,10 +113,10 @@ fn test_record_milestones_batch_rollback() {
     // 1st valid milestone
     milestones.push_back((Symbol::new(&env, "warehouse"), data_hash.clone()));
     // 2nd invalid milestone (let's assume we can trigger a failure)
-    // Actually, record_milestones_batch validates length. 
+    // Actually, record_milestones_batch validates length.
     // Wait, BytesN<32> always has length 32 in Rust.
     // How can I trigger a failure in record_milestones_batch?
-    
+
     // Let's check the code again.
     /*
     2433:         if milestones.len() > config.batch_operation_limit {
@@ -122,25 +124,25 @@ fn test_record_milestones_batch_rollback() {
     2435:         }
     */
     // If I exceed the limit, it fails. But that's BEFORE any processing.
-    
+
     // I need something that fails DURING the loop if possible.
     // But `record_milestones_batch` does validation before the loop.
     /*
     2453:         for milestone_tuple in milestones.iter() {
     2454:             let data_hash = milestone_tuple.1.clone();
-    2455: 
+    2455:
     2456:             // Basic validation - ensure data_hash is valid
     2457:             if data_hash.len() != 32 {
     */
     // This loop is BEFORE the processing loop.
-    
-    // Wait, if it's already structured as "validate all" then "process all", 
+
+    // Wait, if it's already structured as "validate all" then "process all",
     // it's naturally atomic even without host rollback (though host rollback is there).
-    
+
     // So the task is just to "Implement atomicity rollback tests".
-    
+
     // I'll add a test that ensures it rolls back if it fails.
-    
+
     let mut oversized_milestones = Vec::new(&env);
     for _ in 0..100 {
         oversized_milestones.push_back((Symbol::new(&env, "fail"), data_hash.clone()));
@@ -151,14 +153,16 @@ fn test_record_milestones_batch_rollback() {
 
     // Verify no events were emitted
     let events = env.events().all();
-    let milestone_events = events.iter().filter(|e| {
-        if let Some(topic) = e.1.get(0) {
-            if let Ok(symbol) = Symbol::try_from_val(&env, &topic) {
-                return symbol == Symbol::new(&env, "milestone_recorded");
+    let milestone_events = events
+        .iter()
+        .filter(|e| {
+            if let Some(topic) = e.1.get(0) {
+                if let Ok(symbol) = Symbol::try_from_val(&env, &topic) {
+                    return symbol == Symbol::new(&env, "milestone_recorded");
+                }
             }
-        }
-        false
-    }).count();
+            false
+        })
+        .count();
     assert_eq!(milestone_events, 0);
 }
-
