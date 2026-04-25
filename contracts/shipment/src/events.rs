@@ -18,7 +18,9 @@
 //! Each event uses a single descriptive `Symbol` as its topic so that
 //! consumers can filter by topic when subscribing to contract events.
 
-use crate::types::{BreachType, Role, RoleChangeAction, Severity, ShipmentStatus};
+use crate::types::{
+    BreachType, MigrationReport, Role, RoleChangeAction, Severity, ShipmentStatus,
+};
 use soroban_sdk::{xdr::ToXdr, Address, BytesN, Env, Symbol};
 
 pub const EVENT_SCHEMA_VERSION: u32 = 2;
@@ -504,6 +506,30 @@ pub fn emit_contract_upgraded(
     env.events().publish(
         (Symbol::new(env, crate::event_topics::CONTRACT_UPGRADED),),
         (admin.clone(), new_wasm_hash.clone(), version),
+    );
+}
+
+/// Emits a `migration_reported` event summarizing the impact of an upgrade.
+///
+/// # Event Data
+///
+/// | Field            | Type              | Description                                |
+/// |------------------|-------------------|--------------------------------------------|
+/// | current_version  | `u32`             | Version before migration                    |
+/// | target_version   | `u32`             | Version after migration                     |
+/// | affected_entries | `u64`             | Count of entries involved in the migration  |
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `report` - Structured migration metrics.
+pub fn emit_migration_report(env: &Env, report: &MigrationReport) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::MIGRATION_REPORTED),),
+        (
+            report.current_version,
+            report.target_version,
+            report.affected_shipments,
+        ),
     );
 }
 
