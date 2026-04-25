@@ -114,14 +114,14 @@ fn test_debug_event_structure() {
     // What does our target symbol look like as a string?
     let target = Symbol::new(&env, "shipment_created");
     let target_str: std::string::String = target.to_string();
-    std::println!("TARGET string: {:?}", target_str);
+    std::println!("TARGET string: {target_str:?}");
 
     // What do the event topic symbols look like as strings?
     for (_contract, topics, _data) in env.events().all().iter() {
         for (i, v) in topics.iter().enumerate() {
             let s = soroban_sdk::Symbol::from_val(&env, &v);
             let s_str: std::string::String = s.to_string();
-            std::println!("  topic[{}] string: {:?}", i, s_str);
+            std::println!("  topic[{i}] string: {s_str:?}");
         }
     }
 }

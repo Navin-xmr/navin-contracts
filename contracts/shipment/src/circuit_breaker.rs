@@ -96,6 +96,12 @@ pub struct CircuitBreakerTracker {
     pub half_open_requests: u32,
 }
 
+impl Default for CircuitBreakerTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CircuitBreakerTracker {
     /// Create a new circuit breaker tracker in Closed state
     pub fn new() -> Self {
@@ -223,7 +229,7 @@ pub fn check_transfer_allowed(env: &Env, config: &CircuitBreakerConfig) -> Resul
         .storage()
         .persistent()
         .get(&breaker_key)
-        .unwrap_or_else(CircuitBreakerTracker::new);
+        .unwrap_or_default();
 
     breaker.should_allow_request(config, current_time)?;
 
@@ -244,7 +250,7 @@ pub fn record_transfer_success(env: &Env) {
         .storage()
         .persistent()
         .get(&breaker_key)
-        .unwrap_or_else(CircuitBreakerTracker::new);
+        .unwrap_or_default();
 
     breaker.record_success();
 
@@ -265,7 +271,7 @@ pub fn record_transfer_failure(env: &Env, config: &CircuitBreakerConfig) {
         .storage()
         .persistent()
         .get(&breaker_key)
-        .unwrap_or_else(CircuitBreakerTracker::new);
+        .unwrap_or_default();
 
     breaker.record_failure(config, current_time);
 
@@ -325,7 +331,7 @@ pub fn get_breaker_status(
         .storage()
         .persistent()
         .get(&breaker_key)
-        .unwrap_or_else(CircuitBreakerTracker::new);
+        .unwrap_or_default();
 
     let recovery_time = breaker.get_recovery_time_remaining(config, current_time);
 
