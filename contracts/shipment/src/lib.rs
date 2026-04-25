@@ -27,6 +27,8 @@ mod test_cross_contract_integration;
 mod test_finalization;
 #[cfg(test)]
 mod test_performance;
+#[cfg(test)]
+mod test_rollback;
 mod types;
 mod validation;
 
