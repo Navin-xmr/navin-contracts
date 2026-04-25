@@ -106,4 +106,6 @@ pub enum NavinError {
     DataHashMismatch = 45,
     /// Circuit breaker is open; token transfers are temporarily disabled.
     CircuitBreakerOpen = 46,
+    /// Migration version transition is not allowed.
+    InvalidMigrationEdge = 47,
 }
