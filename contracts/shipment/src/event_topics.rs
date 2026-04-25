@@ -101,6 +101,9 @@ pub const ADMIN_TRANSFERRED: &str = "admin_transferred";
 /// Emitted when the contract WASM is upgraded.
 pub const CONTRACT_UPGRADED: &str = "contract_upgraded";
 
+/// Emitted when a migration report is generated after an upgrade.
+pub const MIGRATION_REPORTED: &str = "migration_reported";
+
 /// Emitted when the contract is paused.
 pub const CONTRACT_PAUSED: &str = "contract_paused";
 
@@ -178,6 +181,7 @@ mod tests {
             NOTIFICATION,
             NOTE_APPENDED,
             EVIDENCE_ADDED,
+            MIGRATION_REPORTED,
         ];
         for topic in &topics {
             assert!(
@@ -226,6 +230,7 @@ mod tests {
         assert_eq!(NOTIFICATION, "notification");
         assert_eq!(NOTE_APPENDED, "note_appended");
         assert_eq!(EVIDENCE_ADDED, "evidence_added");
+        assert_eq!(MIGRATION_REPORTED, "migration_reported");
     }
 
     #[test]
@@ -262,6 +267,7 @@ mod tests {
             NOTIFICATION,
             NOTE_APPENDED,
             EVIDENCE_ADDED,
+            MIGRATION_REPORTED,
         ];
         topics.sort_unstable();
         // After sorting, any duplicates are adjacent — windows(2) catches them.

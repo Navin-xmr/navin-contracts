@@ -7,8 +7,6 @@
 //! - Shipment already Disputed: no double-open.
 //! - Shipment Cancelled: auto-dispute is skipped.
 
-#![cfg(test)]
-
 extern crate std;
 
 use crate::{BreachType, NavinShipment, NavinShipmentClient, Severity, ShipmentStatus};
