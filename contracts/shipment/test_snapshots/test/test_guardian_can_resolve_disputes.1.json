@@ -543,6 +543,51 @@
                   "symbol": "IdempotencyWindow"
                 },
                 {
+                  "bytes": "af7a63feae392a11b415f1e64350ae14d54e54a792136240376be7559b0f2c36"
+                }
+              ]
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "IdempotencyWindow"
+                    },
+                    {
+                      "bytes": "af7a63feae392a11b415f1e64350ae14d54e54a792136240376be7559b0f2c36"
+                    }
+                  ]
+                },
+                "durability": "temporary",
+                "val": {
+                  "bool": true
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          16
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "IdempotencyWindow"
+                },
+                {
                   "bytes": "ecece9a017a37804f38dccad69ca2d02f8bc6cf937dff67a68f0d0a35a4874a9"
                 }
               ]

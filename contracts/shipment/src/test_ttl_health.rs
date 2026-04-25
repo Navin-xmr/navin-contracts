@@ -9,21 +9,21 @@
 #![cfg(test)]
 
 use crate::{NavinShipment, NavinShipmentClient};
-use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env};
+use soroban_sdk::{
+    contract, contractimpl, testutils::Address as _, xdr::ToXdr, Address, BytesN, Env,
+};
 
 #[contract]
-struct MockToken;
+struct TtlMockToken;
 
 #[contractimpl]
-impl MockToken {
-    pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {
-        // Mock implementation - always succeeds
-    }
+impl TtlMockToken {
+    pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
 }
 
 fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
     let (env, admin) = super::test_utils::setup_env();
-    let token_contract = env.register(MockToken {}, ());
+    let token_contract = env.register(TtlMockToken {}, ());
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
     (env, client, admin, token_contract)
 }
@@ -36,7 +36,7 @@ fn create_test_shipment(
     carrier: &Address,
 ) -> u64 {
     let receiver = Address::generate(env);
-    let data_hash = BytesN::from_array(env, &[1u8; 32]);
+    let data_hash: BytesN<32> = env.crypto().sha256(&receiver.clone().to_xdr(env)).into();
     let deadline = env.ledger().timestamp() + 86400; // 1 day from now
 
     client.create_shipment(
