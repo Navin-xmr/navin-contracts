@@ -66,8 +66,8 @@ pub fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Addr
     (env, client, admin, token_contract)
 }
 
-pub fn setup_shipment_env_with_failing_token() -> (Env, NavinShipmentClient<'static>, Address, Address)
-{
+pub fn setup_shipment_env_with_failing_token(
+) -> (Env, NavinShipmentClient<'static>, Address, Address) {
     let (env, admin) = super::test_utils::setup_env();
     let token_contract = env.register(failing_token::FailingMockToken {}, ());
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
@@ -4568,7 +4568,8 @@ fn test_propose_action_upgrade() {
     let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
     let action = crate::AdminAction::Upgrade(new_wasm_hash);
 
-    let proposal_id = client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
     assert_eq!(proposal_id, 1);
 
     let proposal = client.get_proposal(&proposal_id);
@@ -4623,7 +4624,8 @@ fn test_approve_action_success() {
     let new_admin = Address::generate(&env);
     let action = crate::AdminAction::TransferAdmin(new_admin);
 
-    let proposal_id = client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Admin2 approves
     client.approve_action(&admin2, &proposal_id);
@@ -4652,7 +4654,8 @@ fn test_approve_action_already_approved() {
     let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
     let action = crate::AdminAction::Upgrade(new_wasm_hash);
 
-    let proposal_id = client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Admin1 tries to approve again (already approved when proposing)
     client.approve_action(&admin1, &proposal_id);
@@ -4678,7 +4681,8 @@ fn test_approve_action_not_admin() {
     let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
     let action = crate::AdminAction::Upgrade(new_wasm_hash);
 
-    let proposal_id = client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Outsider tries to approve
     client.approve_action(&outsider, &proposal_id);
@@ -4705,7 +4709,8 @@ fn test_execute_proposal_auto_on_threshold() {
     client.init_multisig(&admin, &admins, &2);
 
     let action = crate::AdminAction::Upgrade(new_wasm_hash);
-    let proposal_id = client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Admin2 approves - this should auto-execute since threshold is met
     client.approve_action(&admin2, &proposal_id);
@@ -4742,7 +4747,8 @@ fn test_execute_proposal_already_executed() {
 
     // Use TransferAdmin action instead of Upgrade
     let action = crate::AdminAction::TransferAdmin(new_admin);
-    let proposal_id = client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     client.approve_action(&admin2, &proposal_id);
 
@@ -4768,7 +4774,8 @@ fn test_proposal_expiration() {
     let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
     let action = crate::AdminAction::Upgrade(new_wasm_hash);
 
-    let proposal_id = client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Fast forward time beyond expiration (7 days + 1 second)
     super::test_utils::advance_past_multisig_expiry(&env);
@@ -4819,7 +4826,8 @@ fn test_force_release_action() {
 
     // Propose force release
     let action = crate::AdminAction::ForceRelease(shipment_id);
-    let proposal_id = client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Approve and execute
     client.approve_action(&admin2, &proposal_id);
@@ -4867,7 +4875,8 @@ fn test_force_refund_action() {
 
     // Propose force refund
     let action = crate::AdminAction::ForceRefund(shipment_id);
-    let proposal_id = client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Approve and execute
     client.approve_action(&admin2, &proposal_id);
@@ -4895,7 +4904,8 @@ fn test_transfer_admin_action() {
 
     // Propose admin transfer
     let action = crate::AdminAction::TransferAdmin(new_admin.clone());
-    let proposal_id = client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Approve and execute
     client.approve_action(&admin2, &proposal_id);
@@ -4930,7 +4940,8 @@ fn test_three_of_five_multisig() {
     client.init_multisig(&admin, &admins, &3);
 
     let action = crate::AdminAction::Upgrade(new_wasm_hash);
-    let proposal_id = client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // First approval (proposer)
     let proposal = client.get_proposal(&proposal_id);
@@ -4980,7 +4991,8 @@ fn test_execute_proposal_insufficient_approvals() {
     let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
     let action = crate::AdminAction::Upgrade(new_wasm_hash);
 
-    let proposal_id = client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Only 1 approval, need 3
     client.execute_proposal(&proposal_id);
@@ -6742,7 +6754,11 @@ fn test_execute_proposal_returns_proposal_already_executed() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id), &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id),
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
 
     client.approve_action(&admin2, &proposal_id);
     client.execute_proposal(&proposal_id);
@@ -6780,7 +6796,11 @@ fn test_approve_action_returns_proposal_expired() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id), &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id),
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
 
     // Fast forward time past expiration (7 days)
     super::test_utils::advance_past_multisig_expiry(&env);
@@ -6816,7 +6836,11 @@ fn test_execute_proposal_returns_proposal_expired() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id), &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id),
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
 
     client.approve_action(&admin2, &proposal_id);
 
@@ -6858,7 +6882,11 @@ fn test_approve_action_returns_already_approved() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id), &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id),
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
 
     client.approve_action(&admin2, &proposal_id);
     // Try to approve again with the same admin
@@ -6897,7 +6925,11 @@ fn test_execute_proposal_returns_insufficient_approvals() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id), &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id),
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
 
     // Only 1 approval (proposer), but threshold is 3
     client.execute_proposal(&proposal_id);
@@ -6935,7 +6967,11 @@ fn test_propose_action_returns_not_an_admin() {
     );
 
     // Outsider tries to propose
-    client.propose_action(&outsider, &crate::AdminAction::ForceRelease(shipment_id), &BytesN::from_array(&env, &[1u8; 32]));
+    client.propose_action(
+        &outsider,
+        &crate::AdminAction::ForceRelease(shipment_id),
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
 }
 
 #[test]
@@ -6967,7 +7003,11 @@ fn test_approve_action_returns_not_an_admin() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id), &BytesN::from_array(&env, &[1u8; 32]));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id),
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
 
     // Outsider tries to approve
     client.approve_action(&outsider, &proposal_id);

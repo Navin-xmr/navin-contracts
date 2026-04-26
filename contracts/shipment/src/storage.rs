@@ -1498,6 +1498,18 @@ pub fn shipment_exists_in_persistent(env: &Env, shipment_id: u64) -> bool {
         .has(&DataKey::Shipment(shipment_id))
 }
 
+pub fn is_salt_used(env: &Env, salt: &BytesN<32>) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::UsedSalt(salt.clone()))
+}
+
+pub fn mark_salt_used(env: &Env, salt: &BytesN<32>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::UsedSalt(salt.clone()), &true);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1762,16 +1774,4 @@ pub fn clear_active_settlement(env: &Env, shipment_id: u64) {
     env.storage()
         .persistent()
         .remove(&DataKey::ActiveSettlement(shipment_id));
-}
-
-pub fn is_salt_used(env: &Env, salt: &BytesN<32>) -> bool {
-    env.storage()
-        .persistent()
-        .has(&DataKey::UsedSalt(salt.clone()))
-}
-
-pub fn mark_salt_used(env: &Env, salt: &BytesN<32>) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::UsedSalt(salt.clone()), &true);
 }

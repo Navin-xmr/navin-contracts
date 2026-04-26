@@ -46,9 +46,7 @@ extern crate std;
 
 use crate::{NavinError, NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
-    contract, contractimpl,
-    testutils::{Address as _, Ledger as _},
-    Address, BytesN, Env, Symbol, Vec,
+    contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Symbol, Vec,
 };
 
 // ── No-op token stub ──────────────────────────────────────────────────────────
@@ -94,7 +92,17 @@ fn setup() -> Ctx {
     client.add_guardian(&admin, &guardian);
     client.add_operator(&admin, &operator);
 
-    Ctx { env, client, admin, company, carrier, receiver, guardian, operator, stranger }
+    Ctx {
+        env,
+        client,
+        admin,
+        company,
+        carrier,
+        receiver,
+        guardian,
+        operator,
+        stranger,
+    }
 }
 
 fn dummy_hash(env: &Env) -> BytesN<32> {
@@ -144,7 +152,8 @@ fn create_disputed_shipment(ctx: &Ctx) -> u64 {
         &crate::ShipmentStatus::InTransit,
         &dummy_hash(&ctx.env),
     );
-    ctx.client.raise_dispute(&ctx.company, &id, &seeded_hash(&ctx.env, 0xFE));
+    ctx.client
+        .raise_dispute(&ctx.company, &id, &seeded_hash(&ctx.env, 0xFE));
     id
 }
 
@@ -172,7 +181,11 @@ fn assert_unauthorized<T: core::fmt::Debug, E: core::fmt::Debug>(
 ) {
     assert!(result.is_err(), "expected Unauthorized but call succeeded");
     let err = result.unwrap_err().unwrap();
-    assert_eq!(err, NavinError::Unauthorized, "expected Unauthorized, got {err:?}");
+    assert_eq!(
+        err,
+        NavinError::Unauthorized,
+        "expected Unauthorized, got {err:?}"
+    );
 }
 
 // =============================================================================
@@ -346,7 +359,10 @@ fn test_auth_stranger_add_operator_deny() {
 #[test]
 fn test_auth_admin_suspend_carrier_allow() {
     let ctx = setup();
-    assert!(ctx.client.try_suspend_carrier(&ctx.admin, &ctx.carrier).is_ok());
+    assert!(ctx
+        .client
+        .try_suspend_carrier(&ctx.admin, &ctx.carrier)
+        .is_ok());
 }
 
 /// test_auth_company_suspend_carrier_deny
@@ -384,7 +400,10 @@ fn test_auth_stranger_suspend_carrier_deny() {
 fn test_auth_admin_revoke_role_allow() {
     let ctx = setup();
     // Revoking the operator role from the operator address.
-    assert!(ctx.client.try_revoke_role(&ctx.admin, &ctx.operator).is_ok());
+    assert!(ctx
+        .client
+        .try_revoke_role(&ctx.admin, &ctx.operator)
+        .is_ok());
 }
 
 /// test_auth_company_revoke_role_deny
@@ -423,7 +442,10 @@ fn test_auth_admin_force_cancel_shipment_allow() {
     let ctx = setup();
     let id = create_shipment(&ctx);
     let reason = dummy_hash(&ctx.env);
-    assert!(ctx.client.try_force_cancel_shipment(&ctx.admin, &id, &reason).is_ok());
+    assert!(ctx
+        .client
+        .try_force_cancel_shipment(&ctx.admin, &id, &reason)
+        .is_ok());
 }
 
 /// test_auth_company_force_cancel_shipment_deny
@@ -432,7 +454,10 @@ fn test_auth_company_force_cancel_shipment_deny() {
     let ctx = setup();
     let id = create_shipment(&ctx);
     let reason = dummy_hash(&ctx.env);
-    assert_unauthorized(ctx.client.try_force_cancel_shipment(&ctx.company, &id, &reason));
+    assert_unauthorized(
+        ctx.client
+            .try_force_cancel_shipment(&ctx.company, &id, &reason),
+    );
 }
 
 /// test_auth_carrier_force_cancel_shipment_deny
@@ -441,7 +466,10 @@ fn test_auth_carrier_force_cancel_shipment_deny() {
     let ctx = setup();
     let id = create_shipment(&ctx);
     let reason = dummy_hash(&ctx.env);
-    assert_unauthorized(ctx.client.try_force_cancel_shipment(&ctx.carrier, &id, &reason));
+    assert_unauthorized(
+        ctx.client
+            .try_force_cancel_shipment(&ctx.carrier, &id, &reason),
+    );
 }
 
 /// test_auth_guardian_force_cancel_shipment_deny
@@ -450,7 +478,10 @@ fn test_auth_guardian_force_cancel_shipment_deny() {
     let ctx = setup();
     let id = create_shipment(&ctx);
     let reason = dummy_hash(&ctx.env);
-    assert_unauthorized(ctx.client.try_force_cancel_shipment(&ctx.guardian, &id, &reason));
+    assert_unauthorized(
+        ctx.client
+            .try_force_cancel_shipment(&ctx.guardian, &id, &reason),
+    );
 }
 
 /// test_auth_stranger_force_cancel_shipment_deny
@@ -459,7 +490,10 @@ fn test_auth_stranger_force_cancel_shipment_deny() {
     let ctx = setup();
     let id = create_shipment(&ctx);
     let reason = dummy_hash(&ctx.env);
-    assert_unauthorized(ctx.client.try_force_cancel_shipment(&ctx.stranger, &id, &reason));
+    assert_unauthorized(
+        ctx.client
+            .try_force_cancel_shipment(&ctx.stranger, &id, &reason),
+    );
 }
 
 // ── pause ─────────────────────────────────────────────────────────────────────
@@ -670,7 +704,10 @@ fn test_auth_company_deposit_escrow_allow() {
     let ctx = setup();
     let id = create_shipment(&ctx);
     // Token is a no-op mock so the transfer always succeeds.
-    assert!(ctx.client.try_deposit_escrow(&ctx.company, &id, &1000).is_ok());
+    assert!(ctx
+        .client
+        .try_deposit_escrow(&ctx.company, &id, &1000)
+        .is_ok());
 }
 
 /// test_auth_admin_deposit_escrow_allow — admin has Company role from initialize.
@@ -678,7 +715,10 @@ fn test_auth_company_deposit_escrow_allow() {
 fn test_auth_admin_deposit_escrow_allow() {
     let ctx = setup();
     let id = create_shipment(&ctx);
-    assert!(ctx.client.try_deposit_escrow(&ctx.admin, &id, &1000).is_ok());
+    assert!(ctx
+        .client
+        .try_deposit_escrow(&ctx.admin, &id, &1000)
+        .is_ok());
 }
 
 /// test_auth_carrier_deposit_escrow_deny
@@ -720,28 +760,40 @@ fn test_auth_company_add_carrier_to_whitelist_allow() {
 #[test]
 fn test_auth_admin_add_carrier_to_whitelist_allow() {
     let ctx = setup();
-    assert!(ctx.client.try_add_carrier_to_whitelist(&ctx.admin, &ctx.carrier).is_ok());
+    assert!(ctx
+        .client
+        .try_add_carrier_to_whitelist(&ctx.admin, &ctx.carrier)
+        .is_ok());
 }
 
 /// test_auth_carrier_add_carrier_to_whitelist_deny
 #[test]
 fn test_auth_carrier_add_carrier_to_whitelist_deny() {
     let ctx = setup();
-    assert_unauthorized(ctx.client.try_add_carrier_to_whitelist(&ctx.carrier, &ctx.carrier));
+    assert_unauthorized(
+        ctx.client
+            .try_add_carrier_to_whitelist(&ctx.carrier, &ctx.carrier),
+    );
 }
 
 /// test_auth_guardian_add_carrier_to_whitelist_deny
 #[test]
 fn test_auth_guardian_add_carrier_to_whitelist_deny() {
     let ctx = setup();
-    assert_unauthorized(ctx.client.try_add_carrier_to_whitelist(&ctx.guardian, &ctx.carrier));
+    assert_unauthorized(
+        ctx.client
+            .try_add_carrier_to_whitelist(&ctx.guardian, &ctx.carrier),
+    );
 }
 
 /// test_auth_stranger_add_carrier_to_whitelist_deny
 #[test]
 fn test_auth_stranger_add_carrier_to_whitelist_deny() {
     let ctx = setup();
-    assert_unauthorized(ctx.client.try_add_carrier_to_whitelist(&ctx.stranger, &ctx.carrier));
+    assert_unauthorized(
+        ctx.client
+            .try_add_carrier_to_whitelist(&ctx.stranger, &ctx.carrier),
+    );
 }
 
 // ── cancel_shipment ───────────────────────────────────────────────────────────
@@ -752,7 +804,10 @@ fn test_auth_company_cancel_shipment_allow() {
     let ctx = setup();
     let id = create_shipment(&ctx);
     let reason = dummy_hash(&ctx.env);
-    assert!(ctx.client.try_cancel_shipment(&ctx.company, &id, &reason).is_ok());
+    assert!(ctx
+        .client
+        .try_cancel_shipment(&ctx.company, &id, &reason)
+        .is_ok());
 }
 
 /// test_auth_carrier_cancel_shipment_deny — carrier is not the sender.
@@ -1180,7 +1235,9 @@ fn test_auth_admin_propose_action_allow() {
     init_single_admin_multisig(&ctx, &ctx.admin.clone());
 
     let action = crate::types::AdminAction::TransferAdmin(Address::generate(&ctx.env));
-    let result = ctx.client.try_propose_action(&ctx.admin, &action, &salt(&ctx.env));
+    let result = ctx
+        .client
+        .try_propose_action(&ctx.admin, &action, &salt(&ctx.env));
     assert!(result.is_ok());
 }
 
@@ -1191,7 +1248,9 @@ fn test_auth_company_propose_action_deny() {
     init_single_admin_multisig(&ctx, &ctx.admin.clone());
 
     let action = crate::types::AdminAction::TransferAdmin(Address::generate(&ctx.env));
-    let result = ctx.client.try_propose_action(&ctx.company, &action, &salt(&ctx.env));
+    let result = ctx
+        .client
+        .try_propose_action(&ctx.company, &action, &salt(&ctx.env));
     assert!(result.is_err());
     let err = result.unwrap_err().unwrap();
     assert_eq!(err, NavinError::NotAnAdmin);
@@ -1204,7 +1263,9 @@ fn test_auth_carrier_propose_action_deny() {
     init_single_admin_multisig(&ctx, &ctx.admin.clone());
 
     let action = crate::types::AdminAction::TransferAdmin(Address::generate(&ctx.env));
-    let result = ctx.client.try_propose_action(&ctx.carrier, &action, &salt(&ctx.env));
+    let result = ctx
+        .client
+        .try_propose_action(&ctx.carrier, &action, &salt(&ctx.env));
     assert!(result.is_err());
     let err = result.unwrap_err().unwrap();
     assert_eq!(err, NavinError::NotAnAdmin);
@@ -1217,7 +1278,9 @@ fn test_auth_guardian_propose_action_deny() {
     init_single_admin_multisig(&ctx, &ctx.admin.clone());
 
     let action = crate::types::AdminAction::TransferAdmin(Address::generate(&ctx.env));
-    let result = ctx.client.try_propose_action(&ctx.guardian, &action, &salt(&ctx.env));
+    let result = ctx
+        .client
+        .try_propose_action(&ctx.guardian, &action, &salt(&ctx.env));
     assert!(result.is_err());
     let err = result.unwrap_err().unwrap();
     assert_eq!(err, NavinError::NotAnAdmin);
@@ -1230,7 +1293,9 @@ fn test_auth_stranger_propose_action_deny() {
     init_single_admin_multisig(&ctx, &ctx.admin.clone());
 
     let action = crate::types::AdminAction::TransferAdmin(Address::generate(&ctx.env));
-    let result = ctx.client.try_propose_action(&ctx.stranger, &action, &salt(&ctx.env));
+    let result = ctx
+        .client
+        .try_propose_action(&ctx.stranger, &action, &salt(&ctx.env));
     assert!(result.is_err());
     let err = result.unwrap_err().unwrap();
     assert_eq!(err, NavinError::NotAnAdmin);

@@ -24,13 +24,13 @@ mod test_consistency;
 #[cfg(test)]
 mod test_cross_contract_integration;
 #[cfg(test)]
-mod test_token_compatibility;
-#[cfg(test)]
 mod test_finalization;
 #[cfg(test)]
 mod test_performance;
 #[cfg(test)]
 mod test_settlement;
+#[cfg(test)]
+mod test_token_compatibility;
 mod types;
 mod validation;
 
@@ -41,13 +41,13 @@ mod test_auth_matrix;
 #[cfg(test)]
 mod test_auto_dispute;
 #[cfg(test)]
-mod test_replay_protection;
-#[cfg(test)]
 mod test_diagnostics;
 #[cfg(test)]
 mod test_iot_verification;
 #[cfg(test)]
 mod test_pause;
+#[cfg(test)]
+mod test_replay_protection;
 #[cfg(test)]
 mod test_suspension;
 #[cfg(test)]
@@ -155,8 +155,8 @@ fn create_settlement(
 
 /// Mark a settlement as completed.
 fn complete_settlement(env: &Env, settlement_id: u64, shipment_id: u64) -> Result<(), NavinError> {
-    let mut settlement = storage::get_settlement(env, settlement_id)
-        .ok_or(NavinError::ShipmentNotFound)?; // Reusing error for simplicity
+    let mut settlement =
+        storage::get_settlement(env, settlement_id).ok_or(NavinError::ShipmentNotFound)?; // Reusing error for simplicity
     settlement.state = SettlementState::Completed;
     settlement.completed_at = Some(env.ledger().timestamp());
     storage::set_settlement(env, &settlement);
@@ -171,8 +171,8 @@ fn fail_settlement(
     shipment_id: u64,
     error_code: u32,
 ) -> Result<(), NavinError> {
-    let mut settlement = storage::get_settlement(env, settlement_id)
-        .ok_or(NavinError::ShipmentNotFound)?; // Reusing error for simplicity
+    let mut settlement =
+        storage::get_settlement(env, settlement_id).ok_or(NavinError::ShipmentNotFound)?; // Reusing error for simplicity
     settlement.state = SettlementState::Failed;
     settlement.completed_at = Some(env.ledger().timestamp());
     settlement.error_code = Some(error_code);
@@ -299,8 +299,7 @@ fn internal_release_escrow(
 
     if actual_release > 0 {
         // Get token contract address
-        let token_contract = storage::get_token_contract(env)
-            .ok_or(NavinError::NotInitialized)?;
+        let token_contract = storage::get_token_contract(env).ok_or(NavinError::NotInitialized)?;
         let contract_address = env.current_contract_address();
 
         // Create settlement record in Pending state
@@ -2016,7 +2015,8 @@ impl NavinShipment {
         )?;
 
         // Transfer tokens from user to this contract
-        let transfer_result = invoke_token_transfer(&env, &token_contract, &from, &contract_address, amount);
+        let transfer_result =
+            invoke_token_transfer(&env, &token_contract, &from, &contract_address, amount);
 
         match transfer_result {
             Ok(()) => {
@@ -3457,11 +3457,7 @@ impl NavinShipment {
 
         // Set the idempotency window (using config-specified duration)
         let config = config::get_config(&env);
-        storage::set_idempotency_window(
-            &env,
-            &action_hash,
-            config.idempotency_window_seconds as u64,
-        );
+        storage::set_idempotency_window(&env, &action_hash, config.idempotency_window_seconds);
 
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;

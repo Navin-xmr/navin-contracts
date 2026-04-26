@@ -14,11 +14,7 @@
 extern crate std;
 
 use crate::{NavinError, NavinShipment, NavinShipmentClient};
-use soroban_sdk::{
-    contract, contractimpl,
-    testutils::{Address as _, Ledger as _},
-    Address, BytesN, Env, Vec,
-};
+use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
 
 // ── Minimal no-op token ───────────────────────────────────────────────────────
 
@@ -43,11 +39,7 @@ fn setup() -> (Env, NavinShipmentClient<'static>, Address) {
 
 /// Initialise a 2-of-1 multisig: two admins registered, threshold=1 so the
 /// proposer auto-executes (meets the min-admins=2 config constraint).
-fn setup_multisig(
-    env: &Env,
-    client: &NavinShipmentClient,
-    admin: &Address,
-) {
+fn setup_multisig(env: &Env, client: &NavinShipmentClient, admin: &Address) {
     let mut admins: Vec<Address> = Vec::new(env);
     admins.push_back(admin.clone());
     admins.push_back(Address::generate(env));
