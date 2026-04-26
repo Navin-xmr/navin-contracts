@@ -1050,6 +1050,7 @@ version = "0.0.0"
 dependencies = [
  "navin-token",
  "serde_json",
+ "sha2",
  "soroban-sdk",
 ]
 
