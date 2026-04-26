@@ -438,7 +438,7 @@
                   "symbol": "IdempotencyWindow"
                 },
                 {
-                  "bytes": "812debeeb9fa7aca416c483509761d206d19d05135a5f88167f56367e63409c4"
+                  "bytes": "92cfce0a756e41f916339226f898fa89cb92af248efb138f99c66ebd0d3caea6"
                 }
               ]
             },
@@ -458,7 +458,7 @@
                       "symbol": "IdempotencyWindow"
                     },
                     {
-                      "bytes": "812debeeb9fa7aca416c483509761d206d19d05135a5f88167f56367e63409c4"
+                      "bytes": "92cfce0a756e41f916339226f898fa89cb92af248efb138f99c66ebd0d3caea6"
                     }
                   ]
                 },
@@ -483,7 +483,7 @@
                   "symbol": "IdempotencyWindow"
                 },
                 {
-                  "bytes": "92cfce0a756e41f916339226f898fa89cb92af248efb138f99c66ebd0d3caea6"
+                  "bytes": "fd3687880f93fa1b31b710669f97d1b17e7dd73610fac0446e23507ede7172ab"
                 }
               ]
             },
@@ -503,7 +503,7 @@
                       "symbol": "IdempotencyWindow"
                     },
                     {
-                      "bytes": "92cfce0a756e41f916339226f898fa89cb92af248efb138f99c66ebd0d3caea6"
+                      "bytes": "fd3687880f93fa1b31b710669f97d1b17e7dd73610fac0446e23507ede7172ab"
                     }
                   ]
                 },
@@ -894,7 +894,7 @@
                           ]
                         },
                         "val": {
-                          "bytes": "6a0efca8bd21d50a73455494417546197795ee66234c5b6b991bba0d714b17e4"
+                          "bytes": "50ffe82c4517a915e4ee4ed163e55afdf56d3d2e401c16133fd069446806ab9d"
                         }
                       },
                       {
@@ -949,10 +949,42 @@
                             },
                             {
                               "key": {
+                                "symbol": "max_breaches_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_evidence_per_dispute"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "max_metadata_entries"
                               },
                               "val": {
                                 "u32": 5
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_milestones_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_notes_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
                               }
                             },
                             {

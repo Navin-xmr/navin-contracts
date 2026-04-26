@@ -120,10 +120,42 @@
                     },
                     {
                       "key": {
+                        "symbol": "max_breaches_per_shipment"
+                      },
+                      "val": {
+                        "u32": 255
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "max_evidence_per_dispute"
+                      },
+                      "val": {
+                        "u32": 255
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "max_metadata_entries"
                       },
                       "val": {
                         "u32": 5
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "max_milestones_per_shipment"
+                      },
+                      "val": {
+                        "u32": 255
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "max_notes_per_shipment"
+                      },
+                      "val": {
+                        "u32": 255
                       }
                     },
                     {
@@ -625,7 +657,7 @@
                           ]
                         },
                         "val": {
-                          "bytes": "b5fccb46aa2ae03753352f3981f8c935b824107dfe8587452d29cdae8de12651"
+                          "bytes": "03eee21cf4efe1303db6d5ed1f1a3073ec5a21304ccf2314407c3a680c454a4f"
                         }
                       },
                       {
@@ -680,10 +712,42 @@
                             },
                             {
                               "key": {
+                                "symbol": "max_breaches_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_evidence_per_dispute"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "max_metadata_entries"
                               },
                               "val": {
                                 "u32": 5
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_milestones_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_notes_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
                               }
                             },
                             {

@@ -30,7 +30,28 @@ fn next_event_counter(env: &Env, shipment_id: u64) -> u32 {
     crate::storage::get_event_count(env, shipment_id).saturating_add(1)
 }
 
-fn generate_idempotency_key(
+/// Compute the canonical idempotency key for an event.
+///
+/// The idempotency key is a SHA-256 hash of a canonical binary payload
+/// consisting of three fields concatenated in order:
+///
+/// 1. `shipment_id` as big-endian u64 (8 bytes)
+/// 2. `event_type` as XDR-encoded Symbol (length-prefixed string)
+/// 3. `event_counter` as big-endian u32 (4 bytes)
+///
+/// This deterministic encoding ensures that all parties (on-chain and
+/// off-chain indexers) can independently compute the same key for a given
+/// event, enabling reliable deduplication.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The shipment identifier.
+/// * `event_type` - The event type string (must match a topic constant).
+/// * `event_counter` - The per-shipment monotonically increasing event counter.
+///
+/// # Returns
+/// * `BytesN<32>` - The idempotency key.
+pub fn generate_idempotency_key(
     env: &Env,
     shipment_id: u64,
     event_type: &str,
@@ -171,7 +192,7 @@ pub fn emit_status_updated(
 ///
 /// Milestones are **never stored on-chain** — this is the canonical example
 /// of the Hash-and-Emit pattern. The full milestone payload (GPS coordinates,
-/// temperature readings, photos) lives off-chain; only its hash is emitted.
+/// temperature readings, photos) lives off-chain; only its hash is published.
 ///
 /// # Event Data
 ///
@@ -228,6 +249,8 @@ pub fn emit_milestone_recorded(
         ),
     );
     crate::storage::increment_event_count(env, shipment_id);
+    // Also track milestone-specific count for payload size guard
+    crate::storage::increment_milestone_event_count(env, shipment_id);
 }
 
 /// Emits an `escrow_deposited` event when funds are locked for a shipment.
