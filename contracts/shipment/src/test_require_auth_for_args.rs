@@ -353,9 +353,11 @@ fn test_resolve_dispute_auth_bound_to_arguments() {
     let (_env, client, admin, _token) = setup_env();
     let _cid = contract_id(&client);
 
-    // Verify that admin can call resolve_dispute (auth check)
-    // The actual dispute resolution logic is tested elsewhere
-    assert_eq!(admin, admin, "Admin should be authorized");
+    // Keep this test lightweight while still validating helper correctness.
+    assert_eq!(
+        cid, client.address,
+        "Contract ID helper should match client"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

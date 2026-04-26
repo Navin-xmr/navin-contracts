@@ -1,7 +1,46 @@
 use crate::types::*;
 use crate::{NavinShipment, NavinShipmentClient};
-use soroban_sdk::testutils::Address as _;
-use soroban_sdk::{Address, BytesN, Env};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
+
+// ── Mock token stubs ──────────────────────────────────────────────────────────
+
+mod ok_token {
+    use soroban_sdk::{contract, contractimpl, Address, Env};
+    #[contract]
+    pub struct MockToken;
+    #[contractimpl]
+    impl MockToken {
+        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+    }
+}
+
+mod fail_token {
+    use soroban_sdk::{contract, contracterror, contractimpl, Address, Env};
+    #[contracterror]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+    #[repr(u32)]
+    pub enum MockTokenError {
+        TransferFailed = 1,
+    }
+    #[contract]
+    pub struct FailingMockToken;
+    #[contractimpl]
+    impl FailingMockToken {
+        pub fn transfer(
+            _env: Env,
+            _from: Address,
+            _to: Address,
+            _amount: i128,
+        ) -> Result<(), MockTokenError> {
+            Err(MockTokenError::TransferFailed)
+        }
+    }
+}
+
+use fail_token::FailingMockToken;
+use ok_token::MockToken;
+
+// ── Setup helpers ─────────────────────────────────────────────────────────────
 
 mod mock_token {
     use soroban_sdk::{contract, contractimpl, Address, Env};
@@ -55,6 +94,14 @@ fn setup_shipment_env_with_failing_token() -> (Env, NavinShipmentClient<'static>
 fn dummy_hash(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &[1u8; 32])
 }
+
+fn seeded_hash(env: &Env, seed: u8) -> BytesN<32> {
+    let mut bytes = [1u8; 32];
+    bytes[31] = seed;
+    BytesN::from_array(env, &bytes)
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
 
 /// Test that deposit_escrow creates a settlement record in Pending state
 /// and transitions to Completed on success.
@@ -412,7 +459,7 @@ fn test_multiple_shipments_independent_settlements() {
     let data_hash2 = BytesN::from_array(&env, &[2u8; 32]);
     let deadline = env.ledger().timestamp() + 86400;
 
-    // Create two shipments
+    // Use distinct data hashes so the idempotency check treats them as separate operations.
     let shipment_id1 = client.create_shipment(
         &company,
         &receiver,

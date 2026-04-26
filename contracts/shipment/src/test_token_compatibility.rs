@@ -2,6 +2,7 @@
 //!
 //! Validates the shipment contract's escrow and payment flows against both
 //! Stellar Asset Contract (SAC) tokens and custom token contracts (NavinToken).
+#![allow(deprecated)]
 
 use crate::{test_utils, types::ShipmentStatus, NavinError, NavinShipment, NavinShipmentClient};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, IntoVal, Vec};
