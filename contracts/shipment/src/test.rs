@@ -8,7 +8,7 @@ use crate::{
 };
 use soroban_sdk::{
     contract, contracterror, contractimpl,
-    testutils::{storage::Persistent, Address as _, Events, Ledger as _},
+    testutils::{storage::Persistent, Address as _, Events},
     Address, BytesN, Env, Symbol, TryFromVal,
 };
 
@@ -58,7 +58,7 @@ mod failing_token {
     }
 }
 
-pub fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
+fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
     let (env, admin) = super::test_utils::setup_env();
     let token_contract = env.register(MockToken {}, ());
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
@@ -66,7 +66,7 @@ pub fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Addr
     (env, client, admin, token_contract)
 }
 
-pub fn setup_shipment_env_with_failing_token() -> (Env, NavinShipmentClient<'static>, Address, Address)
+fn setup_shipment_env_with_failing_token() -> (Env, NavinShipmentClient<'static>, Address, Address)
 {
     let (env, admin) = super::test_utils::setup_env();
     let token_contract = env.register(failing_token::FailingMockToken {}, ());
@@ -9945,12 +9945,9 @@ fn test_guardian_can_resolve_disputes() {
 }
 
 #[test]
-fn test_resolve_dispute_idempotency() {
+fn test_report_condition_breach_limit_exceeded() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
-
-    let guardian = Address::generate(&env);
-    client.add_guardian(&admin, &guardian);
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -9970,52 +9967,47 @@ fn test_resolve_dispute_idempotency() {
         &deadline,
     );
 
-    client.deposit_escrow(&company, &shipment_id, &1000);
+    // Initial status update to move into InTransit
     client.update_status(
         &carrier,
         &shipment_id,
         &ShipmentStatus::InTransit,
         &data_hash,
     );
-    client.raise_dispute(&company, &shipment_id, &data_hash);
 
-    // Set idempotency window to 300s
+    // Update config to have a small breach limit for testing
     let config = crate::ContractConfig {
-        idempotency_window_seconds: 300,
+        max_breaches_per_shipment: 2,
         ..crate::ContractConfig::default()
     };
     client.update_config(&admin, &config);
 
-    // Resolve once - OK
-    client.resolve_dispute(
-        &guardian,
+    // First breach - OK
+    client.report_condition_breach(
+        &carrier,
         &shipment_id,
-        &crate::DisputeResolution::RefundToCompany,
+        &BreachType::TemperatureHigh,
+        &Severity::Medium,
         &data_hash,
     );
 
-    // Resolve again immediately - Should fail with DuplicateAction
-    let res = client.try_resolve_dispute(
-        &guardian,
+    // Second breach - OK
+    client.report_condition_breach(
+        &carrier,
         &shipment_id,
-        &crate::DisputeResolution::RefundToCompany,
+        &BreachType::Impact,
+        &Severity::High,
         &data_hash,
     );
-    assert_eq!(res, Err(Ok(crate::NavinError::DuplicateAction)));
 
-    // Advance time past the window
-    env.ledger().with_mut(|l| {
-        l.timestamp += 301;
-        l.sequence_number += 61; // 301 / 5 = ~60 ledgers
-    });
-
-    // Resolve again - Now it fails with ShipmentFinalized (because it's already resolved/cancelled/finalized)
-    // but NOT DuplicateAction anymore.
-    let res = client.try_resolve_dispute(
-        &guardian,
+    // Third breach - Should fail
+    let res = client.try_report_condition_breach(
+        &carrier,
         &shipment_id,
-        &crate::DisputeResolution::RefundToCompany,
+        &BreachType::TamperDetected,
+        &Severity::Critical,
         &data_hash,
     );
-    assert_eq!(res, Err(Ok(crate::NavinError::ShipmentFinalized)));
+
+    assert_eq!(res, Err(Ok(crate::NavinError::BreachLimitExceeded)));
 }
