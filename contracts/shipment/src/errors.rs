@@ -108,4 +108,6 @@ pub enum NavinError {
     CircuitBreakerOpen = 46,
     /// Migration version transition is not allowed.
     InvalidMigrationEdge = 47,
+    /// Proposal salt was already used in a prior proposal; replay attack prevented.
+    ProposalSaltReused = 48,
 }
