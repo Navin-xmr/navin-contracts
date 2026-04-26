@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 extern crate std;
 use std::println;
 
@@ -24,11 +22,18 @@ fn test_frontend_verification_flow() {
     client.add_company(&admin, &sender);
     client.add_carrier(&admin, &carrier);
 
-    client.create_shipment(&sender, &receiver, &carrier, &data_hash, &payment_milestones, &deadline);
+    client.create_shipment(
+        &sender,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &payment_milestones,
+        &deadline,
+    );
 
     // 1. Get events
     let events = env.events().all();
-    
+
     // Filter for the shipment_created event
     let target_topic = Symbol::new(&env, "shipment_created");
     let shipment_created_event = events
@@ -52,14 +57,19 @@ fn test_frontend_verification_flow() {
 
     // 3. Verification Step: Verify Topics
     // Topic 0 should be the event type
-    let topic_0: Symbol = shipment_created_event.1.get(0).unwrap().try_into_val(&env).unwrap();
+    let topic_0: Symbol = shipment_created_event
+        .1
+        .get(0)
+        .unwrap()
+        .try_into_val(&env)
+        .unwrap();
     assert_eq!(topic_0, target_topic);
 
     // 4. Verification Step: Verify Data Hash and Fields
-    // For shipment_created data is a Vec<Val>: 
+    // For shipment_created data is a Vec<Val>:
     // [shipment_id, sender, receiver, data_hash, version, counter, idempotency_key]
     let event_data: Vec<soroban_sdk::Val> = shipment_created_event.2.try_into_val(&env).unwrap();
-    
+
     let shipment_id: u64 = event_data.get(0).unwrap().try_into_val(&env).unwrap();
     let event_sender: Address = event_data.get(1).unwrap().try_into_val(&env).unwrap();
     let event_receiver: Address = event_data.get(2).unwrap().try_into_val(&env).unwrap();
@@ -75,8 +85,13 @@ fn test_frontend_verification_flow() {
 
     // 5. Verification Step: Verify Idempotency Key
     // The idempotency key is a hash of (shipment_id, event_type, event_counter)
-    let expected_key = crate::events::generate_idempotency_key(&env, shipment_id, "shipment_created", event_counter);
+    let expected_key = crate::events::generate_idempotency_key(
+        &env,
+        shipment_id,
+        "shipment_created",
+        event_counter,
+    );
     assert_eq!(event_idempotency_key, expected_key);
-    
+
     println!("Verification successful!");
 }

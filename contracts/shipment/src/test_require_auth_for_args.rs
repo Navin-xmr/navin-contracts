@@ -4,8 +4,6 @@
 //! payload arguments using require_auth_for_args, preventing signature reuse
 //! attacks where a signed payload for one operation could be replayed for another.
 
-#![cfg(test)]
-
 extern crate std;
 
 use crate::{NavinShipment, NavinShipmentClient};

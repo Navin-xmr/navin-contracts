@@ -5,8 +5,6 @@
 //! coverage for edge cases, boundary conditions, and malformed inputs on ALL public
 //! entry points prevents wallet/dApp crashes and improves production stability.
 
-#![cfg(test)]
-
 extern crate std;
 
 use crate::{NavinShipment, NavinShipmentClient, ShipmentStatus};
