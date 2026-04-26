@@ -9,12 +9,11 @@
 
 extern crate std;
 
-use crate::{
-    NavinShipment, NavinShipmentClient, NavinError, ShipmentStatus,
-};
+use crate::{NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::{
-    contract, contractimpl, Address, BytesN, Env, Symbol, Vec,
+    contract, contractimpl,
     testutils::{Address as _, Ledger as _},
+    Address, BytesN, Env, Symbol, Vec,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -57,7 +56,10 @@ fn test_initialize_already_initialized_returns_error() {
     let (env, client, admin, token) = setup_env();
     // Already initialized in setup_env, second call must return error
     let result = client.try_initialize(&admin, &token);
-    assert!(result.is_err(), "initialize must return error when already initialized");
+    assert!(
+        result.is_err(),
+        "initialize must return error when already initialized"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,9 +71,12 @@ fn test_add_company_unauthorized_caller() {
     let (env, client, _admin, _token) = setup_env();
     let unauthorized = Address::generate(&env);
     let company = Address::generate(&env);
-    
+
     let result = client.try_add_company(&unauthorized, &company);
-    assert!(result.is_err(), "add_company must fail with unauthorized caller");
+    assert!(
+        result.is_err(),
+        "add_company must fail with unauthorized caller"
+    );
 }
 
 #[test]
@@ -80,17 +85,21 @@ fn test_add_company_not_initialized() {
     env.ledger().with_mut(|li| {
         li.protocol_version = crate::test_utils::DEFAULT_PROTOCOL_VERSION;
     });
-    env.ledger().set_timestamp(crate::test_utils::DEFAULT_TIMESTAMP);
-    
+    env.ledger()
+        .set_timestamp(crate::test_utils::DEFAULT_TIMESTAMP);
+
     let admin = Address::generate(&env);
     let company = Address::generate(&env);
     let token = env.register(MockToken {}, ());
     let contract_id = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &contract_id);
-    
+
     env.mock_all_auths();
     let result = client.try_add_company(&admin, &company);
-    assert!(result.is_err(), "add_company must fail when not initialized");
+    assert!(
+        result.is_err(),
+        "add_company must fail when not initialized"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -102,9 +111,12 @@ fn test_add_carrier_unauthorized_caller() {
     let (env, client, _admin, _token) = setup_env();
     let unauthorized = Address::generate(&env);
     let carrier = Address::generate(&env);
-    
+
     let result = client.try_add_carrier(&unauthorized, &carrier);
-    assert!(result.is_err(), "add_carrier must fail with unauthorized caller");
+    assert!(
+        result.is_err(),
+        "add_carrier must fail with unauthorized caller"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -119,9 +131,9 @@ fn test_create_shipment_invalid_hash_all_zeros() {
     let carrier = Address::generate(&env);
     let invalid_hash = BytesN::from_array(&env, &[0u8; 32]); // All zeros
     let deadline = env.ledger().timestamp() + 3600;
-    
+
     client.add_company(&admin, &company);
-    
+
     let result = client.try_create_shipment(
         &company,
         &receiver,
@@ -141,9 +153,9 @@ fn test_create_shipment_deadline_in_past() {
     let carrier = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let past_deadline = env.ledger().timestamp() - 1; // Past timestamp
-    
+
     client.add_company(&admin, &company);
-    
+
     let result = client.try_create_shipment(
         &company,
         &receiver,
@@ -163,7 +175,7 @@ fn test_create_shipment_unauthorized_company() {
     let carrier = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
-    
+
     let result = client.try_create_shipment(
         &unauthorized_company,
         &receiver,
@@ -183,14 +195,14 @@ fn test_create_shipment_invalid_milestone_sum() {
     let carrier = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
-    
+
     client.add_company(&admin, &company);
-    
+
     // Create milestones that don't sum to 100
     let mut milestones = Vec::new(&env);
     milestones.push_back((Symbol::new(&env, "checkpoint1"), 50u32));
     milestones.push_back((Symbol::new(&env, "checkpoint2"), 30u32)); // Sum = 80, not 100
-    
+
     let result = client.try_create_shipment(
         &company,
         &receiver,
@@ -199,7 +211,10 @@ fn test_create_shipment_invalid_milestone_sum() {
         &milestones,
         &deadline,
     );
-    assert!(result.is_err(), "create_shipment must reject invalid milestone sum");
+    assert!(
+        result.is_err(),
+        "create_shipment must reject invalid milestone sum"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -214,7 +229,7 @@ fn test_deposit_escrow_invalid_amount_zero() {
     let carrier = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
-    
+
     client.add_company(&admin, &company);
     let shipment_id = client.create_shipment(
         &company,
@@ -224,7 +239,7 @@ fn test_deposit_escrow_invalid_amount_zero() {
         &Vec::new(&env),
         &deadline,
     );
-    
+
     let result = client.try_deposit_escrow(&company, &shipment_id, &0i128);
     assert!(result.is_err(), "deposit_escrow must reject zero amount");
 }
@@ -233,11 +248,14 @@ fn test_deposit_escrow_invalid_amount_zero() {
 fn test_deposit_escrow_nonexistent_shipment() {
     let (env, client, admin, _token) = setup_env();
     let company = Address::generate(&env);
-    
+
     client.add_company(&admin, &company);
-    
+
     let result = client.try_deposit_escrow(&company, &999u64, &100i128);
-    assert!(result.is_err(), "deposit_escrow must fail for nonexistent shipment");
+    assert!(
+        result.is_err(),
+        "deposit_escrow must fail for nonexistent shipment"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -249,11 +267,15 @@ fn test_update_status_nonexistent_shipment() {
     let (env, client, admin, _token) = setup_env();
     let carrier = Address::generate(&env);
     let status_hash = BytesN::from_array(&env, &[2u8; 32]);
-    
+
     client.add_carrier(&admin, &carrier);
-    
-    let result = client.try_update_status(&carrier, &999u64, &ShipmentStatus::InTransit, &status_hash);
-    assert!(result.is_err(), "update_status must fail for nonexistent shipment");
+
+    let result =
+        client.try_update_status(&carrier, &999u64, &ShipmentStatus::InTransit, &status_hash);
+    assert!(
+        result.is_err(),
+        "update_status must fail for nonexistent shipment"
+    );
 }
 
 #[test]
@@ -265,10 +287,10 @@ fn test_update_status_invalid_transition() {
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let status_hash = BytesN::from_array(&env, &[2u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
-    
+
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
-    
+
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -277,10 +299,18 @@ fn test_update_status_invalid_transition() {
         &Vec::new(&env),
         &deadline,
     );
-    
+
     // Try invalid transition: Created -> Delivered (should be Created -> InTransit)
-    let result = client.try_update_status(&carrier, &shipment_id, &ShipmentStatus::Delivered, &status_hash);
-    assert!(result.is_err(), "update_status must reject invalid state transition");
+    let result = client.try_update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::Delivered,
+        &status_hash,
+    );
+    assert!(
+        result.is_err(),
+        "update_status must reject invalid state transition"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -292,11 +322,14 @@ fn test_cancel_shipment_nonexistent_shipment() {
     let (env, client, admin, _token) = setup_env();
     let company = Address::generate(&env);
     let reason_hash = BytesN::from_array(&env, &[3u8; 32]);
-    
+
     client.add_company(&admin, &company);
-    
+
     let result = client.try_cancel_shipment(&company, &999u64, &reason_hash);
-    assert!(result.is_err(), "cancel_shipment must fail for nonexistent shipment");
+    assert!(
+        result.is_err(),
+        "cancel_shipment must fail for nonexistent shipment"
+    );
 }
 
 #[test]
@@ -308,10 +341,10 @@ fn test_cancel_shipment_unauthorized_caller() {
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let reason_hash = BytesN::from_array(&env, &[3u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
-    
+
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
-    
+
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -320,10 +353,13 @@ fn test_cancel_shipment_unauthorized_caller() {
         &Vec::new(&env),
         &deadline,
     );
-    
+
     let unauthorized = Address::generate(&env);
     let result = client.try_cancel_shipment(&unauthorized, &shipment_id, &reason_hash);
-    assert!(result.is_err(), "cancel_shipment must fail for unauthorized caller");
+    assert!(
+        result.is_err(),
+        "cancel_shipment must fail for unauthorized caller"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -334,9 +370,12 @@ fn test_cancel_shipment_unauthorized_caller() {
 fn test_release_escrow_nonexistent_shipment() {
     let (env, client, admin, _token) = setup_env();
     let caller = Address::generate(&env);
-    
+
     let result = client.try_release_escrow(&caller, &999u64);
-    assert!(result.is_err(), "release_escrow must fail for nonexistent shipment");
+    assert!(
+        result.is_err(),
+        "release_escrow must fail for nonexistent shipment"
+    );
 }
 
 #[test]
@@ -347,10 +386,10 @@ fn test_release_escrow_invalid_status() {
     let carrier = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
-    
+
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
-    
+
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -359,10 +398,13 @@ fn test_release_escrow_invalid_status() {
         &Vec::new(&env),
         &deadline,
     );
-    
+
     // Try to release escrow when shipment is in Created status (not Delivered)
     let result = client.try_release_escrow(&receiver, &shipment_id);
-    assert!(result.is_err(), "release_escrow must fail for non-Delivered shipment");
+    assert!(
+        result.is_err(),
+        "release_escrow must fail for non-Delivered shipment"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -373,9 +415,12 @@ fn test_release_escrow_invalid_status() {
 fn test_refund_escrow_nonexistent_shipment() {
     let (env, client, admin, _token) = setup_env();
     let caller = Address::generate(&env);
-    
+
     let result = client.try_refund_escrow(&caller, &999u64);
-    assert!(result.is_err(), "refund_escrow must fail for nonexistent shipment");
+    assert!(
+        result.is_err(),
+        "refund_escrow must fail for nonexistent shipment"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -387,9 +432,12 @@ fn test_raise_dispute_nonexistent_shipment() {
     let (env, client, admin, _token) = setup_env();
     let caller = Address::generate(&env);
     let reason_hash = BytesN::from_array(&env, &[4u8; 32]);
-    
+
     let result = client.try_raise_dispute(&caller, &999u64, &reason_hash);
-    assert!(result.is_err(), "raise_dispute must fail for nonexistent shipment");
+    assert!(
+        result.is_err(),
+        "raise_dispute must fail for nonexistent shipment"
+    );
 }
 
 #[test]
@@ -401,10 +449,10 @@ fn test_raise_dispute_unauthorized_caller() {
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let reason_hash = BytesN::from_array(&env, &[4u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
-    
+
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
-    
+
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -413,10 +461,13 @@ fn test_raise_dispute_unauthorized_caller() {
         &Vec::new(&env),
         &deadline,
     );
-    
+
     let unauthorized = Address::generate(&env);
     let result = client.try_raise_dispute(&unauthorized, &shipment_id, &reason_hash);
-    assert!(result.is_err(), "raise_dispute must fail for unauthorized caller");
+    assert!(
+        result.is_err(),
+        "raise_dispute must fail for unauthorized caller"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -427,9 +478,17 @@ fn test_raise_dispute_unauthorized_caller() {
 fn test_resolve_dispute_nonexistent_shipment() {
     let (env, client, admin, _token) = setup_env();
     let reason_hash = BytesN::from_array(&env, &[5u8; 32]);
-    
-    let result = client.try_resolve_dispute(&admin, &999u64, &crate::DisputeResolution::ReleaseToCarrier, &reason_hash);
-    assert!(result.is_err(), "resolve_dispute must fail for nonexistent shipment");
+
+    let result = client.try_resolve_dispute(
+        &admin,
+        &999u64,
+        &crate::DisputeResolution::ReleaseToCarrier,
+        &reason_hash,
+    );
+    assert!(
+        result.is_err(),
+        "resolve_dispute must fail for nonexistent shipment"
+    );
 }
 
 #[test]
@@ -441,10 +500,10 @@ fn test_resolve_dispute_unauthorized_caller() {
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let reason_hash = BytesN::from_array(&env, &[5u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
-    
+
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
-    
+
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -453,10 +512,18 @@ fn test_resolve_dispute_unauthorized_caller() {
         &Vec::new(&env),
         &deadline,
     );
-    
+
     let unauthorized = Address::generate(&env);
-    let result = client.try_resolve_dispute(&unauthorized, &shipment_id, &crate::DisputeResolution::ReleaseToCarrier, &reason_hash);
-    assert!(result.is_err(), "resolve_dispute must fail for unauthorized caller");
+    let result = client.try_resolve_dispute(
+        &unauthorized,
+        &shipment_id,
+        &crate::DisputeResolution::ReleaseToCarrier,
+        &reason_hash,
+    );
+    assert!(
+        result.is_err(),
+        "resolve_dispute must fail for unauthorized caller"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -467,9 +534,12 @@ fn test_resolve_dispute_unauthorized_caller() {
 fn test_set_shipment_limit_unauthorized_caller() {
     let (env, client, _admin, _token) = setup_env();
     let unauthorized = Address::generate(&env);
-    
+
     let result = client.try_set_shipment_limit(&unauthorized, &50u32);
-    assert!(result.is_err(), "set_shipment_limit must fail for unauthorized caller");
+    assert!(
+        result.is_err(),
+        "set_shipment_limit must fail for unauthorized caller"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -480,7 +550,7 @@ fn test_set_shipment_limit_unauthorized_caller() {
 fn test_pause_unauthorized_caller() {
     let (env, client, _admin, _token) = setup_env();
     let unauthorized = Address::generate(&env);
-    
+
     let result = client.try_pause(&unauthorized);
     assert!(result.is_err(), "pause must fail for unauthorized caller");
 }
@@ -493,7 +563,7 @@ fn test_pause_unauthorized_caller() {
 fn test_unpause_unauthorized_caller() {
     let (env, client, _admin, _token) = setup_env();
     let unauthorized = Address::generate(&env);
-    
+
     let result = client.try_unpause(&unauthorized);
     assert!(result.is_err(), "unpause must fail for unauthorized caller");
 }
@@ -506,9 +576,12 @@ fn test_unpause_unauthorized_caller() {
 fn test_force_cancel_shipment_nonexistent_shipment() {
     let (env, client, admin, _token) = setup_env();
     let reason_hash = BytesN::from_array(&env, &[6u8; 32]);
-    
+
     let result = client.try_force_cancel_shipment(&admin, &999u64, &reason_hash);
-    assert!(result.is_err(), "force_cancel_shipment must fail for nonexistent shipment");
+    assert!(
+        result.is_err(),
+        "force_cancel_shipment must fail for nonexistent shipment"
+    );
 }
 
 #[test]
@@ -520,10 +593,10 @@ fn test_force_cancel_shipment_unauthorized_caller() {
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let reason_hash = BytesN::from_array(&env, &[6u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
-    
+
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
-    
+
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -532,10 +605,13 @@ fn test_force_cancel_shipment_unauthorized_caller() {
         &Vec::new(&env),
         &deadline,
     );
-    
+
     let unauthorized = Address::generate(&env);
     let result = client.try_force_cancel_shipment(&unauthorized, &shipment_id, &reason_hash);
-    assert!(result.is_err(), "force_cancel_shipment must fail for unauthorized caller");
+    assert!(
+        result.is_err(),
+        "force_cancel_shipment must fail for unauthorized caller"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -8,13 +8,11 @@
 
 extern crate std;
 
-use crate::{
-    NavinShipment, NavinShipmentClient,
-};
+use crate::{NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
-    contract, contractimpl, Address, BytesN, Env, Symbol, Vec,
+    contract, contractimpl,
     testutils::{Address as _, AuthorizedFunction, Ledger as _},
-    IntoVal,
+    Address, BytesN, Env, IntoVal, Symbol, Vec,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -70,18 +68,25 @@ fn test_add_company_auth_bound_to_arguments() {
     // Verify the auth tree contains the exact arguments
     let auths = env.auths();
     assert_eq!(auths.len(), 1, "Should have exactly one auth invocation");
-    
+
     let (auth_addr, auth_inv) = &auths[0];
     assert_eq!(auth_addr, &admin, "Auth should be for admin");
-    
+
     match &auth_inv.function {
         AuthorizedFunction::Contract((cid_auth, func_name, args)) => {
             assert_eq!(cid_auth, &cid, "Contract ID should match");
-            assert_eq!(func_name, &Symbol::new(&env, "add_company"), "Function name should match");
-            
+            assert_eq!(
+                func_name,
+                &Symbol::new(&env, "add_company"),
+                "Function name should match"
+            );
+
             // Verify arguments are bound: (admin, company1)
             let expected_args = (admin.clone(), company1.clone()).into_val(&env);
-            assert_eq!(args, &expected_args, "Arguments should be bound to exact values");
+            assert_eq!(
+                args, &expected_args,
+                "Arguments should be bound to exact values"
+            );
         }
         _ => panic!("Expected Contract authorization"),
     }
@@ -96,22 +101,23 @@ fn test_add_company_mismatched_args_fails() {
     env.ledger().with_mut(|li| {
         li.protocol_version = crate::test_utils::DEFAULT_PROTOCOL_VERSION;
     });
-    env.ledger().set_timestamp(crate::test_utils::DEFAULT_TIMESTAMP);
-    
+    env.ledger()
+        .set_timestamp(crate::test_utils::DEFAULT_TIMESTAMP);
+
     let admin = Address::generate(&env);
     let company1 = Address::generate(&env);
     let company2 = Address::generate(&env);
     let token = env.register(MockToken {}, ());
     let contract_id = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &contract_id);
-    
+
     // Mock auth for (admin, company1) only
     env.mock_all_auths();
     client.initialize(&admin, &token);
-    
+
     // This should succeed with company1
     client.add_company(&admin, &company1);
-    
+
     // Now try with company2 - should fail because auth is not mocked for this specific call
     // In a real scenario with require_auth_for_args, this would fail
     let result = client.try_add_company(&admin, &company2);
@@ -135,17 +141,24 @@ fn test_add_carrier_auth_bound_to_arguments() {
 
     let auths = env.auths();
     assert_eq!(auths.len(), 1, "Should have exactly one auth invocation");
-    
+
     let (auth_addr, auth_inv) = &auths[0];
     assert_eq!(auth_addr, &admin, "Auth should be for admin");
-    
+
     match &auth_inv.function {
         AuthorizedFunction::Contract((cid_auth, func_name, args)) => {
             assert_eq!(cid_auth, &cid, "Contract ID should match");
-            assert_eq!(func_name, &Symbol::new(&env, "add_carrier"), "Function name should match");
-            
+            assert_eq!(
+                func_name,
+                &Symbol::new(&env, "add_carrier"),
+                "Function name should match"
+            );
+
             let expected_args = (admin.clone(), carrier1.clone()).into_val(&env);
-            assert_eq!(args, &expected_args, "Arguments should be bound to exact values");
+            assert_eq!(
+                args, &expected_args,
+                "Arguments should be bound to exact values"
+            );
         }
         _ => panic!("Expected Contract authorization"),
     }
@@ -163,37 +176,42 @@ fn test_suspend_carrier_auth_bound_to_arguments() {
     let cid = contract_id(&client);
 
     client.add_carrier(&admin, &carrier);
-    
+
     // Clear previous auths
     let _ = env.auths();
-    
+
     client.suspend_carrier(&admin, &carrier);
 
     let auths = env.auths();
     assert!(auths.len() > 0, "Should have auth invocation");
-    
+
     // Find the suspend_carrier auth
-    let suspend_auth = auths.iter().find(|(_, inv)| {
-        match &inv.function {
-            AuthorizedFunction::Contract((_, func_name, _)) => {
-                func_name == &Symbol::new(&env, "suspend_carrier")
-            }
-            _ => false,
+    let suspend_auth = auths.iter().find(|(_, inv)| match &inv.function {
+        AuthorizedFunction::Contract((_, func_name, _)) => {
+            func_name == &Symbol::new(&env, "suspend_carrier")
         }
+        _ => false,
     });
-    
+
     assert!(suspend_auth.is_some(), "Should have suspend_carrier auth");
-    
+
     let (auth_addr, auth_inv) = suspend_auth.unwrap();
     assert_eq!(auth_addr, &admin, "Auth should be for admin");
-    
+
     match &auth_inv.function {
         AuthorizedFunction::Contract((cid_auth, func_name, args)) => {
             assert_eq!(cid_auth, &cid, "Contract ID should match");
-            assert_eq!(func_name, &Symbol::new(&env, "suspend_carrier"), "Function name should match");
-            
+            assert_eq!(
+                func_name,
+                &Symbol::new(&env, "suspend_carrier"),
+                "Function name should match"
+            );
+
             let expected_args = (admin.clone(), carrier.clone()).into_val(&env);
-            assert_eq!(args, &expected_args, "Arguments should be bound to exact values");
+            assert_eq!(
+                args, &expected_args,
+                "Arguments should be bound to exact values"
+            );
         }
         _ => panic!("Expected Contract authorization"),
     }
@@ -211,36 +229,41 @@ fn test_revoke_role_auth_bound_to_arguments() {
     let cid = contract_id(&client);
 
     client.add_company(&admin, &company);
-    
+
     // Clear previous auths
     let _ = env.auths();
-    
+
     client.revoke_role(&admin, &company);
 
     let auths = env.auths();
     assert!(auths.len() > 0, "Should have auth invocation");
-    
-    let revoke_auth = auths.iter().find(|(_, inv)| {
-        match &inv.function {
-            AuthorizedFunction::Contract((_, func_name, _)) => {
-                func_name == &Symbol::new(&env, "revoke_role")
-            }
-            _ => false,
+
+    let revoke_auth = auths.iter().find(|(_, inv)| match &inv.function {
+        AuthorizedFunction::Contract((_, func_name, _)) => {
+            func_name == &Symbol::new(&env, "revoke_role")
         }
+        _ => false,
     });
-    
+
     assert!(revoke_auth.is_some(), "Should have revoke_role auth");
-    
+
     let (auth_addr, auth_inv) = revoke_auth.unwrap();
     assert_eq!(auth_addr, &admin, "Auth should be for admin");
-    
+
     match &auth_inv.function {
         AuthorizedFunction::Contract((cid_auth, func_name, args)) => {
             assert_eq!(cid_auth, &cid, "Contract ID should match");
-            assert_eq!(func_name, &Symbol::new(&env, "revoke_role"), "Function name should match");
-            
+            assert_eq!(
+                func_name,
+                &Symbol::new(&env, "revoke_role"),
+                "Function name should match"
+            );
+
             let expected_args = (admin.clone(), company.clone()).into_val(&env);
-            assert_eq!(args, &expected_args, "Arguments should be bound to exact values");
+            assert_eq!(
+                args, &expected_args,
+                "Arguments should be bound to exact values"
+            );
         }
         _ => panic!("Expected Contract authorization"),
     }
@@ -264,7 +287,7 @@ fn test_force_cancel_shipment_auth_bound_to_arguments() {
 
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
-    
+
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -273,36 +296,44 @@ fn test_force_cancel_shipment_auth_bound_to_arguments() {
         &Vec::new(&env),
         &deadline,
     );
-    
+
     // Clear previous auths
     let _ = env.auths();
-    
+
     client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
 
     let auths = env.auths();
     assert!(auths.len() > 0, "Should have auth invocation");
-    
-    let force_cancel_auth = auths.iter().find(|(_, inv)| {
-        match &inv.function {
-            AuthorizedFunction::Contract((_, func_name, _)) => {
-                func_name == &Symbol::new(&env, "force_cancel_shipment")
-            }
-            _ => false,
+
+    let force_cancel_auth = auths.iter().find(|(_, inv)| match &inv.function {
+        AuthorizedFunction::Contract((_, func_name, _)) => {
+            func_name == &Symbol::new(&env, "force_cancel_shipment")
         }
+        _ => false,
     });
-    
-    assert!(force_cancel_auth.is_some(), "Should have force_cancel_shipment auth");
-    
+
+    assert!(
+        force_cancel_auth.is_some(),
+        "Should have force_cancel_shipment auth"
+    );
+
     let (auth_addr, auth_inv) = force_cancel_auth.unwrap();
     assert_eq!(auth_addr, &admin, "Auth should be for admin");
-    
+
     match &auth_inv.function {
         AuthorizedFunction::Contract((cid_auth, func_name, args)) => {
             assert_eq!(cid_auth, &cid, "Contract ID should match");
-            assert_eq!(func_name, &Symbol::new(&env, "force_cancel_shipment"), "Function name should match");
-            
+            assert_eq!(
+                func_name,
+                &Symbol::new(&env, "force_cancel_shipment"),
+                "Function name should match"
+            );
+
             let expected_args = (admin.clone(), shipment_id, reason_hash.clone()).into_val(&env);
-            assert_eq!(args, &expected_args, "Arguments should be bound to exact values");
+            assert_eq!(
+                args, &expected_args,
+                "Arguments should be bound to exact values"
+            );
         }
         _ => panic!("Expected Contract authorization"),
     }
@@ -320,7 +351,7 @@ fn test_resolve_dispute_auth_bound_to_arguments() {
     // The full integration test is covered in other test modules.
     let (env, client, admin, _token) = setup_env();
     let cid = contract_id(&client);
-    
+
     // Verify that admin can call resolve_dispute (auth check)
     // The actual dispute resolution logic is tested elsewhere
     assert_eq!(admin, admin, "Admin should be authorized");
@@ -338,33 +369,36 @@ fn test_pause_auth_bound_to_arguments() {
 
     // Clear previous auths
     let _ = env.auths();
-    
+
     client.pause(&admin);
 
     let auths = env.auths();
     assert!(auths.len() > 0, "Should have auth invocation");
-    
-    let pause_auth = auths.iter().find(|(_, inv)| {
-        match &inv.function {
-            AuthorizedFunction::Contract((_, func_name, _)) => {
-                func_name == &Symbol::new(&env, "pause")
-            }
-            _ => false,
-        }
+
+    let pause_auth = auths.iter().find(|(_, inv)| match &inv.function {
+        AuthorizedFunction::Contract((_, func_name, _)) => func_name == &Symbol::new(&env, "pause"),
+        _ => false,
     });
-    
+
     assert!(pause_auth.is_some(), "Should have pause auth");
-    
+
     let (auth_addr, auth_inv) = pause_auth.unwrap();
     assert_eq!(auth_addr, &admin, "Auth should be for admin");
-    
+
     match &auth_inv.function {
         AuthorizedFunction::Contract((cid_auth, func_name, args)) => {
             assert_eq!(cid_auth, &cid, "Contract ID should match");
-            assert_eq!(func_name, &Symbol::new(&env, "pause"), "Function name should match");
-            
+            assert_eq!(
+                func_name,
+                &Symbol::new(&env, "pause"),
+                "Function name should match"
+            );
+
             let expected_args = (admin.clone(),).into_val(&env);
-            assert_eq!(args, &expected_args, "Arguments should be bound to exact values");
+            assert_eq!(
+                args, &expected_args,
+                "Arguments should be bound to exact values"
+            );
         }
         _ => panic!("Expected Contract authorization"),
     }
@@ -381,36 +415,41 @@ fn test_unpause_auth_bound_to_arguments() {
     let cid = contract_id(&client);
 
     client.pause(&admin);
-    
+
     // Clear previous auths
     let _ = env.auths();
-    
+
     client.unpause(&admin);
 
     let auths = env.auths();
     assert!(auths.len() > 0, "Should have auth invocation");
-    
-    let unpause_auth = auths.iter().find(|(_, inv)| {
-        match &inv.function {
-            AuthorizedFunction::Contract((_, func_name, _)) => {
-                func_name == &Symbol::new(&env, "unpause")
-            }
-            _ => false,
+
+    let unpause_auth = auths.iter().find(|(_, inv)| match &inv.function {
+        AuthorizedFunction::Contract((_, func_name, _)) => {
+            func_name == &Symbol::new(&env, "unpause")
         }
+        _ => false,
     });
-    
+
     assert!(unpause_auth.is_some(), "Should have unpause auth");
-    
+
     let (auth_addr, auth_inv) = unpause_auth.unwrap();
     assert_eq!(auth_addr, &admin, "Auth should be for admin");
-    
+
     match &auth_inv.function {
         AuthorizedFunction::Contract((cid_auth, func_name, args)) => {
             assert_eq!(cid_auth, &cid, "Contract ID should match");
-            assert_eq!(func_name, &Symbol::new(&env, "unpause"), "Function name should match");
-            
+            assert_eq!(
+                func_name,
+                &Symbol::new(&env, "unpause"),
+                "Function name should match"
+            );
+
             let expected_args = (admin.clone(),).into_val(&env);
-            assert_eq!(args, &expected_args, "Arguments should be bound to exact values");
+            assert_eq!(
+                args, &expected_args,
+                "Arguments should be bound to exact values"
+            );
         }
         _ => panic!("Expected Contract authorization"),
     }
