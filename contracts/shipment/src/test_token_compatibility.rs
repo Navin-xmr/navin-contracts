@@ -2,16 +2,10 @@
 //!
 //! Validates the shipment contract's escrow and payment flows against both
 //! Stellar Asset Contract (SAC) tokens and custom token contracts (NavinToken).
+#![allow(deprecated)]
 
-use crate::{
-    test_utils,
-    types::{ShipmentStatus},
-    NavinError, NavinShipment, NavinShipmentClient,
-};
-use soroban_sdk::{
-    testutils::{Address as _},
-    Address, BytesN, Env, Vec, IntoVal,
-};
+use crate::{test_utils, types::ShipmentStatus, NavinError, NavinShipment, NavinShipmentClient};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, IntoVal, Vec};
 
 // Import custom token client
 use navin_token::NavinTokenClient;
@@ -83,7 +77,7 @@ fn setup_test(variant: TokenVariant) -> TestContext {
 fn mint_tokens(ctx: &TestContext, to: &Address, amount: i128) {
     let token_addr = ctx.token_address.clone();
     let mut args: Vec<soroban_sdk::Val> = Vec::new(&ctx.env);
-    
+
     match ctx.variant {
         TokenVariant::StellarAsset => {
             // SAC mint(to, amount)
@@ -97,24 +91,18 @@ fn mint_tokens(ctx: &TestContext, to: &Address, amount: i128) {
             args.push_back(amount.into_val(&ctx.env));
         }
     }
-    
-    ctx.env.invoke_contract::<()>(
-        &token_addr,
-        &soroban_sdk::symbol_short!("mint"),
-        args,
-    );
+
+    ctx.env
+        .invoke_contract::<()>(&token_addr, &soroban_sdk::symbol_short!("mint"), args);
 }
 
 fn get_balance(ctx: &TestContext, address: &Address) -> i128 {
     let token_addr = ctx.token_address.clone();
     let mut args: Vec<soroban_sdk::Val> = Vec::new(&ctx.env);
     args.push_back(address.clone().into_val(&ctx.env));
-    
-    ctx.env.invoke_contract::<i128>(
-        &token_addr,
-        &soroban_sdk::symbol_short!("balance"),
-        args,
-    )
+
+    ctx.env
+        .invoke_contract::<i128>(&token_addr, &soroban_sdk::symbol_short!("balance"), args)
 }
 
 pub fn dummy_hash(env: &Env) -> BytesN<32> {
@@ -150,21 +138,28 @@ fn run_escrow_flow_test(variant: TokenVariant) {
         &deadline,
     );
 
-    ctx.shipment_client.deposit_escrow(&ctx.company, &shipment_id, &amount);
+    ctx.shipment_client
+        .deposit_escrow(&ctx.company, &shipment_id, &amount);
 
     assert_eq!(get_balance(&ctx, &ctx.company), 0);
     assert_eq!(get_balance(&ctx, &ctx.shipment_client.address), amount);
     assert_eq!(ctx.shipment_client.get_escrow_balance(&shipment_id), amount);
 
     // Transition to InTransit (required for Delivered)
-    ctx.shipment_client.update_status(&ctx.carrier, &shipment_id, &ShipmentStatus::InTransit, &dummy_hash(&ctx.env));
+    ctx.shipment_client.update_status(
+        &ctx.carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &dummy_hash(&ctx.env),
+    );
 
-    ctx.shipment_client.confirm_delivery(&ctx.receiver, &shipment_id, &dummy_hash(&ctx.env));
+    ctx.shipment_client
+        .confirm_delivery(&ctx.receiver, &shipment_id, &dummy_hash(&ctx.env));
 
     assert_eq!(get_balance(&ctx, &ctx.shipment_client.address), 0);
     assert_eq!(get_balance(&ctx, &ctx.carrier), amount);
     assert_eq!(ctx.shipment_client.get_escrow_balance(&shipment_id), 0);
-    
+
     let s = ctx.shipment_client.get_shipment(&shipment_id);
     assert_eq!(s.status, ShipmentStatus::Delivered);
 }
@@ -194,13 +189,15 @@ fn run_refund_flow_test(variant: TokenVariant) {
         &deadline,
     );
 
-    ctx.shipment_client.deposit_escrow(&ctx.company, &shipment_id, &amount);
-    
-    ctx.shipment_client.refund_escrow(&ctx.company, &shipment_id);
+    ctx.shipment_client
+        .deposit_escrow(&ctx.company, &shipment_id, &amount);
+
+    ctx.shipment_client
+        .refund_escrow(&ctx.company, &shipment_id);
 
     assert_eq!(get_balance(&ctx, &ctx.company), amount);
     assert_eq!(get_balance(&ctx, &ctx.shipment_client.address), 0);
-    
+
     let s = ctx.shipment_client.get_shipment(&shipment_id);
     assert_eq!(s.status, ShipmentStatus::Cancelled);
 }
@@ -221,7 +218,7 @@ fn run_milestone_payment_flow_test(variant: TokenVariant) {
 
     mint_tokens(&ctx, &ctx.company, amount);
     let deadline = ctx.env.ledger().timestamp() + 3600;
-    
+
     let mut milestones = Vec::new(&ctx.env);
     milestones.push_back((soroban_sdk::symbol_short!("M1"), 50)); // 50%
     milestones.push_back((soroban_sdk::symbol_short!("M2"), 50)); // 50%
@@ -235,18 +232,34 @@ fn run_milestone_payment_flow_test(variant: TokenVariant) {
         &deadline,
     );
 
-    ctx.shipment_client.deposit_escrow(&ctx.company, &shipment_id, &amount);
+    ctx.shipment_client
+        .deposit_escrow(&ctx.company, &shipment_id, &amount);
 
-    ctx.shipment_client.update_status(&ctx.carrier, &shipment_id, &ShipmentStatus::InTransit, &dummy_hash(&ctx.env));
+    ctx.shipment_client.update_status(
+        &ctx.carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &dummy_hash(&ctx.env),
+    );
 
     test_utils::advance_past_rate_limit(&ctx.env);
-    ctx.shipment_client.record_milestone(&ctx.carrier, &shipment_id, &soroban_sdk::symbol_short!("M1"), &dummy_hash(&ctx.env));
+    ctx.shipment_client.record_milestone(
+        &ctx.carrier,
+        &shipment_id,
+        &soroban_sdk::symbol_short!("M1"),
+        &dummy_hash(&ctx.env),
+    );
 
     assert_eq!(get_balance(&ctx, &ctx.carrier), 500);
     assert_eq!(get_balance(&ctx, &ctx.shipment_client.address), 500);
 
     test_utils::advance_past_rate_limit(&ctx.env);
-    ctx.shipment_client.record_milestone(&ctx.carrier, &shipment_id, &soroban_sdk::symbol_short!("M2"), &dummy_hash(&ctx.env));
+    ctx.shipment_client.record_milestone(
+        &ctx.carrier,
+        &shipment_id,
+        &soroban_sdk::symbol_short!("M2"),
+        &dummy_hash(&ctx.env),
+    );
 
     assert_eq!(get_balance(&ctx, &ctx.carrier), 1000);
     assert_eq!(get_balance(&ctx, &ctx.shipment_client.address), 0);
@@ -278,31 +291,33 @@ fn run_insufficient_funds_test(variant: TokenVariant) {
         &deadline,
     );
 
-    let result = ctx.shipment_client.try_deposit_escrow(&ctx.company, &shipment_id, &amount);
-    
+    let result = ctx
+        .shipment_client
+        .try_deposit_escrow(&ctx.company, &shipment_id, &amount);
+
     assert!(result.is_err());
     let err = result.unwrap_err().unwrap();
     assert_eq!(err, NavinError::TokenTransferFailed);
 }
 
 // ── Behavioral Assumptions ──────────────────────────────────────────────────
-// 
-// 1. Interface Compliance: All supported tokens must implement the standard Soroban 
+//
+// 1. Interface Compliance: All supported tokens must implement the standard Soroban
 //    Token Interface (specifically transfer, balance, and mint for tests).
-// 
-// 2. Authentication: The contract assumes that calling transfer(from, to, amount) 
+//
+// 2. Authentication: The contract assumes that calling transfer(from, to, amount)
 //    on the token contract will trigger from.require_auth(). This is true for both
 //    SAC and standard-compliant custom tokens.
-// 
-// 3. Error Mapping: Any failure in the token's transfer method (due to 
-//    insufficient balance, frozen accounts, etc.) is captured by the shipment 
+//
+// 3. Error Mapping: Any failure in the token's transfer method (due to
+//    insufficient balance, frozen accounts, etc.) is captured by the shipment
 //    contract and returned as NavinError::TokenTransferFailed.
-// 
-// 4. Escrow Custody: The shipment contract acts as the custodian of escrowed tokens. 
-//    It must have been authorized (via approve or being the target of transfer) 
-//    to hold and later move these tokens. In this implementation, deposit_escrow 
+//
+// 4. Escrow Custody: The shipment contract acts as the custodian of escrowed tokens.
+//    It must have been authorized (via approve or being the target of transfer)
+//    to hold and later move these tokens. In this implementation, deposit_escrow
 //    directly transfers tokens from the sender to the shipment contract.
-// 
-// 5. Atomic Releases: Milestone payments and final releases are atomic. If a 
-//    token transfer fails, the entire transaction (including status updates) 
+//
+// 5. Atomic Releases: Milestone payments and final releases are atomic. If a
+//    token transfer fails, the entire transaction (including status updates)
 //    is rolled back by Soroban.
