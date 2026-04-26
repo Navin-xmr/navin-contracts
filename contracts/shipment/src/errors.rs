@@ -108,6 +108,12 @@ pub enum NavinError {
     CircuitBreakerOpen = 46,
     /// Migration version transition is not allowed.
     InvalidMigrationEdge = 47,
-    /// Proposal salt was already used in a prior proposal; replay attack prevented.
-    ProposalSaltReused = 48,
+    /// Maximum allowed milestone events for a shipment has been reached.
+    MilestoneLimitExceeded = 48,
+    /// Maximum allowed note events for a shipment has been reached.
+    NoteLimitExceeded = 49,
+    /// Maximum allowed evidence entries for a dispute has been reached.
+    EvidenceLimitExceeded = 50,
+    /// Maximum allowed condition breach events for a shipment has been reached.
+    BreachLimitExceeded = 51,
 }

@@ -80,6 +80,8 @@ pub enum DataKey {
     DisputeEvidenceCount(u64),
     /// SHA-256 checksum of critical config fields for drift detection.
     ConfigChecksum,
+    /// Counter for milestone events emitted for a shipment.
+    MilestoneEventCount(u64),
     /// Temporary idempotency window key — present while the action hash is within its window.
     IdempotencyWindow(BytesN<32>),
     /// IoT sensor data hash stored per shipment status transition.
@@ -94,6 +96,8 @@ pub enum DataKey {
     AuditEntry(u64),
     /// Total count of audit log entries.
     AuditEntryCount,
+    /// Counter for condition breach events emitted for a shipment.
+    BreachEventCount(u64),
     /// Settlement counter for generating unique settlement IDs.
     SettlementCounter,
     /// Settlement record keyed by settlement ID.
@@ -633,48 +637,4 @@ pub struct Analytics {
     pub disputed_count: u64,
     /// Number of shipments currently in 'Cancelled' state.
     pub cancelled_count: u64,
-}
-
-/// TTL health summary for active datasets.
-///
-/// Provides aggregated metrics for proactive archival risk monitoring.
-/// Supports operations dashboards and indexers to detect datasets approaching
-/// expiration and trigger preventive TTL extension or archival workflows.
-///
-/// **Note on TTL Metrics**: Direct TTL values are not queryable from within
-/// Soroban contracts in production. This summary provides observable metrics
-/// about persistent storage presence and configuration parameters that operators
-/// can use to assess TTL health externally.
-///
-/// # Examples
-/// ```rust
-/// // Struct represents TTL health metrics for the contract.
-/// ```
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct TtlHealthSummary {
-    /// Total number of shipments created (from counter).
-    pub total_shipment_count: u64,
-    /// Number of shipments sampled for health check.
-    /// Due to gas constraints, only a representative sample is checked.
-    pub sampled_count: u32,
-    /// Number of sampled shipments found in persistent storage.
-    /// Shipments not in persistent storage may be archived or expired.
-    pub persistent_count: u32,
-    /// Number of sampled shipments not found in persistent storage.
-    /// These may be archived in temporary storage or fully expired.
-    pub missing_or_archived_count: u32,
-    /// Percentage of sampled shipments in persistent storage (0-100).
-    /// High percentage indicates good TTL health.
-    pub persistent_percentage: u32,
-    /// Configured TTL threshold (in ledgers) from contract config.
-    /// Shipments with TTL below this value should be extended.
-    pub ttl_threshold: u32,
-    /// Configured TTL extension (in ledgers) from contract config.
-    /// This is the amount by which TTL is extended when threshold is reached.
-    pub ttl_extension: u32,
-    /// Current ledger sequence number at the time of query.
-    pub current_ledger: u32,
-    /// Timestamp of the query for correlation with external monitoring.
-    pub query_timestamp: u64,
 }

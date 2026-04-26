@@ -1241,6 +1241,78 @@ pub fn decrement_active_shipment_count(env: &Env, company: &Address) {
     set_active_shipment_count(env, company, current.saturating_sub(1));
 }
 
+// ============= Milestone Event Counter Storage Functions =============
+
+/// Get the milestone event count for a shipment.
+/// Returns 0 if no milestone events have been emitted yet.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// * `u32` - The number of milestone events emitted for this shipment.
+///
+/// # Examples
+/// ```rust
+/// // let count = storage::get_milestone_event_count(&env, 1);
+/// ```
+pub fn get_milestone_event_count(env: &Env, shipment_id: u64) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::MilestoneEventCount(shipment_id))
+        .unwrap_or(0)
+}
+
+/// Increment the milestone event count for a shipment.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// No return value.
+///
+/// # Examples
+/// ```rust
+/// // storage::increment_milestone_event_count(&env, 1);
+/// ```
+pub fn increment_milestone_event_count(env: &Env, shipment_id: u64) {
+    let current = get_milestone_event_count(env, shipment_id);
+    env.storage().persistent().set(
+        &DataKey::MilestoneEventCount(shipment_id),
+        &current.saturating_add(1),
+    );
+}
+
+/// Get the condition breach event count for a shipment.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// * `u32` - The number of condition breach events emitted for this shipment.
+pub fn get_breach_event_count(env: &Env, shipment_id: u64) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::BreachEventCount(shipment_id))
+        .unwrap_or(0)
+}
+
+/// Increment the condition breach event count for a shipment.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+pub fn increment_breach_event_count(env: &Env, shipment_id: u64) {
+    let current = get_breach_event_count(env, shipment_id);
+    env.storage().persistent().set(
+        &DataKey::BreachEventCount(shipment_id),
+        &current.saturating_add(1),
+    );
+}
+
 // ============= Event Counter Storage Functions =============
 
 /// Get the event count for a shipment.
@@ -1423,6 +1495,8 @@ pub fn get_evidence_hash(env: &Env, shipment_id: u64, index: u32) -> Option<Byte
         .get(&DataKey::DisputeEvidence(shipment_id, index))
 }
 
+// ============= Milestone Event Counter Storage Functions =============
+
 // ============= Idempotency Window Storage Functions =============
 
 /// Returns true if the action hash is already within an active idempotency window.
@@ -1492,27 +1566,16 @@ pub fn get_status_hash(env: &Env, shipment_id: u64, status: &ShipmentStatus) -> 
 /// ```rust
 /// // let exists = storage::shipment_exists_in_persistent(&env, 1);
 /// ```
+#[allow(dead_code)]
 pub fn shipment_exists_in_persistent(env: &Env, shipment_id: u64) -> bool {
     env.storage()
         .persistent()
         .has(&DataKey::Shipment(shipment_id))
 }
 
-pub fn is_salt_used(env: &Env, salt: &BytesN<32>) -> bool {
-    env.storage()
-        .persistent()
-        .has(&DataKey::UsedSalt(salt.clone()))
-}
+// ============= Settlement Tracking Functions =============
 
-pub fn mark_salt_used(env: &Env, salt: &BytesN<32>) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::UsedSalt(salt.clone()), &true);
-}
-
-// ============= Settlement State Storage Functions =============
-
-/// Get the current settlement counter.
+/// Get the settlement counter value from instance storage.
 ///
 /// # Arguments
 /// * `env` - The execution environment.
@@ -1524,6 +1587,7 @@ pub fn mark_salt_used(env: &Env, salt: &BytesN<32>) {
 /// ```rust
 /// // let counter = storage::get_settlement_counter(&env);
 /// ```
+#[allow(dead_code)]
 pub fn get_settlement_counter(env: &Env) -> u64 {
     env.storage()
         .instance()
@@ -1544,6 +1608,7 @@ pub fn get_settlement_counter(env: &Env) -> u64 {
 /// ```rust
 /// // storage::set_settlement_counter(&env, 10);
 /// ```
+#[allow(dead_code)]
 pub fn set_settlement_counter(env: &Env, counter: u64) {
     env.storage()
         .instance()
@@ -1562,6 +1627,7 @@ pub fn set_settlement_counter(env: &Env, counter: u64) {
 /// ```rust
 /// // let next_id = storage::increment_settlement_counter(&env);
 /// ```
+#[allow(dead_code)]
 pub fn increment_settlement_counter(env: &Env) -> u64 {
     let cur = get_settlement_counter(env);
     let next = cur.checked_add(1).unwrap_or(cur);
@@ -1582,6 +1648,7 @@ pub fn increment_settlement_counter(env: &Env) -> u64 {
 /// ```rust
 /// // let settlement = storage::get_settlement(&env, 1);
 /// ```
+#[allow(dead_code)]
 pub fn get_settlement(env: &Env, settlement_id: u64) -> Option<crate::types::SettlementRecord> {
     env.storage()
         .persistent()
@@ -1601,6 +1668,7 @@ pub fn get_settlement(env: &Env, settlement_id: u64) -> Option<crate::types::Set
 /// ```rust
 /// // storage::set_settlement(&env, &settlement);
 /// ```
+#[allow(dead_code)]
 pub fn set_settlement(env: &Env, settlement: &crate::types::SettlementRecord) {
     env.storage()
         .persistent()
@@ -1620,6 +1688,7 @@ pub fn set_settlement(env: &Env, settlement: &crate::types::SettlementRecord) {
 /// ```rust
 /// // let active_id = storage::get_active_settlement(&env, 1);
 /// ```
+#[allow(dead_code)]
 pub fn get_active_settlement(env: &Env, shipment_id: u64) -> Option<u64> {
     env.storage()
         .persistent()
@@ -1640,6 +1709,7 @@ pub fn get_active_settlement(env: &Env, shipment_id: u64) -> Option<u64> {
 /// ```rust
 /// // storage::set_active_settlement(&env, 1, 100);
 /// ```
+#[allow(dead_code)]
 pub fn set_active_settlement(env: &Env, shipment_id: u64, settlement_id: u64) {
     env.storage()
         .persistent()
@@ -1659,11 +1729,13 @@ pub fn set_active_settlement(env: &Env, shipment_id: u64, settlement_id: u64) {
 /// ```rust
 /// // storage::clear_active_settlement(&env, 1);
 /// ```
+#[allow(dead_code)]
 pub fn clear_active_settlement(env: &Env, shipment_id: u64) {
     env.storage()
         .persistent()
         .remove(&DataKey::ActiveSettlement(shipment_id));
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1774,3 +1846,5 @@ mod tests {
         });
     }
 }
+
+// ============= Settlement State Storage Functions =============
