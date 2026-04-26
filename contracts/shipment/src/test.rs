@@ -9962,4 +9962,69 @@ fn test_get_canonical_hash() {
     fields.push_back(456_u64.into_val(&env));
     let hash3 = client.get_canonical_hash(&fields);
     assert_ne!(hash1, hash3);
+fn test_report_condition_breach_limit_exceeded() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Initial status update to move into InTransit
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    // Update config to have a small breach limit for testing
+    let config = crate::ContractConfig {
+        max_breaches_per_shipment: 2,
+        ..crate::ContractConfig::default()
+    };
+    client.update_config(&admin, &config);
+
+    // First breach - OK
+    client.report_condition_breach(
+        &carrier,
+        &shipment_id,
+        &BreachType::TemperatureHigh,
+        &Severity::Medium,
+        &data_hash,
+    );
+
+    // Second breach - OK
+    client.report_condition_breach(
+        &carrier,
+        &shipment_id,
+        &BreachType::Impact,
+        &Severity::High,
+        &data_hash,
+    );
+
+    // Third breach - Should fail
+    let res = client.try_report_condition_breach(
+        &carrier,
+        &shipment_id,
+        &BreachType::TamperDetected,
+        &Severity::Critical,
+        &data_hash,
+    );
+
+    assert_eq!(res, Err(Ok(crate::NavinError::BreachLimitExceeded)));
 }

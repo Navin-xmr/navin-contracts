@@ -18,7 +18,7 @@ mod rate_limit;
 mod recovery;
 mod storage;
 mod stress_test;
-mod test;
+pub mod test;
 #[cfg(test)]
 mod test_consistency;
 #[cfg(test)]
@@ -27,6 +27,8 @@ mod test_cross_contract_integration;
 mod test_finalization;
 #[cfg(test)]
 mod test_performance;
+#[cfg(test)]
+mod test_rollback;
 mod types;
 mod validation;
 
@@ -39,7 +41,11 @@ mod test_diagnostics;
 #[cfg(test)]
 mod test_iot_verification;
 #[cfg(test)]
+mod test_panic_free_invariants;
+#[cfg(test)]
 mod test_pause;
+#[cfg(test)]
+mod test_require_auth_for_args;
 #[cfg(test)]
 mod test_suspension;
 #[cfg(test)]
@@ -495,6 +501,13 @@ impl NavinShipment {
             require_active_company(&env, &reporter)?;
         }
 
+        // Check note event payload size guard
+        let config = config::get_config(&env);
+        let current_note_count = storage::get_note_count(&env, shipment_id);
+        if current_note_count >= config.max_notes_per_shipment {
+            return Err(NavinError::NoteLimitExceeded);
+        }
+
         // notes are append-only; we just increment the counter and store at the next index.
         let index = storage::increment_note_count(&env, shipment_id);
         storage::set_note_hash(&env, shipment_id, index, &note_hash);
@@ -551,6 +564,13 @@ impl NavinShipment {
         // If reporter is the company (sender), check for suspension
         if reporter == shipment.sender {
             require_active_company(&env, &reporter)?;
+        }
+
+        // Check evidence count payload size guard
+        let config = config::get_config(&env);
+        let current_evidence_count = storage::get_evidence_count(&env, shipment_id);
+        if current_evidence_count >= config.max_evidence_per_dispute {
+            return Err(NavinError::EvidenceLimitExceeded);
         }
 
         // Increment counter and store hash
@@ -892,6 +912,53 @@ impl NavinShipment {
                 Ok(config::compute_config_checksum(&current_config, &env))
             }
         }
+    }
+
+    /// Compute the idempotency key for a shipment event.
+    ///
+    /// This helper enables off-chain indexers to recompute the same idempotency
+    /// key that the contract emits in events. The key is used to deduplicate
+    /// events during indexing and to protect against duplicate submissions of
+    /// high-impact operations (e.g., dispute resolution).
+    ///
+    /// Canonical serialization order:
+    /// 1. `shipment_id` as big-endian u64 (8 bytes)
+    /// 2. `event_type` as XDR-encoded Symbol (variable-length)
+    /// 3. `event_counter` as big-endian u32 (4 bytes)
+    ///
+    /// The concatenated byte vector is hashed with SHA-256 to produce a
+    /// 32-byte idempotency key.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - The shipment identifier.
+    /// * `event_type` - The event type symbol (e.g., "shipment_created").
+    /// * `event_counter` - The per-shipment event counter value.
+    ///
+    /// # Returns
+    /// * `BytesN<32>` - The idempotency key.
+    ///
+    /// # Examples
+    /// ```rust
+    /// let key = contract.compute_idempotency_key(&env, 1, Symbol::new(&env, "shipment_created"), 1);
+    /// ```
+    pub fn compute_idempotency_key(
+        env: Env,
+        shipment_id: u64,
+        event_type: Symbol,
+        event_counter: u32,
+    ) -> BytesN<32> {
+        let mut payload = soroban_sdk::Bytes::new(&env);
+        payload.append(&soroban_sdk::Bytes::from_array(
+            &env,
+            &shipment_id.to_be_bytes(),
+        ));
+        payload.append(&event_type.clone().to_xdr(&env));
+        payload.append(&soroban_sdk::Bytes::from_array(
+            &env,
+            &event_counter.to_be_bytes(),
+        ));
+        env.crypto().sha256(&payload).into()
     }
 
     /// Add a carrier to a company's whitelist.
@@ -2373,6 +2440,13 @@ impl NavinShipment {
             return Err(NavinError::InvalidStatus);
         }
 
+        // Enforce milestone event payload size guard
+        let config = config::get_config(&env);
+        let current_milestone_count = storage::get_milestone_event_count(&env, shipment_id);
+        if current_milestone_count >= config.max_milestones_per_shipment {
+            return Err(NavinError::MilestoneLimitExceeded);
+        }
+
         let timestamp = env.ledger().timestamp();
 
         let _milestone = Milestone {
@@ -2491,6 +2565,18 @@ impl NavinShipment {
             if data_hash.len() != 32 {
                 return Err(NavinError::InvalidHash);
             }
+        }
+
+        // Enforce milestone event payload size guard
+        let config = config::get_config(&env);
+        let current_milestone_count = storage::get_milestone_event_count(&env, shipment_id);
+        let new_milestones = milestones.len();
+        if current_milestone_count
+            .checked_add(new_milestones)
+            .ok_or(NavinError::ArithmeticError)?
+            > config.max_milestones_per_shipment
+        {
+            return Err(NavinError::MilestoneLimitExceeded);
         }
 
         // All validations passed, now process each milestone
@@ -3134,6 +3220,16 @@ impl NavinShipment {
             return Err(NavinError::DisputeReasonHashMissing);
         }
 
+        // Idempotency: reject duplicate (shipment_id, resolution, reason_hash) within the window.
+        let mut payload = soroban_sdk::Bytes::new(&env);
+        payload.append(&soroban_sdk::Bytes::from_array(
+            &env,
+            &shipment_id.to_be_bytes(),
+        ));
+        payload.append(&resolution.clone().to_xdr(&env));
+        payload.append(&reason_hash.clone().into());
+        check_idempotency(&env, payload)?;
+
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
@@ -3340,6 +3436,13 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
 
+        // Enforce breach payload size guard
+        let config = config::get_config(&env);
+        let current_breach_count = storage::get_breach_event_count(&env, shipment_id);
+        if current_breach_count >= config.max_breaches_per_shipment {
+            return Err(NavinError::BreachLimitExceeded);
+        }
+
         events::emit_condition_breach(
             &env,
             shipment_id,
@@ -3351,6 +3454,9 @@ impl NavinShipment {
 
         // Reputation: record breach against carrier
         events::emit_carrier_breach(&env, &carrier, shipment_id, &breach_type, &severity);
+
+        // Increment breach event count
+        storage::increment_breach_event_count(&env, shipment_id);
 
         // Auto-open dispute on Critical breaches when the config toggle is enabled.
         // Skips silently if the shipment is already Disputed or Cancelled.

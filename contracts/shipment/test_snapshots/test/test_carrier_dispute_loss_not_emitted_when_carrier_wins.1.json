@@ -388,6 +388,96 @@
                   "symbol": "IdempotencyWindow"
                 },
                 {
+                  "bytes": "5d850df3c6089f389249eb876c4da1e7d377eefb71026722c03d72505d178154"
+                }
+              ]
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "IdempotencyWindow"
+                    },
+                    {
+                      "bytes": "5d850df3c6089f389249eb876c4da1e7d377eefb71026722c03d72505d178154"
+                    }
+                  ]
+                },
+                "durability": "temporary",
+                "val": {
+                  "bool": true
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          16
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "IdempotencyWindow"
+                },
+                {
+                  "bytes": "92cfce0a756e41f916339226f898fa89cb92af248efb138f99c66ebd0d3caea6"
+                }
+              ]
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "IdempotencyWindow"
+                    },
+                    {
+                      "bytes": "6f2da24706a2c5c18349d90457ad6c6f8d33d011d81cc6cc612c119faf276332"
+                    }
+                  ]
+                },
+                "durability": "temporary",
+                "val": {
+                  "bool": true
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          16
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "IdempotencyWindow"
+                },
+                {
                   "bytes": "92cfce0a756e41f916339226f898fa89cb92af248efb138f99c66ebd0d3caea6"
                 }
               ]
@@ -664,7 +754,7 @@
                           ]
                         },
                         "val": {
-                          "bytes": "6a0efca8bd21d50a73455494417546197795ee66234c5b6b991bba0d714b17e4"
+                          "bytes": "50ffe82c4517a915e4ee4ed163e55afdf56d3d2e401c16133fd069446806ab9d"
                         }
                       },
                       {
@@ -719,10 +809,42 @@
                             },
                             {
                               "key": {
+                                "symbol": "max_breaches_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_evidence_per_dispute"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "max_metadata_entries"
                               },
                               "val": {
                                 "u32": 5
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_milestones_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_notes_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
                               }
                             },
                             {

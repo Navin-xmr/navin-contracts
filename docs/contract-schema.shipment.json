@@ -38,6 +38,87 @@
     }
   },
   {
+    "udt_union_v0": {
+      "doc": "A detected violation of a consistency invariant.\\n\\nEach variant carries the `shipment_id` of the offending shipment so that\\nan admin can correlate the report back to storage for manual correction.",
+      "lib": "",
+      "name": "ConsistencyViolation",
+      "cases": [
+        {
+          "tuple_v0": {
+            "doc": "`shipment.escrow_amount` does not match the escrow storage entry.",
+            "name": "EscrowMismatch",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "`finalized == true` but status is not terminal, or escrow balance is non-zero.",
+            "name": "InvalidFinalization",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "A symbol in `paid_milestones` is not present in `payment_milestones`.",
+            "name": "MilestoneViolation",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "`updated_at < created_at` \\xe2\\x80\\x94 clock went backwards or fields were corrupted.",
+            "name": "TimestampAnomaly",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "`deadline <= created_at` \\xe2\\x80\\x94 deadline was set in the past relative to creation.",
+            "name": "DeadlineAnomaly",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Shipment ID is tracked by the counter but no storage entry exists.",
+            "name": "MissingShipment",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Batch member has a different `sender` than the first shipment in the batch.",
+            "name": "BatchSenderMismatch",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Batch member has a different `created_at` than the first shipment in the batch.",
+            "name": "BatchTimestampMismatch",
+            "type_": [
+              "u64"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
     "udt_struct_v0": {
       "doc": "Reusable response object representing the state of the contract's health.",
       "lib": "",
@@ -2588,6 +2669,36 @@
   },
   {
     "function_v0": {
+      "doc": "Compute the idempotency key for a shipment event.\\n\\nThis helper enables off-chain indexers to recompute the same idempotency\\nkey that the contract emits in events. The key is used to deduplicate\\nevents during indexing and to protect against duplicate submissions of\\nhigh-impact operations (e.g., dispute resolution).\\n\\nCanonical serialization order:\\n1. `shipment_id` as big-endian u64 (8 bytes)\\n2. `event_type` as XDR-encoded Symbol (variable-length)\\n3. `event_counter` as big-endian u32 (4 bytes)\\n\\nThe concatenated byte vector is hashed with SHA-256 to produce a\\n32-byte idempotency key.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `shipment_id` - The shipment identifier.\\n* `event_type` - The event type symbol (e.g., \"shipment_created\").\\n* `event_counter` - The per-shipment event counter value.\\n\\n# Returns\\n* `BytesN<32>` - The idempotency key.\\n\\n# Examples\\n```rust\\nlet key = contract.compute_idempotency_key(&env, 1, Symbol::new(&env, \"shipment_created\"), 1);\\n```",
+      "name": "compute_idempotency_key",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "shipment_id",
+          "type_": "u64"
+        },
+        {
+          "doc": "",
+          "name": "event_type",
+          "type_": "symbol"
+        },
+        {
+          "doc": "",
+          "name": "event_counter",
+          "type_": "u32"
+        }
+      ],
+      "outputs": [
+        {
+          "bytes_n": {
+            "n": 32
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
       "doc": "Return read-only diagnostics that help operators triage restore requirements.\\n\\nThis query does not mutate state. It classifies the shipment ID as active,\\narchived-expected, missing, or inconsistent (both active and archived present).",
       "name": "get_restore_diagnostics",
       "inputs": [
@@ -2930,6 +3041,39 @@
             "ok_type": {
               "udt": {
                 "name": "ShipmentStatusCursorPage"
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "NavinError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Scan all tracked shipments and return every consistency violation found.\\n\\nChecks per-shipment invariants across the full ledger:\\n- Escrow amounts match storage\\n- Finalized flag is only set on terminal shipments with zero escrow\\n- Paid milestones are a subset of the payment schedule\\n- Timestamps are non-decreasing\\n- Deadlines are strictly after creation time\\n\\nIntended for periodic admin audits; not safe to call on hot paths\\ndue to the O(n) scan over all shipments.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `admin` - Admin or operator address (auth required).\\n\\n# Returns\\n* `Result<Vec<ConsistencyViolation>, NavinError>` - List of detected violations.\\nAn empty vec means all invariants hold.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::Unauthorized` - If caller is not admin or operator.",
+      "name": "check_consistency_violations",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type_": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "vec": {
+                "element_type": {
+                  "udt": {
+                    "name": "ConsistencyViolation"
+                  }
+                }
               }
             },
             "error_type": {
@@ -3420,6 +3564,15 @@
         },
         {
           "tuple_v0": {
+            "doc": "Counter for milestone events emitted for a shipment.",
+            "name": "MilestoneEventCount",
+            "type_": [
+              "u64"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
             "doc": "Temporary idempotency window key \\xe2\\x80\\x94 present while the action hash is within its window.",
             "name": "IdempotencyWindow",
             "type_": [
@@ -3479,6 +3632,15 @@
           "void_v0": {
             "doc": "Total count of audit log entries.",
             "name": "AuditEntryCount"
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Counter for condition breach events emitted for a shipment.",
+            "name": "BreachEventCount",
+            "type_": [
+              "u64"
+            ]
           }
         }
       ]
@@ -4270,8 +4432,28 @@
           "type_": "u64"
         },
         {
+          "doc": "Maximum number of condition breach events allowed per shipment.\\nGuards against unbounded breach reporting that would increase execution costs.\\nMust be >= 1 and <= 1000.\\nDefault: 255 breaches per shipment.",
+          "name": "max_breaches_per_shipment",
+          "type_": "u32"
+        },
+        {
+          "doc": "Maximum number of evidence hashes allowed per dispute (per shipment).\\nEvidence entries are stored while a shipment is disputed; this limit\\nprevents unbounded storage consumption in the dispute window.\\nMust be >= 1 and <= 1000.\\nDefault: 255 evidence entries per dispute.",
+          "name": "max_evidence_per_dispute",
+          "type_": "u32"
+        },
+        {
           "doc": "Maximum number of metadata key-value pairs per shipment.\\nDefault: 5 entries.",
           "name": "max_metadata_entries",
+          "type_": "u32"
+        },
+        {
+          "doc": "Maximum number of milestone events allowed per shipment.\\nGuards against unbounded milestone list growth that would increase\\nstorage and indexing costs. Must be >= 1 and <= 1000.\\nDefault: 255 milestones per shipment.",
+          "name": "max_milestones_per_shipment",
+          "type_": "u32"
+        },
+        {
+          "doc": "Maximum number of note events allowed per shipment.\\nBounds the size of the append-only note log for payload growth control.\\nMust be >= 1 and <= 1000.\\nDefault: 255 notes per shipment.",
+          "name": "max_notes_per_shipment",
           "type_": "u32"
         },
         {
@@ -4542,6 +4724,26 @@
           "doc": "Circuit breaker is open; token transfers are temporarily disabled.",
           "name": "CircuitBreakerOpen",
           "value": 46
+        },
+        {
+          "doc": "Maximum allowed milestone events for a shipment has been reached.",
+          "name": "MilestoneLimitExceeded",
+          "value": 47
+        },
+        {
+          "doc": "Maximum allowed note events for a shipment has been reached.",
+          "name": "NoteLimitExceeded",
+          "value": 48
+        },
+        {
+          "doc": "Maximum allowed evidence entries for a dispute has been reached.",
+          "name": "EvidenceLimitExceeded",
+          "value": 49
+        },
+        {
+          "doc": "Maximum allowed condition breach events for a shipment has been reached.",
+          "name": "BreachLimitExceeded",
+          "value": 50
         }
       ]
     }
