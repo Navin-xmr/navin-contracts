@@ -101,6 +101,31 @@ pub struct ContractConfig {
     /// `Disputed` or `Cancelled`.
     /// Default: `false` (disabled — existing behavior preserved).
     pub auto_dispute_breach: bool,
+
+    /// Maximum number of milestone events allowed per shipment.
+    /// Guards against unbounded milestone list growth that would increase
+    /// storage and indexing costs. Must be >= 1 and <= 1000.
+    /// Default: 255 milestones per shipment.
+    pub max_milestones_per_shipment: u32,
+
+    /// Maximum number of note events allowed per shipment.
+    /// Bounds the size of the append-only note log for payload growth control.
+    /// Must be >= 1 and <= 1000.
+    /// Default: 255 notes per shipment.
+    pub max_notes_per_shipment: u32,
+
+    /// Maximum number of evidence hashes allowed per dispute (per shipment).
+    /// Evidence entries are stored while a shipment is disputed; this limit
+    /// prevents unbounded storage consumption in the dispute window.
+    /// Must be >= 1 and <= 1000.
+    /// Default: 255 evidence entries per dispute.
+    pub max_evidence_per_dispute: u32,
+
+    /// Maximum number of condition breach events allowed per shipment.
+    /// Guards against unbounded breach reporting that would increase execution costs.
+    /// Must be >= 1 and <= 1000.
+    /// Default: 255 breaches per shipment.
+    pub max_breaches_per_shipment: u32,
 }
 
 impl Default for ContractConfig {
@@ -125,6 +150,10 @@ impl Default for ContractConfig {
             deadline_grace_seconds: 0,        // no grace period
             idempotency_window_seconds: 300,  // 5 minutes
             auto_dispute_breach: false,       // disabled by default
+            max_milestones_per_shipment: 255, // 255 milestones
+            max_notes_per_shipment: 255,      // 255 notes
+            max_evidence_per_dispute: 255,    // 255 evidence entries
+            max_breaches_per_shipment: 255,   // 255 breaches
         }
     }
 }
@@ -229,6 +258,20 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
         return Err("max_metadata_entries must be >= 1 and <= 50");
     }
 
+    // Validate high-frequency event payload size guards
+    if config.max_milestones_per_shipment == 0 || config.max_milestones_per_shipment > 1000 {
+        return Err("max_milestones_per_shipment must be >= 1 and <= 1000");
+    }
+    if config.max_notes_per_shipment == 0 || config.max_notes_per_shipment > 1000 {
+        return Err("max_notes_per_shipment must be >= 1 and <= 1000");
+    }
+    if config.max_evidence_per_dispute == 0 || config.max_evidence_per_dispute > 1000 {
+        return Err("max_evidence_per_dispute must be >= 1 and <= 1000");
+    }
+    if config.max_breaches_per_shipment == 0 || config.max_breaches_per_shipment > 1000 {
+        return Err("max_breaches_per_shipment must be >= 1 and <= 1000");
+    }
+
     // Validate shipment limits
     if config.default_shipment_limit == 0 || config.default_shipment_limit > 10_000 {
         return Err("default_shipment_limit must be >= 1 and <= 10,000");
@@ -275,8 +318,11 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// 9. proposal_expiry_seconds (u64, 8 bytes, big-endian)
 /// 10. deadline_grace_seconds (u64, 8 bytes, big-endian)
 /// 11. auto_dispute_breach (bool, 1 byte: 1 = true, 0 = false)
+/// 12. max_milestones_per_shipment (u32, 4 bytes, big-endian)
+/// 13. max_notes_per_shipment (u32, 4 bytes, big-endian)
+/// 14. max_evidence_per_dispute (u32, 4 bytes, big-endian)
 ///
-/// Total: 53 bytes serialized, hashed to 32-byte SHA-256 digest.
+/// Total: 65 bytes serialized, hashed to 32-byte SHA-256 digest.
 ///
 /// # Arguments
 /// * `config` - The configuration to checksum.
@@ -292,8 +338,8 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// assert_eq!(checksum1, checksum2); // Deterministic
 /// ```
 pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32> {
-    // Serialize all fields in fixed order (53 bytes total)
-    let mut bytes: [u8; 53] = [0; 53];
+    // Serialize all fields in fixed order (69 bytes total)
+    let mut bytes: [u8; 69] = [0; 69];
     let mut offset = 0;
 
     // 1. shipment_ttl_threshold (u32, big-endian)
@@ -338,6 +384,22 @@ pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32>
 
     // 11. auto_dispute_breach (bool, 1 byte)
     bytes[offset] = if config.auto_dispute_breach { 1 } else { 0 };
+    offset += 1;
+
+    // 12. max_milestones_per_shipment (u32, big-endian)
+    bytes[offset..offset + 4].copy_from_slice(&config.max_milestones_per_shipment.to_be_bytes());
+    offset += 4;
+
+    // 13. max_notes_per_shipment (u32, big-endian)
+    bytes[offset..offset + 4].copy_from_slice(&config.max_notes_per_shipment.to_be_bytes());
+    offset += 4;
+
+    // 14. max_evidence_per_dispute (u32, big-endian)
+    bytes[offset..offset + 4].copy_from_slice(&config.max_evidence_per_dispute.to_be_bytes());
+    offset += 4;
+
+    // 15. max_breaches_per_shipment (u32, big-endian)
+    bytes[offset..offset + 4].copy_from_slice(&config.max_breaches_per_shipment.to_be_bytes());
 
     // Compute SHA-256 hash and convert to BytesN<32>
     let hash = env
@@ -607,6 +669,38 @@ mod tests {
             checksum, checksum_original,
             "Changing auto_dispute_breach must change checksum"
         );
+
+        let mut config = config_original.clone();
+        config.max_milestones_per_shipment = 100;
+        let checksum = compute_config_checksum(&config, &env);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing max_milestones_per_shipment must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.max_notes_per_shipment = 100;
+        let checksum = compute_config_checksum(&config, &env);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing max_notes_per_shipment must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.max_evidence_per_dispute = 100;
+        let checksum = compute_config_checksum(&config, &env);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing max_evidence_per_dispute must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.max_breaches_per_shipment = 100;
+        let checksum = compute_config_checksum(&config, &env);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing max_breaches_per_shipment must change checksum"
+        );
     }
 
     #[test]
@@ -648,6 +742,10 @@ mod tests {
             deadline_grace_seconds: 43_200,
             idempotency_window_seconds: 300,
             auto_dispute_breach: false,
+            max_milestones_per_shipment: 100,
+            max_notes_per_shipment: 100,
+            max_evidence_per_dispute: 100,
+            max_breaches_per_shipment: 100,
         };
 
         let checksums = [
@@ -731,6 +829,10 @@ mod tests {
             deadline_grace_seconds: 0,
             idempotency_window_seconds: 0,
             auto_dispute_breach: false,
+            max_milestones_per_shipment: 1,
+            max_notes_per_shipment: 1,
+            max_evidence_per_dispute: 1,
+            max_breaches_per_shipment: 1,
         };
 
         let config_max = ContractConfig {
@@ -746,6 +848,10 @@ mod tests {
             deadline_grace_seconds: 604_800,
             idempotency_window_seconds: 86_400,
             auto_dispute_breach: true,
+            max_milestones_per_shipment: 1000,
+            max_notes_per_shipment: 1000,
+            max_evidence_per_dispute: 1000,
+            max_breaches_per_shipment: 1000,
         };
 
         let checksum_min = compute_config_checksum(&config_min, &env);
