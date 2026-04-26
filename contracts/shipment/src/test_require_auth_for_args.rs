@@ -350,8 +350,8 @@ fn test_force_cancel_shipment_auth_bound_to_arguments() {
 fn test_resolve_dispute_auth_bound_to_arguments() {
     // This test verifies the auth tree structure for resolve_dispute.
     // The full integration test is covered in other test modules.
-    let (_env, client, admin, _token) = setup_env();
-    let _cid = contract_id(&client);
+    let (_env, client, _admin, _token) = setup_env();
+    let cid = contract_id(&client);
 
     // Keep this test lightweight while still validating helper correctness.
     assert_eq!(
