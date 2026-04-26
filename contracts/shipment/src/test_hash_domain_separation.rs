@@ -27,7 +27,7 @@ mod tests {
         HASH_DOMAIN_ESCROW, HASH_DOMAIN_EVIDENCE, HASH_DOMAIN_NOTE, HASH_DOMAIN_NOTIFICATION,
         HASH_DOMAIN_RBAC, HASH_DOMAIN_SHIPMENT,
     };
-    use soroban_sdk::{xdr::ToXdr, BytesN, Env, Symbol};
+    use soroban_sdk::{Bytes, BytesN, Env};
 
     // ── Helper ───────────────────────────────────────────────────────────────
     //
@@ -35,14 +35,24 @@ mod tests {
     // can exercise domain separation without requiring access to the private
     // symbol.  **This function must stay in sync with `events::generate_idempotency_key`.**
 
-    fn compute_key(env: &Env, domain: u8, shipment_id: u64, event_type: &str, counter: u32)
-        -> BytesN<32>
-    {
-        let mut payload = soroban_sdk::Bytes::new(env);
-        payload.append(&soroban_sdk::Bytes::from_array(env, &domain.to_be_bytes()));
-        payload.append(&soroban_sdk::Bytes::from_array(env, &shipment_id.to_be_bytes()));
-        payload.append(&Symbol::new(env, event_type).to_xdr(env));
-        payload.append(&soroban_sdk::Bytes::from_array(env, &counter.to_be_bytes()));
+    fn append_len_prefixed_bytes(env: &Env, payload: &mut Bytes, data: &[u8]) {
+        payload.append(&Bytes::from_array(env, &(data.len() as u32).to_be_bytes()));
+        payload.append(&Bytes::from_slice(env, data));
+    }
+
+    fn compute_key(
+        env: &Env,
+        domain: u8,
+        shipment_id: u64,
+        event_type: &str,
+        counter: u32,
+    ) -> BytesN<32> {
+        let mut payload = Bytes::new(env);
+        let domain_bytes = domain.to_be_bytes();
+        append_len_prefixed_bytes(env, &mut payload, &domain_bytes);
+        payload.append(&Bytes::from_array(env, &shipment_id.to_be_bytes()));
+        append_len_prefixed_bytes(env, &mut payload, event_type.as_bytes());
+        payload.append(&Bytes::from_array(env, &counter.to_be_bytes()));
         env.crypto().sha256(&payload).into()
     }
 
@@ -106,22 +116,26 @@ mod tests {
 
         let key_shipment =
             compute_key(&env, HASH_DOMAIN_SHIPMENT, shipment_id, event_type, counter);
-        let key_escrow =
-            compute_key(&env, HASH_DOMAIN_ESCROW, shipment_id, event_type, counter);
-        let key_dispute =
-            compute_key(&env, HASH_DOMAIN_DISPUTE, shipment_id, event_type, counter);
-        let key_condition =
-            compute_key(&env, HASH_DOMAIN_CONDITION, shipment_id, event_type, counter);
-        let key_carrier =
-            compute_key(&env, HASH_DOMAIN_CARRIER, shipment_id, event_type, counter);
-        let key_admin =
-            compute_key(&env, HASH_DOMAIN_ADMIN, shipment_id, event_type, counter);
-        let key_rbac =
-            compute_key(&env, HASH_DOMAIN_RBAC, shipment_id, event_type, counter);
-        let key_notification =
-            compute_key(&env, HASH_DOMAIN_NOTIFICATION, shipment_id, event_type, counter);
-        let key_note =
-            compute_key(&env, HASH_DOMAIN_NOTE, shipment_id, event_type, counter);
+        let key_escrow = compute_key(&env, HASH_DOMAIN_ESCROW, shipment_id, event_type, counter);
+        let key_dispute = compute_key(&env, HASH_DOMAIN_DISPUTE, shipment_id, event_type, counter);
+        let key_condition = compute_key(
+            &env,
+            HASH_DOMAIN_CONDITION,
+            shipment_id,
+            event_type,
+            counter,
+        );
+        let key_carrier = compute_key(&env, HASH_DOMAIN_CARRIER, shipment_id, event_type, counter);
+        let key_admin = compute_key(&env, HASH_DOMAIN_ADMIN, shipment_id, event_type, counter);
+        let key_rbac = compute_key(&env, HASH_DOMAIN_RBAC, shipment_id, event_type, counter);
+        let key_notification = compute_key(
+            &env,
+            HASH_DOMAIN_NOTIFICATION,
+            shipment_id,
+            event_type,
+            counter,
+        );
+        let key_note = compute_key(&env, HASH_DOMAIN_NOTE, shipment_id, event_type, counter);
         let key_evidence =
             compute_key(&env, HASH_DOMAIN_EVIDENCE, shipment_id, event_type, counter);
 
@@ -142,7 +156,8 @@ mod tests {
         for i in 0..all_keys.len() {
             for j in (i + 1)..all_keys.len() {
                 assert_ne!(
-                    all_keys[i], all_keys[j],
+                    all_keys[i],
+                    all_keys[j],
                     "Domain 0x{:02X} and 0x{:02X} produced the same idempotency key",
                     i + 1,
                     j + 1,
@@ -164,10 +179,8 @@ mod tests {
 
         let key_shipment =
             compute_key(&env, HASH_DOMAIN_SHIPMENT, shipment_id, event_type, counter);
-        let key_escrow =
-            compute_key(&env, HASH_DOMAIN_ESCROW, shipment_id, event_type, counter);
-        let key_dispute =
-            compute_key(&env, HASH_DOMAIN_DISPUTE, shipment_id, event_type, counter);
+        let key_escrow = compute_key(&env, HASH_DOMAIN_ESCROW, shipment_id, event_type, counter);
+        let key_dispute = compute_key(&env, HASH_DOMAIN_DISPUTE, shipment_id, event_type, counter);
 
         assert_ne!(key_shipment, key_escrow);
         assert_ne!(key_escrow, key_dispute);
@@ -241,7 +254,7 @@ mod tests {
             crate::event_topics::DELIVERY_SUCCESS,
         ] {
             let correct = compute_key(&env, HASH_DOMAIN_SHIPMENT, shipment_id, topic, counter);
-            let wrong   = compute_key(&env, HASH_DOMAIN_ESCROW,   shipment_id, topic, counter);
+            let wrong = compute_key(&env, HASH_DOMAIN_ESCROW, shipment_id, topic, counter);
             assert_ne!(
                 correct, wrong,
                 "Topic '{}': HASH_DOMAIN_SHIPMENT and HASH_DOMAIN_ESCROW must not collide",
@@ -262,8 +275,8 @@ mod tests {
             crate::event_topics::ESCROW_RELEASED,
             crate::event_topics::ESCROW_REFUNDED,
         ] {
-            let correct = compute_key(&env, HASH_DOMAIN_ESCROW,    shipment_id, topic, counter);
-            let wrong   = compute_key(&env, HASH_DOMAIN_SHIPMENT,  shipment_id, topic, counter);
+            let correct = compute_key(&env, HASH_DOMAIN_ESCROW, shipment_id, topic, counter);
+            let wrong = compute_key(&env, HASH_DOMAIN_SHIPMENT, shipment_id, topic, counter);
             assert_ne!(
                 correct, wrong,
                 "Topic '{}': HASH_DOMAIN_ESCROW and HASH_DOMAIN_SHIPMENT must not collide",
@@ -283,8 +296,8 @@ mod tests {
             crate::event_topics::DISPUTE_RAISED,
             crate::event_topics::DISPUTE_RESOLVED,
         ] {
-            let correct = compute_key(&env, HASH_DOMAIN_DISPUTE,  shipment_id, topic, counter);
-            let wrong   = compute_key(&env, HASH_DOMAIN_SHIPMENT, shipment_id, topic, counter);
+            let correct = compute_key(&env, HASH_DOMAIN_DISPUTE, shipment_id, topic, counter);
+            let wrong = compute_key(&env, HASH_DOMAIN_SHIPMENT, shipment_id, topic, counter);
             assert_ne!(
                 correct, wrong,
                 "Topic '{}': HASH_DOMAIN_DISPUTE and HASH_DOMAIN_SHIPMENT must not collide",
