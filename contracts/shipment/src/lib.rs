@@ -24,13 +24,9 @@ mod test_consistency;
 #[cfg(test)]
 mod test_cross_contract_integration;
 #[cfg(test)]
-mod test_token_compatibility;
-#[cfg(test)]
 mod test_finalization;
 #[cfg(test)]
 mod test_performance;
-#[cfg(test)]
-mod test_settlement;
 mod types;
 mod validation;
 
@@ -46,8 +42,6 @@ mod test_iot_verification;
 mod test_pause;
 #[cfg(test)]
 mod test_suspension;
-#[cfg(test)]
-mod test_ttl_health;
 #[cfg(test)]
 mod test_utils;
 
@@ -120,61 +114,6 @@ fn finalize_if_settled(_env: &Env, shipment: &mut Shipment) {
     {
         shipment.finalized = true;
     }
-}
-
-/// Create a new settlement record and mark it as active for the shipment.
-fn create_settlement(
-    env: &Env,
-    shipment_id: u64,
-    operation: SettlementOperation,
-    amount: i128,
-    from: &Address,
-    to: &Address,
-) -> Result<u64, NavinError> {
-    let settlement_id = storage::increment_settlement_counter(env);
-    let settlement = SettlementRecord {
-        settlement_id,
-        shipment_id,
-        operation,
-        state: SettlementState::Pending,
-        amount,
-        from: from.clone(),
-        to: to.clone(),
-        initiated_at: env.ledger().timestamp(),
-        completed_at: None,
-        error_code: None,
-    };
-    storage::set_settlement(env, &settlement);
-    storage::set_active_settlement(env, shipment_id, settlement_id);
-    Ok(settlement_id)
-}
-
-/// Mark a settlement as completed.
-fn complete_settlement(env: &Env, settlement_id: u64, shipment_id: u64) -> Result<(), NavinError> {
-    let mut settlement = storage::get_settlement(env, settlement_id)
-        .ok_or(NavinError::ShipmentNotFound)?; // Reusing error for simplicity
-    settlement.state = SettlementState::Completed;
-    settlement.completed_at = Some(env.ledger().timestamp());
-    storage::set_settlement(env, &settlement);
-    storage::clear_active_settlement(env, shipment_id);
-    Ok(())
-}
-
-/// Mark a settlement as failed with an error code.
-fn fail_settlement(
-    env: &Env,
-    settlement_id: u64,
-    shipment_id: u64,
-    error_code: u32,
-) -> Result<(), NavinError> {
-    let mut settlement = storage::get_settlement(env, settlement_id)
-        .ok_or(NavinError::ShipmentNotFound)?; // Reusing error for simplicity
-    settlement.state = SettlementState::Failed;
-    settlement.completed_at = Some(env.ledger().timestamp());
-    settlement.error_code = Some(error_code);
-    storage::set_settlement(env, &settlement);
-    storage::clear_active_settlement(env, shipment_id);
-    Ok(())
 }
 
 fn require_not_finalized(shipment: &Shipment) -> Result<(), NavinError> {
@@ -294,54 +233,29 @@ fn internal_release_escrow(
     };
 
     if actual_release > 0 {
+        shipment.escrow_amount = checked_sub_i128(shipment.escrow_amount, actual_release)?;
+        shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
+        storage::set_shipment(env, shipment);
+        storage::set_escrow(env, shipment.id, shipment.escrow_amount);
+
         // Get token contract address
-        let token_contract = storage::get_token_contract(env)
-            .ok_or(NavinError::NotInitialized)?;
-        let contract_address = env.current_contract_address();
-
-        // Create settlement record in Pending state
-        let settlement_id = create_settlement(
-            env,
-            shipment.id,
-            SettlementOperation::Release,
-            actual_release,
-            &contract_address,
-            &shipment.carrier,
-        )?;
-
-        // Transfer tokens from this contract to carrier
-        let transfer_result = invoke_token_transfer(
-            env,
-            &token_contract,
-            &contract_address,
-            &shipment.carrier,
-            actual_release,
-        );
-
-        match transfer_result {
-            Ok(()) => {
-                // Mark settlement as completed
-                complete_settlement(env, settlement_id, shipment.id)?;
-
-                shipment.escrow_amount = checked_sub_i128(shipment.escrow_amount, actual_release)?;
-                shipment.updated_at = env.ledger().timestamp();
-                shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
-                storage::set_shipment(env, shipment);
-                storage::set_escrow(env, shipment.id, shipment.escrow_amount);
-
-                events::emit_escrow_released(env, shipment.id, &shipment.carrier, actual_release);
-
-                Ok(())
-            }
-            Err(e) => {
-                // Mark settlement as failed
-                fail_settlement(env, settlement_id, shipment.id, e as u32)?;
-                Err(e)
-            }
+        if let Some(token_contract) = storage::get_token_contract(env) {
+            // Transfer tokens from this contract to carrier
+            let contract_address = env.current_contract_address();
+            invoke_token_transfer(
+                env,
+                &token_contract,
+                &contract_address,
+                &shipment.carrier,
+                actual_release,
+            )?;
         }
-    } else {
-        Ok(())
+
+        events::emit_escrow_released(env, shipment.id, &shipment.carrier, actual_release);
     }
+
+    Ok(())
 }
 
 fn require_initialized(env: &Env) -> Result<(), NavinError> {
@@ -581,6 +495,13 @@ impl NavinShipment {
             require_active_company(&env, &reporter)?;
         }
 
+        // Check note event payload size guard
+        let config = config::get_config(&env);
+        let current_note_count = storage::get_note_count(&env, shipment_id);
+        if current_note_count >= config.max_notes_per_shipment {
+            return Err(NavinError::NoteLimitExceeded);
+        }
+
         // notes are append-only; we just increment the counter and store at the next index.
         let index = storage::increment_note_count(&env, shipment_id);
         storage::set_note_hash(&env, shipment_id, index, &note_hash);
@@ -637,6 +558,13 @@ impl NavinShipment {
         // If reporter is the company (sender), check for suspension
         if reporter == shipment.sender {
             require_active_company(&env, &reporter)?;
+        }
+
+        // Check evidence count payload size guard
+        let config = config::get_config(&env);
+        let current_evidence_count = storage::get_evidence_count(&env, shipment_id);
+        if current_evidence_count >= config.max_evidence_per_dispute {
+            return Err(NavinError::EvidenceLimitExceeded);
         }
 
         // Increment counter and store hash
@@ -980,119 +908,51 @@ impl NavinShipment {
         }
     }
 
-    /// Get TTL health summary for active datasets.
+    /// Compute the idempotency key for a shipment event.
     ///
-    /// Provides aggregated metrics for proactive archival risk monitoring.
-    /// Supports operations dashboards and indexers to detect datasets approaching
-    /// expiration and trigger preventive TTL extension or archival workflows.
+    /// This helper enables off-chain indexers to recompute the same idempotency
+    /// key that the contract emits in events. The key is used to deduplicate
+    /// events during indexing and to protect against duplicate submissions of
+    /// high-impact operations (e.g., dispute resolution).
     ///
-    /// **Important**: Direct TTL values are not queryable from within Soroban
-    /// contracts. This function provides observable metrics about persistent
-    /// storage presence that operators can correlate with external TTL monitoring.
+    /// Canonical serialization order:
+    /// 1. `shipment_id` as big-endian u64 (8 bytes)
+    /// 2. `event_type` as XDR-encoded Symbol (variable-length)
+    /// 3. `event_counter` as big-endian u32 (4 bytes)
     ///
-    /// # Sampling Strategy
-    /// Due to gas constraints, this function samples a representative subset of
-    /// shipments rather than checking all shipments. The sampling strategy:
-    /// - Samples up to 20 shipments evenly distributed across the ID range
-    /// - For contracts with <= 20 shipments, all are sampled
-    /// - For contracts with > 20 shipments, every Nth shipment is sampled
-    ///
-    /// # Health Metrics
-    /// - **persistent_count**: Number of sampled shipments in persistent storage
-    /// - **missing_or_archived_count**: Shipments not in persistent storage
-    /// - **persistent_percentage**: Percentage of sampled shipments still persistent
-    ///
-    /// A high persistent_percentage (e.g., >90%) indicates good TTL health.
-    /// A low percentage may indicate TTL expiration issues requiring attention.
+    /// The concatenated byte vector is hashed with SHA-256 to produce a
+    /// 32-byte idempotency key.
     ///
     /// # Arguments
     /// * `env` - Execution environment.
+    /// * `shipment_id` - The shipment identifier.
+    /// * `event_type` - The event type symbol (e.g., "shipment_created").
+    /// * `event_counter` - The per-shipment event counter value.
     ///
     /// # Returns
-    /// * `Result<TtlHealthSummary, NavinError>` - TTL health metrics.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `BytesN<32>` - The idempotency key.
     ///
     /// # Examples
     /// ```rust
-    /// // let health = contract.get_ttl_health_summary(&env)?;
-    /// // if health.persistent_percentage < 90 {
-    /// //     // Investigate potential TTL issues
-    /// // }
+    /// let key = contract.compute_idempotency_key(&env, 1, Symbol::new(&env, "shipment_created"), 1);
     /// ```
-    pub fn get_ttl_health_summary(env: Env) -> Result<TtlHealthSummary, NavinError> {
-        require_initialized(&env)?;
-
-        let config = config::get_config(&env);
-        let total_shipments = storage::get_shipment_counter(&env);
-        let current_ledger = env.ledger().sequence();
-        let query_timestamp = env.ledger().timestamp();
-
-        // If no shipments exist, return empty summary
-        if total_shipments == 0 {
-            return Ok(TtlHealthSummary {
-                total_shipment_count: 0,
-                sampled_count: 0,
-                persistent_count: 0,
-                missing_or_archived_count: 0,
-                persistent_percentage: 0,
-                ttl_threshold: config.shipment_ttl_threshold,
-                ttl_extension: config.shipment_ttl_extension,
-                current_ledger,
-                query_timestamp,
-            });
-        }
-
-        // Sampling strategy: check up to 20 shipments evenly distributed
-        const MAX_SAMPLE_SIZE: u32 = 20;
-        let sample_size = if total_shipments <= MAX_SAMPLE_SIZE as u64 {
-            total_shipments as u32
-        } else {
-            MAX_SAMPLE_SIZE
-        };
-
-        let step = if sample_size < MAX_SAMPLE_SIZE {
-            1
-        } else {
-            (total_shipments / sample_size as u64).max(1)
-        };
-
-        let mut persistent_count: u32 = 0;
-        let mut sampled_count: u32 = 0;
-
-        // Sample shipments across the ID range
-        let mut shipment_id = 1u64;
-        while shipment_id <= total_shipments && sampled_count < sample_size {
-            sampled_count += 1;
-
-            // Check if shipment exists in persistent storage
-            if storage::shipment_exists_in_persistent(&env, shipment_id) {
-                persistent_count += 1;
-            }
-
-            shipment_id += step;
-        }
-
-        // Calculate metrics
-        let missing_or_archived_count = sampled_count.saturating_sub(persistent_count);
-        let persistent_percentage = if sampled_count > 0 {
-            ((persistent_count as u64 * 100) / sampled_count as u64) as u32
-        } else {
-            0
-        };
-
-        Ok(TtlHealthSummary {
-            total_shipment_count: total_shipments,
-            sampled_count,
-            persistent_count,
-            missing_or_archived_count,
-            persistent_percentage,
-            ttl_threshold: config.shipment_ttl_threshold,
-            ttl_extension: config.shipment_ttl_extension,
-            current_ledger,
-            query_timestamp,
-        })
+    pub fn compute_idempotency_key(
+        env: Env,
+        shipment_id: u64,
+        event_type: Symbol,
+        event_counter: u32,
+    ) -> BytesN<32> {
+        let mut payload = soroban_sdk::Bytes::new(&env);
+        payload.append(&soroban_sdk::Bytes::from_array(
+            &env,
+            &shipment_id.to_be_bytes(),
+        ));
+        payload.append(&event_type.clone().to_xdr(&env));
+        payload.append(&soroban_sdk::Bytes::from_array(
+            &env,
+            &event_counter.to_be_bytes(),
+        ));
+        env.crypto().sha256(&payload).into()
     }
 
     /// Add a carrier to a company's whitelist.
@@ -2000,44 +1860,22 @@ impl NavinShipment {
         // Get token contract address
         let token_contract = storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
 
-        // Create settlement record in Pending state
-        let contract_address = env.current_contract_address();
-        let settlement_id = create_settlement(
-            &env,
-            shipment_id,
-            SettlementOperation::Deposit,
-            amount,
-            &from,
-            &contract_address,
-        )?;
-
         // Transfer tokens from user to this contract
-        let transfer_result = invoke_token_transfer(&env, &token_contract, &from, &contract_address, amount);
+        let contract_address = env.current_contract_address();
+        invoke_token_transfer(&env, &token_contract, &from, &contract_address, amount)?;
 
-        match transfer_result {
-            Ok(()) => {
-                // Mark settlement as completed
-                complete_settlement(&env, settlement_id, shipment_id)?;
+        shipment.escrow_amount = checked_add_i128(0, amount)?;
+        shipment.total_escrow = checked_add_i128(0, amount)?;
+        shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
+        storage::set_shipment(&env, &shipment);
+        storage::set_escrow(&env, shipment_id, amount);
+        storage::add_total_escrow_volume(&env, amount)?;
+        extend_shipment_ttl(&env, shipment_id);
 
-                shipment.escrow_amount = checked_add_i128(0, amount)?;
-                shipment.total_escrow = checked_add_i128(0, amount)?;
-                shipment.updated_at = env.ledger().timestamp();
-                shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
-                storage::set_shipment(&env, &shipment);
-                storage::set_escrow(&env, shipment_id, amount);
-                storage::add_total_escrow_volume(&env, amount)?;
-                extend_shipment_ttl(&env, shipment_id);
+        events::emit_escrow_deposited(&env, shipment_id, &from, amount);
 
-                events::emit_escrow_deposited(&env, shipment_id, &from, amount);
-
-                Ok(())
-            }
-            Err(e) => {
-                // Mark settlement as failed
-                fail_settlement(&env, settlement_id, shipment_id, e as u32)?;
-                Err(e)
-            }
-        }
+        Ok(())
     }
 
     /// Update shipment status with transition validation.
@@ -2179,65 +2017,6 @@ impl NavinShipment {
             return Err(NavinError::ShipmentNotFound);
         }
         Ok(storage::get_escrow_balance(&env, shipment_id))
-    }
-
-    /// Get a settlement record by ID.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    /// * `settlement_id` - The ID of the settlement.
-    ///
-    /// # Returns
-    /// * `Result<SettlementRecord, NavinError>` - The settlement record.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::ShipmentNotFound` - If settlement doesn't exist (reusing error).
-    ///
-    /// # Examples
-    /// ```rust
-    /// // let settlement = contract.get_settlement(&env, 1);
-    /// ```
-    pub fn get_settlement(env: Env, settlement_id: u64) -> Result<SettlementRecord, NavinError> {
-        require_initialized(&env)?;
-        storage::get_settlement(&env, settlement_id).ok_or(NavinError::ShipmentNotFound)
-    }
-
-    /// Get the active settlement ID for a shipment.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    /// * `shipment_id` - The ID of the shipment.
-    ///
-    /// # Returns
-    /// * `Result<Option<u64>, NavinError>` - The active settlement ID if one exists.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    ///
-    /// # Examples
-    /// ```rust
-    /// // let active_id = contract.get_active_settlement(&env, 1);
-    /// ```
-    pub fn get_active_settlement(env: Env, shipment_id: u64) -> Result<Option<u64>, NavinError> {
-        require_initialized(&env)?;
-        Ok(storage::get_active_settlement(&env, shipment_id))
-    }
-
-    /// Get the total number of settlements created.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    ///
-    /// # Returns
-    /// * `u64` - The total settlement count.
-    ///
-    /// # Examples
-    /// ```rust
-    /// // let count = contract.get_settlement_count(&env);
-    /// ```
-    pub fn get_settlement_count(env: Env) -> u64 {
-        storage::get_settlement_counter(&env)
     }
 
     /// Returns the total number of shipments created on the platform.
@@ -2655,6 +2434,13 @@ impl NavinShipment {
             return Err(NavinError::InvalidStatus);
         }
 
+        // Enforce milestone event payload size guard
+        let config = config::get_config(&env);
+        let current_milestone_count = storage::get_milestone_event_count(&env, shipment_id);
+        if current_milestone_count >= config.max_milestones_per_shipment {
+            return Err(NavinError::MilestoneLimitExceeded);
+        }
+
         let timestamp = env.ledger().timestamp();
 
         let _milestone = Milestone {
@@ -2773,6 +2559,18 @@ impl NavinShipment {
             if data_hash.len() != 32 {
                 return Err(NavinError::InvalidHash);
             }
+        }
+
+        // Enforce milestone event payload size guard
+        let config = config::get_config(&env);
+        let current_milestone_count = storage::get_milestone_event_count(&env, shipment_id);
+        let new_milestones = milestones.len();
+        if current_milestone_count
+            .checked_add(new_milestones)
+            .ok_or(NavinError::ArithmeticError)?
+            > config.max_milestones_per_shipment
+        {
+            return Err(NavinError::MilestoneLimitExceeded);
         }
 
         // All validations passed, now process each milestone
@@ -3255,61 +3053,39 @@ impl NavinShipment {
 
         // Get token contract address
         let token_contract = storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
-        let contract_address = env.current_contract_address();
-
-        // Create settlement record in Pending state
-        let settlement_id = create_settlement(
-            &env,
-            shipment_id,
-            SettlementOperation::Refund,
-            escrow_amount,
-            &contract_address,
-            &shipment.sender,
-        )?;
 
         // Transfer tokens from this contract to company
-        let transfer_result = invoke_token_transfer(
+        let contract_address = env.current_contract_address();
+        invoke_token_transfer(
             &env,
             &token_contract,
             &contract_address,
             &shipment.sender,
             escrow_amount,
-        );
+        )?;
 
-        match transfer_result {
-            Ok(()) => {
-                // Mark settlement as completed
-                complete_settlement(&env, settlement_id, shipment_id)?;
+        shipment.escrow_amount = 0;
+        let old_status = shipment.status.clone();
+        shipment.status = ShipmentStatus::Cancelled;
+        shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
-                shipment.escrow_amount = 0;
-                let old_status = shipment.status.clone();
-                shipment.status = ShipmentStatus::Cancelled;
-                shipment.updated_at = env.ledger().timestamp();
-                shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
+        finalize_if_settled(&env, &mut shipment);
+        storage::set_shipment(&env, &shipment);
+        storage::decrement_status_count(&env, &old_status);
+        storage::increment_status_count(&env, &ShipmentStatus::Cancelled);
 
-                finalize_if_settled(&env, &mut shipment);
-                storage::set_shipment(&env, &shipment);
-                storage::decrement_status_count(&env, &old_status);
-                storage::increment_status_count(&env, &ShipmentStatus::Cancelled);
-
-                // Decrement active shipment count if it was not already cancelled
-                if old_status != ShipmentStatus::Cancelled {
-                    storage::decrement_active_shipment_count(&env, &shipment.sender);
-                }
-
-                extend_shipment_ttl(&env, shipment_id);
-                extend_shipment_ttl(&env, shipment_id);
-
-                events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
-
-                Ok(())
-            }
-            Err(e) => {
-                // Mark settlement as failed
-                fail_settlement(&env, settlement_id, shipment_id, e as u32)?;
-                Err(e)
-            }
+        // Decrement active shipment count if it was not already cancelled
+        if old_status != ShipmentStatus::Cancelled {
+            storage::decrement_active_shipment_count(&env, &shipment.sender);
         }
+
+        extend_shipment_ttl(&env, shipment_id);
+        extend_shipment_ttl(&env, shipment_id);
+
+        events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
+
+        Ok(())
     }
 
     /// Raise a dispute for a shipment.
@@ -3438,26 +3214,15 @@ impl NavinShipment {
             return Err(NavinError::DisputeReasonHashMissing);
         }
 
-        // Idempotency check: prevent duplicate resolutions within the window
-        let mut action_payload: Vec<soroban_sdk::Val> = Vec::new(&env);
-        action_payload.push_back(Symbol::new(&env, "resolve_dispute").into_val(&env));
-        action_payload.push_back(shipment_id.into_val(&env));
-        action_payload.push_back(resolution.clone().into_val(&env));
-        action_payload.push_back(reason_hash.clone().into_val(&env));
-
-        let action_hash: BytesN<32> = env.crypto().sha256(&action_payload.to_xdr(&env)).into();
-
-        if storage::has_idempotency_window(&env, &action_hash) {
-            return Err(NavinError::DuplicateAction);
-        }
-
-        // Set the idempotency window (using config-specified duration)
-        let config = config::get_config(&env);
-        storage::set_idempotency_window(
+        // Idempotency: reject duplicate (shipment_id, resolution, reason_hash) within the window.
+        let mut payload = soroban_sdk::Bytes::new(&env);
+        payload.append(&soroban_sdk::Bytes::from_array(
             &env,
-            &action_hash,
-            config.idempotency_window_seconds as u64,
-        );
+            &shipment_id.to_be_bytes(),
+        ));
+        payload.append(&resolution.clone().to_xdr(&env));
+        payload.append(&reason_hash.clone().into());
+        check_idempotency(&env, payload)?;
 
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
@@ -3665,6 +3430,13 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
 
+        // Enforce breach payload size guard
+        let config = config::get_config(&env);
+        let current_breach_count = storage::get_breach_event_count(&env, shipment_id);
+        if current_breach_count >= config.max_breaches_per_shipment {
+            return Err(NavinError::BreachLimitExceeded);
+        }
+
         events::emit_condition_breach(
             &env,
             shipment_id,
@@ -3676,6 +3448,9 @@ impl NavinShipment {
 
         // Reputation: record breach against carrier
         events::emit_carrier_breach(&env, &carrier, shipment_id, &breach_type, &severity);
+
+        // Increment breach event count
+        storage::increment_breach_event_count(&env, shipment_id);
 
         // Auto-open dispute on Critical breaches when the config toggle is enabled.
         // Skips silently if the shipment is already Disputed or Cancelled.
