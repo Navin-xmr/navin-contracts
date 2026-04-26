@@ -612,6 +612,32 @@ pub fn set_escrow(env: &Env, shipment_id: u64, amount: i128) {
         .set(&DataKey::Escrow(shipment_id), &amount);
 }
 
+/// Get the latest escrow freeze reason code for a shipment.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// * `Option<EscrowFreezeReason>` - Structured freeze reason if present.
+pub fn get_escrow_freeze_reason(env: &Env, shipment_id: u64) -> Option<EscrowFreezeReason> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EscrowFreezeReasonByShipment(shipment_id))
+}
+
+/// Store the latest escrow freeze reason code for a shipment.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+/// * `reason` - Structured freeze reason.
+pub fn set_escrow_freeze_reason(env: &Env, shipment_id: u64, reason: &EscrowFreezeReason) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::EscrowFreezeReasonByShipment(shipment_id), reason);
+}
+
 /// Remove escrow for a shipment from persistent storage.
 ///
 /// # Arguments
@@ -742,6 +768,13 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
         env.storage()
             .persistent()
             .extend_ttl(&hash_key, threshold, extend_to);
+    }
+
+    let freeze_reason_key = DataKey::EscrowFreezeReasonByShipment(shipment_id);
+    if env.storage().persistent().has(&freeze_reason_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&freeze_reason_key, threshold, extend_to);
     }
 }
 
@@ -1499,6 +1532,7 @@ pub fn shipment_exists_in_persistent(env: &Env, shipment_id: u64) -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use crate::test_utils;

@@ -70,7 +70,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 },
                 {
-                  "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+                  "bytes": "1dab000000000000000000000000000000000000000000000000000000000000"
                 },
                 {
                   "vec": []
@@ -250,7 +250,7 @@
                   "symbol": "IdempotencyWindow"
                 },
                 {
-                  "bytes": "92cfce0a756e41f916339226f898fa89cb92af248efb138f99c66ebd0d3caea6"
+                  "bytes": "cae0bb42345b2e808f1a80d4eef2a738139ded294c2a80426b35cfc90c2e86d9"
                 }
               ]
             },
@@ -270,7 +270,7 @@
                       "symbol": "IdempotencyWindow"
                     },
                     {
-                      "bytes": "92cfce0a756e41f916339226f898fa89cb92af248efb138f99c66ebd0d3caea6"
+                      "bytes": "cae0bb42345b2e808f1a80d4eef2a738139ded294c2a80426b35cfc90c2e86d9"
                     }
                   ]
                 },
@@ -343,7 +343,7 @@
                         "symbol": "data_hash"
                       },
                       "val": {
-                        "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+                        "bytes": "1dab000000000000000000000000000000000000000000000000000000000000"
                       }
                     },
                     {

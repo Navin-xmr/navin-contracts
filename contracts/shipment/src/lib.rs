@@ -25,6 +25,9 @@ mod test_consistency;
 mod test_cross_contract_integration;
 #[cfg(test)]
 mod test_token_compatibility;
+
+#[cfg(test)]
+mod test_event_fixtures;
 #[cfg(test)]
 mod test_finalization;
 #[cfg(test)]
@@ -151,8 +154,8 @@ fn create_settlement(
 
 /// Mark a settlement as completed.
 fn complete_settlement(env: &Env, settlement_id: u64, shipment_id: u64) -> Result<(), NavinError> {
-    let mut settlement = storage::get_settlement(env, settlement_id)
-        .ok_or(NavinError::ShipmentNotFound)?; // Reusing error for simplicity
+    let mut settlement =
+        storage::get_settlement(env, settlement_id).ok_or(NavinError::ShipmentNotFound)?; // Reusing error for simplicity
     settlement.state = SettlementState::Completed;
     settlement.completed_at = Some(env.ledger().timestamp());
     storage::set_settlement(env, &settlement);
@@ -167,8 +170,8 @@ fn fail_settlement(
     shipment_id: u64,
     error_code: u32,
 ) -> Result<(), NavinError> {
-    let mut settlement = storage::get_settlement(env, settlement_id)
-        .ok_or(NavinError::ShipmentNotFound)?; // Reusing error for simplicity
+    let mut settlement =
+        storage::get_settlement(env, settlement_id).ok_or(NavinError::ShipmentNotFound)?; // Reusing error for simplicity
     settlement.state = SettlementState::Failed;
     settlement.completed_at = Some(env.ledger().timestamp());
     settlement.error_code = Some(error_code);
@@ -218,6 +221,29 @@ impl TokenOperation {
             #[cfg(test)]
             TokenOperation::Mint => NavinError::TokenMintFailed,
         }
+    }
+}
+
+/// Validates that the token contract reports the expected number of decimal places (7).
+///
+/// The Navin contract assumes all amounts are expressed in the Stellar standard
+/// unit where 1 token = 10_000_000 stroops (7 decimal places). Tokens returning
+/// a different value from `decimals()` would cause mismatched amount calculations
+/// in escrow operations, so they are rejected early.
+///
+/// # Errors
+/// Returns `NavinError::InvalidTokenDecimals` if the token returns ≠ 7 decimals,
+/// or if the call to the token contract fails (treated as an incompatible token).
+fn validate_token_decimals(env: &Env, token_contract: &Address) -> Result<(), NavinError> {
+    let args: Vec<soroban_sdk::Val> = Vec::new(env);
+    let result = env.try_invoke_contract::<u32, soroban_sdk::Error>(
+        token_contract,
+        &Symbol::new(env, "decimals"),
+        args,
+    );
+    match result {
+        Ok(Ok(decimals)) if decimals == crate::types::EXPECTED_TOKEN_DECIMALS => Ok(()),
+        _ => Err(NavinError::InvalidTokenDecimals),
     }
 }
 
@@ -295,8 +321,7 @@ fn internal_release_escrow(
 
     if actual_release > 0 {
         // Get token contract address
-        let token_contract = storage::get_token_contract(env)
-            .ok_or(NavinError::NotInitialized)?;
+        let token_contract = storage::get_token_contract(env).ok_or(NavinError::NotInitialized)?;
         let contract_address = env.current_contract_address();
 
         // Create settlement record in Pending state
@@ -856,6 +881,18 @@ impl NavinShipment {
     pub fn get_hash_algo_version(env: Env) -> Result<u32, NavinError> {
         require_initialized(&env)?;
         Ok(DEFAULT_HASH_ALGO)
+    }
+
+    /// Get the token decimals policy expected by escrow math normalization.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - Expected token decimals (7).
+    pub fn get_expected_token_decimals(env: Env) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        Ok(crate::types::EXPECTED_TOKEN_DECIMALS)
     }
 
     /// Get on-chain metadata for this contract.
@@ -2000,6 +2037,10 @@ impl NavinShipment {
         // Get token contract address
         let token_contract = storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
 
+        // Validate that the token uses 7 decimal places (Stellar standard).
+        // This prevents silent amount mismatches for non-standard tokens.
+        validate_token_decimals(&env, &token_contract)?;
+
         // Create settlement record in Pending state
         let contract_address = env.current_contract_address();
         let settlement_id = create_settlement(
@@ -2012,7 +2053,8 @@ impl NavinShipment {
         )?;
 
         // Transfer tokens from user to this contract
-        let transfer_result = invoke_token_transfer(&env, &token_contract, &from, &contract_address, amount);
+        let transfer_result =
+            invoke_token_transfer(&env, &token_contract, &from, &contract_address, amount);
 
         match transfer_result {
             Ok(()) => {
@@ -2179,6 +2221,25 @@ impl NavinShipment {
             return Err(NavinError::ShipmentNotFound);
         }
         Ok(storage::get_escrow_balance(&env, shipment_id))
+    }
+
+    /// Get the latest structured escrow freeze reason for a shipment, if present.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    ///
+    /// # Returns
+    /// * `Result<Option<EscrowFreezeReason>, NavinError>` - Latest freeze reason code.
+    pub fn get_escrow_freeze_reason(
+        env: Env,
+        shipment_id: u64,
+    ) -> Result<Option<EscrowFreezeReason>, NavinError> {
+        require_initialized(&env)?;
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+        Ok(storage::get_escrow_freeze_reason(&env, shipment_id))
     }
 
     /// Get a settlement record by ID.
@@ -3374,10 +3435,22 @@ impl NavinShipment {
         storage::decrement_status_count(&env, &old_status);
         storage::increment_status_count(&env, &ShipmentStatus::Disputed);
         storage::increment_total_disputes(&env);
+        storage::set_escrow_freeze_reason(
+            &env,
+            shipment_id,
+            &crate::types::EscrowFreezeReason::DisputeRaised,
+        );
 
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_dispute_raised(&env, shipment_id, &caller, &reason_hash);
+        // Emit a structured freeze reason so indexers can classify the escrow block.
+        events::emit_escrow_frozen(
+            &env,
+            shipment_id,
+            crate::types::EscrowFreezeReason::DisputeRaised,
+            &caller,
+        );
         events::emit_notification(
             &env,
             &shipment.sender,

@@ -108,4 +108,7 @@ pub enum NavinError {
     CircuitBreakerOpen = 46,
     /// Migration version transition is not allowed.
     InvalidMigrationEdge = 47,
+    /// Token decimals do not match the expected value (7 for Stellar standard).
+    /// Prevents mismatched amount interpretations across different token types.
+    InvalidTokenDecimals = 48,
 }

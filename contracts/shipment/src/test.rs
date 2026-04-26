@@ -20,6 +20,9 @@ impl MockToken {
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {
         // Mock implementation - always succeeds
     }
+    pub fn decimals(_env: Env) -> u32 {
+        crate::types::EXPECTED_TOKEN_DECIMALS
+    }
 }
 
 mod failing_token {
@@ -55,6 +58,41 @@ mod failing_token {
         ) -> Result<(), MockTokenFailure> {
             Err(MockTokenFailure::MintFailed)
         }
+
+        pub fn decimals(_env: Env) -> u32 {
+            crate::types::EXPECTED_TOKEN_DECIMALS
+        }
+    }
+}
+
+mod invalid_token {
+    use super::*;
+
+    // Token with invalid decimals for testing #260
+    #[contract]
+    pub struct MockTokenInvalidDecimals;
+
+    #[contractimpl]
+    impl MockTokenInvalidDecimals {
+        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+        pub fn decimals(_env: Env) -> u32 {
+            6 // Non-standard decimals
+        }
+    }
+}
+
+mod invalid_token_high_decimals {
+    use super::*;
+
+    #[contract]
+    pub struct MockTokenHighDecimals;
+
+    #[contractimpl]
+    impl MockTokenHighDecimals {
+        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+        pub fn decimals(_env: Env) -> u32 {
+            9
+        }
     }
 }
 
@@ -66,8 +104,8 @@ pub fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Addr
     (env, client, admin, token_contract)
 }
 
-pub fn setup_shipment_env_with_failing_token() -> (Env, NavinShipmentClient<'static>, Address, Address)
-{
+pub fn setup_shipment_env_with_failing_token(
+) -> (Env, NavinShipmentClient<'static>, Address, Address) {
     let (env, admin) = super::test_utils::setup_env();
     let token_contract = env.register(failing_token::FailingMockToken {}, ());
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
@@ -10018,4 +10056,143 @@ fn test_resolve_dispute_idempotency() {
         &data_hash,
     );
     assert_eq!(res, Err(Ok(crate::NavinError::ShipmentFinalized)));
+}
+
+#[test]
+fn test_deposit_escrow_invalid_token_decimals() {
+    let (env, admin) = super::test_utils::setup_env();
+    let token_contract = env.register(invalid_token::MockTokenInvalidDecimals {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+
+    client.initialize(&admin, &token_contract);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let milestones = soroban_sdk::Vec::new(&env);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    let res = client.try_deposit_escrow(&company, &shipment_id, &1000);
+    assert_eq!(res, Err(Ok(crate::NavinError::InvalidTokenDecimals)));
+}
+
+#[test]
+fn test_get_expected_token_decimals_policy() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    assert_eq!(
+        client.get_expected_token_decimals(),
+        crate::types::EXPECTED_TOKEN_DECIMALS
+    );
+}
+
+#[test]
+fn test_deposit_escrow_invalid_token_high_decimals() {
+    let (env, admin) = super::test_utils::setup_env();
+    let token_contract = env.register(invalid_token_high_decimals::MockTokenHighDecimals {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+
+    client.initialize(&admin, &token_contract);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let milestones = soroban_sdk::Vec::new(&env);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    let res = client.try_deposit_escrow(&company, &shipment_id, &1000);
+    assert_eq!(res, Err(Ok(crate::NavinError::InvalidTokenDecimals)));
+}
+
+#[test]
+fn test_dispute_emits_escrow_frozen_event() {
+    let (env, client, admin, token) = setup_shipment_env();
+    client.initialize(&admin, &token);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let milestones = soroban_sdk::Vec::new(&env);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    client.raise_dispute(&company, &shipment_id, &data_hash);
+
+    let events = env.events().all();
+
+    let mut frozen_found = false;
+    for (_contract_id, topic, data) in events.into_iter() {
+        if let Some(topic_sym) = topic
+            .get(0)
+            .and_then(|v| Symbol::try_from_val(&env, &v).ok())
+        {
+            if topic_sym == Symbol::new(&env, crate::event_topics::ESCROW_FROZEN) {
+                frozen_found = true;
+
+                let data_vec =
+                    soroban_sdk::Vec::<soroban_sdk::Val>::try_from_val(&env, &data).unwrap();
+                assert_eq!(data_vec.len(), 4);
+
+                let reason =
+                    crate::types::EscrowFreezeReason::try_from_val(&env, &data_vec.get(1).unwrap())
+                        .unwrap();
+                let caller = Address::try_from_val(&env, &data_vec.get(2).unwrap()).unwrap();
+
+                assert_eq!(reason, crate::types::EscrowFreezeReason::DisputeRaised);
+                assert_eq!(caller, company);
+            }
+        }
+    }
+
+    assert!(frozen_found, "escrow_frozen event was not emitted");
+
+    let stored_reason = client.get_escrow_freeze_reason(&shipment_id);
+    assert_eq!(
+        stored_reason,
+        Some(crate::types::EscrowFreezeReason::DisputeRaised)
+    );
 }
