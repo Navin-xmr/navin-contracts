@@ -534,51 +534,6 @@
                   "symbol": "IdempotencyWindow"
                 },
                 {
-                  "bytes": "af7a63feae392a11b415f1e64350ae14d54e54a792136240376be7559b0f2c36"
-                }
-              ]
-            },
-            "durability": "temporary"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "IdempotencyWindow"
-                    },
-                    {
-                      "bytes": "af7a63feae392a11b415f1e64350ae14d54e54a792136240376be7559b0f2c36"
-                    }
-                  ]
-                },
-                "durability": "temporary",
-                "val": {
-                  "bool": true
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          16
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "LastStatusUpdate"
-                },
-                {
                   "bytes": "ef17fa67778b6e4d6d1080b1098baa394248094836071bd89d6a9f9dff2b5792"
                 }
               ]

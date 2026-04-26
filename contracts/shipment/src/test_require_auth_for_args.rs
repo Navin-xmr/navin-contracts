@@ -183,7 +183,7 @@ fn test_suspend_carrier_auth_bound_to_arguments() {
     client.suspend_carrier(&admin, &carrier);
 
     let auths = env.auths();
-    assert!(auths.len() > 0, "Should have auth invocation");
+    assert!(!auths.is_empty(), "Should have auth invocation");
 
     // Find the suspend_carrier auth
     let suspend_auth = auths.iter().find(|(_, inv)| match &inv.function {
@@ -236,7 +236,7 @@ fn test_revoke_role_auth_bound_to_arguments() {
     client.revoke_role(&admin, &company);
 
     let auths = env.auths();
-    assert!(auths.len() > 0, "Should have auth invocation");
+    assert!(!auths.is_empty(), "Should have auth invocation");
 
     let revoke_auth = auths.iter().find(|(_, inv)| match &inv.function {
         AuthorizedFunction::Contract((_, func_name, _)) => {
@@ -303,7 +303,7 @@ fn test_force_cancel_shipment_auth_bound_to_arguments() {
     client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
 
     let auths = env.auths();
-    assert!(auths.len() > 0, "Should have auth invocation");
+    assert!(!auths.is_empty(), "Should have auth invocation");
 
     let force_cancel_auth = auths.iter().find(|(_, inv)| match &inv.function {
         AuthorizedFunction::Contract((_, func_name, _)) => {
@@ -349,12 +349,14 @@ fn test_force_cancel_shipment_auth_bound_to_arguments() {
 fn test_resolve_dispute_auth_bound_to_arguments() {
     // This test verifies the auth tree structure for resolve_dispute.
     // The full integration test is covered in other test modules.
-    let (env, client, admin, _token) = setup_env();
+    let (_env, client, _admin, _token) = setup_env();
     let cid = contract_id(&client);
 
-    // Verify that admin can call resolve_dispute (auth check)
-    // The actual dispute resolution logic is tested elsewhere
-    assert_eq!(admin, admin, "Admin should be authorized");
+    // Keep this test lightweight while still validating helper correctness.
+    assert_eq!(
+        cid, client.address,
+        "Contract ID helper should match client"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -373,7 +375,7 @@ fn test_pause_auth_bound_to_arguments() {
     client.pause(&admin);
 
     let auths = env.auths();
-    assert!(auths.len() > 0, "Should have auth invocation");
+    assert!(!auths.is_empty(), "Should have auth invocation");
 
     let pause_auth = auths.iter().find(|(_, inv)| match &inv.function {
         AuthorizedFunction::Contract((_, func_name, _)) => func_name == &Symbol::new(&env, "pause"),
@@ -422,7 +424,7 @@ fn test_unpause_auth_bound_to_arguments() {
     client.unpause(&admin);
 
     let auths = env.auths();
-    assert!(auths.len() > 0, "Should have auth invocation");
+    assert!(!auths.is_empty(), "Should have auth invocation");
 
     let unpause_auth = auths.iter().find(|(_, inv)| match &inv.function {
         AuthorizedFunction::Contract((_, func_name, _)) => {
