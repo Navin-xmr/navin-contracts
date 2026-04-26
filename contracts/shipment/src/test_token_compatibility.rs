@@ -36,7 +36,8 @@ fn setup_test(variant: TokenVariant) -> TestContext {
     let token_address = match variant {
         TokenVariant::StellarAsset => {
             // Register SAC
-            env.register_stellar_asset_contract(admin.clone())
+            env.register_stellar_asset_contract_v2(admin.clone())
+                .address()
         }
         TokenVariant::Custom => {
             // Register NavinToken

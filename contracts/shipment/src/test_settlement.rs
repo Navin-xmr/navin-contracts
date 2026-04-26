@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use crate::test_utils::*;
 use crate::types::*;
 use crate::{NavinShipment, NavinShipmentClient};
 use soroban_sdk::testutils::Address as _;
@@ -8,7 +7,9 @@ use soroban_sdk::{Address, BytesN, Env};
 
 fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
     let (env, admin) = crate::test_utils::setup_env();
-    let token_contract = env.register_stellar_asset_contract(admin.clone());
+    let token_contract = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
 
     (env, client, admin, token_contract)
@@ -18,7 +19,9 @@ fn setup_shipment_env_with_failing_token() -> (Env, NavinShipmentClient<'static>
 {
     let (env, admin) = crate::test_utils::setup_env();
     // For simplicity in this test, we use a regular token but mock a failure if needed
-    let token_contract = env.register_stellar_asset_contract(admin.clone());
+    let token_contract = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
 
     (env, client, admin, token_contract)
