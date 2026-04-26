@@ -43,7 +43,11 @@ mod test_diagnostics;
 #[cfg(test)]
 mod test_iot_verification;
 #[cfg(test)]
+mod test_panic_free_invariants;
+#[cfg(test)]
 mod test_pause;
+#[cfg(test)]
+mod test_require_auth_for_args;
 #[cfg(test)]
 mod test_suspension;
 #[cfg(test)]
