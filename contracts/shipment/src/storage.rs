@@ -1848,4 +1848,3 @@ mod tests {
 }
 
 // ============= Settlement State Storage Functions =============
-
