@@ -35,6 +35,8 @@ mod validation;
 #[cfg(test)]
 mod test_auth;
 #[cfg(test)]
+mod test_auth_matrix;
+#[cfg(test)]
 mod test_auto_dispute;
 #[cfg(test)]
 mod test_diagnostics;
@@ -3671,6 +3673,7 @@ impl NavinShipment {
         env: Env,
         proposer: Address,
         action: crate::types::AdminAction,
+        salt: BytesN<32>,
     ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
         proposer.require_auth();
@@ -3679,6 +3682,12 @@ impl NavinShipment {
         if !storage::is_admin(&env, &proposer) {
             return Err(NavinError::NotAnAdmin);
         }
+
+        // Anti-replay: reject if this salt has been used before.
+        if storage::is_salt_used(&env, &salt) {
+            return Err(NavinError::ProposalSaltReused);
+        }
+        storage::mark_salt_used(&env, &salt);
 
         let proposal_id = storage::get_proposal_counter(&env)
             .checked_add(1)
@@ -3699,6 +3708,7 @@ impl NavinShipment {
             created_at: now,
             expires_at,
             executed: false,
+            salt: salt.clone(),
         };
 
         storage::set_proposal(&env, &proposal);
