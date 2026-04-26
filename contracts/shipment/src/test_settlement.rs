@@ -5,12 +5,51 @@ use crate::test_utils::{self, dummy_hash, seeded_hash};
 use crate::types::*;
 use crate::{NavinShipment, NavinShipmentClient};
 use soroban_sdk::testutils::Address as _;
-use soroban_sdk::{Address, BytesN, Env};
+use soroban_sdk::{contract, contractimpl, contracterror, Address, BytesN, Env};
+
+// ── Mock token that always succeeds ──────────────────────────────────────────
+#[contract]
+struct MockToken;
+
+#[contractimpl]
+impl MockToken {
+    pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {
+        // no-op: always succeeds
+    }
+}
+
+// ── Mock token that always fails ─────────────────────────────────────────────
+mod failing_token {
+    use super::*;
+
+    #[contracterror]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+    #[repr(u32)]
+    pub enum MockTokenFailure {
+        TransferFailed = 1,
+    }
+
+    #[contract]
+    pub struct FailingMockToken;
+
+    #[contractimpl]
+    impl FailingMockToken {
+        pub fn transfer(
+            _env: Env,
+            _from: Address,
+            _to: Address,
+            _amount: i128,
+        ) -> Result<(), MockTokenFailure> {
+            Err(MockTokenFailure::TransferFailed)
+        }
+    }
+}
 
 fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
     let (env, admin) = crate::test_utils::setup_env();
-    let token_contract = env.register_stellar_asset_contract(admin.clone());
+    let token_contract = env.register(MockToken {}, ());
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    client.initialize(&admin, &token_contract);
 
     (env, client, admin, token_contract)
 }
@@ -18,9 +57,9 @@ fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address)
 fn setup_shipment_env_with_failing_token() -> (Env, NavinShipmentClient<'static>, Address, Address)
 {
     let (env, admin) = crate::test_utils::setup_env();
-    // For simplicity in this test, we use a regular token but mock a failure if needed
-    let token_contract = env.register_stellar_asset_contract(admin.clone());
+    let token_contract = env.register(failing_token::FailingMockToken {}, ());
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    client.initialize(&admin, &token_contract);
 
     (env, client, admin, token_contract)
 }
@@ -110,6 +149,7 @@ fn test_deposit_escrow_settlement_failure_rollback() {
     let result = client.try_deposit_escrow(&company, &shipment_id, &escrow_amount);
     assert!(result.is_err());
 
+    // On Soroban, the failed call is reverted atomically, so no settlement is persisted.
     // Verify settlement was NOT created (transaction rolled back)
     let settlement_count = client.get_settlement_count();
     assert_eq!(settlement_count, 0);
@@ -268,6 +308,11 @@ fn test_refund_escrow_settlement_failure_rollback() {
     let result = client.try_refund_escrow(&company, &shipment_id);
     assert!(result.is_err());
 
+    // On Soroban, the failed call is reverted atomically, so no settlement is persisted.
+    let settlement_count = client.get_settlement_count();
+    assert_eq!(settlement_count, 0);
+
+    // Verify no active settlement remains
     // Verify settlement was NOT created (transaction rolled back)
     let settlement_count = client.get_settlement_count();
     assert_eq!(settlement_count, 0);
@@ -383,7 +428,8 @@ fn test_multiple_shipments_independent_settlements() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let data_hash = dummy_hash(&env);
+    let data_hash1 = BytesN::from_array(&env, &[1u8; 32]);
+    let data_hash2 = BytesN::from_array(&env, &[2u8; 32]);
     let deadline = env.ledger().timestamp() + 86400;
 
     // Create two shipments
@@ -391,7 +437,7 @@ fn test_multiple_shipments_independent_settlements() {
         &company,
         &receiver,
         &carrier,
-        &data_hash,
+        &data_hash1,
         &soroban_sdk::Vec::new(&env),
         &deadline,
     );
@@ -400,6 +446,7 @@ fn test_multiple_shipments_independent_settlements() {
         &company,
         &receiver,
         &carrier,
+        &data_hash2,
         &seeded_hash(&env, 2),
         &soroban_sdk::Vec::new(&env),
         &deadline,

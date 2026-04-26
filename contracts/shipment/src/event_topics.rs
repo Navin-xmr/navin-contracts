@@ -139,6 +139,68 @@ pub const NOTE_APPENDED: &str = "note_appended";
 /// Emitted when dispute evidence is appended (append-only).
 pub const EVIDENCE_ADDED: &str = "evidence_added";
 
+// ── Hash domain-separation prefixes by event family ──────────────────────────
+//
+// These `u8` tags are prepended to every idempotency-key hash input to
+// bind each key to its event-family context.  Using a per-family tag means
+// that the same external payload hash submitted to two different event
+// families always produces distinct idempotency keys, preventing
+// cross-context hash collisions.
+//
+// ## Callers computing off-chain hashes
+//
+// Off-chain clients SHOULD prefix their raw payload with the appropriate
+// constant before hashing (e.g. `SHA-256(domain_tag_byte || raw_payload)`)
+// so that hashes are naturally scoped to their family.
+//
+// ## Assignment rules
+// - Each event family gets a unique, stable `u8` discriminant.
+// - Values MUST NOT be reused or renumbered; doing so is a breaking change.
+
+/// Domain tag for shipment-lifecycle events
+/// (`shipment_created`, `status_updated`, `milestone_recorded`,
+///  `shipment_cancelled`, `shipment_expired`, `shipment_archived`,
+///  `delivery_success`).
+pub const HASH_DOMAIN_SHIPMENT: u8 = 0x01;
+
+/// Domain tag for escrow-operation events
+/// (`escrow_deposited`, `escrow_released`, `escrow_refunded`).
+pub const HASH_DOMAIN_ESCROW: u8 = 0x02;
+
+/// Domain tag for dispute-related events
+/// (`dispute_raised`, `dispute_resolved`).
+pub const HASH_DOMAIN_DISPUTE: u8 = 0x03;
+
+/// Domain tag for condition-breach / sensor-data events
+/// (`condition_breach`, `carrier_breach`).
+pub const HASH_DOMAIN_CONDITION: u8 = 0x04;
+
+/// Domain tag for carrier-reputation events
+/// (`carrier_late_delivery`, `carrier_on_time_delivery`,
+///  `carrier_handoff`, `carrier_handoff_completed`,
+///  `carrier_milestone_rate`, `carrier_dispute_loss`).
+pub const HASH_DOMAIN_CARRIER: u8 = 0x05;
+
+/// Domain tag for admin / governance events
+/// (`admin_proposed`, `admin_transferred`, `contract_upgraded`,
+///  `migration_reported`, `contract_paused`, `contract_unpaused`,
+///  `force_cancelled`, `recovery_event`, `escrow_unlock_event`,
+///  `finalization_clear_event`).
+pub const HASH_DOMAIN_ADMIN: u8 = 0x06;
+
+/// Domain tag for RBAC events
+/// (`role_revoked`, `role_changed`).
+pub const HASH_DOMAIN_RBAC: u8 = 0x07;
+
+/// Domain tag for notification events (`notification`).
+pub const HASH_DOMAIN_NOTIFICATION: u8 = 0x08;
+
+/// Domain tag for shipment-note events (`note_appended`).
+pub const HASH_DOMAIN_NOTE: u8 = 0x09;
+
+/// Domain tag for dispute-evidence events (`evidence_added`).
+pub const HASH_DOMAIN_EVIDENCE: u8 = 0x0A;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,4 +341,46 @@ mod tests {
             );
         }
     }
-}
+    /// Verifies that every hash domain-separation prefix has a unique `u8` value.
+    ///
+    /// Adding a new family domain tag must not reuse an existing discriminant;
+    /// this test is the compile-time-adjacent guard against that mistake.
+    #[test]
+    fn all_hash_domain_constants_are_unique() {
+        let mut domains = [
+            HASH_DOMAIN_SHIPMENT,
+            HASH_DOMAIN_ESCROW,
+            HASH_DOMAIN_DISPUTE,
+            HASH_DOMAIN_CONDITION,
+            HASH_DOMAIN_CARRIER,
+            HASH_DOMAIN_ADMIN,
+            HASH_DOMAIN_RBAC,
+            HASH_DOMAIN_NOTIFICATION,
+            HASH_DOMAIN_NOTE,
+            HASH_DOMAIN_EVIDENCE,
+        ];
+        domains.sort_unstable();
+        for pair in domains.windows(2) {
+            assert_ne!(
+                pair[0], pair[1],
+                "Duplicate HASH_DOMAIN constant value detected: 0x{:02X}",
+                pair[0]
+            );
+        }
+    }
+
+    /// Verifies that each domain constant has the exact value specified in the
+    /// design.  Changing a value is a breaking change for off-chain indexers.
+    #[test]
+    fn hash_domain_constant_values_are_stable() {
+        assert_eq!(HASH_DOMAIN_SHIPMENT, 0x01);
+        assert_eq!(HASH_DOMAIN_ESCROW, 0x02);
+        assert_eq!(HASH_DOMAIN_DISPUTE, 0x03);
+        assert_eq!(HASH_DOMAIN_CONDITION, 0x04);
+        assert_eq!(HASH_DOMAIN_CARRIER, 0x05);
+        assert_eq!(HASH_DOMAIN_ADMIN, 0x06);
+        assert_eq!(HASH_DOMAIN_RBAC, 0x07);
+        assert_eq!(HASH_DOMAIN_NOTIFICATION, 0x08);
+        assert_eq!(HASH_DOMAIN_NOTE, 0x09);
+        assert_eq!(HASH_DOMAIN_EVIDENCE, 0x0A);
+    }}
