@@ -50,6 +50,8 @@ mod test_suspension;
 mod test_ttl_health;
 #[cfg(test)]
 mod test_utils;
+#[cfg(test)]
+mod test_hash_domain_separation;
 
 pub use config::*;
 pub use consistency::*;

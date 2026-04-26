@@ -29,11 +29,18 @@ fn next_event_counter(env: &Env, shipment_id: u64) -> u32 {
 
 fn generate_idempotency_key(
     env: &Env,
+    domain: u8,
     shipment_id: u64,
     event_type: &str,
     event_counter: u32,
 ) -> BytesN<32> {
     let mut payload = soroban_sdk::Bytes::new(env);
+    // Prepend a per-family domain tag so that keys from different event
+    // families are always distinct, even when all other inputs are equal.
+    payload.append(&soroban_sdk::Bytes::from_array(
+        env,
+        &domain.to_be_bytes(),
+    ));
     payload.append(&soroban_sdk::Bytes::from_array(
         env,
         &shipment_id.to_be_bytes(),
@@ -86,6 +93,7 @@ pub fn emit_shipment_created(
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_SHIPMENT,
         shipment_id,
         crate::event_topics::SHIPMENT_CREATED,
         event_counter,
@@ -145,6 +153,7 @@ pub fn emit_status_updated(
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_SHIPMENT,
         shipment_id,
         crate::event_topics::STATUS_UPDATED,
         event_counter,
@@ -208,6 +217,7 @@ pub fn emit_milestone_recorded(
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_SHIPMENT,
         shipment_id,
         crate::event_topics::MILESTONE_RECORDED,
         event_counter,
@@ -260,6 +270,7 @@ pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_ESCROW,
         shipment_id,
         crate::event_topics::ESCROW_DEPOSITED,
         event_counter,
@@ -310,6 +321,7 @@ pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_ESCROW,
         shipment_id,
         crate::event_topics::ESCROW_RELEASED,
         event_counter,
@@ -360,6 +372,7 @@ pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_ESCROW,
         shipment_id,
         crate::event_topics::ESCROW_REFUNDED,
         event_counter,
@@ -454,6 +467,7 @@ pub fn emit_shipment_cancelled(
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_SHIPMENT,
         shipment_id,
         crate::event_topics::SHIPMENT_CANCELLED,
         event_counter,
@@ -661,6 +675,7 @@ pub fn emit_shipment_expired(env: &Env, shipment_id: u64) {
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_SHIPMENT,
         shipment_id,
         crate::event_topics::SHIPMENT_EXPIRED,
         event_counter,
@@ -698,6 +713,7 @@ pub fn emit_delivery_success(env: &Env, carrier: &Address, shipment_id: u64, del
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_SHIPMENT,
         shipment_id,
         crate::event_topics::DELIVERY_SUCCESS,
         event_counter,
@@ -1127,6 +1143,7 @@ pub fn emit_dispute_resolved(
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_DISPUTE,
         shipment_id,
         crate::event_topics::DISPUTE_RESOLVED,
         event_counter,
