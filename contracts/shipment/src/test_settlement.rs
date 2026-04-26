@@ -1,6 +1,7 @@
 #![cfg(test)]
 
-use crate::test_utils::*;
+use crate::test::*;
+use crate::test_utils::{self, dummy_hash, seeded_hash};
 use crate::types::*;
 use crate::{NavinShipment, NavinShipmentClient};
 use soroban_sdk::testutils::Address as _;
@@ -32,7 +33,7 @@ fn dummy_hash(env: &Env) -> BytesN<32> {
 /// and transitions to Completed on success.
 #[test]
 fn test_deposit_escrow_settlement_success() {
-    let (env, client, admin, _token_contract) = setup_shipment_env();
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -69,7 +70,7 @@ fn test_deposit_escrow_settlement_success() {
     assert_eq!(settlement.state, SettlementState::Completed);
     assert_eq!(settlement.amount, escrow_amount);
     assert_eq!(settlement.from, company);
-    assert_eq!(settlement.to, env.current_contract_address());
+    assert_eq!(settlement.to, client.address);
     assert!(settlement.completed_at.is_some());
     assert!(settlement.error_code.is_none());
 
@@ -78,10 +79,12 @@ fn test_deposit_escrow_settlement_success() {
     assert!(active.is_none());
 }
 
-/// Test that deposit_escrow creates a Failed settlement record when token transfer fails.
+/// Test that deposit_escrow rolls back on token transfer failure.
+/// Due to Soroban transaction semantics, when the token transfer fails,
+/// the entire transaction (including settlement creation) is rolled back.
 #[test]
-fn test_deposit_escrow_settlement_failure() {
-    let (env, client, admin, _token_contract) = setup_shipment_env_with_failing_token();
+fn test_deposit_escrow_settlement_failure_rollback() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env_with_failing_token();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -107,25 +110,24 @@ fn test_deposit_escrow_settlement_failure() {
     let result = client.try_deposit_escrow(&company, &shipment_id, &escrow_amount);
     assert!(result.is_err());
 
-    // Verify settlement was created and marked as Failed
+    // Verify settlement was NOT created (transaction rolled back)
     let settlement_count = client.get_settlement_count();
-    assert_eq!(settlement_count, 1);
+    assert_eq!(settlement_count, 0);
 
-    let settlement = client.get_settlement(&1);
-    assert_eq!(settlement.state, SettlementState::Failed);
-    assert_eq!(settlement.operation, SettlementOperation::Deposit);
-    assert!(settlement.completed_at.is_some());
-    assert!(settlement.error_code.is_some());
-
-    // Verify no active settlement remains
+    // Verify no active settlement (transaction rolled back)
     let active = client.get_active_settlement(&shipment_id);
     assert!(active.is_none());
+
+    // Verify shipment state unchanged
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.escrow_amount, 0);
+    assert_eq!(shipment.status, ShipmentStatus::Created);
 }
 
 /// Test that release_escrow creates a settlement record and transitions correctly.
 #[test]
 fn test_release_escrow_settlement_success() {
-    let (env, client, admin, _token_contract) = setup_shipment_env();
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -169,7 +171,7 @@ fn test_release_escrow_settlement_success() {
     assert_eq!(settlement.operation, SettlementOperation::Release);
     assert_eq!(settlement.state, SettlementState::Completed);
     assert_eq!(settlement.amount, escrow_amount);
-    assert_eq!(settlement.from, env.current_contract_address());
+    assert_eq!(settlement.from, client.address);
     assert_eq!(settlement.to, carrier);
     assert!(settlement.completed_at.is_some());
     assert!(settlement.error_code.is_none());
@@ -182,7 +184,7 @@ fn test_release_escrow_settlement_success() {
 /// Test that refund_escrow creates a settlement record and transitions correctly.
 #[test]
 fn test_refund_escrow_settlement_success() {
-    let (env, client, admin, _token_contract) = setup_shipment_env();
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -219,7 +221,7 @@ fn test_refund_escrow_settlement_success() {
     assert_eq!(settlement.operation, SettlementOperation::Refund);
     assert_eq!(settlement.state, SettlementState::Completed);
     assert_eq!(settlement.amount, escrow_amount);
-    assert_eq!(settlement.from, env.current_contract_address());
+    assert_eq!(settlement.from, client.address);
     assert_eq!(settlement.to, company);
     assert!(settlement.completed_at.is_some());
     assert!(settlement.error_code.is_none());
@@ -229,10 +231,12 @@ fn test_refund_escrow_settlement_success() {
     assert!(active.is_none());
 }
 
-/// Test that refund_escrow creates a Failed settlement when token transfer fails.
+/// Test that refund_escrow rolls back on token transfer failure.
+/// Due to Soroban transaction semantics, when the token transfer fails,
+/// the entire transaction (including settlement creation) is rolled back.
 #[test]
-fn test_refund_escrow_settlement_failure() {
-    let (env, client, admin, _token_contract) = setup_shipment_env_with_failing_token();
+fn test_refund_escrow_settlement_failure_rollback() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env_with_failing_token();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -264,25 +268,24 @@ fn test_refund_escrow_settlement_failure() {
     let result = client.try_refund_escrow(&company, &shipment_id);
     assert!(result.is_err());
 
-    // Verify settlement was created and marked as Failed
+    // Verify settlement was NOT created (transaction rolled back)
     let settlement_count = client.get_settlement_count();
-    assert_eq!(settlement_count, 1);
+    assert_eq!(settlement_count, 0);
 
-    let settlement = client.get_settlement(&1);
-    assert_eq!(settlement.state, SettlementState::Failed);
-    assert_eq!(settlement.operation, SettlementOperation::Refund);
-    assert!(settlement.completed_at.is_some());
-    assert!(settlement.error_code.is_some());
-
-    // Verify no active settlement remains
+    // Verify no active settlement (transaction rolled back)
     let active = client.get_active_settlement(&shipment_id);
     assert!(active.is_none());
+
+    // Verify shipment state unchanged
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.escrow_amount, 3000);
+    assert_eq!(shipment.status, ShipmentStatus::Created);
 }
 
 /// Test settlement state transitions through full lifecycle.
 #[test]
 fn test_settlement_full_lifecycle() {
-    let (env, client, admin, _token_contract) = setup_shipment_env();
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -331,7 +334,7 @@ fn test_settlement_full_lifecycle() {
 /// Test that settlement records are queryable and contain correct metadata.
 #[test]
 fn test_settlement_record_metadata() {
-    let (env, client, admin, _token_contract) = setup_shipment_env();
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -362,7 +365,7 @@ fn test_settlement_record_metadata() {
     assert_eq!(settlement.shipment_id, shipment_id);
     assert_eq!(settlement.amount, 5000);
     assert_eq!(settlement.from, company);
-    assert_eq!(settlement.to, env.current_contract_address());
+    assert_eq!(settlement.to, client.address);
     assert!(settlement.initiated_at >= before_timestamp);
     assert!(settlement.initiated_at <= after_timestamp);
     assert!(settlement.completed_at.is_some());
@@ -372,7 +375,7 @@ fn test_settlement_record_metadata() {
 /// Test that multiple shipments can have independent settlement records.
 #[test]
 fn test_multiple_shipments_independent_settlements() {
-    let (env, client, admin, _token_contract) = setup_shipment_env();
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -397,7 +400,7 @@ fn test_multiple_shipments_independent_settlements() {
         &company,
         &receiver,
         &carrier,
-        &data_hash,
+        &seeded_hash(&env, 2),
         &soroban_sdk::Vec::new(&env),
         &deadline,
     );

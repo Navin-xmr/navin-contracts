@@ -18,7 +18,7 @@ mod rate_limit;
 mod recovery;
 mod storage;
 mod stress_test;
-mod test;
+pub mod test;
 #[cfg(test)]
 mod test_consistency;
 #[cfg(test)]
