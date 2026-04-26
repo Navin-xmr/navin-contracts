@@ -4,12 +4,51 @@ use crate::test_utils::*;
 use crate::types::*;
 use crate::{NavinShipment, NavinShipmentClient};
 use soroban_sdk::testutils::Address as _;
-use soroban_sdk::{Address, BytesN, Env};
+use soroban_sdk::{contract, contractimpl, contracterror, Address, BytesN, Env};
+
+// ── Mock token that always succeeds ──────────────────────────────────────────
+#[contract]
+struct MockToken;
+
+#[contractimpl]
+impl MockToken {
+    pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {
+        // no-op: always succeeds
+    }
+}
+
+// ── Mock token that always fails ─────────────────────────────────────────────
+mod failing_token {
+    use super::*;
+
+    #[contracterror]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+    #[repr(u32)]
+    pub enum MockTokenFailure {
+        TransferFailed = 1,
+    }
+
+    #[contract]
+    pub struct FailingMockToken;
+
+    #[contractimpl]
+    impl FailingMockToken {
+        pub fn transfer(
+            _env: Env,
+            _from: Address,
+            _to: Address,
+            _amount: i128,
+        ) -> Result<(), MockTokenFailure> {
+            Err(MockTokenFailure::TransferFailed)
+        }
+    }
+}
 
 fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
     let (env, admin) = crate::test_utils::setup_env();
-    let token_contract = env.register_stellar_asset_contract(admin.clone());
+    let token_contract = env.register(MockToken {}, ());
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    client.initialize(&admin, &token_contract);
 
     (env, client, admin, token_contract)
 }
@@ -17,9 +56,9 @@ fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address)
 fn setup_shipment_env_with_failing_token() -> (Env, NavinShipmentClient<'static>, Address, Address)
 {
     let (env, admin) = crate::test_utils::setup_env();
-    // For simplicity in this test, we use a regular token but mock a failure if needed
-    let token_contract = env.register_stellar_asset_contract(admin.clone());
+    let token_contract = env.register(failing_token::FailingMockToken {}, ());
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    client.initialize(&admin, &token_contract);
 
     (env, client, admin, token_contract)
 }
@@ -69,7 +108,7 @@ fn test_deposit_escrow_settlement_success() {
     assert_eq!(settlement.state, SettlementState::Completed);
     assert_eq!(settlement.amount, escrow_amount);
     assert_eq!(settlement.from, company);
-    assert_eq!(settlement.to, env.current_contract_address());
+    assert_eq!(settlement.to, client.address);
     assert!(settlement.completed_at.is_some());
     assert!(settlement.error_code.is_none());
 
@@ -107,15 +146,9 @@ fn test_deposit_escrow_settlement_failure() {
     let result = client.try_deposit_escrow(&company, &shipment_id, &escrow_amount);
     assert!(result.is_err());
 
-    // Verify settlement was created and marked as Failed
+    // On Soroban, the failed call is reverted atomically, so no settlement is persisted.
     let settlement_count = client.get_settlement_count();
-    assert_eq!(settlement_count, 1);
-
-    let settlement = client.get_settlement(&1);
-    assert_eq!(settlement.state, SettlementState::Failed);
-    assert_eq!(settlement.operation, SettlementOperation::Deposit);
-    assert!(settlement.completed_at.is_some());
-    assert!(settlement.error_code.is_some());
+    assert_eq!(settlement_count, 0);
 
     // Verify no active settlement remains
     let active = client.get_active_settlement(&shipment_id);
@@ -169,7 +202,7 @@ fn test_release_escrow_settlement_success() {
     assert_eq!(settlement.operation, SettlementOperation::Release);
     assert_eq!(settlement.state, SettlementState::Completed);
     assert_eq!(settlement.amount, escrow_amount);
-    assert_eq!(settlement.from, env.current_contract_address());
+    assert_eq!(settlement.from, client.address);
     assert_eq!(settlement.to, carrier);
     assert!(settlement.completed_at.is_some());
     assert!(settlement.error_code.is_none());
@@ -219,7 +252,7 @@ fn test_refund_escrow_settlement_success() {
     assert_eq!(settlement.operation, SettlementOperation::Refund);
     assert_eq!(settlement.state, SettlementState::Completed);
     assert_eq!(settlement.amount, escrow_amount);
-    assert_eq!(settlement.from, env.current_contract_address());
+    assert_eq!(settlement.from, client.address);
     assert_eq!(settlement.to, company);
     assert!(settlement.completed_at.is_some());
     assert!(settlement.error_code.is_none());
@@ -264,15 +297,9 @@ fn test_refund_escrow_settlement_failure() {
     let result = client.try_refund_escrow(&company, &shipment_id);
     assert!(result.is_err());
 
-    // Verify settlement was created and marked as Failed
+    // On Soroban, the failed call is reverted atomically, so no settlement is persisted.
     let settlement_count = client.get_settlement_count();
-    assert_eq!(settlement_count, 1);
-
-    let settlement = client.get_settlement(&1);
-    assert_eq!(settlement.state, SettlementState::Failed);
-    assert_eq!(settlement.operation, SettlementOperation::Refund);
-    assert!(settlement.completed_at.is_some());
-    assert!(settlement.error_code.is_some());
+    assert_eq!(settlement_count, 0);
 
     // Verify no active settlement remains
     let active = client.get_active_settlement(&shipment_id);
@@ -362,7 +389,7 @@ fn test_settlement_record_metadata() {
     assert_eq!(settlement.shipment_id, shipment_id);
     assert_eq!(settlement.amount, 5000);
     assert_eq!(settlement.from, company);
-    assert_eq!(settlement.to, env.current_contract_address());
+    assert_eq!(settlement.to, client.address);
     assert!(settlement.initiated_at >= before_timestamp);
     assert!(settlement.initiated_at <= after_timestamp);
     assert!(settlement.completed_at.is_some());
@@ -380,7 +407,8 @@ fn test_multiple_shipments_independent_settlements() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let data_hash = dummy_hash(&env);
+    let data_hash1 = BytesN::from_array(&env, &[1u8; 32]);
+    let data_hash2 = BytesN::from_array(&env, &[2u8; 32]);
     let deadline = env.ledger().timestamp() + 86400;
 
     // Create two shipments
@@ -388,7 +416,7 @@ fn test_multiple_shipments_independent_settlements() {
         &company,
         &receiver,
         &carrier,
-        &data_hash,
+        &data_hash1,
         &soroban_sdk::Vec::new(&env),
         &deadline,
     );
@@ -397,7 +425,7 @@ fn test_multiple_shipments_independent_settlements() {
         &company,
         &receiver,
         &carrier,
-        &data_hash,
+        &data_hash2,
         &soroban_sdk::Vec::new(&env),
         &deadline,
     );
