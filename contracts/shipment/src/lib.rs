@@ -11,6 +11,7 @@ mod config;
 pub mod consistency;
 pub mod diagnostics;
 mod e2e_test;
+pub mod error_map;
 mod errors;
 mod event_topics;
 mod events;
