@@ -3,9 +3,8 @@
 extern crate std;
 
 use crate::{
-    types::DataKey, BreachType, GeofenceEvent, NavinShipment, NavinShipmentClient,
-    NavinError, PersistentRestoreDiagnostics, Severity, ShipmentInput, ShipmentStatus,
-    StoragePresenceState,
+    types::DataKey, BreachType, GeofenceEvent, NavinError, NavinShipment, NavinShipmentClient,
+    PersistentRestoreDiagnostics, Severity, ShipmentInput, ShipmentStatus, StoragePresenceState,
 };
 use soroban_sdk::{
     contract, contracterror, contractimpl,
