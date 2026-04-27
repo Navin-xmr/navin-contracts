@@ -70,6 +70,8 @@ pub enum DataKey {
     StatusCount(ShipmentStatus),
     /// Configurable limit on active shipments per company.
     ShipmentLimit,
+    /// Per-company override for active shipment limit.
+    CompanyShipmentLimit(Address),
     /// Counter for active shipments per company.
     ActiveShipmentCount(Address),
     /// Contract configuration parameters.

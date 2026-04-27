@@ -847,6 +847,34 @@ impl NavinShipment {
         Ok(storage::get_shipment_limit(&env))
     }
 
+    /// Set a company-specific active shipment limit override.
+    pub fn set_company_shipment_limit(
+        env: Env,
+        admin: Address,
+        company: Address,
+        limit: u32,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::set_company_shipment_limit(&env, &company, limit);
+        env.events().publish(
+            (Symbol::new(&env, "set_cmp_limit"),),
+            (admin, company, limit),
+        );
+        Ok(())
+    }
+
+    /// Get the effective shipment limit for a company (override or global fallback).
+    pub fn get_effective_shipment_limit(env: Env, company: Address) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        Ok(storage::get_effective_shipment_limit(&env, &company))
+    }
+
     /// Get the current active shipment count for a company.
     pub fn get_active_shipment_count(env: Env, company: Address) -> Result<u32, NavinError> {
         require_initialized(&env)?;
@@ -1668,7 +1696,7 @@ impl NavinShipment {
 
         // Check company active shipment limit
         let current_active = storage::get_active_shipment_count(&env, &sender);
-        let limit = storage::get_shipment_limit(&env);
+        let limit = storage::get_effective_shipment_limit(&env, &sender);
         if current_active >= limit {
             return Err(NavinError::ShipmentLimitReached);
         }
@@ -1765,7 +1793,7 @@ impl NavinShipment {
 
         // Check batch size against limit
         let current_active = storage::get_active_shipment_count(&env, &sender);
-        let limit = storage::get_shipment_limit(&env);
+        let limit = storage::get_effective_shipment_limit(&env, &sender);
         if current_active.saturating_add(shipments.len()) > limit {
             return Err(NavinError::ShipmentLimitReached);
         }

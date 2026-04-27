@@ -3,7 +3,7 @@
 extern crate std;
 
 use crate::{
-    types::DataKey, BreachType, GeofenceEvent, NavinShipment, NavinShipmentClient,
+    types::DataKey, BreachType, GeofenceEvent, NavinError, NavinShipment, NavinShipmentClient,
     PersistentRestoreDiagnostics, Severity, ShipmentInput, ShipmentStatus, StoragePresenceState,
 };
 use soroban_sdk::{
@@ -5969,6 +5969,83 @@ fn test_active_shipment_count_tracking() {
         &deadline,
     );
     assert_eq!(client.get_active_shipment_count(&company), 2);
+}
+
+#[test]
+fn test_company_shipment_limit_override_takes_precedence() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.set_shipment_limit(&admin, &5);
+    client.set_company_shipment_limit(&admin, &company, &1);
+
+    assert_eq!(client.get_effective_shipment_limit(&company), 1);
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let result = client.try_create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert_eq!(result, Err(Ok(NavinError::ShipmentLimitReached)));
+}
+
+#[test]
+fn test_company_limit_falls_back_to_global_limit() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.set_shipment_limit(&admin, &2);
+
+    assert_eq!(client.get_effective_shipment_limit(&company), 2);
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[3u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[4u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let result = client.try_create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[5u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert_eq!(result, Err(Ok(NavinError::ShipmentLimitReached)));
 }
 
 // ============= Dispute Evidence Tests =============
