@@ -1,6 +1,6 @@
 use crate::errors::NavinError;
 use crate::storage;
-use crate::types::Shipment;
+use crate::types::{Shipment, ShipmentStatus};
 use soroban_sdk::{xdr::ToXdr, BytesN, Env, Symbol};
 
 /// Maximum reasonable escrow amount (1 quadrillion stroops ≈ 1 billion XLM).
@@ -279,10 +279,43 @@ pub fn preflight_check_shipment_available(
     Ok(shipment)
 }
 
+/// Validate cross-field shipment state-machine invariants.
+///
+/// This validator protects against impossible state combinations and is intended
+/// to be called on every write path before persisting shipment state.
+pub fn validate_shipment_invariants(shipment: &Shipment) -> Result<(), NavinError> {
+    if shipment.total_escrow < 0 || shipment.escrow_amount < 0 {
+        return Err(NavinError::InvalidStatus);
+    }
+
+    if shipment.escrow_amount > shipment.total_escrow {
+        return Err(NavinError::InvalidStatus);
+    }
+
+    if shipment.finalized {
+        let terminal = shipment.status == ShipmentStatus::Delivered
+            || shipment.status == ShipmentStatus::Cancelled;
+        if !terminal || shipment.escrow_amount != 0 {
+            return Err(NavinError::InvalidStatus);
+        }
+    }
+
+    if shipment.status == ShipmentStatus::Disputed && shipment.finalized {
+        return Err(NavinError::InvalidStatus);
+    }
+
+    if shipment.status == ShipmentStatus::Created && !shipment.paid_milestones.is_empty() {
+        return Err(NavinError::InvalidStatus);
+    }
+
+    Ok(())
+}
+
 // Tests
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soroban_sdk::testutils::Address as _;
     use soroban_sdk::{testutils::Ledger, BytesN, Env, Symbol};
 
     // validate_hash
@@ -307,6 +340,59 @@ mod tests {
         let env = Env::default();
         let hash: BytesN<32> = BytesN::from_array(&env, &[0xFF_u8; 32]);
         assert_eq!(validate_hash(&hash), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_shipment_invariants_accepts_valid_shipment() {
+        let env = Env::default();
+        let shipment = Shipment {
+            id: 1,
+            sender: soroban_sdk::Address::generate(&env),
+            receiver: soroban_sdk::Address::generate(&env),
+            carrier: soroban_sdk::Address::generate(&env),
+            status: ShipmentStatus::InTransit,
+            data_hash: BytesN::from_array(&env, &[1_u8; 32]),
+            created_at: 100,
+            updated_at: 100,
+            escrow_amount: 10,
+            total_escrow: 10,
+            metadata: None,
+            payment_milestones: soroban_sdk::Vec::new(&env),
+            paid_milestones: soroban_sdk::Vec::new(&env),
+            deadline: 200,
+            integration_nonce: 0,
+            finalized: false,
+        };
+
+        assert_eq!(validate_shipment_invariants(&shipment), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_shipment_invariants_rejects_escrow_greater_than_total() {
+        let env = Env::default();
+        let shipment = Shipment {
+            id: 1,
+            sender: soroban_sdk::Address::generate(&env),
+            receiver: soroban_sdk::Address::generate(&env),
+            carrier: soroban_sdk::Address::generate(&env),
+            status: ShipmentStatus::InTransit,
+            data_hash: BytesN::from_array(&env, &[2_u8; 32]),
+            created_at: 100,
+            updated_at: 100,
+            escrow_amount: 20,
+            total_escrow: 10,
+            metadata: None,
+            payment_milestones: soroban_sdk::Vec::new(&env),
+            paid_milestones: soroban_sdk::Vec::new(&env),
+            deadline: 200,
+            integration_nonce: 0,
+            finalized: false,
+        };
+
+        assert_eq!(
+            validate_shipment_invariants(&shipment),
+            Err(NavinError::InvalidStatus)
+        );
     }
 
     // validate_amount
