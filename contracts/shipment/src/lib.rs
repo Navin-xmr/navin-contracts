@@ -792,8 +792,19 @@ impl NavinShipment {
     /// * `NavinError::AlreadyInitialized` - If called when already initialized.
     ///
     /// # Examples
-    /// ```rust
-    /// // contract.initialize(&env, &admin_addr, &token_addr);
+    ///
+    /// ```rust,no_run
+    /// # use soroban_sdk::{Env, Address};
+    /// # use soroban_sdk::testutils::Address as _;
+    /// # use shipment::{NavinShipment, NavinShipmentClient};
+    /// # let env = Env::default();
+    /// # env.mock_all_auths();
+    /// # let contract_id = env.register(NavinShipment, ());
+    /// # let client = NavinShipmentClient::new(&env, &contract_id);
+    /// let admin = Address::generate(&env);
+    /// let token_contract = Address::generate(&env); // replace with deployed token address
+    ///
+    /// client.initialize(&admin, &token_contract);
     /// ```
     pub fn initialize(env: Env, admin: Address, token_contract: Address) -> Result<(), NavinError> {
         if storage::is_initialized(&env) {
@@ -1665,8 +1676,30 @@ impl NavinShipment {
     /// * `NavinError::InvalidTimestamp` - If the deadline is not strictly in the future.
     ///
     /// # Examples
-    /// ```rust
-    /// // let id = contract.create_shipment(&env, &sender, &receiver, &carrier, &hash, vec![(&env, Symbol::new(&env, "warehouse"), 100)], deadline_ts);
+    ///
+    /// ```rust,no_run
+    /// # use soroban_sdk::{Env, Address, BytesN, Vec, Symbol};
+    /// # use soroban_sdk::testutils::Address as _;
+    /// # use shipment::{NavinShipment, NavinShipmentClient};
+    /// # let env = Env::default();
+    /// # env.mock_all_auths();
+    /// # let contract_id = env.register(NavinShipment, ());
+    /// # let client = NavinShipmentClient::new(&env, &contract_id);
+    /// # let admin = Address::generate(&env);
+    /// # let token = Address::generate(&env);
+    /// # client.initialize(&admin, &token);
+    /// # client.add_company(&admin, &admin);
+    /// let sender = admin.clone();
+    /// let receiver = Address::generate(&env);
+    /// let carrier = Address::generate(&env);
+    /// let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    /// let milestones: Vec<(Symbol, u32)> = Vec::new(&env); // no milestone splits
+    /// let deadline = env.ledger().timestamp() + 86_400; // 1 day from now
+    ///
+    /// let shipment_id = client.create_shipment(
+    ///     &sender, &receiver, &carrier, &data_hash, &milestones, &deadline,
+    /// );
+    /// assert_eq!(shipment_id, 1);
     /// ```
     pub fn create_shipment(
         env: Env,
@@ -1988,8 +2021,28 @@ impl NavinShipment {
     /// * `NavinError::EscrowLocked` - If escrow is already deposited for shipment.
     ///
     /// # Examples
-    /// ```rust
-    /// // contract.deposit_escrow(&env, &company, 1, 5000000);
+    ///
+    /// ```rust,no_run
+    /// # use soroban_sdk::{Env, Address, BytesN, Vec, Symbol};
+    /// # use soroban_sdk::testutils::Address as _;
+    /// # use shipment::{NavinShipment, NavinShipmentClient};
+    /// # let env = Env::default();
+    /// # env.mock_all_auths();
+    /// # let contract_id = env.register(NavinShipment, ());
+    /// # let client = NavinShipmentClient::new(&env, &contract_id);
+    /// # let admin = Address::generate(&env);
+    /// # let token = Address::generate(&env);
+    /// # client.initialize(&admin, &token);
+    /// # client.add_company(&admin, &admin);
+    /// # let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    /// # let milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+    /// # let deadline = env.ledger().timestamp() + 86_400;
+    /// # let receiver = Address::generate(&env);
+    /// # let carrier = Address::generate(&env);
+    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline);
+    /// // Deposit 5_000_000 stroops (0.5 tokens) into escrow for the shipment.
+    /// // The company must have pre-approved the token transfer allowance.
+    /// client.deposit_escrow(&admin, &shipment_id, &5_000_000_i128);
     /// ```
     pub fn deposit_escrow(
         env: Env,
@@ -2086,7 +2139,29 @@ impl NavinShipment {
     ///
     /// # Examples
     /// ```rust
-    /// // contract.update_status(&env, &carrier, 1, ShipmentStatus::InTransit, &hash);
+    /// ```rust,no_run
+    /// # use soroban_sdk::{Env, Address, BytesN, Vec, Symbol};
+    /// # use soroban_sdk::testutils::Address as _;
+    /// # use shipment::{NavinShipment, NavinShipmentClient, ShipmentStatus};
+    /// # let env = Env::default();
+    /// # env.mock_all_auths();
+    /// # let contract_id = env.register(NavinShipment, ());
+    /// # let client = NavinShipmentClient::new(&env, &contract_id);
+    /// # let admin = Address::generate(&env);
+    /// # let token = Address::generate(&env);
+    /// # client.initialize(&admin, &token);
+    /// # client.add_company(&admin, &admin);
+    /// # let carrier = Address::generate(&env);
+    /// # client.add_carrier(&admin, &carrier);
+    /// # let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    /// # let milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+    /// # let deadline = env.ledger().timestamp() + 86_400;
+    /// # let receiver = Address::generate(&env);
+    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline);
+    /// let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
+    ///
+    /// // Carrier moves shipment from Created -> InTransit.
+    /// client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
     /// ```
     pub fn update_status(
         env: Env,
@@ -2443,7 +2518,30 @@ impl NavinShipment {
     ///
     /// # Examples
     /// ```rust
-    /// // contract.confirm_delivery(&env, &receiver_addr, 1, 5000000);
+    /// ```rust,no_run
+    /// # use soroban_sdk::{Env, Address, BytesN, Vec, Symbol};
+    /// # use soroban_sdk::testutils::Address as _;
+    /// # use shipment::{NavinShipment, NavinShipmentClient, ShipmentStatus};
+    /// # let env = Env::default();
+    /// # env.mock_all_auths();
+    /// # let contract_id = env.register(NavinShipment, ());
+    /// # let client = NavinShipmentClient::new(&env, &contract_id);
+    /// # let admin = Address::generate(&env);
+    /// # let token = Address::generate(&env);
+    /// # client.initialize(&admin, &token);
+    /// # client.add_company(&admin, &admin);
+    /// # let carrier = Address::generate(&env);
+    /// # client.add_carrier(&admin, &carrier);
+    /// # let receiver = Address::generate(&env);
+    /// # let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    /// # let milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+    /// # let deadline = env.ledger().timestamp() + 86_400;
+    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline);
+    /// # client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &BytesN::from_array(&env, &[2u8; 32]));
+    /// let pod_hash = BytesN::from_array(&env, &[3u8; 32]); // SHA-256 of proof-of-delivery doc
+    ///
+    /// // Receiver confirms delivery; escrow is automatically released to the carrier.
+    /// client.confirm_delivery(&receiver, &shipment_id, &pod_hash);
     /// ```
     pub fn confirm_delivery(
         env: Env,
@@ -3293,7 +3391,29 @@ impl NavinShipment {
     ///
     /// # Examples
     /// ```rust
-    /// // contract.release_escrow(env, receiver, 1);
+    /// ```rust,no_run
+    /// # use soroban_sdk::{Env, Address, BytesN, Vec, Symbol};
+    /// # use soroban_sdk::testutils::Address as _;
+    /// # use shipment::{NavinShipment, NavinShipmentClient, ShipmentStatus};
+    /// # let env = Env::default();
+    /// # env.mock_all_auths();
+    /// # let contract_id = env.register(NavinShipment, ());
+    /// # let client = NavinShipmentClient::new(&env, &contract_id);
+    /// # let admin = Address::generate(&env);
+    /// # let token = Address::generate(&env);
+    /// # client.initialize(&admin, &token);
+    /// # client.add_company(&admin, &admin);
+    /// # let carrier = Address::generate(&env);
+    /// # client.add_carrier(&admin, &carrier);
+    /// # let receiver = Address::generate(&env);
+    /// # let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    /// # let milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+    /// # let deadline = env.ledger().timestamp() + 86_400;
+    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline);
+    /// # client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &BytesN::from_array(&env, &[2u8; 32]));
+    /// # client.confirm_delivery(&receiver, &shipment_id, &BytesN::from_array(&env, &[3u8; 32]));
+    /// // Manually release any remaining escrow to the carrier after delivery is confirmed.
+    /// client.release_escrow(&receiver, &shipment_id);
     /// ```
     pub fn release_escrow(env: Env, caller: Address, shipment_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
@@ -3360,7 +3480,27 @@ impl NavinShipment {
     ///
     /// # Examples
     /// ```rust
-    /// // contract.refund_escrow(env, sender, 1);
+    /// ```rust,no_run
+    /// # use soroban_sdk::{Env, Address, BytesN, Vec, Symbol};
+    /// # use soroban_sdk::testutils::Address as _;
+    /// # use shipment::{NavinShipment, NavinShipmentClient};
+    /// # let env = Env::default();
+    /// # env.mock_all_auths();
+    /// # let contract_id = env.register(NavinShipment, ());
+    /// # let client = NavinShipmentClient::new(&env, &contract_id);
+    /// # let admin = Address::generate(&env);
+    /// # let token = Address::generate(&env);
+    /// # client.initialize(&admin, &token);
+    /// # client.add_company(&admin, &admin);
+    /// # let carrier = Address::generate(&env);
+    /// # client.add_carrier(&admin, &carrier);
+    /// # let receiver = Address::generate(&env);
+    /// # let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    /// # let milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+    /// # let deadline = env.ledger().timestamp() + 86_400;
+    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline);
+    /// // Refund escrow back to the company when the shipment is in Created or Cancelled state.
+    /// client.refund_escrow(&admin, &shipment_id);
     /// ```
     pub fn refund_escrow(env: Env, caller: Address, shipment_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
@@ -3450,7 +3590,30 @@ impl NavinShipment {
     ///
     /// # Examples
     /// ```rust
-    /// // contract.raise_dispute(env, caller, 1, hash);
+    /// ```rust,no_run
+    /// # use soroban_sdk::{Env, Address, BytesN, Vec, Symbol};
+    /// # use soroban_sdk::testutils::Address as _;
+    /// # use shipment::{NavinShipment, NavinShipmentClient, ShipmentStatus};
+    /// # let env = Env::default();
+    /// # env.mock_all_auths();
+    /// # let contract_id = env.register(NavinShipment, ());
+    /// # let client = NavinShipmentClient::new(&env, &contract_id);
+    /// # let admin = Address::generate(&env);
+    /// # let token = Address::generate(&env);
+    /// # client.initialize(&admin, &token);
+    /// # client.add_company(&admin, &admin);
+    /// # let carrier = Address::generate(&env);
+    /// # client.add_carrier(&admin, &carrier);
+    /// # let receiver = Address::generate(&env);
+    /// # let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    /// # let milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+    /// # let deadline = env.ledger().timestamp() + 86_400;
+    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline);
+    /// # client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &BytesN::from_array(&env, &[2u8; 32]));
+    /// let reason_hash = BytesN::from_array(&env, &[4u8; 32]); // SHA-256 of dispute reason doc
+    ///
+    /// // Receiver raises a dispute; escrow is frozen until admin resolves it.
+    /// client.raise_dispute(&receiver, &shipment_id, &reason_hash);
     /// ```
     pub fn raise_dispute(
         env: Env,
@@ -3549,6 +3712,40 @@ impl NavinShipment {
     /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
     /// * `NavinError::Unauthorized` - If called by a non-admin.
     /// * `NavinError::DisputeReasonHashMissing` - If reason_hash is all zeros.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use soroban_sdk::{Env, Address, BytesN, Vec, Symbol};
+    /// # use soroban_sdk::testutils::Address as _;
+    /// # use shipment::{NavinShipment, NavinShipmentClient, ShipmentStatus, DisputeResolution};
+    /// # let env = Env::default();
+    /// # env.mock_all_auths();
+    /// # let contract_id = env.register(NavinShipment, ());
+    /// # let client = NavinShipmentClient::new(&env, &contract_id);
+    /// # let admin = Address::generate(&env);
+    /// # let token = Address::generate(&env);
+    /// # client.initialize(&admin, &token);
+    /// # client.add_company(&admin, &admin);
+    /// # let carrier = Address::generate(&env);
+    /// # client.add_carrier(&admin, &carrier);
+    /// # let receiver = Address::generate(&env);
+    /// # let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    /// # let milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+    /// # let deadline = env.ledger().timestamp() + 86_400;
+    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline);
+    /// # client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &BytesN::from_array(&env, &[2u8; 32]));
+    /// # client.raise_dispute(&receiver, &shipment_id, &BytesN::from_array(&env, &[4u8; 32]));
+    /// let justification_hash = BytesN::from_array(&env, &[5u8; 32]); // SHA-256 of admin ruling doc
+    ///
+    /// // Admin rules in favour of the carrier: escrow is released to them.
+    /// client.resolve_dispute(
+    ///     &admin,
+    ///     &shipment_id,
+    ///     &DisputeResolution::ReleaseToCarrier,
+    ///     &justification_hash,
+    /// );
+    /// ```
     pub fn resolve_dispute(
         env: Env,
         admin: Address,
