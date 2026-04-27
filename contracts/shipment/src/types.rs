@@ -202,6 +202,8 @@ pub enum ShipmentStatus {
     InTransit,
     /// Shipment has arrived at an intermediate checkpoint.
     AtCheckpoint,
+    /// Shipment has been partially delivered and partially settled.
+    PartiallyDelivered,
     /// Shipment has been delivered to the receiver.
     Delivered,
     /// Shipment is under dispute.
@@ -256,11 +258,17 @@ impl ShipmentStatus {
             (Self::Created, Self::Cancelled) => true,
             (Self::Created, Self::Disputed) => true,
             (Self::InTransit, Self::AtCheckpoint) => true,
+            (Self::InTransit, Self::PartiallyDelivered) => true,
             (Self::InTransit, Self::Delivered) => true,
             (Self::InTransit, Self::Disputed) => true,
             (Self::InTransit, Self::Cancelled) => true,
             (Self::AtCheckpoint, Self::InTransit) => true,
+            (Self::AtCheckpoint, Self::PartiallyDelivered) => true,
             (Self::AtCheckpoint, Self::Delivered) => true,
+            (Self::PartiallyDelivered, Self::PartiallyDelivered) => true,
+            (Self::PartiallyDelivered, Self::Delivered) => true,
+            (Self::PartiallyDelivered, Self::Disputed) => true,
+            (Self::PartiallyDelivered, Self::Cancelled) => true,
             (Self::AtCheckpoint, Self::Disputed) => true,
             (Self::AtCheckpoint, Self::Cancelled) => true,
             (Self::Disputed, Self::Cancelled) => true,

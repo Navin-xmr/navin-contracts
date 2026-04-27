@@ -1562,6 +1562,137 @@ fn test_confirm_delivery_wrong_status() {
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
 }
 
+#[test]
+fn test_confirm_partial_delivery_releases_bounded_escrow() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &10_000);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[2u8; 32]),
+    );
+
+    client.confirm_partial_delivery(
+        &receiver,
+        &shipment_id,
+        &BytesN::from_array(&env, &[3u8; 32]),
+        &30,
+    );
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::PartiallyDelivered);
+    assert_eq!(shipment.escrow_amount, 7_000);
+}
+
+#[test]
+fn test_confirm_partial_delivery_rejects_over_release() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[10u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &10_000);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[11u8; 32]),
+    );
+
+    client.confirm_partial_delivery(
+        &receiver,
+        &shipment_id,
+        &BytesN::from_array(&env, &[12u8; 32]),
+        &60,
+    );
+
+    let result = client.try_confirm_partial_delivery(
+        &receiver,
+        &shipment_id,
+        &BytesN::from_array(&env, &[13u8; 32]),
+        &60,
+    );
+    assert_eq!(result, Err(Ok(NavinError::InvalidAmount)));
+}
+
+#[test]
+fn test_confirm_partial_delivery_can_settle_to_delivered() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[20u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &10_000);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[21u8; 32]),
+    );
+
+    client.confirm_partial_delivery(
+        &receiver,
+        &shipment_id,
+        &BytesN::from_array(&env, &[22u8; 32]),
+        &50,
+    );
+    client.confirm_partial_delivery(
+        &receiver,
+        &shipment_id,
+        &BytesN::from_array(&env, &[23u8; 32]),
+        &50,
+    );
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Delivered);
+    assert_eq!(shipment.escrow_amount, 0);
+    assert_eq!(client.get_active_shipment_count(&company), 0);
+}
+
 // ============= Release Escrow Tests =============
 
 #[test]
