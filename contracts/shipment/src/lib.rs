@@ -4581,6 +4581,21 @@ impl NavinShipment {
         require_admin_or_operator(&env, &admin)?;
         Ok(consistency::check_all_consistency(&env))
     }
+
+    /// Compute a canonical SHA-256 hash for a list of values.
+    ///
+    /// This utility allows off-chain systems to verify their hashing implementation
+    /// against the contract's canonical standard.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `fields` - List of values to hash.
+    ///
+    /// # Returns
+    /// * `BytesN<32>` - The computed canonical hash.
+    pub fn get_canonical_hash(env: Env, fields: Vec<soroban_sdk::Val>) -> BytesN<32> {
+        validation::compute_offchain_payload_hash(&env, fields)
+    }
 }
 
 /// Validates whether a version transition is permitted.

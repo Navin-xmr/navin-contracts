@@ -1885,6 +1885,30 @@
   },
   {
     "function_v0": {
+      "doc": "Compute a canonical SHA-256 hash for a list of values.\\n\\nThis utility allows off-chain systems to verify their hashing implementation\\nagainst the contract's canonical standard.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `fields` - List of values to hash.\\n\\n# Returns\\n* `BytesN<32>` - The computed canonical hash.",
+      "name": "get_canonical_hash",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "fields",
+          "type_": {
+            "vec": {
+              "element_type": "val"
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "bytes_n": {
+            "n": 32
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
       "doc": "Returns the current escrowed amount for a specific shipment.\\nReturns 0 if no escrow has been deposited.\\nReturns ShipmentNotFound if the shipment does not exist.\\n\\n# Arguments\\n* `env` - Execution environment.\\n* `shipment_id` - ID of the shipment.\\n\\n# Returns\\n* `Result<i128, NavinError>` - Amount stored in escrow.\\n\\n# Errors\\n* `NavinError::NotInitialized` - If contract is not initialized.\\n* `NavinError::ShipmentNotFound` - If shipment does not exist.\\n\\n# Examples\\n```rust\\n// let balance = contract.get_escrow_balance(&env, 1);\\n```",
       "name": "get_escrow_balance",
       "inputs": [
