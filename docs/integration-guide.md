@@ -11,12 +11,13 @@ Complete guide for integrating the Navin shipment tracking smart contract with y
 
 1. [Architecture Overview](#architecture-overview)
 2. [Contract Schema (ABI)](#contract-schema-abi)
-3. [Setup & Configuration](#setup--configuration)
-4. [Contract Invocation](#contract-invocation)
-5. [Immutable Provenance Queries](#immutable-provenance-queries)
-6. [Event Listening](#event-listening)
-7. [Transaction Verification](#transaction-verification)
-8. [Complete Examples](#complete-examples)
+3. [Event Payload Schemas](#event-payload-schemas)
+4. [Setup & Configuration](#setup--configuration)
+5. [Contract Invocation](#contract-invocation)
+6. [Immutable Provenance Queries](#immutable-provenance-queries)
+7. [Event Listening](#event-listening)
+8. [Transaction Verification](#transaction-verification)
+9. [Complete Examples](#complete-examples)
 
 ## Contract Schema (ABI)
 
@@ -95,6 +96,17 @@ CI will fail if the committed `docs/contract-schema.shipment.json` diverges from
 4. Fails the workflow if any difference is found
 
 This ensures the schema file stays in sync with the contract code on every PR. If CI fails with a schema drift error, run `make generate-schema-shipment` locally, commit the updated JSON, and push again.
+
+## Event Payload Schemas
+
+Use `docs/event_schemas.md` as the central JSON-schema-like reference for emitted event payloads and field ordering.
+
+Indexer conformance fixtures are validated by tests in:
+
+- `contracts/shipment/src/test_event_fixtures.rs`
+- `contracts/shipment/test_snapshots/test_event_fixtures/`
+
+When parser logic changes, regenerate and re-validate against these fixture outputs before release.
 
 ## Architecture Overview
 

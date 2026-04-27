@@ -5,8 +5,6 @@
 //! coverage for edge cases, boundary conditions, and malformed inputs on ALL public
 //! entry points prevents wallet/dApp crashes and improves production stability.
 
-#![cfg(test)]
-
 extern crate std;
 
 use crate::{NavinShipment, NavinShipmentClient, ShipmentStatus};
@@ -27,6 +25,9 @@ struct MockToken;
 impl MockToken {
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {
         // Mock implementation - always succeeds
+    }
+    pub fn decimals(_env: Env) -> u32 {
+        7
     }
 }
 

@@ -1,0 +1,692 @@
+warning: unused import: `types::ShipmentStatus`
+ --> contracts/shipment/src/test_event_fixtures.rs:5:25
+  |
+5 | use crate::{test_utils, types::ShipmentStatus, NavinShipment, Na...
+  |                         ^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `crate::test_utils::*`
+ --> contracts/shipment/src/test_settlement.rs:3:5
+  |
+3 | use crate::test_utils::*;
+  |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::Env::register_stellar_asset_contract`: use [Env::register_stellar_asset_contract_v2]
+  --> contracts/shipment/src/test_token_compatibility.rs:39:17
+   |
+39 |             env.register_stellar_asset_contract(admin.clone())
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated method `soroban_sdk::Env::register_stellar_asset_contract`: use [Env::register_stellar_asset_contract_v2]
+  --> contracts/shipment/src/test_event_fixtures.rs:25:29
+   |
+25 |     let token_address = env.register_stellar_asset_contract(adm...
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `shipment` (lib test) generated 4 warnings (run `cargo fix --lib -p shipment --tests` to apply 2 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.38s
+     Running unittests src/lib.rs (target/debug/deps/shipment-7308b3ae306067ee)
+
+running 517 tests
+test audit::tests::test_audit_event_type_variants ... ok
+test circuit_breaker::tests::test_circuit_breaker_configs ... ok
+test circuit_breaker::tests::test_circuit_breaker_closed_allows_requests ... ok
+test circuit_breaker::tests::test_circuit_breaker_failure_in_half_open_reopens ... ok
+test circuit_breaker::tests::test_circuit_breaker_half_open_after_timeout ... ok
+test circuit_breaker::tests::test_circuit_breaker_new ... ok
+test circuit_breaker::tests::test_circuit_breaker_opens_on_threshold ... ok
+test circuit_breaker::tests::test_circuit_breaker_rejects_when_open ... ok
+test circuit_breaker::tests::test_circuit_breaker_success_closes ... ok
+test circuit_breaker::tests::test_recovery_time_remaining ... ok
+test audit::tests::test_audit_log_entry_creation ... ok
+test config::tests::test_checksum_boundary_values ... ok
+test config::tests::test_checksum_is_32_bytes ... ok
+test config::tests::test_checksum_different_for_different_configs ... ok
+test config::tests::test_checksum_not_all_zeros ... ok
+test config::tests::test_checksum_deterministic_same_config ... ok
+test config::tests::test_checksum_serialization_order_matters ... ok
+test config::tests::test_validate_batch_limit ... ok
+test config::tests::test_validate_deadline_grace_seconds ... ok
+test config::tests::test_validate_multisig_admins ... ok
+test config::tests::test_checksum_changes_on_field_modification ... ok
+test config::tests::test_validate_ttl_threshold ... ok
+test config::tests::test_default_config_is_valid ... ok
+test config::tests::test_checksum_stable_across_multiple_runs ... ok
+test config::tests::test_checksum_single_bit_flip_changes_hash ... ok
+test event_topics::tests::all_topic_constants_are_unique ... ok
+test event_topics::tests::all_topic_constants_are_within_symbol_length_limit ... ok
+test event_topics::tests::topic_values_are_backward_compatible ... ok
+test rate_limit::tests::test_quota_tracker_check_and_update_exceeds_limit ... ok
+test rate_limit::tests::test_quota_tracker_check_and_update_within_limit ... ok
+test rate_limit::tests::test_quota_tracker_new ... ok
+test rate_limit::tests::test_quota_tracker_window_reset ... ok
+test rate_limit::tests::test_rate_limit_configs ... ok
+test rate_limit::tests::test_remaining_quota ... ok
+test rate_limit::tests::test_window_time_remaining ... ok
+test recovery::tests::test_invalid_recovery_transitions ... ok
+test recovery::tests::test_valid_recovery_transitions ... ok
+test storage::tests::carrier_whitelist_tuple_key_round_trip_and_order_regression ... ok
+test storage::tests::dispute_evidence_tuple_key_round_trip_and_component_regression ... ok
+test storage::tests::role_suspended_tuple_key_round_trip ... ok
+test storage::tests::shipment_note_tuple_key_round_trip_and_component_regression ... ok
+test storage::tests::user_role_tuple_key_round_trip ... ok
+test e2e_test::test_debug_event_structure ... ok
+test e2e_test::test_e2e_deadline_expiry_auto_cancel_and_refund ... ok
+test e2e_test::test_regression_milestone_release_event_ordering ... ok
+test e2e_test::test_e2e_cancel_refund_path_with_token_balances ... ok
+test e2e_test::test_regression_deadline_refund_event_ordering ... ok
+test e2e_test::test_e2e_partial_milestones_then_cancel_via_deadline ... ok
+test test::test_add_carrier_returns_not_initialized - should panic ... ok
+test test::test_add_carrier_returns_unauthorized - should panic ... ok
+test e2e_test::test_e2e_happy_path_with_milestones_and_token_balances ... ok
+test test::test_add_carrier_to_whitelist ... ok
+test test::test_add_company_returns_not_initialized - should panic ... ok
+test test::test_add_carrier_to_whitelist_returns_unauthorized - should panic ... ok
+test test::test_add_company_returns_unauthorized - should panic ... ok
+test test::test_active_shipment_count_tracking ... ok
+test test::test_add_dispute_evidence_hash_rejects_zero_hash - should panic ... ok
+test test::test_add_whitelist_fails_before_initialization - should panic ... ok
+test test::test_add_dispute_evidence_hash_validates_hash ... ok
+test test::test_admin_is_stored_correctly ... ok
+test test::test_add_dispute_evidence_hash_success ... ok
+test test::test_add_dispute_evidence_unauthorized - should panic ... ok
+test test::test_append_note_hash_rejects_zero_hash - should panic ... ok
+test test::test_analytics_batch_and_cancel ... ok
+test test::test_analytics_counters ... ok
+test test::test_approve_action_already_approved - should panic ... ok
+test test::test_append_note_hash_validates_hash ... ok
+test test::test_approve_action_not_admin - should panic ... ok
+test test::test_approve_action_returns_already_approved - should panic ... ok
+test test::test_approve_action_returns_proposal_expired - should panic ... ok
+test test::test_approve_action_returns_proposal_not_found - should panic ... ok
+test test::test_approve_action_returns_not_an_admin - should panic ... ok
+test test::test_approve_action_success ... ok
+test test::test_archive_active_shipment_fails - should panic ... ok
+test test::test_archive_disputed_shipment_fails - should panic ... ok
+test test::test_archive_cancelled_shipment ... ok
+test test::test_archive_delivered_shipment ... ok
+test test::test_archive_nonexistent_shipment_fails - should panic ... ok
+test test::test_archive_in_transit_shipment_fails - should panic ... ok
+test test::test_archive_shipment_unauthorized - should panic ... ok
+test test::test_batch_limit_reached - should panic ... ok
+test test::test_cancel_shipment_delivered_should_fail - should panic ... ok
+test test::test_cancel_shipment_by_admin ... ok
+test test::test_cancel_shipment_returns_shipment_not_found - should panic ... ok
+test test::test_cancel_shipment_disputed_should_fail - should panic ... ok
+test test::test_cancel_shipment_returns_unauthorized - should panic ... ok
+test test::test_cancel_shipment_without_escrow ... ok
+test test::test_carrier_breach_event_emitted_on_report_condition_breach ... ok
+test test::test_carrier_breach_event_emitted_alongside_condition_breach ... ok
+test test::test_cancel_shipment_with_escrow ... ok
+test test::test_carrier_dispute_loss_event_contains_correct_carrier ... ok
+test test::test_carrier_handoff_completed_event ... ok
+test test::test_carrier_dispute_loss_not_emitted_when_carrier_wins ... ok
+test test::test_carrier_on_time_delivery_event ... ok
+test test::test_check_deadline_after_grace_period_cancels_shipment ... ok
+test test::test_carrier_late_delivery_event_and_milestones ... ok
+test test::test_carrier_dispute_loss_event_emitted_on_refund_to_company ... ok
+test test::test_check_deadline_returns_not_expired - should panic ... ok
+test test::test_check_deadline_at_grace_boundary_succeeds ... ok
+test test::test_check_deadline_fails_if_not_expired - should panic ... ok
+test test::test_check_deadline_zero_grace_expires_immediately ... ok
+test test::test_check_deadline_returns_shipment_not_found - should panic ... ok
+test test::test_condition_breach_event_includes_severity ... ok
+test test::test_confirm_delivery_returns_shipment_not_found - should panic ... ok
+test test::test_check_deadline_within_grace_period_returns_not_expired - should panic ... ok
+test test::test_confirm_delivery_wrong_receiver - should panic ... ok
+test test::test_check_deadline_success_auto_cancels_and_refunds ... ok
+test test::test_confirm_delivery_success_at_checkpoint ... ok
+test test::test_confirm_delivery_success_in_transit ... ok
+test test::test_count_decrements_on_deadline_expiration ... ok
+test test::test_confirm_delivery_wrong_status - should panic ... ok
+test test::test_create_shipment_fails_before_initialization - should panic ... ok
+test test::test_count_decrements_on_cancel ... ok
+test test::test_count_decrements_on_delivery ... ok
+test test::test_create_shipment_returns_not_initialized - should panic ... ok
+test test::test_create_shipment_returns_invalid_hash - should panic ... ok
+test test::test_create_shipment_returns_counter_overflow - should panic ... ok
+test stress_test::test_20_concurrent_status_updates ... ok
+test test::test_create_shipment_unauthorized - should panic ... ok
+test test::test_create_shipment_returns_shipment_limit_reached - should panic ... ok
+test test::test_create_shipment_with_duplicate_milestone_symbols_fails - should panic ... ok
+test test::test_create_shipment_success ... ok
+test test::test_count_decrements_on_dispute_resolution ... ok
+test test::test_create_shipments_batch_invalid_input - should panic ... ok
+test test::test_create_shipments_batch_oversized - should panic ... ok
+test test::test_create_shipment_with_valid_milestone_symbols ... ok
+test test::test_create_shipments_batch_returns_shipment_limit_reached - should panic ... ok
+test test::test_create_shipments_batch_validates_milestone_symbols ... ok
+test stress_test::test_create_50_shipments_sequentially ... ok
+test test::test_deposit_escrow_invalid_amount - should panic ... ok
+test test::test_delivery_before_deadline ... ok
+test test::test_delivery_success_event_contains_correct_carrier ... ok
+test test::test_create_shipments_batch_success ... ok
+test test::test_deposit_escrow_invalid_token_decimals ... ok
+test test::test_deposit_escrow_maps_token_transfer_failure ... ok
+test test::test_delivery_success_event_emitted_on_confirm_delivery ... ok
+test test::test_deposit_escrow_returns_escrow_already_deposited - should panic ... ok
+test test::test_deposit_escrow_returns_invalid_amount_negative - should panic ... ok
+test test::test_deposit_escrow_shipment_not_found - should panic ... ok
+test test::test_deposit_escrow_returns_invalid_amount_zero - should panic ... ok
+test test::test_deposit_escrow_returns_invalid_status - should panic ... ok
+test test::test_dry_run_invalid_edge_fails - should panic ... ok
+test test::test_dry_run_migration_success ... ok
+test test::test_deposit_escrow_success ... ok
+test test::test_deposit_escrow_unauthorized - should panic ... ok
+test test::test_escrow_deposit_after_status_change_fails - should panic ... ok
+test test::test_escrow_cancel_path_create_deposit_cancel_refund ... ok
+test test::test_dispute_emits_escrow_frozen_event ... ok
+test test::test_escrow_double_deposit_prevention - should panic ... ok
+test test::test_escrow_release_without_delivery_confirm_from_created_fails - should panic ... ok
+test test::test_escrow_dispute_resolve_to_cancelled ... ok
+test test::test_escrow_refund_after_delivery_fails - should panic ... ok
+test test::test_event_count_after_create ... ok
+test test::test_escrow_dispute_resolve_to_delivered ... ok
+test test::test_event_count_after_delivery ... ok
+test test::test_event_count_after_milestone ... ok
+test test::test_event_count_shipment_not_found - should panic ... ok
+test test::test_escrow_happy_path_create_deposit_transit_deliver_confirm ... ok
+test test::test_execute_proposal_insufficient_approvals - should panic ... ok
+test test::test_event_count_after_status_updates ... ok
+test test::test_event_count_returns_zero_for_new_shipment ... ok
+test test::test_event_count_with_multiple_milestones ... ok
+test test::test_execute_proposal_auto_on_threshold ... ok
+test test::test_execute_proposal_already_executed - should panic ... ok
+test test::test_execute_proposal_returns_insufficient_approvals - should panic ... ok
+test test::test_execute_proposal_returns_proposal_expired - should panic ... ok
+test test::test_execute_proposal_returns_proposal_not_found - should panic ... ok
+test test::test_execute_proposal_returns_proposal_already_executed - should panic ... ok
+test test::test_force_cancel_shipment_already_cancelled - should panic ... ok
+test stress_test::test_no_data_corruption_between_shipments ... ok
+test test::test_force_cancel_emits_dedicated_event_not_shipment_cancelled ... ok
+test test::test_force_cancel_shipment_not_found - should panic ... ok
+test test::test_force_cancel_shipment_refunds_escrow ... ok
+test test::test_force_cancel_shipment_unauthorized_company - should panic ... ok
+test test::test_force_cancel_shipment_already_delivered - should panic ... ok
+test test::test_force_cancel_shipment_success_created ... ok
+test test::test_get_active_shipment_count_returns_not_initialized - should panic ... ok
+test test::test_get_admin_returns_not_initialized - should panic ... ok
+test test::test_force_cancel_shipment_success_in_transit ... ok
+test test::test_force_cancel_shipment_success_disputed ... ok
+test test::test_get_analytics_returns_not_initialized - should panic ... ok
+test test::test_force_cancel_shipment_zero_reason_hash_rejected - should panic ... ok
+test test::test_force_refund_action ... ok
+test test::test_get_contract_metadata_after_init ... ok
+test test::test_get_contract_metadata_fails_before_initialization - should panic ... ok
+test test::test_force_release_action ... ok
+test test::test_get_contract_metadata_after_upgrade ... ok
+test test::test_get_escrow_balance_fails_before_initialization - should panic ... ok
+test test::test_get_contract_metadata_after_creating_shipments ... ok
+test test::test_get_escrow_balance_shipment_not_found - should panic ... ok
+test test::test_get_hash_algo_version ... ok
+test test::test_get_proposal_returns_proposal_not_found - should panic ... ok
+test test::test_get_escrow_balance_returns_zero_without_deposit ... ok
+test test::test_get_role_unassigned ... ok
+test test::test_get_escrow_balance_after_release ... ok
+test test::test_get_role_assigned ... ok
+test test::test_get_shipment_count_returns_zero_on_fresh_contract ... ok
+test test::test_get_escrow_balance_after_deposit ... ok
+test test::test_full_shipment_lifecycle_integration ... ok
+test test::test_get_shipment_fails_before_initialization - should panic ... ok
+test test::test_get_shipment_limit_returns_not_initialized - should panic ... ok
+test stress_test::test_verify_shipment_count_after_mass_operations ... ok
+test test::test_get_shipment_count_returns_zero_after_initialization ... ok
+test test::test_get_shipment_creator_fails_for_invalid_id - should panic ... ok
+test test::test_get_shipment_creator_returns_sender_for_valid_id ... ok
+test test::test_get_shipment_not_found - should panic ... ok
+test test::test_get_shipment_receiver_fails_for_invalid_id - should panic ... ok
+test test::test_get_version_fails_before_initialization - should panic ... ok
+test test::test_get_version_after_upgrade ... ok
+test test::test_get_shipment_count_after_creating_shipments ... ok
+test test::test_get_shipment_reference_deterministic ... ok
+test test::test_get_shipment_receiver_returns_receiver_for_valid_id ... ok
+test test::test_get_shipment_returns_correct_data ... ok
+test test::test_get_shipment_reference_collision_free ... ok
+test test::test_handoff_nonexistent_shipment - should panic ... ok
+test test::test_handoff_invalid_new_carrier - should panic ... ok
+test test::test_handoff_shipment_returns_shipment_not_found - should panic ... ok
+test test::test_guardian_can_resolve_disputes ... ok
+test test::test_handoff_cancelled_shipment - should panic ... ok
+test test::test_handoff_delivered_shipment - should panic ... ok
+test test::test_handoff_unauthorized - should panic ... ok
+test test::test_init_multisig_invalid_threshold_too_high - should panic ... ok
+test test::test_idempotency_create_shipment_duplicate_in_window_rejected - should panic ... ok
+test test::test_handoff_wrong_current_carrier - should panic ... ok
+test test::test_init_multisig_invalid_threshold_zero - should panic ... ok
+test test::test_idempotency_create_shipment_different_hash_not_blocked ... ok
+test test::test_init_multisig_returns_invalid_multisig_config_empty_admins - should panic ... ok
+test test::test_idempotency_create_shipment_first_run_succeeds ... ok
+test test::test_init_multisig_returns_invalid_multisig_config_threshold_zero - should panic ... ok
+test test::test_init_multisig_returns_invalid_multisig_config_threshold_too_high - should panic ... ok
+test test::test_idempotency_update_status_duplicate_in_window_rejected - should panic ... ok
+test test::test_init_multisig_success ... ok
+test test::test_is_carrier_whitelisted_returns_false_for_non_whitelisted ... ok
+test test::test_init_multisig_too_few_admins - should panic ... ok
+test test::test_idempotency_update_status_different_hash_not_blocked ... ok
+test test::test_manual_ttl_extension ... ok
+test test::test_milestone_payment_invalid_sum_fails - should panic ... ok
+test test::test_metadata_symbols_multiple_entries ... ok
+test test::test_multiple_carriers_whitelist ... ok
+test test::test_integration_nonce_increment ... ok
+test test::test_milestone_payment_duplicate_record_no_double_pay ... ok
+test test::test_milestone_payment_success ... ok
+test test::test_milestone_payment_delivery_releases_remaining ... ok
+test test::test_multiple_shipments_have_unique_ids ... ok
+test test::test_notification_emitted_on_delivery_confirmed ... ok
+test test::test_notification_emitted_on_dispute_raised ... ok
+test test::test_only_admin_can_assign_roles ... ok
+test test::test_notification_emitted_on_shipment_created ... ok
+test test::test_notification_emitted_on_dispute_resolved ... ok
+test test::test_proposal_expiration ... ok
+test test::test_only_carrier_can_update_status_and_record_milestones ... ok
+test test::test_only_company_can_create_shipments ... ok
+test test::test_propose_action_not_admin - should panic ... ok
+test test::test_notification_emitted_on_status_changed ... ok
+test test::test_operator_can_manage_roles ... ok
+test test::test_propose_action_upgrade ... ok
+test test::test_propose_action_returns_not_an_admin - should panic ... ok
+test test::test_raise_dispute_by_receiver ... ok
+test test::test_raise_dispute_by_carrier ... ok
+test test::test_raise_dispute_returns_shipment_not_found - should panic ... ok
+test test::test_raise_dispute_by_sender ... ok
+test test::test_raise_dispute_on_cancelled_shipment - should panic ... ok
+test test::test_rbac_all_gated_functions_with_wrong_role ... ok
+test test::test_rate_limit_update_after_interval_succeeds ... ok
+test test::test_re_initialization_with_different_admin_fails - should panic ... ok
+test test::test_re_initialization_fails - should panic ... ok
+test test::test_only_receiver_can_confirm_delivery ... ok
+test test::test_raise_dispute_unauthorized - should panic ... ok
+test test::test_reactivate_role_success ... ok
+test test::test_rate_limit_rapid_update_fails - should panic ... ok
+test test::test_record_milestone_returns_shipment_not_found - should panic ... ok
+test test::test_rate_limit_admin_bypasses ... ok
+test test::test_record_milestones_batch_invalid_status - should panic ... ok
+test test::test_record_milestone_success ... ok
+test test::test_record_milestone_unauthorized - should panic ... ok
+test test::test_record_milestones_batch_oversized - should panic ... ok
+test test::test_record_milestone_wrong_status - should panic ... ok
+test test::test_refund_escrow_double_refund - should panic ... ok
+test test::test_refund_escrow_by_admin ... ok
+test test::test_refund_escrow_on_delivered_shipment - should panic ... ok
+test test::test_record_milestones_batch_max_size ... ok
+test test::test_record_milestones_batch_single_milestone ... ok
+test test::test_record_milestones_batch_unauthorized - should panic ... ok
+test test::test_record_milestones_batch_success ... ok
+test test::test_refund_escrow_returns_shipment_not_found - should panic ... ok
+test test::test_release_escrow_returns_shipment_not_found - should panic ... ok
+test test::test_refund_escrow_success ... ok
+test test::test_release_escrow_by_admin ... ok
+test test::test_record_milestones_batch_with_payment_milestones ... ok
+test test::test_refund_escrow_unauthorized - should panic ... ok
+test test::test_release_escrow_double_release - should panic ... ok
+test test::test_report_condition_breach_returns_shipment_not_found - should panic ... ok
+test test::test_remove_carrier_from_whitelist_returns_unauthorized - should panic ... ok
+test test::test_release_escrow_unauthorized - should panic ... ok
+test test::test_report_condition_breach_success ... ok
+test test::test_remove_carrier_from_whitelist ... ok
+test test::test_report_geofence_event_non_existent_shipment - should panic ... ok
+test test::test_report_condition_breach_returns_unauthorized - should panic ... ok
+test test::test_report_condition_breach_unauthorized_non_carrier - should panic ... ok
+test test::test_report_condition_breach_wrong_carrier - should panic ... ok
+test test::test_release_escrow_wrong_status - should panic ... ok
+test test::test_report_geofence_zone_exit ... ok
+test test::test_report_geofence_route_deviation ... ok
+test test::test_report_geofence_zone_entry ... ok
+test test::test_report_geofence_event_unauthorized_role - should panic ... ok
+test test::test_resolve_dispute_returns_shipment_not_found - should panic ... ok
+test test::test_resolve_dispute_fails_without_reason_hash ... ok
+test test::test_release_escrow_success ... ok
+test test::test_resolve_dispute_release_to_carrier ... ok
+test test::test_restore_diagnostics_archived_expected_state ... ok
+test test::test_resolve_dispute_refund_to_company ... ok
+test test::test_restore_diagnostics_missing_state ... ok
+test test::test_restore_diagnostics_active_persistent_state ... ok
+test test::test_restore_diagnostics_inconsistent_dual_presence_state ... ok
+test test::test_revoke_role_company ... ok
+test test::test_resolve_dispute_not_disputed - should panic ... ok
+test test::test_revoke_role_self_revoke_fails - should panic ... ok
+test test::test_revoke_role_carrier ... ok
+test test::test_revoke_role_emits_event ... ok
+test test::test_scaffold ... ok
+test test::test_revoke_role_unauthorized - should panic ... ok
+test test::test_revoke_role_then_create_shipment_fails ... ok
+test test::test_set_and_get_shipment_limit ... ok
+test test::test_set_shipment_limit_returns_not_initialized - should panic ... ok
+test test::test_resolve_dispute_unauthorized - should panic ... ok
+test test::test_role_changed_event_emitted_on_add_carrier ... ok
+test test::test_role_changed_event_emitted_on_add_company ... ok
+test test::test_role_changed_event_emitted_on_revoke_role ... ok
+test test::test_resolve_dispute_idempotency ... ok
+test test::test_set_shipment_limit_unauthorized - should panic ... ok
+test test::test_set_shipment_limit_returns_unauthorized - should panic ... ok
+test test::test_shipment_counter_starts_at_zero ... ok
+test test::test_set_metadata_with_valid_symbols ... ok
+test test::test_shipment_notes_unauthorized - should panic ... ok
+test test::test_successful_admin_transfer ... ok
+test test::test_successful_initialization ... ok
+test test::test_shipment_limit_reached - should panic ... ok
+test test::test_suspend_carrier_requires_admin ... ok
+test test::test_token_mint_helper_maps_failure ... ok
+test test::test_suspended_role_cannot_perform_actions ... ok
+test test::test_suspend_role_success ... ok
+test test::test_unassigned_addresses_are_rejected ... ok
+test test::test_transfer_admin_action ... ok
+test test::test_shipment_notes_success ... ok
+test test::test_suspended_carrier_blocked_from_milestone_handlers ... ok
+test test::test_update_config_rejects_grace_period_exceeding_max - should panic ... ok
+test test::test_unauthorized_admin_transfer - should panic ... ok
+test test::test_three_of_five_multisig ... ok
+test test::test_successful_handoff ... ok
+test test::test_unauthorized_admin_acceptance - should panic ... ok
+test test::test_suspend_and_reactivate_carrier_for_status_updates ... ok
+test test::test_update_eta_returns_shipment_not_found - should panic ... ok
+test test::test_ttl_extension_on_shipment_creation ... ok
+test test::test_update_status_invalid_transition - should panic ... ok
+test test::test_update_status_nonexistent_shipment - should panic ... ok
+test test::test_update_status_returns_shipment_not_found - should panic ... ok
+test test::test_update_eta_valid_emits_event ... ok
+test test::test_update_eta_rejects_past_timestamp - should panic ... ok
+test test::test_update_eta_unauthorized - should panic ... ok
+test test::test_update_status_unauthorized - should panic ... ok
+test test::test_update_status_returns_rate_limit_exceeded - should panic ... ok
+test test::test_upgrade_invalid_edge_fails - should panic ... ok
+test test::test_update_status_multiple_valid_transitions ... ok
+test test::test_upgrade_unauthorized - should panic ... ok
+test test::test_whitelist_functions_fail_before_initialization - should panic ... ok
+test test::test_upgrade_success ... ok
+test test::test_verify_delivery_proof_nonexistent_shipment - should panic ... ok
+test test::test_update_status_valid_transition_by_admin ... ok
+test test::test_update_status_valid_transition_by_carrier ... ok
+test test_auth::test_auth_add_guardian_fails_without_auth ... ok
+test test::test_verify_delivery_proof_match ... ok
+test test_auth::test_auth_force_cancel_fails_without_auth ... ok
+test test::test_whitelist_per_company ... ok
+test test_auth::test_auth_add_company_fails_without_auth ... ok
+test test_auth::test_auth_add_operator_fails_without_auth ... ok
+test test_auth::test_auth_confirm_delivery_fails_without_auth ... ok
+test test::test_verify_delivery_proof_mismatch ... ok
+test test_auth::test_auth_create_shipment_fails_without_auth ... ok
+test test_auth::test_auth_tree_add_carrier ... ok
+test test_auth::test_auth_tree_add_operator ... ok
+test test_auth::test_auth_tree_add_company ... ok
+test test_auth::test_auth_tree_add_guardian ... ok
+test test_auth::test_auth_tree_archive_shipment ... ok
+test test_auth::test_auth_tree_cancel_shipment ... ok
+test test_auth::test_auth_tree_create_shipment ... ok
+test test_auth::test_auth_tree_suspend_carrier ... ok
+test test_auth::test_auth_tree_revoke_role ... ok
+test test_auth::test_auth_tree_confirm_delivery ... ok
+test test_auth::test_auth_tree_force_cancel_shipment ... ok
+test test_auth::test_auth_update_status_fails_without_auth ... ok
+test test_auth::test_auth_tree_handoff_shipment ... ok
+test test_auth::test_auth_tree_update_status ... ok
+test test_auto_dispute::test_auto_dispute_increments_total_disputes ... ok
+test test_auto_dispute::test_auto_dispute_disabled_critical_breach_leaves_status_unchanged ... ok
+test test_auto_dispute::test_auto_dispute_toggle_persisted_in_config ... ok
+test test_auto_dispute::test_auto_dispute_opens_on_critical_breach_when_enabled ... ok
+test test_auto_dispute::test_auto_dispute_skips_cancelled_shipment ... ok
+test test_auto_dispute::test_auto_dispute_ignores_non_critical_breach ... ok
+test test_auto_dispute::test_auto_dispute_skips_already_disputed_shipment ... ok
+test test_consistency::test_admin_query_returns_violations_for_corrupted_state ... ok
+test test_consistency::test_admin_query_returns_empty_for_clean_state ... ok
+test test_consistency::test_delivered_finalized_with_zero_escrow_is_healthy ... ok
+test test_auto_dispute::test_no_regression_when_toggle_re_disabled ... ok
+test test_consistency::test_check_all_consistency_clean_state ... ok
+test test_consistency::test_detects_batch_timestamp_mismatch ... ok
+test test_consistency::test_detects_deadline_anomaly ... ok
+test test_consistency::test_detects_milestone_violation ... ok
+test test_consistency::test_detects_escrow_mismatch ... ok
+test test_consistency::test_detects_missing_shipment ... ok
+test test_consistency::test_detects_invalid_finalization ... ok
+test test_consistency::test_detects_batch_sender_mismatch ... ok
+test test_consistency::test_detects_timestamp_anomaly ... ok
+test test_cross_contract_integration::test_cancel_without_escrow_succeeds_with_failing_token ... ok
+test test_consistency::test_healthy_shipment_has_no_violations ... ok
+test test_cross_contract_integration::test_force_cancel_with_escrow_and_failing_token_fails ... ok
+test test_cross_contract_integration::test_read_only_queries_work_regardless_of_token_state ... ok
+test test_consistency::test_healthy_batch_has_no_violations ... ok
+test test_cross_contract_integration::test_shipment_creation_without_escrow_succeeds ... ok
+test test_cross_contract_integration::test_circuit_breaker_opens_after_repeated_failures ... ok
+test test_cross_contract_integration::test_status_update_succeeds_with_working_token ... ok
+test test_cross_contract_integration::test_batch_creation_does_not_call_token_contract ... ok
+test test_cross_contract_integration::test_batch_creation_5_items_succeeds ... ok
+test test_cross_contract_integration::test_release_escrow_fails_with_failing_token ... ok
+test test_cross_contract_integration::test_token_transfer_failure_returns_correct_error ... ok
+test test_diagnostics::test_detect_storage_inconsistencies ... ok
+test test_diagnostics::test_clean_health_check ... ok
+test test_event_fixtures::test_all_fixtures_emit_expected_topics ... FAILED
+test test_finalization::test_finalization_on_cancel_with_zero_escrow ... ok
+test test_finalization::test_mutation_rejected_after_finalization - should panic ... ok
+test test_iot_verification::tests::test_iot_verification_no_auth_required ... ok
+test test_finalization::test_archival_permitted_after_finalization ... ok
+test test_iot_verification::tests::test_get_status_hash_not_found - should panic ... ok
+test test_iot_verification::tests::test_verify_data_hash_nonexistent_shipment - should panic ... ok
+test test_finalization::test_finalization_on_delivery_settlement ... ok
+test test_diagnostics::test_detect_anomalies_and_escrow ... ok
+test test_pause::tests::test_create_shipment_fails_when_paused - should panic ... ok
+test test_iot_verification::tests::test_verify_data_hash_success ... ok
+test test_iot_verification::tests::test_status_hash_stored_on_update ... ok
+test test_pause::tests::test_pause_success ... ok
+test test_iot_verification::tests::test_multiple_status_hashes ... ok
+test test_pause::tests::test_pause_unauthorized - should panic ... ok
+test test_pause::tests::test_pause_guardian_success ... ok
+test test_iot_verification::tests::test_verify_data_hash_mismatch ... ok
+test test_pause::tests::test_unpause_guardian_success ... ok
+test test_pause::tests::test_unpause_success ... ok
+test test_pause::tests::test_pause_unpause_operation_succeeds ... ok
+test test_performance::test_get_shipment_within_budget ... ok
+test test_pause::tests::test_read_operations_work_when_paused ... ok
+test test_pause::tests::test_update_status_fails_when_paused - should panic ... ok
+test test_performance::test_single_shipment_creation_within_budget ... ok
+test test_settlement::test_deposit_escrow_settlement_failure ... FAILED
+test test_settlement::test_multiple_shipments_independent_settlements ... FAILED
+test test_performance::test_batch_milestone_recording_within_budget ... ok
+test test_settlement::test_deposit_escrow_settlement_success ... ok
+test test_performance::test_status_update_within_budget ... ok
+test test_settlement::test_refund_escrow_settlement_failure ... FAILED
+test test_settlement::test_release_escrow_settlement_success ... ok
+test test_settlement::test_refund_escrow_settlement_success ... ok
+test test_suspension::test_company_suspension_blocks_cancel_shipment ... ok
+test test_settlement::test_settlement_record_metadata ... ok
+test test_suspension::test_company_reactivation_restores_access ... ok
+test test_settlement::test_settlement_full_lifecycle ... ok
+test test_suspension::test_company_suspension_blocks_create_shipment ... ok
+test test_performance::test_batch_cheaper_per_item_than_individual_calls ... ok
+test test_suspension::test_company_suspension_blocks_metadata_update ... ok
+test test_performance::test_batch_creation_10_within_budget ... ok
+test test_token_compatibility::test_custom_token_insufficient_funds ... ok
+test test_token_compatibility::test_custom_token_refund_flow ... ok
+test test_ttl_health::test_ttl_health_summary_config_values ... FAILED
+test test_token_compatibility::test_sac_refund_flow ... ok
+test test_token_compatibility::test_custom_token_milestone_payment_flow ... ok
+test test_ttl_health::test_ttl_health_summary_deterministic ... FAILED
+test test_ttl_health::test_ttl_health_summary_edge_case_exactly_20_shipments ... FAILED
+test test_token_compatibility::test_sac_insufficient_funds ... ok
+test test_utils::tests::test_advance_ledger_sequence_increments ... ok
+test test_utils::tests::test_advance_ledger_time_increments_timestamp ... ok
+test test_utils::tests::test_advance_past_multisig_expiry_adds_seven_days_plus_one ... ok
+test test_utils::tests::test_advance_past_rate_limit_adds_61_seconds ... ok
+test test_utils::tests::test_future_deadline_returns_offset_from_now ... ok
+test test_utils::tests::test_sanitize_json_snapshot ... ok
+test test_utils::tests::test_set_ledger_sequence_pins_value ... ok
+test test_utils::tests::test_set_ledger_time_pins_timestamp ... ok
+test test_utils::tests::test_setup_env_sets_protocol_version ... ok
+test test_utils::tests::test_setup_env_sets_sequence_number ... ok
+test test_ttl_health::test_ttl_health_summary_multiple_shipments ... FAILED
+test test_token_compatibility::test_sac_milestone_payment_flow ... ok
+test test_ttl_health::test_ttl_health_summary_not_initialized - should panic ... ok
+test validation::tests::test_validate_amount_valid_passes ... ok
+test test_utils::tests::test_setup_env_sets_timestamp ... ok
+test validation::tests::test_validate_amount_zero_fails ... ok
+test validation::tests::test_validate_hash_all_ones_passes ... ok
+test validation::tests::test_validate_hash_all_zeros_fails ... ok
+test validation::tests::test_validate_hash_nonzero_passes ... ok
+test validation::tests::test_validate_amount_exceeds_max_fails ... ok
+test validation::tests::test_validate_amount_negative_fails ... ok
+test validation::tests::test_validate_metadata_symbols_common_pairs_pass ... ok
+test validation::tests::test_validate_metadata_symbols_single_char_passes ... ok
+test validation::tests::test_validate_metadata_symbols_valid_passes ... ok
+test validation::tests::test_validate_metadata_symbols_long_names_pass ... ok
+test validation::tests::test_validate_milestone_symbols_duplicate_fails ... ok
+test validation::tests::test_validate_milestone_symbols_empty_passes ... ok
+test validation::tests::test_validate_milestone_symbols_single_milestone_passes ... ok
+test validation::tests::test_validate_milestone_symbols_many_unique_passes ... ok
+test validation::tests::test_validate_milestone_symbols_valid_passes ... ok
+test test_ttl_health::test_ttl_health_summary_no_shipments ... FAILED
+test validation::tests::test_validate_symbol_common_names_pass ... ok
+test validation::tests::test_validate_symbol_single_char_passes ... ok
+test validation::tests::test_validate_timestamp_current_passes ... ok
+test validation::tests::test_validate_symbol_valid_long_passes ... ok
+test validation::tests::test_validate_symbol_valid_short_passes ... ok
+test test_ttl_health::test_ttl_health_summary_single_shipment ... FAILED
+test validation::tests::test_validate_timestamp_far_future_fails ... ok
+test validation::tests::test_validate_timestamp_far_past_fails ... ok
+test validation::tests::test_validate_timestamp_near_future_passes ... ok
+test test_token_compatibility::test_custom_token_escrow_flow ... ok
+test validation::tests::test_validate_shipment_exists_missing_returns_error ... ok
+test test_token_compatibility::test_sac_escrow_flow ... ok
+
+failures:
+
+---- test_event_fixtures::test_all_fixtures_emit_expected_topics stdout ----
+TARGET TOPICS = [shipment_created, dispute_raised, escrow_frozen]
+FOUND TOPICS = ["dispute_raised", "escrow_frozen", "notification", "notification", "notification"]
+
+thread 'test_event_fixtures::test_all_fixtures_emit_expected_topics' (706776) panicked at contracts/shipment/src/test_event_fixtures.rs:74:5:
+assertion failed: topics_found.contains(&Symbol::new(&env,
+            crate::event_topics::SHIPMENT_CREATED))
+Writing test snapshot file for test "test_event_fixtures::test_all_fixtures_emit_expected_topics" to "test_snapshots/test_event_fixtures/test_all_fixtures_emit_expected_topics.1.json".
+
+---- test_settlement::test_deposit_escrow_settlement_failure stdout ----
+
+thread 'test_settlement::test_deposit_escrow_settlement_failure' (706803) panicked at contracts/shipment/src/test_settlement.rs:139:5:
+assertion `left == right` failed
+  left: 0
+ right: 1
+Writing test snapshot file for test "test_settlement::test_deposit_escrow_settlement_failure" to "test_snapshots/test_settlement/test_deposit_escrow_settlement_failure.1.json".
+
+---- test_settlement::test_multiple_shipments_independent_settlements stdout ----
+
+thread 'test_settlement::test_multiple_shipments_independent_settlements' (706805) panicked at /home/izk/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-env-host-22.1.3/src/host.rs:847:9:
+HostError: Error(Contract, #41)
+
+Event log (newest first):
+   0: [Diagnostic Event] topics:[error, Error(Contract, #41)], data:"escalating error to panic"
+   1: [Diagnostic Event] topics:[error, Error(Contract, #41)], data:["contract call failed", create_shipment, [CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM, Bytes(0101010101010101010101010101010101010101010101010101010101010101), [], 172800]]
+   2: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, topics:[error, Error(Contract, #41)], data:"escalating Ok(ScErrorType::Contract) frame-exit to Err"
+   3: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, topics:[fn_return, create_shipment], data:Error(Contract, #41)
+   4: [Diagnostic Event] topics:[fn_call, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, create_shipment], data:[CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM, Bytes(0101010101010101010101010101010101010101010101010101010101010101), [], 172800]
+
+Writing test snapshot file for test "test_settlement::test_multiple_shipments_independent_settlements" to "test_snapshots/test_settlement/test_multiple_shipments_independent_settlements.1.json".
+
+---- test_settlement::test_refund_escrow_settlement_failure stdout ----
+
+thread 'test_settlement::test_refund_escrow_settlement_failure' (706824) panicked at contracts/shipment/src/test_settlement.rs:296:5:
+assertion `left == right` failed
+  left: 0
+ right: 1
+Writing test snapshot file for test "test_settlement::test_refund_escrow_settlement_failure" to "test_snapshots/test_settlement/test_refund_escrow_settlement_failure.1.json".
+
+---- test_ttl_health::test_ttl_health_summary_config_values stdout ----
+
+thread 'test_ttl_health::test_ttl_health_summary_config_values' (706841) panicked at /home/izk/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-env-host-22.1.3/src/host.rs:847:9:
+HostError: Error(Contract, #1)
+
+Event log (newest first):
+   0: [Diagnostic Event] topics:[error, Error(Contract, #1)], data:"escalating error to panic"
+   1: [Diagnostic Event] topics:[error, Error(Contract, #1)], data:["contract call failed", initialize, [CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4]]
+   2: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, topics:[error, Error(Contract, #1)], data:"escalating Ok(ScErrorType::Contract) frame-exit to Err"
+   3: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, topics:[fn_return, initialize], data:Error(Contract, #1)
+   4: [Diagnostic Event] topics:[fn_call, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, initialize], data:[CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4]
+
+Writing test snapshot file for test "test_ttl_health::test_ttl_health_summary_config_values" to "test_snapshots/test_ttl_health/test_ttl_health_summary_config_values.1.json".
+
+---- test_ttl_health::test_ttl_health_summary_deterministic stdout ----
+
+thread 'test_ttl_health::test_ttl_health_summary_deterministic' (706843) panicked at /home/izk/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-env-host-22.1.3/src/host.rs:847:9:
+HostError: Error(Contract, #1)
+
+Event log (newest first):
+   0: [Diagnostic Event] topics:[error, Error(Contract, #1)], data:"escalating error to panic"
+   1: [Diagnostic Event] topics:[error, Error(Contract, #1)], data:["contract call failed", initialize, [CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4]]
+   2: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, topics:[error, Error(Contract, #1)], data:"escalating Ok(ScErrorType::Contract) frame-exit to Err"
+   3: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, topics:[fn_return, initialize], data:Error(Contract, #1)
+   4: [Diagnostic Event] topics:[fn_call, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, initialize], data:[CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4]
+
+Writing test snapshot file for test "test_ttl_health::test_ttl_health_summary_deterministic" to "test_snapshots/test_ttl_health/test_ttl_health_summary_deterministic.1.json".
+
+---- test_ttl_health::test_ttl_health_summary_edge_case_exactly_20_shipments stdout ----
+
+thread 'test_ttl_health::test_ttl_health_summary_edge_case_exactly_20_shipments' (706849) panicked at /home/izk/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-env-host-22.1.3/src/host.rs:847:9:
+HostError: Error(Contract, #1)
+
+Event log (newest first):
+   0: [Diagnostic Event] topics:[error, Error(Contract, #1)], data:"escalating error to panic"
+   1: [Diagnostic Event] topics:[error, Error(Contract, #1)], data:["contract call failed", initialize, [CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4]]
+   2: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, topics:[error, Error(Contract, #1)], data:"escalating Ok(ScErrorType::Contract) frame-exit to Err"
+   3: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, topics:[fn_return, initialize], data:Error(Contract, #1)
+   4: [Diagnostic Event] topics:[fn_call, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, initialize], data:[CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4]
+
+Writing test snapshot file for test "test_ttl_health::test_ttl_health_summary_edge_case_exactly_20_shipments" to "test_snapshots/test_ttl_health/test_ttl_health_summary_edge_case_exactly_20_shipments.1.json".
+
+---- test_ttl_health::test_ttl_health_summary_multiple_shipments stdout ----
+
+thread 'test_ttl_health::test_ttl_health_summary_multiple_shipments' (706853) panicked at /home/izk/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-env-host-22.1.3/src/host.rs:847:9:
+HostError: Error(Contract, #1)
+
+Event log (newest first):
+   0: [Diagnostic Event] topics:[error, Error(Contract, #1)], data:"escalating error to panic"
+   1: [Diagnostic Event] topics:[error, Error(Contract, #1)], data:["contract call failed", initialize, [CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4]]
+   2: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, topics:[error, Error(Contract, #1)], data:"escalating Ok(ScErrorType::Contract) frame-exit to Err"
+   3: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, topics:[fn_return, initialize], data:Error(Contract, #1)
+   4: [Diagnostic Event] topics:[fn_call, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, initialize], data:[CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4]
+
+Writing test snapshot file for test "test_ttl_health::test_ttl_health_summary_multiple_shipments" to "test_snapshots/test_ttl_health/test_ttl_health_summary_multiple_shipments.1.json".
+
+---- test_ttl_health::test_ttl_health_summary_no_shipments stdout ----
+
+thread 'test_ttl_health::test_ttl_health_summary_no_shipments' (706854) panicked at /home/izk/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-env-host-22.1.3/src/host.rs:847:9:
+HostError: Error(Contract, #1)
+
+Event log (newest first):
+   0: [Diagnostic Event] topics:[error, Error(Contract, #1)], data:"escalating error to panic"
+   1: [Diagnostic Event] topics:[error, Error(Contract, #1)], data:["contract call failed", initialize, [CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4]]
+   2: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, topics:[error, Error(Contract, #1)], data:"escalating Ok(ScErrorType::Contract) frame-exit to Err"
+   3: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, topics:[fn_return, initialize], data:Error(Contract, #1)
+   4: [Diagnostic Event] topics:[fn_call, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, initialize], data:[CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4]
+
+Writing test snapshot file for test "test_ttl_health::test_ttl_health_summary_no_shipments" to "test_snapshots/test_ttl_health/test_ttl_health_summary_no_shipments.1.json".
+
+---- test_ttl_health::test_ttl_health_summary_single_shipment stdout ----
+
+thread 'test_ttl_health::test_ttl_health_summary_single_shipment' (706856) panicked at /home/izk/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-env-host-22.1.3/src/host.rs:847:9:
+HostError: Error(Contract, #1)
+
+Event log (newest first):
+   0: [Diagnostic Event] topics:[error, Error(Contract, #1)], data:"escalating error to panic"
+   1: [Diagnostic Event] topics:[error, Error(Contract, #1)], data:["contract call failed", initialize, [CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4]]
+   2: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, topics:[error, Error(Contract, #1)], data:"escalating Ok(ScErrorType::Contract) frame-exit to Err"
+   3: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, topics:[fn_return, initialize], data:Error(Contract, #1)
+   4: [Diagnostic Event] topics:[fn_call, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, initialize], data:[CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4]
+
+Writing test snapshot file for test "test_ttl_health::test_ttl_health_summary_single_shipment" to "test_snapshots/test_ttl_health/test_ttl_health_summary_single_shipment.1.json".
+
+
+failures:
+    test_event_fixtures::test_all_fixtures_emit_expected_topics
+    test_settlement::test_deposit_escrow_settlement_failure
+    test_settlement::test_multiple_shipments_independent_settlements
+    test_settlement::test_refund_escrow_settlement_failure
+    test_ttl_health::test_ttl_health_summary_config_values
+    test_ttl_health::test_ttl_health_summary_deterministic
+    test_ttl_health::test_ttl_health_summary_edge_case_exactly_20_shipments
+    test_ttl_health::test_ttl_health_summary_multiple_shipments
+    test_ttl_health::test_ttl_health_summary_no_shipments
+    test_ttl_health::test_ttl_health_summary_single_shipment
+
+test result: FAILED. 507 passed; 10 failed; 0 ignored; 0 measured; 0 filtered out; finished in 19.24s
+
+error: test failed, to rerun pass `-p shipment --lib`

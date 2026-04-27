@@ -31,6 +31,10 @@ mod mock_ok {
 
     #[contractimpl]
     impl MockToken {
+        pub fn decimals(_env: soroban_sdk::Env) -> u32 {
+            7
+        }
+
         pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
         pub fn mint(_env: Env, _admin: Address, _to: Address, _amount: i128) {}
     }

@@ -3,6 +3,14 @@ use soroban_sdk::{contracttype, Address, BytesN, Map, Symbol, Vec};
 pub const HASH_ALGO_SHA256: u32 = 1;
 pub const DEFAULT_HASH_ALGO: u32 = HASH_ALGO_SHA256;
 
+/// Expected number of decimal places for tokens used with this contract.
+///
+/// The contract assumes the Stellar/Soroban standard of 7 decimal places
+/// (i.e., 1 token = 10_000_000 stroops). Tokens that return a different
+/// value from their `decimals()` method will be rejected to prevent
+/// mismatched amount interpretations during escrow operations.
+pub const EXPECTED_TOKEN_DECIMALS: u32 = 7;
+
 /// Storage keys for contract data.
 ///
 /// # Examples
@@ -104,6 +112,34 @@ pub enum DataKey {
     Settlement(u64),
     /// Active settlement ID for a shipment (only one active settlement per shipment).
     ActiveSettlement(u64),
+    /// Latest escrow freeze reason code keyed by shipment ID.
+    EscrowFreezeReasonByShipment(u64),
+}
+
+/// Structured reason codes for escrow freeze events.
+///
+/// Attached to `escrow_frozen` events so that off-chain indexers and
+/// auditing systems can distinguish *why* an escrow was frozen without
+/// parsing free-form fields.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::EscrowFreezeReason;
+/// let reason = EscrowFreezeReason::DisputeRaised;
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum EscrowFreezeReason {
+    /// Escrow frozen because a dispute was raised on the shipment.
+    DisputeRaised,
+    /// Escrow frozen because the carrier account was suspended.
+    CarrierSuspended,
+    /// Escrow frozen because the company account was suspended.
+    CompanySuspended,
+    /// Escrow frozen because the contract was paused by an admin.
+    ContractPaused,
+    /// Escrow frozen due to the token-transfer circuit breaker opening.
+    CircuitBreakerOpen,
 }
 
 /// Supported user roles.

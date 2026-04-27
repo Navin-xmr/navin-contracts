@@ -18,7 +18,10 @@
 //! Each event uses a single descriptive `Symbol` as its topic so that
 //! consumers can filter by topic when subscribing to contract events.
 
-use crate::types::{BreachType, MigrationReport, Role, RoleChangeAction, Severity, ShipmentStatus};
+use crate::types::{
+    BreachType, EscrowFreezeReason, MigrationReport, Role, RoleChangeAction, Severity,
+    ShipmentStatus,
+};
 use soroban_sdk::{xdr::ToXdr, Address, BytesN, Env, Symbol};
 
 pub const EVENT_SCHEMA_VERSION: u32 = 2;
@@ -1343,6 +1346,47 @@ pub fn emit_finalization_clear_event(
             shipment_id,
             admin.clone(),
             reason_hash.clone(),
+            env.ledger().timestamp(),
+        ),
+    );
+}
+
+/// Emits an `escrow_frozen` event when escrow is blocked due to a dispute or safety control.
+///
+/// # Event Data
+///
+/// | Field       | Type                | Description                                       |
+/// |-------------|---------------------|---------------------------------------------------|
+/// | shipment_id | `u64`               | Shipment whose escrow is now frozen                |
+/// | reason      | `EscrowFreezeReason`| Structured code explaining why escrow was frozen  |
+/// | caller      | `Address`           | Address that triggered the freeze (e.g. disputer) |
+/// | timestamp   | `u64`               | Ledger timestamp of the freeze                    |
+///
+/// # Arguments
+/// * `env`         - Execution environment.
+/// * `shipment_id` - ID of the shipment with frozen escrow.
+/// * `reason`      - `EscrowFreezeReason` variant classifying the freeze.
+/// * `caller`      - The address that triggered the freeze action.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_escrow_frozen(&env, shipment_id, EscrowFreezeReason::DisputeRaised, &caller);
+/// ```
+pub fn emit_escrow_frozen(
+    env: &Env,
+    shipment_id: u64,
+    reason: EscrowFreezeReason,
+    caller: &Address,
+) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::ESCROW_FROZEN),),
+        (
+            shipment_id,
+            reason,
+            caller.clone(),
             env.ledger().timestamp(),
         ),
     );
