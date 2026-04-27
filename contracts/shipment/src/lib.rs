@@ -55,6 +55,8 @@ mod test_require_auth_for_args;
 mod test_suspension;
 #[cfg(test)]
 mod test_utils;
+#[cfg(test)]
+mod test_verification;
 
 pub use config::*;
 pub use consistency::*;
