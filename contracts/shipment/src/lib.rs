@@ -869,7 +869,7 @@ impl NavinShipment {
         Ok(())
     }
 
-    /// Get the effective shipment limit for a company (override or global fallback).
+    /// Get effective shipment limit for a company (override or global fallback).
     pub fn get_effective_shipment_limit(env: Env, company: Address) -> Result<u32, NavinError> {
         require_initialized(&env)?;
         Ok(storage::get_effective_shipment_limit(&env, &company))
@@ -2530,6 +2530,84 @@ impl NavinShipment {
             &shipment.carrier,
             NotificationType::DeliveryConfirmed,
             shipment_id,
+            &confirmation_hash,
+        );
+
+        Ok(())
+    }
+
+    /// Confirm a partial delivery and release a bounded escrow percentage.
+    ///
+    /// The receiver can repeatedly confirm partial delivery slices while the
+    /// shipment is in transit/checkpoint/partial states. Each call releases
+    /// `release_percent` of `total_escrow`, and cumulative releases are bounded
+    /// so they never exceed the escrow initially deposited.
+    pub fn confirm_partial_delivery(
+        env: Env,
+        receiver: Address,
+        shipment_id: u64,
+        confirmation_hash: BytesN<32>,
+        release_percent: u32,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        receiver.require_auth();
+
+        if release_percent == 0 || release_percent > 100 {
+            return Err(NavinError::InvalidAmount);
+        }
+
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        if shipment.receiver != receiver {
+            return Err(NavinError::Unauthorized);
+        }
+        require_not_finalized(&shipment)?;
+
+        if shipment.status != ShipmentStatus::InTransit
+            && shipment.status != ShipmentStatus::AtCheckpoint
+            && shipment.status != ShipmentStatus::PartiallyDelivered
+        {
+            return Err(NavinError::InvalidStatus);
+        }
+
+        let release_amount =
+            checked_mul_div_i128(shipment.total_escrow, release_percent as i128, 100)?;
+        if release_amount <= 0 {
+            return Err(NavinError::InvalidAmount);
+        }
+
+        let released_so_far = checked_sub_i128(shipment.total_escrow, shipment.escrow_amount)?;
+        let new_total_released = checked_add_i128(released_so_far, release_amount)?;
+        if new_total_released > shipment.total_escrow {
+            return Err(NavinError::InvalidAmount);
+        }
+
+        let old_status = shipment.status.clone();
+        shipment.status = if new_total_released == shipment.total_escrow {
+            ShipmentStatus::Delivered
+        } else {
+            ShipmentStatus::PartiallyDelivered
+        };
+        shipment.updated_at = env.ledger().timestamp();
+
+        storage::decrement_status_count(&env, &old_status);
+        storage::increment_status_count(&env, &shipment.status);
+        storage::set_confirmation_hash(&env, shipment_id, &confirmation_hash);
+        if shipment.status == ShipmentStatus::Delivered {
+            storage::decrement_active_shipment_count(&env, &shipment.sender);
+        }
+
+        internal_release_escrow(&env, &mut shipment, release_amount)?;
+        finalize_if_settled(&env, &mut shipment);
+        persist_shipment(&env, &shipment)?;
+        extend_shipment_ttl(&env, shipment_id);
+
+        events::emit_status_updated(
+            &env,
+            shipment_id,
+            &old_status,
+            &shipment.status,
             &confirmation_hash,
         );
 
