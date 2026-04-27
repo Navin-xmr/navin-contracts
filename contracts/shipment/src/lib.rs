@@ -58,6 +58,14 @@ mod test_suspension;
 mod test_utils;
 #[cfg(test)]
 mod test_verification;
+#[cfg(test)]
+mod test_precondition_guards;
+#[cfg(test)]
+mod test_carrier_relationship;
+#[cfg(test)]
+mod test_creation_quota;
+#[cfg(test)]
+mod test_proposal_digest;
 
 pub use config::*;
 pub use consistency::*;
@@ -496,6 +504,36 @@ fn require_active_carrier(env: &Env, carrier: &Address) -> Result<(), NavinError
         return Err(NavinError::Unauthorized);
     }
     Ok(())
+}
+
+/// Require that `caller` is the contract admin. Centralizes the repeated
+/// `if storage::get_admin(&env) != admin { return Err(Unauthorized) }` pattern.
+fn require_admin(env: &Env, caller: &Address) -> Result<(), NavinError> {
+    if storage::get_admin(env) != *caller {
+        return Err(NavinError::Unauthorized);
+    }
+    Ok(())
+}
+
+/// Require that a shipment exists and return it. Centralizes the repeated
+/// `storage::get_shipment(&env, id).ok_or(ShipmentNotFound)?` pattern.
+fn require_shipment(env: &Env, shipment_id: u64) -> Result<Shipment, NavinError> {
+    storage::get_shipment(env, shipment_id).ok_or(NavinError::ShipmentNotFound)
+}
+
+/// Require that `caller` is the assigned carrier for a shipment (or admin).
+/// Returns the shipment on success.
+fn require_carrier_for_shipment(
+    env: &Env,
+    caller: &Address,
+    shipment_id: u64,
+) -> Result<Shipment, NavinError> {
+    let shipment = require_shipment(env, shipment_id)?;
+    let admin = storage::get_admin(env);
+    if *caller != shipment.carrier && *caller != admin {
+        return Err(NavinError::Unauthorized);
+    }
+    Ok(shipment)
 }
 
 #[contract]
@@ -1702,6 +1740,9 @@ impl NavinShipment {
             return Err(NavinError::ShipmentLimitReached);
         }
 
+        // Check per-company creation quota window (issue #296).
+        check_and_update_creation_quota(&env, &sender)?;
+
         let shipment_id = storage::get_shipment_counter(&env)
             .checked_add(1)
             .ok_or(NavinError::CounterOverflow)?;
@@ -1797,6 +1838,36 @@ impl NavinShipment {
         let limit = storage::get_effective_shipment_limit(&env, &sender);
         if current_active.saturating_add(shipments.len()) > limit {
             return Err(NavinError::ShipmentLimitReached);
+        }
+
+        // Check per-company creation quota window for the entire batch (issue #296).
+        // We check once per item to correctly track the rolling count.
+        {
+            let cfg = config::get_config(&env);
+            if cfg.creation_quota_max > 0 {
+                let now_ts = env.ledger().timestamp();
+                let mut tracker =
+                    storage::get_creation_quota(&env, &sender).unwrap_or(
+                        crate::types::CreationQuotaTracker {
+                            count: 0,
+                            window_start: now_ts,
+                        },
+                    );
+                if now_ts >= tracker.window_start + cfg.creation_quota_window_seconds {
+                    tracker.window_start = now_ts;
+                    tracker.count = 0;
+                }
+                let batch_len = shipments.len();
+                let new_count = tracker
+                    .count
+                    .checked_add(batch_len)
+                    .ok_or(NavinError::CounterOverflow)?;
+                if new_count > cfg.creation_quota_max {
+                    return Err(NavinError::CreationQuotaExceeded);
+                }
+                tracker.count = new_count;
+                storage::set_creation_quota(&env, &sender, &tracker);
+            }
         }
 
         for shipment_input in shipments.iter() {
@@ -4051,8 +4122,20 @@ impl NavinShipment {
         storage::set_proposal(&env, &proposal);
         storage::set_proposal_counter(&env, proposal_id);
 
+        // Compute and store the deterministic action digest (issue #297).
+        let digest_hash = compute_action_digest(&env, proposal_id, &action);
+        let digest_record = crate::types::ProposalActionDigest {
+            proposal_id,
+            digest: digest_hash.clone(),
+            computed_at: now,
+        };
+        storage::set_proposal_digest(&env, proposal_id, &digest_record);
+
         env.events()
             .publish((symbol_short!("propose"),), (proposal_id, proposer, action));
+        // Emit digest event so off-chain indexers can capture it without a query.
+        env.events()
+            .publish((Symbol::new(&env, "proposal_digest"),), (proposal_id, digest_hash));
 
         Ok(proposal_id)
     }
@@ -4696,6 +4779,245 @@ impl NavinShipment {
         require_admin_or_operator(&env, &admin)?;
         Ok(consistency::check_all_consistency(&env))
     }
+
+    // =========================================================================
+    // Issue #295 — Company/Carrier Relationship Query APIs
+    // =========================================================================
+
+    /// Check whether a carrier is allowed (whitelisted and not suspended) for a company.
+    ///
+    /// Semantic alias for `is_carrier_whitelisted` that also checks suspension
+    /// state, making it the single authoritative query for frontend consumers.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `company` - The company address.
+    /// * `carrier` - The carrier address to check.
+    ///
+    /// # Returns
+    /// * `Result<bool, NavinError>` - `true` if whitelisted and neither party suspended.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn is_company_carrier_allowed(
+        env: Env,
+        company: Address,
+        carrier: Address,
+    ) -> Result<bool, NavinError> {
+        require_initialized(&env)?;
+        if !storage::is_carrier_whitelisted(&env, &company, &carrier) {
+            return Ok(false);
+        }
+        if storage::is_company_suspended(&env, &company) {
+            return Ok(false);
+        }
+        if storage::is_carrier_suspended(&env, &carrier) {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
+    /// Paginated listing of carriers whitelisted by a company.
+    ///
+    /// Iterates over a caller-supplied `candidates` list and returns only those
+    /// that are whitelisted. The caller provides the candidate set (e.g. from an
+    /// off-chain index); this keeps the query deterministic and bounded.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `company` - The company whose whitelist is queried.
+    /// * `candidates` - Ordered list of carrier addresses to check.
+    /// * `cursor` - Index into `candidates` to start from (0 for first page).
+    /// * `page_size` - Maximum whitelisted carriers to return (1–50).
+    ///
+    /// # Returns
+    /// * `Result<CarrierRelationshipPage, NavinError>` - Page of whitelisted carriers.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::InvalidConfig` - If `page_size` is 0 or > 50.
+    pub fn list_company_carriers(
+        env: Env,
+        company: Address,
+        candidates: Vec<Address>,
+        cursor: u32,
+        page_size: u32,
+    ) -> Result<CarrierRelationshipPage, NavinError> {
+        require_initialized(&env)?;
+
+        if page_size == 0 || page_size > 50 {
+            return Err(NavinError::InvalidConfig);
+        }
+
+        let total = candidates.len();
+        let mut result = Vec::new(&env);
+        let mut scanned: u32 = 0;
+        let mut next_cursor: Option<u32> = None;
+        let mut idx = cursor;
+
+        while idx < total {
+            let candidate = candidates.get(idx).unwrap();
+            scanned = scanned.saturating_add(1);
+
+            if storage::is_carrier_whitelisted(&env, &company, &candidate) {
+                result.push_back(candidate);
+                if result.len() == page_size {
+                    let next = idx.saturating_add(1);
+                    if next < total {
+                        next_cursor = Some(next);
+                    }
+                    break;
+                }
+            }
+            idx = idx.saturating_add(1);
+        }
+
+        Ok(CarrierRelationshipPage {
+            carriers: result,
+            next_cursor,
+            total_scanned: scanned,
+        })
+    }
+
+    // =========================================================================
+    // Issue #296 — Shipment Creation Quota Window
+    // =========================================================================
+
+    /// Configure the per-company shipment creation quota.
+    ///
+    /// Sets `creation_quota_max` (max shipments per window) and
+    /// `creation_quota_window_seconds` (window duration). Set `max` to 0 to
+    /// disable the quota entirely (default).
+    ///
+    /// Only the admin can call this.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Contract admin address.
+    /// * `max_per_window` - Max shipments a company may create per window (0 = disabled).
+    /// * `window_seconds` - Duration of the quota window in seconds.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok on success.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not the admin.
+    /// * `NavinError::InvalidConfig` - If `window_seconds` is 0 when `max > 0`.
+    pub fn set_creation_quota(
+        env: Env,
+        admin: Address,
+        max_per_window: u32,
+        window_seconds: u64,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+        require_admin(&env, &admin)?;
+
+        if max_per_window > 0 && window_seconds == 0 {
+            return Err(NavinError::InvalidConfig);
+        }
+
+        let mut cfg = config::get_config(&env);
+        cfg.creation_quota_max = max_per_window;
+        cfg.creation_quota_window_seconds = window_seconds;
+        config::set_config(&env, &cfg);
+
+        env.events().publish(
+            (Symbol::new(&env, "quota_set"),),
+            (admin, max_per_window, window_seconds),
+        );
+
+        Ok(())
+    }
+
+    /// Query the current creation quota status for a company.
+    ///
+    /// Returns `(used, remaining)` for the current window. When the quota is
+    /// disabled (`max == 0`), returns `(0, u32::MAX)`.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `company` - The company address to query.
+    ///
+    /// # Returns
+    /// * `Result<(u32, u32), NavinError>` - `(used, remaining)` in the current window.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn get_creation_quota_status(
+        env: Env,
+        company: Address,
+    ) -> Result<(u32, u32), NavinError> {
+        require_initialized(&env)?;
+        let cfg = config::get_config(&env);
+
+        if cfg.creation_quota_max == 0 {
+            return Ok((0, u32::MAX));
+        }
+
+        let now = env.ledger().timestamp();
+        match storage::get_creation_quota(&env, &company) {
+            None => Ok((0, cfg.creation_quota_max)),
+            Some(t) => {
+                if now >= t.window_start + cfg.creation_quota_window_seconds {
+                    Ok((0, cfg.creation_quota_max))
+                } else {
+                    let used = t.count;
+                    let remaining = cfg.creation_quota_max.saturating_sub(used);
+                    Ok((used, remaining))
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Issue #297 — Multi-sig Proposal Action Hash and Digest Query
+    // =========================================================================
+
+    /// Retrieve the stored action digest for a proposal.
+    ///
+    /// The digest is computed and stored when `propose_action` is called.
+    /// Off-chain signers can recompute `sha256(proposal_id_be_u64 || action_xdr)`
+    /// to verify the exact payload before approving.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `proposal_id` - The proposal whose digest to retrieve.
+    ///
+    /// # Returns
+    /// * `Result<ProposalActionDigest, NavinError>` - The stored digest record.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ProposalNotFound` - If the proposal or its digest does not exist.
+    pub fn get_proposal_action_digest(
+        env: Env,
+        proposal_id: u64,
+    ) -> Result<ProposalActionDigest, NavinError> {
+        require_initialized(&env)?;
+        storage::get_proposal_digest(&env, proposal_id).ok_or(NavinError::ProposalNotFound)
+    }
+
+    /// Compute the action digest for an `AdminAction` without storing it.
+    ///
+    /// Pure helper for off-chain tooling: returns the same digest that
+    /// `propose_action` would store, so callers can verify before submitting.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `proposal_id` - The proposal ID to bind into the digest.
+    /// * `action` - The action to hash.
+    ///
+    /// # Returns
+    /// * `BytesN<32>` - The SHA-256 digest.
+    pub fn compute_proposal_digest(
+        env: Env,
+        proposal_id: u64,
+        action: crate::types::AdminAction,
+    ) -> BytesN<32> {
+        compute_action_digest(&env, proposal_id, &action)
+    }
 }
 
 /// Validates whether a version transition is permitted.
@@ -4719,4 +5041,55 @@ fn is_allowed_migration(current: u32, target: u32) -> bool {
     }
 
     false
+}
+
+/// Compute the deterministic SHA-256 digest for a proposal action (issue #297).
+///
+/// Canonical serialization: `sha256(proposal_id_be_u64 || action_xdr)`
+fn compute_action_digest(
+    env: &Env,
+    proposal_id: u64,
+    action: &crate::types::AdminAction,
+) -> BytesN<32> {
+    let mut payload = soroban_sdk::Bytes::new(env);
+    payload.append(&soroban_sdk::Bytes::from_array(
+        env,
+        &proposal_id.to_be_bytes(),
+    ));
+    payload.append(&action.clone().to_xdr(env));
+    env.crypto().sha256(&payload).into()
+}
+
+/// Enforce the per-company creation quota window (issue #296).
+///
+/// Returns `CreationQuotaExceeded` if the company has exhausted their quota
+/// for the current window. Rolls the window forward automatically when expired.
+/// No-ops when `creation_quota_max == 0` (quota disabled).
+fn check_and_update_creation_quota(env: &Env, company: &Address) -> Result<(), NavinError> {
+    let cfg = config::get_config(env);
+    if cfg.creation_quota_max == 0 {
+        return Ok(());
+    }
+
+    let now = env.ledger().timestamp();
+    let mut tracker = storage::get_creation_quota(env, company).unwrap_or(
+        crate::types::CreationQuotaTracker {
+            count: 0,
+            window_start: now,
+        },
+    );
+
+    // Roll window if expired.
+    if now >= tracker.window_start + cfg.creation_quota_window_seconds {
+        tracker.window_start = now;
+        tracker.count = 0;
+    }
+
+    if tracker.count >= cfg.creation_quota_max {
+        return Err(NavinError::CreationQuotaExceeded);
+    }
+
+    tracker.count = tracker.count.saturating_add(1);
+    storage::set_creation_quota(env, company, &tracker);
+    Ok(())
 }

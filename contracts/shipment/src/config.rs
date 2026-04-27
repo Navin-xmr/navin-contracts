@@ -126,6 +126,16 @@ pub struct ContractConfig {
     /// Must be >= 1 and <= 1000.
     /// Default: 255 breaches per shipment.
     pub max_breaches_per_shipment: u32,
+
+    /// Maximum number of shipments a company may create within `creation_quota_window_seconds`.
+    /// Set to 0 to disable the creation quota (unlimited).
+    /// Default: 0 (disabled).
+    pub creation_quota_max: u32,
+
+    /// Duration of the creation quota window in seconds.
+    /// Only meaningful when `creation_quota_max > 0`.
+    /// Default: 3600 (1 hour).
+    pub creation_quota_window_seconds: u64,
 }
 
 impl Default for ContractConfig {
@@ -154,6 +164,8 @@ impl Default for ContractConfig {
             max_notes_per_shipment: 255,      // 255 notes
             max_evidence_per_dispute: 255,    // 255 evidence entries
             max_breaches_per_shipment: 255,   // 255 breaches
+            creation_quota_max: 0,            // disabled by default
+            creation_quota_window_seconds: 3600, // 1 hour window
         }
     }
 }

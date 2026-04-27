@@ -116,6 +116,12 @@ pub enum DataKey {
     ActiveSettlement(u64),
     /// Latest escrow freeze reason code keyed by shipment ID.
     EscrowFreezeReasonByShipment(u64),
+    /// Per-company shipment creation quota tracker (for rate-limiting creation).
+    CompanyCreationQuota(Address),
+    /// Global shipment creation quota window configuration.
+    CreationQuotaConfig,
+    /// Deterministic action digest stored on proposal creation.
+    ProposalDigest(u64),
 }
 
 /// Structured reason codes for escrow freeze events.
@@ -679,4 +685,46 @@ pub struct Analytics {
     pub disputed_count: u64,
     /// Number of shipments currently in 'Cancelled' state.
     pub cancelled_count: u64,
+}
+
+/// Paginated result for company-carrier relationship queries (issue #295).
+///
+/// Returns a page of carrier addresses whitelisted by a company, with a
+/// cursor for deterministic pagination.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CarrierRelationshipPage {
+    /// Carrier addresses in this page.
+    pub carriers: Vec<Address>,
+    /// Cursor to pass on the next call, or `None` if this is the last page.
+    pub next_cursor: Option<u32>,
+    /// Total number of entries scanned (not total whitelisted — use for diagnostics).
+    pub total_scanned: u32,
+}
+
+/// Per-company creation quota tracker for the sliding-window rate limit (issue #296).
+///
+/// Stored under `DataKey::CompanyCreationQuota(company)` in instance storage.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CreationQuotaTracker {
+    /// Number of shipments created in the current window.
+    pub count: u32,
+    /// Ledger timestamp when the current window started.
+    pub window_start: u64,
+}
+
+/// Deterministic action digest stored on proposal creation (issue #297).
+///
+/// Stored under `DataKey::ProposalDigest(proposal_id)` in persistent storage.
+/// Enables off-chain signers to verify the exact payload before approving.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProposalActionDigest {
+    /// The proposal ID this digest belongs to.
+    pub proposal_id: u64,
+    /// SHA-256 hash of the canonical serialization of the proposal action.
+    pub digest: BytesN<32>,
+    /// Ledger timestamp when the digest was computed.
+    pub computed_at: u64,
 }
