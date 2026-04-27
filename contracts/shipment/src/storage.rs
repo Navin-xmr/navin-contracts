@@ -1203,21 +1203,21 @@ pub fn set_shipment_limit(env: &Env, limit: u32) {
         .set(&DataKey::ShipmentLimit, &limit);
 }
 
-/// Get a company-specific shipment limit override.
+/// Get the company-specific shipment limit override, if set.
 pub fn get_company_shipment_limit(env: &Env, company: &Address) -> Option<u32> {
     env.storage()
         .instance()
         .get(&DataKey::CompanyShipmentLimit(company.clone()))
 }
 
-/// Set a company-specific shipment limit override.
+/// Set the company-specific shipment limit override.
 pub fn set_company_shipment_limit(env: &Env, company: &Address, limit: u32) {
     env.storage()
         .instance()
         .set(&DataKey::CompanyShipmentLimit(company.clone()), &limit);
 }
 
-/// Resolve the effective shipment limit for a company.
+/// Resolve effective shipment limit (company override first, then global).
 pub fn get_effective_shipment_limit(env: &Env, company: &Address) -> u32 {
     get_company_shipment_limit(env, company).unwrap_or_else(|| get_shipment_limit(env))
 }
