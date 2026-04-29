@@ -4092,19 +4092,28 @@ impl NavinShipment {
             internal_release_escrow(&env, &mut shipment, escrow_amount)?;
             finalize_if_settled(&env, &mut shipment);
             persist_shipment(&env, &shipment)?;
+            
+            // Create a proper hash for escrow release notification
+            // Use shipment_id and escrow_amount to create a meaningful hash
+            let mut fields = soroban_sdk::Vec::new(&env);
+            fields.push_back(Symbol::new(&env, "escrow_release").into_val(&env));
+            fields.push_back(shipment_id.into_val(&env));
+            fields.push_back(escrow_amount.into_val(&env));
+            let escrow_release_hash = validation::compute_offchain_payload_hash(&env, fields);
+            
             events::emit_notification(
                 &env,
                 &shipment.sender,
                 NotificationType::EscrowReleased,
                 shipment_id,
-                &BytesN::from_array(&env, &[0u8; 32]),
+                &escrow_release_hash,
             );
             events::emit_notification(
                 &env,
                 &shipment.carrier,
                 NotificationType::EscrowReleased,
                 shipment_id,
-                &BytesN::from_array(&env, &[0u8; 32]),
+                &escrow_release_hash,
             );
 
             Ok(())

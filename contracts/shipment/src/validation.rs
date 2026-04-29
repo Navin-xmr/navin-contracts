@@ -14,18 +14,23 @@ const MAX_PAST_OFFSET: u64 = 365 * 24 * 60 * 60;
 /// Roughly 10 years.
 const MAX_FUTURE_OFFSET: u64 = 10 * 365 * 24 * 60 * 60;
 
-/// Ensure a `BytesN<32>` hash is not the all-zeros sentinel value.
+/// Ensure a `BytesN<32>` hash is valid and not malformed.
 ///
-/// This validator performs a sanity check on external hashes (data_hash, reason_hash, etc.)
-/// to reject the all-zeros pattern which is commonly used as a sentinel for "no data".
-/// This prevents accidental or malicious use of zero hashes in critical fields.
+/// This validator performs comprehensive checks on external hashes (data_hash, reason_hash, etc.)
+/// to prevent invalid or malicious hash values from reaching storage or event emission paths.
+///
+/// # Validation Checks
+/// 1. **Zero Hash Rejection**: Rejects the all-zeros pattern used as a sentinel for "no data"
+/// 2. **Fixed-Size Validation**: Ensures the hash is exactly 32 bytes (enforced by BytesN<32> type)
+/// 3. **Malformed Payload Detection**: Rejects obviously malformed patterns that indicate
+///    encoding errors or malicious input construction
 ///
 /// # Arguments
 /// * `hash` - The 32-byte hash to validate.
 ///
 /// # Returns
-/// * `Ok(())` if the hash contains at least one non-zero byte.
-/// * `Err(NavinError::InvalidHash)` if every byte is zero.
+/// * `Ok(())` if the hash passes all validation checks.
+/// * `Err(NavinError::InvalidHash)` if the hash is invalid or malformed.
 ///
 /// # Examples
 /// ```rust
@@ -34,9 +39,36 @@ const MAX_FUTURE_OFFSET: u64 = 10 * 365 * 24 * 60 * 60;
 pub fn validate_hash(hash: &BytesN<32>) -> Result<(), NavinError> {
     // BytesN::iter() is not available in no_std soroban; use to_array().
     let bytes: [u8; 32] = hash.to_array();
+    
+    // Check 1: Reject all-zeros sentinel value
     if bytes.iter().all(|&b| b == 0) {
         return Err(NavinError::InvalidHash);
     }
+    
+    // Check 2: Detect obviously malformed patterns that suggest encoding errors
+    // These patterns are unlikely to occur in valid SHA-256 hashes but may appear
+    // in malformed input data or malicious constructions
+    
+    // Pattern A: All bytes are the same (except all-zeros which we already caught)
+    // This could indicate a malformed or intentionally crafted invalid hash
+    if bytes.iter().all(|&b| b == bytes[0]) {
+        return Err(NavinError::InvalidHash);
+    }
+    
+    // Pattern B: Repeated short sequences (e.g., 0x01 0x02 0x03 0x04 repeated 8 times)
+    // This suggests a malformed payload rather than a proper hash
+    let first_4 = [bytes[0], bytes[1], bytes[2], bytes[3]];
+    let mut is_repeated_pattern = true;
+    for chunk in bytes.chunks_exact(4) {
+        if chunk != first_4 {
+            is_repeated_pattern = false;
+            break;
+        }
+    }
+    if is_repeated_pattern {
+        return Err(NavinError::InvalidHash);
+    }
+    
     Ok(())
 }
 
@@ -385,9 +417,108 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_hash_all_ones_passes() {
+    fn test_validate_hash_all_ones_fails() {
         let env = Env::default();
         let hash: BytesN<32> = BytesN::from_array(&env, &[0xFF_u8; 32]);
+        assert_eq!(validate_hash(&hash), Err(NavinError::InvalidHash));
+    }
+
+    #[test]
+    fn test_validate_hash_all_same_bytes_fails() {
+        let env = Env::default();
+        // Test various single-byte patterns
+        let test_bytes = [0x01u8, 0x42, 0xAA, 0x7F];
+        for byte in test_bytes {
+            let hash: BytesN<32> = BytesN::from_array(&env, &[byte; 32]);
+            assert_eq!(
+                validate_hash(&hash),
+                Err(NavinError::InvalidHash),
+                "All-{} bytes should be rejected",
+                byte
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_hash_repeated_pattern_fails() {
+        let env = Env::default();
+        // Test repeated 4-byte patterns
+        let patterns = [
+            [0x01, 0x02, 0x03, 0x04],
+            [0xAA, 0xBB, 0xCC, 0xDD],
+            [0x00, 0x01, 0x00, 0x01],
+            [0xFF, 0x00, 0xFF, 0x00],
+        ];
+        
+        for pattern in patterns {
+            let mut bytes = [0u8; 32];
+            for i in 0..8 {
+                bytes[i * 4..i * 4 + 4].copy_from_slice(&pattern);
+            }
+            let hash: BytesN<32> = BytesN::from_array(&env, &bytes);
+            assert_eq!(
+                validate_hash(&hash),
+                Err(NavinError::InvalidHash),
+                "Repeated pattern {:X?} should be rejected",
+                pattern
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_hash_realistic_patterns_pass() {
+        let env = Env::default();
+        // Test realistic hash patterns that should pass validation
+        let valid_hashes = [
+            // Single non-zero byte at different positions
+            ([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "first byte non-zero"),
+            ([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], "last byte non-zero"),
+            ([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "middle byte non-zero"),
+            
+            // Multiple different bytes
+            ([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32], "sequential bytes"),
+            ([0xFF, 0xFE, 0xFD, 0xFC, 0xFB, 0xFA, 0xF9, 0xF8, 0xF7, 0xF6, 0xF5, 0xF4, 0xF3, 0xF2, 0xF1, 0xF0, 0xEF, 0xEE, 0xED, 0xEC, 0xEB, 0xEA, 0xE9, 0xE8, 0xE7, 0xE6, 0xE5, 0xE4, 0xE3, 0xE2, 0xE1, 0xE0], "descending bytes"),
+            
+            // Random-looking pattern
+            ([0x4A, 0x1F, 0x8B, 0x2C, 0x7D, 0x93, 0x0E, 0xF5, 0x66, 0xB1, 0x2A, 0x47, 0x8C, 0x35, 0x9D, 0x70, 0x13, 0xA8, 0x5F, 0xE2, 0x94, 0x27, 0x6B, 0x0C, 0xD1, 0x48, 0x9A, 0x33, 0x7E, 0xC5, 0x10, 0x8F], "random pattern"),
+        ];
+        
+        for (bytes, description) in valid_hashes {
+            let hash: BytesN<32> = BytesN::from_array(&env, &bytes);
+            assert_eq!(
+                validate_hash(&hash),
+                Ok(()),
+                "Valid hash ({}) should pass validation",
+                description
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_hash_boundary_cases() {
+        let env = Env::default();
+        
+        // Test hash with exactly one non-zero byte
+        let mut single_nonzero = [0u8; 32];
+        single_nonzero[31] = 1;
+        let hash: BytesN<32> = BytesN::from_array(&env, &single_nonzero);
+        assert_eq!(validate_hash(&hash), Ok(()));
+        
+        // Test hash with alternating pattern that's not perfectly repeated
+        let mut alternating = [0u8; 32];
+        for i in 0..32 {
+            alternating[i] = if i % 2 == 0 { 0xAA } else { 0x55 };
+        }
+        let hash: BytesN<32> = BytesN::from_array(&env, &alternating);
+        assert_eq!(validate_hash(&hash), Ok(()));
+        
+        // Test hash with two different bytes alternating
+        let mut two_byte_pattern = [0u8; 32];
+        for i in 0..16 {
+            two_byte_pattern[i * 2] = 0x12;
+            two_byte_pattern[i * 2 + 1] = 0x34;
+        }
+        let hash: BytesN<32> = BytesN::from_array(&env, &two_byte_pattern);
         assert_eq!(validate_hash(&hash), Ok(()));
     }
 
