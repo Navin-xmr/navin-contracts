@@ -31,10 +31,11 @@
 //! | [`advance_past_rate_limit`] | Clear 60-s `update_status` window |
 //! | [`advance_past_multisig_expiry`] | Expire a multi-sig proposal |
 //! | [`future_deadline`] | Compute a relative deadline timestamp |
+//! | [`checkpoint_symbol`] | Create deterministic checkpoint/milestone symbols |
 
 use soroban_sdk::{
     testutils::{Address as _, Ledger as _},
-    Address, Env,
+    Address, Env, Symbol,
 };
 
 #[cfg(any(test, feature = "testutils"))]
@@ -177,6 +178,61 @@ pub fn future_deadline(env: &Env, secs_from_now: u64) -> u64 {
     env.ledger().timestamp() + secs_from_now
 }
 
+// ── Symbol helpers ────────────────────────────────────────────────────────────
+
+/// Create a deterministic checkpoint or milestone symbol for tests.
+///
+/// This helper provides a consistent, repeatable way to construct Symbol
+/// instances for milestone and status checkpoint tests, avoiding duplicated
+/// symbol construction code and ensuring deterministic test behavior.
+///
+/// # Naming Pattern
+///
+/// The helper supports common checkpoint/milestone naming conventions:
+/// - **Descriptive names**: "warehouse", "port", "customs", "final"
+/// - **Sequential names**: "M1", "M2", "M3" or "checkpoint1", "checkpoint2"
+/// - **Short codes**: "pickup", "transit", "delivery"
+///
+/// All symbols must conform to Stellar Symbol constraints:
+/// - Length: 1-12 characters
+/// - Format: Alphanumeric and underscore only (A-Z, a-z, 0-9, _)
+///
+/// # Arguments
+/// * `env` - The Soroban environment
+/// * `name` - The checkpoint/milestone name (1-12 chars, alphanumeric + underscore)
+///
+/// # Returns
+/// A `Symbol` instance that can be used in milestone vectors or status updates
+///
+/// # Examples
+/// ```rust
+/// // Create milestone schedule with descriptive names
+/// let mut milestones = Vec::new(&env);
+/// milestones.push_back((checkpoint_symbol(&env, "warehouse"), 30));
+/// milestones.push_back((checkpoint_symbol(&env, "port"), 30));
+/// milestones.push_back((checkpoint_symbol(&env, "final"), 40));
+///
+/// // Create milestone schedule with sequential names
+/// let mut milestones = Vec::new(&env);
+/// milestones.push_back((checkpoint_symbol(&env, "M1"), 50));
+/// milestones.push_back((checkpoint_symbol(&env, "M2"), 50));
+///
+/// // Record a milestone
+/// client.record_milestone(
+///     &carrier,
+///     &shipment_id,
+///     &checkpoint_symbol(&env, "warehouse"),
+///     &data_hash,
+/// );
+/// ```
+///
+/// # Panics
+/// Panics if the provided name exceeds 12 characters or contains invalid
+/// characters (enforced by Stellar Symbol constraints).
+pub fn checkpoint_symbol(env: &Env, name: &str) -> Symbol {
+    Symbol::new(env, name)
+}
+
 /// Normalizes non-deterministic fields in a JSON snapshot.
 #[cfg(any(test, feature = "testutils"))]
 pub fn sanitize_json_snapshot(json: &str) -> std::string::String {
@@ -314,6 +370,45 @@ mod tests {
         let now = env.ledger().timestamp();
         let dl = future_deadline(&env, 3_600);
         assert_eq!(dl, now + 3_600);
+    }
+
+    #[test]
+    fn test_checkpoint_symbol_creates_valid_symbol() {
+        let (env, _) = setup_env();
+        let sym = checkpoint_symbol(&env, "warehouse");
+        assert_eq!(sym, Symbol::new(&env, "warehouse"));
+    }
+
+    #[test]
+    fn test_checkpoint_symbol_short_names() {
+        let (env, _) = setup_env();
+        let m1 = checkpoint_symbol(&env, "M1");
+        let m2 = checkpoint_symbol(&env, "M2");
+        assert_eq!(m1, Symbol::new(&env, "M1"));
+        assert_eq!(m2, Symbol::new(&env, "M2"));
+    }
+
+    #[test]
+    fn test_checkpoint_symbol_max_length() {
+        let (env, _) = setup_env();
+        // 12 characters is the Stellar Symbol maximum
+        let sym = checkpoint_symbol(&env, "VERYLONGNAME");
+        assert_eq!(sym, Symbol::new(&env, "VERYLONGNAME"));
+    }
+
+    #[test]
+    fn test_checkpoint_symbol_with_underscore() {
+        let (env, _) = setup_env();
+        let sym = checkpoint_symbol(&env, "port_arrival");
+        assert_eq!(sym, Symbol::new(&env, "port_arrival"));
+    }
+
+    #[test]
+    fn test_checkpoint_symbol_deterministic() {
+        let (env, _) = setup_env();
+        let sym1 = checkpoint_symbol(&env, "warehouse");
+        let sym2 = checkpoint_symbol(&env, "warehouse");
+        assert_eq!(sym1, sym2, "Same name should produce identical symbols");
     }
 
     #[test]

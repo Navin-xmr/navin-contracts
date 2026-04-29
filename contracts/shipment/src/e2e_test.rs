@@ -188,9 +188,9 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
 
     // ── Milestone schedule: must sum to 100 % ─────────────────────────────────
     let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
-    milestones.push_back((Symbol::new(&env, "warehouse"), 30_u32));
-    milestones.push_back((Symbol::new(&env, "port"), 30_u32));
-    milestones.push_back((Symbol::new(&env, "final"), 40_u32));
+    milestones.push_back((test_utils::checkpoint_symbol(&env, "warehouse"), 30_u32));
+    milestones.push_back((test_utils::checkpoint_symbol(&env, "port"), 30_u32));
+    milestones.push_back((test_utils::checkpoint_symbol(&env, "final"), 40_u32));
 
     // ── Create shipment ───────────────────────────────────────────────────────
     let deadline = env.ledger().timestamp() + 86_400;
@@ -264,7 +264,7 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
     shipment.record_milestone(
         &carrier,
         &shipment_id,
-        &Symbol::new(&env, "warehouse"),
+        &test_utils::checkpoint_symbol(&env, "warehouse"),
         &hash(&env, 0xCC),
     );
     let warehouse_topics = contract_event_topics_since(&env, &shipment.address);
@@ -298,7 +298,7 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
     shipment.record_milestone(
         &carrier,
         &shipment_id,
-        &Symbol::new(&env, "port"),
+        &test_utils::checkpoint_symbol(&env, "port"),
         &hash(&env, 0xDD),
     );
     let port_topics = contract_event_topics_since(&env, &shipment.address);
