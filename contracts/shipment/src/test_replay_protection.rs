@@ -284,6 +284,7 @@ fn test_auth_replay_force_release_salt_reuse_rejected() {
         &dummy_hash(&env),
         &Vec::new(&env),
         &deadline,
+        &None,
     );
 
     let action = crate::types::AdminAction::ForceRelease(shipment_id);

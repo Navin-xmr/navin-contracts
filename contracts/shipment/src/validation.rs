@@ -908,8 +908,7 @@ pub fn validate_dependencies(
         if dep_id == shipment_id {
             return Err(NavinError::CircularDependency);
         }
-        let _ = storage::get_shipment(env, dep_id)
-            .ok_or(NavinError::ShipmentNotFound)?;
+        let _ = storage::get_shipment(env, dep_id).ok_or(NavinError::ShipmentNotFound)?;
         if transitive_has_dependency(env, dep_id, shipment_id, 0)? {
             return Err(NavinError::CircularDependency);
         }

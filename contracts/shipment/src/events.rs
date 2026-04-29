@@ -1547,7 +1547,7 @@ pub fn emit_shipment_blocked(
     env.events().publish(
         (crate::event_topics::SHIPMENT_BLOCKED,),
         (shipment_id, caller.clone(), unmet_dependencies),
-          );
+    );
 }
 
 /// Emits a `platform_fee_collected` event when a fee is deducted from a deposit.

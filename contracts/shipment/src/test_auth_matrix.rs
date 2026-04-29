@@ -57,6 +57,9 @@ struct MatrixMockToken;
 #[contractimpl]
 impl MatrixMockToken {
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+    pub fn decimals(_env: Env) -> u32 {
+        7
+    }
 }
 
 // ── Shared test context ───────────────────────────────────────────────────────
@@ -125,6 +128,7 @@ fn create_shipment(ctx: &Ctx) -> u64 {
         &dummy_hash(&ctx.env),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     )
 }
 
@@ -630,6 +634,7 @@ fn test_auth_company_create_shipment_allow() {
         &dummy_hash(&ctx.env),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     );
     assert!(result.is_ok());
 }
@@ -647,6 +652,7 @@ fn test_auth_admin_create_shipment_allow() {
         &seeded_hash(&ctx.env, 2),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     );
     assert!(result.is_ok());
 }
@@ -663,6 +669,7 @@ fn test_auth_carrier_create_shipment_deny() {
         &seeded_hash(&ctx.env, 3),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     ));
 }
 
@@ -678,6 +685,7 @@ fn test_auth_guardian_create_shipment_deny() {
         &seeded_hash(&ctx.env, 4),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     ));
 }
 
@@ -693,6 +701,7 @@ fn test_auth_stranger_create_shipment_deny() {
         &seeded_hash(&ctx.env, 5),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     ));
 }
 
@@ -963,6 +972,7 @@ fn test_auth_carrier_record_milestone_allow() {
         &dummy_hash(&ctx.env),
         &milestones,
         &deadline,
+        &None,
     );
     ctx.client.update_status(
         &ctx.carrier,
@@ -1343,6 +1353,7 @@ fn test_auth_cross_operator_cannot_create_shipment() {
         &seeded_hash(&ctx.env, 20),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     ));
 }
 

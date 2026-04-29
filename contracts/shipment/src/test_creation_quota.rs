@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn set_creation_quota_rejects_non_admin() {
-        let (env, client, _admin, company, _carrier) = setup();
+        let (_env, client, _admin, company, _carrier) = setup();
 
         let result = client.try_set_creation_quota(&company, &5, &3600);
         assert_eq!(result, Err(Ok(NavinError::Unauthorized)));
@@ -221,8 +221,8 @@ mod tests {
                 data_hash: make_hash(&env, seed),
                 payment_milestones: soroban_sdk::Vec::new(&env),
                 deadline,
-            depends_on: None,
-        });
+                depends_on: None,
+            });
         }
 
         // Batch of 3 exceeds quota of 2.

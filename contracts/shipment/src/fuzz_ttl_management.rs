@@ -84,7 +84,15 @@ fn create_shipment(
     let receiver = Address::generate(env);
     let data_hash = hash_from_seed(env, seed);
     let deadline = env.ledger().timestamp() + 86_400 * 30; // 30 days
-    client.create_shipment(company, &receiver, carrier, &data_hash, &Vec::new(env), &deadline, &None)
+    client.create_shipment(
+        company,
+        &receiver,
+        carrier,
+        &data_hash,
+        &Vec::new(env),
+        &deadline,
+        &None,
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
