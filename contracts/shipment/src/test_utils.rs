@@ -234,6 +234,29 @@ pub fn checkpoint_symbol(env: &Env, name: &str) -> Symbol {
 }
 
 /// Normalizes non-deterministic fields in a JSON snapshot.
+///
+/// # Normalized Fields
+///
+/// This sanitizer removes volatility from snapshot tests by normalizing
+/// ledger-dependent and non-deterministic fields that would otherwise create
+/// noisy diffs on every test run.
+///
+/// ## Ledger State Fields
+/// - `generators.address` → `0` (test address counter)
+/// - `generators.nonce` → `0` (test nonce counter)
+/// - `ledger.timestamp` → `86400` (canonical 1-day offset)
+/// - `ledger.sequence_number` → `1` (canonical sequence)
+/// - `ledger_key_nonce.nonce` → `0` (storage nonces)
+///
+/// ## Event Fields
+/// - `event.contract_id` → `"0000...0000"` (32-byte zero hash)
+/// - Event idempotency keys (last `bytes` in event data) → `"0000...0000"`
+///
+/// ## Design Rationale
+///
+/// True event changes (topics, data structure, ordering) still produce diffs,
+/// while ledger-specific noise is eliminated. This keeps snapshot tests
+/// readable and focused on contract behavior rather than test harness state.
 #[cfg(any(test, feature = "testutils"))]
 pub fn sanitize_json_snapshot(json: &str) -> std::string::String {
     use serde_json::Value;
@@ -271,6 +294,48 @@ pub fn sanitize_json_snapshot(json: &str) -> std::string::String {
                     }
                     if ledger.contains_key("sequence_number") {
                         ledger.insert("sequence_number".to_string(), Value::from(1));
+                    }
+                }
+
+                // Sanitize event contract_id (generated contract addresses)
+                if map.contains_key("event") {
+                    if let Some(event_obj) = map.get_mut("event").and_then(|e| e.as_object_mut()) {
+                        if event_obj.contains_key("contract_id") {
+                            event_obj.insert(
+                                "contract_id".to_string(),
+                                Value::from("0000000000000000000000000000000000000000000000000000000000000000"),
+                            );
+                        }
+                    }
+                }
+
+                // Sanitize event idempotency keys
+                // Events emit idempotency keys as the last element in their data vec
+                // These are SHA-256 hashes that include ledger-dependent values
+                if map.contains_key("body") {
+                    if let Some(body) = map.get_mut("body").and_then(|b| b.as_object_mut()) {
+                        if let Some(v0) = body.get_mut("v0").and_then(|v| v.as_object_mut()) {
+                            if let Some(data) = v0.get_mut("data").and_then(|d| d.as_object_mut()) {
+                                if let Some(vec) = data.get_mut("vec").and_then(|v| v.as_array_mut()) {
+                                    // Check if the last element is a bytes field (potential idempotency key)
+                                    if let Some(last) = vec.last_mut() {
+                                        if let Some(obj) = last.as_object_mut() {
+                                            if obj.contains_key("bytes") {
+                                                // Normalize to zero hash (64 hex chars = 32 bytes)
+                                                if let Some(bytes_val) = obj.get("bytes").and_then(|b| b.as_str()) {
+                                                    if bytes_val.len() == 64 {
+                                                        obj.insert(
+                                                            "bytes".to_string(),
+                                                            Value::from("0000000000000000000000000000000000000000000000000000000000000000"),
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -428,4 +493,143 @@ mod tests {
         assert!(sanitized.contains(r#""address": 0"#));
         assert!(sanitized.contains(r#""nonce": 0"#));
     }
+
+    #[test]
+    fn test_sanitize_json_snapshot_normalizes_event_contract_ids() {
+        let json = r#"{
+            "events": [
+                {
+                    "event": {
+                        "contract_id": "0000000000000000000000000000000000000000000000000000000000000006",
+                        "type_": "contract"
+                    }
+                }
+            ]
+        }"#;
+        let sanitized = sanitize_json_snapshot(json);
+        assert!(
+            sanitized.contains(r#""contract_id": "0000000000000000000000000000000000000000000000000000000000000000""#),
+            "Event contract_id should be normalized to zero hash"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_json_snapshot_normalizes_event_idempotency_keys() {
+        let json = r#"{
+            "events": [
+                {
+                    "event": {
+                        "body": {
+                            "v0": {
+                                "topics": [{"symbol": "shipment_created"}],
+                                "data": {
+                                    "vec": [
+                                        {"u64": 1},
+                                        {"address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"},
+                                        {"u32": 2},
+                                        {"u32": 1},
+                                        {"bytes": "4d665e5885d370938b6ef4915d3e18cce2280979a315d468afc7bef8d99362b4"}
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        }"#;
+        let sanitized = sanitize_json_snapshot(json);
+        assert!(
+            sanitized.contains(r#""bytes": "0000000000000000000000000000000000000000000000000000000000000000""#),
+            "Event idempotency key (last bytes field) should be normalized to zero hash"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_json_snapshot_preserves_non_idempotency_bytes() {
+        let json = r#"{
+            "events": [
+                {
+                    "event": {
+                        "body": {
+                            "v0": {
+                                "topics": [{"symbol": "shipment_created"}],
+                                "data": {
+                                    "vec": [
+                                        {"bytes": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+                                        {"u64": 1},
+                                        {"bytes": "4d665e5885d370938b6ef4915d3e18cce2280979a315d468afc7bef8d99362b4"}
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        }"#;
+        let sanitized = sanitize_json_snapshot(json);
+        // First bytes field (data hash) should be preserved
+        assert!(
+            sanitized.contains(r#""bytes": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""#),
+            "Non-idempotency bytes fields should be preserved"
+        );
+        // Last bytes field (idempotency key) should be normalized
+        assert!(
+            sanitized.contains(r#""bytes": "0000000000000000000000000000000000000000000000000000000000000000""#),
+            "Last bytes field (idempotency key) should be normalized"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_json_snapshot_handles_multiple_events() {
+        let json = r#"{
+            "events": [
+                {
+                    "event": {
+                        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+                        "body": {
+                            "v0": {
+                                "data": {
+                                    "vec": [
+                                        {"u64": 1},
+                                        {"bytes": "1111111111111111111111111111111111111111111111111111111111111111"}
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "event": {
+                        "contract_id": "0000000000000000000000000000000000000000000000000000000000000002",
+                        "body": {
+                            "v0": {
+                                "data": {
+                                    "vec": [
+                                        {"u64": 2},
+                                        {"bytes": "2222222222222222222222222222222222222222222222222222222222222222"}
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        }"#;
+        let sanitized = sanitize_json_snapshot(json);
+        // All contract_ids should be normalized
+        let zero_hash = r#""contract_id": "0000000000000000000000000000000000000000000000000000000000000000""#;
+        assert_eq!(
+            sanitized.matches(zero_hash).count(),
+            2,
+            "All event contract_ids should be normalized"
+        );
+        // All idempotency keys should be normalized
+        let zero_bytes = r#""bytes": "0000000000000000000000000000000000000000000000000000000000000000""#;
+        assert_eq!(
+            sanitized.matches(zero_bytes).count(),
+            2,
+            "All event idempotency keys should be normalized"
+        );
+    }
 }
+

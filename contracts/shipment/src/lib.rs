@@ -74,6 +74,8 @@ mod test_require_auth_for_args;
 #[cfg(test)]
 mod test_signature_argument_ordering;
 #[cfg(test)]
+mod test_snapshot_helpers;
+#[cfg(test)]
 mod test_suspension;
 #[cfg(test)]
 mod test_utils;
