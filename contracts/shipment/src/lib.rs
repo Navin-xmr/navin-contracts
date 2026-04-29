@@ -10,6 +10,7 @@ mod circuit_breaker;
 mod config;
 pub mod consistency;
 pub mod diagnostics;
+#[cfg(test)]
 mod e2e_test;
 pub mod error_map;
 mod errors;
