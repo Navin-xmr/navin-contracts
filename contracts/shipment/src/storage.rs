@@ -658,6 +658,50 @@ pub fn remove_escrow(env: &Env, shipment_id: u64) {
         .remove(&DataKey::Escrow(shipment_id));
 }
 
+/// Check if an address is an observer for a specific shipment.
+pub fn is_shipment_observer(env: &Env, shipment_id: u64, address: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ShipmentObserver(shipment_id, address.clone()))
+        .unwrap_or(false)
+}
+
+/// Assign observer role to an address for a specific shipment.
+pub fn set_shipment_observer(env: &Env, shipment_id: u64, observer: &Address) {
+    env.storage().persistent().set(
+        &DataKey::ShipmentObserver(shipment_id, observer.clone()),
+        &true,
+    );
+    let count = get_observer_count(env, shipment_id);
+    set_observer_count(env, shipment_id, count + 1);
+}
+
+/// Revoke observer role from an address for a specific shipment.
+pub fn remove_shipment_observer(env: &Env, shipment_id: u64, observer: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::ShipmentObserver(shipment_id, observer.clone()));
+    let count = get_observer_count(env, shipment_id);
+    if count > 0 {
+        set_observer_count(env, shipment_id, count - 1);
+    }
+}
+
+/// Get the count of observers for a shipment.
+pub fn get_observer_count(env: &Env, shipment_id: u64) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ObserverCount(shipment_id))
+        .unwrap_or(0)
+}
+
+/// Set the count of observers for a shipment.
+fn set_observer_count(env: &Env, shipment_id: u64, count: u32) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ObserverCount(shipment_id), &count);
+}
+
 /// Backwards-compatible name used by tests: set escrow balance.
 ///
 /// # Arguments
@@ -1760,6 +1804,23 @@ pub fn set_settlement(env: &Env, settlement: &crate::types::SettlementRecord) {
     env.storage()
         .persistent()
         .set(&DataKey::Settlement(settlement.settlement_id), settlement);
+}
+
+/// Get the partial refund record for a shipment.
+pub fn get_partial_refund_record(
+    env: &Env,
+    shipment_id: u64,
+) -> Option<crate::types::PartialRefundRecord> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::PartialRefundRecord(shipment_id))
+}
+
+/// Set the partial refund record for a shipment.
+pub fn set_partial_refund_record(env: &Env, record: &crate::types::PartialRefundRecord) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::PartialRefundRecord(record.shipment_id), record);
 }
 
 /// Get the active settlement ID for a shipment.

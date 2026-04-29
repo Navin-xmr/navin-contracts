@@ -132,6 +132,12 @@ pub enum DataKey {
     ShipmentDeps(u64),
     /// Shipments depending on this shipment — shipment_id -> Vec<u64> of dependent shipment IDs.
     ShipmentDependents(u64),
+    /// Observer assignment for a specific shipment (shipment_id, observer_address) -> bool.
+    ShipmentObserver(u64, Address),
+    /// Count of observers for a specific shipment.
+    ObserverCount(u64),
+    /// Partial refund record for a shipment.
+    PartialRefundRecord(u64),
 }
 
 /// Structured reason codes for escrow freeze events.
@@ -178,6 +184,8 @@ pub enum Role {
     Guardian,
     /// An operator that can perform operational tasks.
     Operator,
+    /// An observer that can read shipment data without modification rights.
+    Observer,
     /// No role assigned.
     Unassigned,
 }
@@ -226,6 +234,8 @@ pub enum ShipmentStatus {
     Disputed,
     /// Shipment has been cancelled.
     Cancelled,
+    /// Escrow has been partially refunded.
+    PartiallyRefunded,
 }
 
 impl ShipmentStatus {
@@ -480,6 +490,22 @@ pub struct SettlementRecord {
     pub completed_at: Option<u64>,
     /// Optional error message for failed settlements.
     pub error_code: Option<u32>,
+}
+
+/// Record of a partial refund operation.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PartialRefundRecord {
+    /// The shipment ID this refund belongs to.
+    pub shipment_id: u64,
+    /// Amount refunded to the sender.
+    pub sender_refund: i128,
+    /// Amount paid to the carrier as compensation.
+    pub carrier_compensation: i128,
+    /// The percentage (1-100) of original escrow refunded to sender.
+    pub refund_percentage: u32,
+    /// Ledger timestamp when the partial refund was executed.
+    pub executed_at: u64,
 }
 
 /// Geofence event types for tracking shipment location events.

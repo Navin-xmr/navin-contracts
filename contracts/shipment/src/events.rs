@@ -410,6 +410,98 @@ pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i
     crate::storage::increment_event_count(env, shipment_id);
 }
 
+/// Emits an `observer_assigned` event when an observer role is assigned to an address.
+pub fn emit_observer_assigned(
+    env: &Env,
+    shipment_id: u64,
+    observer: &Address,
+    assigned_by: &Address,
+) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        crate::event_topics::HASH_DOMAIN_RBAC,
+        shipment_id,
+        crate::event_topics::OBSERVER_ASSIGNED,
+        event_counter,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::OBSERVER_ASSIGNED),),
+        (
+            shipment_id,
+            observer.clone(),
+            assigned_by.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
+
+/// Emits an `observer_revoked` event when an observer role is revoked from an address.
+pub fn emit_observer_revoked(
+    env: &Env,
+    shipment_id: u64,
+    observer: &Address,
+    revoked_by: &Address,
+) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        crate::event_topics::HASH_DOMAIN_RBAC,
+        shipment_id,
+        crate::event_topics::OBSERVER_REVOKED,
+        event_counter,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::OBSERVER_REVOKED),),
+        (
+            shipment_id,
+            observer.clone(),
+            revoked_by.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
+
+/// Emits an `escrow_partially_refunded` event when a partial refund is executed.
+pub fn emit_escrow_partially_refunded(
+    env: &Env,
+    shipment_id: u64,
+    sender_refund: i128,
+    carrier_compensation: i128,
+    refund_percentage: u32,
+) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        crate::event_topics::HASH_DOMAIN_ESCROW,
+        shipment_id,
+        crate::event_topics::ESCROW_PARTIALLY_REFUNDED,
+        event_counter,
+    );
+    env.events().publish(
+        (Symbol::new(
+            env,
+            crate::event_topics::ESCROW_PARTIALLY_REFUNDED,
+        ),),
+        (
+            shipment_id,
+            sender_refund,
+            carrier_compensation,
+            refund_percentage,
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
+
 /// Emits a `milestone_payment_released` event when a partial escrow release occurs.
 pub fn emit_milestone_payment_released(
     env: &Env,

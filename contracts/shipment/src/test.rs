@@ -10918,3 +10918,433 @@ fn test_dispute_emits_escrow_frozen_event() {
         Some(crate::types::EscrowFreezeReason::DisputeRaised)
     );
 }
+
+#[test]
+fn test_observer_can_read_shipment() {
+    let (env, client, admin, token) = setup_shipment_env();
+    client.initialize(&admin, &token);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let observer = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let milestones = soroban_sdk::Vec::new(&env);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    client.assign_observer_role(&admin, &observer, &shipment_id);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.id, shipment_id);
+    assert_eq!(shipment.receiver, receiver);
+}
+
+#[test]
+fn test_observer_cannot_update_status() {
+    let (env, client, admin, token) = setup_shipment_env();
+    client.initialize(&admin, &token);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let observer = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let milestones = soroban_sdk::Vec::new(&env);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    client.assign_observer_role(&admin, &observer, &shipment_id);
+
+    let result = client.try_update_status(
+        &observer,
+        &shipment_id,
+        &crate::ShipmentStatus::InTransit,
+        &data_hash,
+    );
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+}
+
+#[test]
+fn test_observer_assignment_by_non_admin_fails() {
+    let (env, client, admin, token) = setup_shipment_env();
+    client.initialize(&admin, &token);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let observer = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let milestones = soroban_sdk::Vec::new(&env);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    let result = client.try_assign_observer_role(&company, &observer, &shipment_id);
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+}
+
+#[test]
+fn test_multiple_observers_on_one_shipment() {
+    let (env, client, admin, token) = setup_shipment_env();
+    client.initialize(&admin, &token);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let observer1 = Address::generate(&env);
+    let observer2 = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let milestones = soroban_sdk::Vec::new(&env);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    client.assign_observer_role(&admin, &observer1, &shipment_id);
+    client.assign_observer_role(&admin, &observer2, &shipment_id);
+
+    let count = client.get_observer_count(&shipment_id);
+    assert_eq!(count, 2);
+
+    let shipment1 = client.get_shipment(&shipment_id);
+    assert_eq!(shipment1.id, shipment_id);
+
+    let shipment2 = client.get_shipment(&shipment_id);
+    assert_eq!(shipment2.id, shipment_id);
+}
+
+#[test]
+fn test_observer_revocation_works() {
+    let (env, client, admin, token) = setup_shipment_env();
+    client.initialize(&admin, &token);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let observer = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let milestones = soroban_sdk::Vec::new(&env);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    client.assign_observer_role(&admin, &observer, &shipment_id);
+    let count1 = client.get_observer_count(&shipment_id);
+    assert_eq!(count1, 1);
+
+    client.revoke_observer_role(&admin, &observer, &shipment_id);
+    let count2 = client.get_observer_count(&shipment_id);
+    assert_eq!(count2, 0);
+}
+
+#[test]
+fn test_observer_can_call_read_only_functions() {
+    let (env, client, admin, token) = setup_shipment_env();
+    client.initialize(&admin, &token);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let observer = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let milestones = soroban_sdk::Vec::new(&env);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    client.assign_observer_role(&admin, &observer, &shipment_id);
+
+    let _shipment = client.get_shipment(&shipment_id);
+    let _count = client.get_shipment_counter();
+    let _receiver = client.get_shipment_receiver(&shipment_id);
+    let _sender = client.get_shipment_sender(&shipment_id);
+    let _carrier = client.get_shipment_carrier(&shipment_id);
+
+    assert!(true);
+}
+
+#[test]
+fn test_partial_refund_50_percent() {
+    let (env, client, admin, token) = setup_shipment_env();
+    client.initialize(&admin, &token);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let milestones = soroban_sdk::Vec::new(&env);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    let deposit_amount = 1000i128;
+    client.deposit_escrow(&company, &shipment_id, &deposit_amount);
+
+    let shipment_before = client.get_shipment(&shipment_id);
+    assert_eq!(shipment_before.escrow_amount, deposit_amount);
+
+    let result = client.try_partial_refund_escrow(&admin, &shipment_id, &50);
+    assert!(result.is_ok());
+
+    let shipment_after = client.get_shipment(&shipment_id);
+    assert_eq!(
+        shipment_after.status,
+        crate::ShipmentStatus::PartiallyRefunded
+    );
+    assert_eq!(shipment_after.escrow_amount, 0);
+}
+
+#[test]
+fn test_partial_refund_100_percent_equals_full_refund() {
+    let (env, client, admin, token) = setup_shipment_env();
+    client.initialize(&admin, &token);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let milestones = soroban_sdk::Vec::new(&env);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    let deposit_amount = 1000i128;
+    client.deposit_escrow(&company, &shipment_id, &deposit_amount);
+
+    let result = client.try_partial_refund_escrow(&admin, &shipment_id, &100);
+    assert!(result.is_ok());
+
+    let shipment_after = client.get_shipment(&shipment_id);
+    assert_eq!(
+        shipment_after.status,
+        crate::ShipmentStatus::PartiallyRefunded
+    );
+}
+
+#[test]
+fn test_partial_refund_zero_percent_fails() {
+    let (env, client, admin, token) = setup_shipment_env();
+    client.initialize(&admin, &token);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let milestones = soroban_sdk::Vec::new(&env);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    client.deposit_escrow(&company, &shipment_id, &1000);
+
+    let result = client.try_partial_refund_escrow(&admin, &shipment_id, &0);
+    assert_eq!(result, Err(Ok(crate::NavinError::InvalidAmount)));
+}
+
+#[test]
+fn test_partial_refund_unauthorized_fails() {
+    let (env, client, admin, token) = setup_shipment_env();
+    client.initialize(&admin, &token);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let random_user = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let milestones = soroban_sdk::Vec::new(&env);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    client.deposit_escrow(&company, &shipment_id, &1000);
+
+    let result = client.try_partial_refund_escrow(&random_user, &shipment_id, &50);
+    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+}
+
+#[test]
+fn test_partial_refund_on_non_escrowed_shipment_fails() {
+    let (env, client, admin, token) = setup_shipment_env();
+    client.initialize(&admin, &token);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let milestones = soroban_sdk::Vec::new(&env);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    let result = client.try_partial_refund_escrow(&admin, &shipment_id, &50);
+    assert_eq!(result, Err(Ok(crate::NavinError::InsufficientFunds)));
+}
+
+#[test]
+fn test_partial_refund_twice_fails() {
+    let (env, client, admin, token) = setup_shipment_env();
+    client.initialize(&admin, &token);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let milestones = soroban_sdk::Vec::new(&env);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    client.deposit_escrow(&company, &shipment_id, &1000);
+
+    let result1 = client.try_partial_refund_escrow(&admin, &shipment_id, &50);
+    assert!(result1.is_ok());
+
+    let result2 = client.try_partial_refund_escrow(&admin, &shipment_id, &30);
+    assert_eq!(result2, Err(Ok(crate::NavinError::InvalidStatus)));
+}

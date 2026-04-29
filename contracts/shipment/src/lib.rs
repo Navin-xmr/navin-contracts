@@ -532,6 +532,7 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinErr
             }
         }
         Role::Unassigned => Err(NavinError::Unauthorized),
+        Role::Observer => Err(NavinError::Unauthorized),
     }
 }
 
@@ -1626,6 +1627,7 @@ impl NavinShipment {
             Role::Guardian => storage::revoke_role(&env, &target, &Role::Guardian),
             Role::Operator => storage::revoke_role(&env, &target, &Role::Operator),
             Role::Unassigned => {}
+            Role::Observer => {}
         }
 
         events::emit_role_revoked(&env, &admin, &target, &current_role);
@@ -4222,6 +4224,213 @@ impl NavinShipment {
 
             Ok(())
         })
+    }
+
+    /// Assign an observer role to an address for a specific shipment.
+    /// Observers can read shipment data but cannot modify any state.
+    /// Only admin can assign observers.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Admin address (must be the contract admin).
+    /// * `observer` - Address to assign observer role to.
+    /// * `shipment_id` - ID of the shipment.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok on successful assignment.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not admin.
+    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
+    pub fn assign_observer_role(
+        env: Env,
+        admin: Address,
+        observer: Address,
+        shipment_id: u64,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+
+        storage::set_shipment_observer(&env, shipment_id, &observer);
+        events::emit_observer_assigned(&env, shipment_id, &observer, &admin);
+
+        Ok(())
+    }
+
+    /// Revoke observer role from an address for a specific shipment.
+    /// Only admin can revoke observers.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Admin address (must be the contract admin).
+    /// * `observer` - Address to revoke observer role from.
+    /// * `shipment_id` - ID of the shipment.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok on successful revocation.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not admin.
+    pub fn revoke_observer_role(
+        env: Env,
+        admin: Address,
+        observer: Address,
+        shipment_id: u64,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::remove_shipment_observer(&env, shipment_id, &observer);
+        events::emit_observer_revoked(&env, shipment_id, &observer, &admin);
+
+        Ok(())
+    }
+
+    /// Get the list of observers for a specific shipment.
+    /// This is a read-only query that returns the count of observers.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - Number of observers for the shipment.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn get_observer_count(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+        Ok(storage::get_observer_count(&env, shipment_id))
+    }
+
+    /// Execute a partial refund of escrow funds.
+    /// Refunds a percentage of the escrow to the sender and pays the remainder to the carrier.
+    /// Only admin can execute partial refunds (e.g., after dispute resolution).
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Admin address (must be the contract admin).
+    /// * `shipment_id` - ID of the shipment.
+    /// * `refund_percentage` - Percentage (1-100) of escrow to refund to sender.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok on successful partial refund.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not admin.
+    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
+    /// * `NavinError::InvalidAmount` - If refund_percentage is not 1-100.
+    /// * `NavinError::InvalidStatus` - If shipment is already in a terminal state.
+    /// * `NavinError::InsufficientFunds` - If no escrow to refund.
+    pub fn partial_refund_escrow(
+        env: Env,
+        admin: Address,
+        shipment_id: u64,
+        refund_percentage: u32,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        if refund_percentage == 0 || refund_percentage > 100 {
+            return Err(NavinError::InvalidAmount);
+        }
+
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        require_not_finalized(&shipment)?;
+
+        if shipment.status == ShipmentStatus::Delivered
+            || shipment.status == ShipmentStatus::Cancelled
+            || shipment.status == ShipmentStatus::PartiallyRefunded
+        {
+            return Err(NavinError::InvalidStatus);
+        }
+
+        let escrow_balance = shipment.escrow_amount;
+        if escrow_balance == 0 {
+            return Err(NavinError::InsufficientFunds);
+        }
+
+        if storage::get_partial_refund_record(&env, shipment_id).is_some() {
+            return Err(NavinError::InvalidStatus);
+        }
+
+        let sender_refund = checked_mul_div_i128(escrow_balance, refund_percentage as i128, 100)?;
+        let carrier_compensation = escrow_balance - sender_refund;
+
+        let token_contract = storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
+        let contract_address = env.current_contract_address();
+
+        invoke_token_transfer(
+            &env,
+            &token_contract,
+            &contract_address,
+            &shipment.sender,
+            sender_refund,
+        )?;
+
+        invoke_token_transfer(
+            &env,
+            &token_contract,
+            &contract_address,
+            &shipment.carrier,
+            carrier_compensation,
+        )?;
+
+        shipment.escrow_amount = 0;
+        let old_status = shipment.status.clone();
+        shipment.status = ShipmentStatus::PartiallyRefunded;
+        shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
+
+        finalize_if_settled(&env, &mut shipment);
+        persist_shipment(&env, &shipment)?;
+        storage::decrement_status_count(&env, &old_status);
+        storage::increment_status_count(&env, &ShipmentStatus::PartiallyRefunded);
+
+        let record = PartialRefundRecord {
+            shipment_id,
+            sender_refund,
+            carrier_compensation,
+            refund_percentage,
+            executed_at: env.ledger().timestamp(),
+        };
+        storage::set_partial_refund_record(&env, &record);
+
+        extend_shipment_ttl(&env, shipment_id);
+
+        events::emit_escrow_partially_refunded(
+            &env,
+            shipment_id,
+            sender_refund,
+            carrier_compensation,
+            refund_percentage,
+        );
+
+        Ok(())
     }
 
     /// Raise a dispute for a shipment.

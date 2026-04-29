@@ -148,6 +148,19 @@ pub const NOTE_APPENDED: &str = "note_appended";
 /// Emitted when dispute evidence is appended (append-only).
 pub const EVIDENCE_ADDED: &str = "evidence_added";
 
+// ── Observer role ───────────────────────────────────────────────────────────────
+
+/// Emitted when an observer role is assigned to an address for a shipment.
+pub const OBSERVER_ASSIGNED: &str = "observer_assigned";
+
+/// Emitted when an observer role is revoked from an address for a shipment.
+pub const OBSERVER_REVOKED: &str = "observer_revoked";
+
+// ── Partial refund ──────────────────────────────────────────────────────────────
+
+/// Emitted when a partial refund is executed on a shipment escrow.
+pub const ESCROW_PARTIALLY_REFUNDED: &str = "escrow_partially_refunded";
+
 // ── Hash domain-separation prefixes by event family ──────────────────────────
 //
 // These `u8` tags are prepended to every idempotency-key hash input to
