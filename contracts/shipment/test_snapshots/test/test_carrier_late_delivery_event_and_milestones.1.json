@@ -98,7 +98,8 @@
                 },
                 {
                   "u64": 90000
-                }
+                },
+                "void"
               ]
             }
           },
@@ -533,7 +534,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "u32": 7
+                  "u32": 8
                 }
               }
             },
@@ -669,6 +670,51 @@
                 "durability": "persistent",
                 "val": {
                   "u64": 86400
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4096
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "MilestoneEventCount"
+                },
+                {
+                  "u64": 1
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "MilestoneEventCount"
+                    },
+                    {
+                      "u64": 1
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u32": 1
                 }
               }
             },
@@ -1153,6 +1199,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "depends_on"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "escrow_amount"
                       },
                       "val": {
@@ -1191,6 +1243,18 @@
                         "symbol": "metadata"
                       },
                       "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestones_completed"
+                      },
+                      "val": {
+                        "vec": [
+                          {
+                            "symbol": "warehouse"
+                          }
+                        ]
+                      }
                     },
                     {
                       "key": {
@@ -1407,7 +1471,7 @@
                           ]
                         },
                         "val": {
-                          "bytes": "6a0efca8bd21d50a73455494417546197795ee66234c5b6b991bba0d714b17e4"
+                          "bytes": "50ffe82c4517a915e4ee4ed163e55afdf56d3d2e401c16133fd069446806ab9d"
                         }
                       },
                       {
@@ -1438,6 +1502,22 @@
                             },
                             {
                               "key": {
+                                "symbol": "creation_quota_max"
+                              },
+                              "val": {
+                                "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "creation_quota_window_seconds"
+                              },
+                              "val": {
+                                "u64": 3600
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "deadline_grace_seconds"
                               },
                               "val": {
@@ -1462,10 +1542,42 @@
                             },
                             {
                               "key": {
+                                "symbol": "max_breaches_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_evidence_per_dispute"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "max_metadata_entries"
                               },
                               "val": {
                                 "u32": 5
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_milestones_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_notes_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
                               }
                             },
                             {
@@ -1517,6 +1629,18 @@
                               }
                             }
                           ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ReentrancyLock"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
                         }
                       },
                       {
@@ -2003,10 +2127,10 @@
                   "u32": 2
                 },
                 {
-                  "u32": 6
+                  "u32": 7
                 },
                 {
-                  "bytes": "f7edfd199e497fb0fdd7edadedf9a778f0992e3c765579df35113dd41193f67a"
+                  "bytes": "5f57c3fcb5bc1afee4049651d9ecf93a3226a7766706c332a88e5caae21cdfed"
                 }
               ]
             }
@@ -2072,10 +2196,10 @@
                   "u32": 2
                 },
                 {
-                  "u32": 7
+                  "u32": 8
                 },
                 {
-                  "bytes": "f499c7bcf20ea16d0db1e5f9a8db4a97efac88910f23bcf388ac5e8b0d8dc580"
+                  "bytes": "5f98256f2e7c3ed1e02ff1d490accc3f51801c30bf1b1f1ca727d15c4db9e6af"
                 }
               ]
             }

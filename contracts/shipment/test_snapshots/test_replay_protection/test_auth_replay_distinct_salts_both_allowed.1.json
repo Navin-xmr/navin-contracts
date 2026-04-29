@@ -494,6 +494,146 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "ProposalDigest"
+                },
+                {
+                  "u64": 1
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "ProposalDigest"
+                    },
+                    {
+                      "u64": 1
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "computed_at"
+                      },
+                      "val": {
+                        "u64": 86400
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "digest"
+                      },
+                      "val": {
+                        "bytes": "4daa89b1ed1c91cf2709306d3a1036b3ce5e58385099eb7ef5807bdc9d8a70c9"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "proposal_id"
+                      },
+                      "val": {
+                        "u64": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4096
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "ProposalDigest"
+                },
+                {
+                  "u64": 2
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "ProposalDigest"
+                    },
+                    {
+                      "u64": 2
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "computed_at"
+                      },
+                      "val": {
+                        "u64": 86400
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "digest"
+                      },
+                      "val": {
+                        "bytes": "972209d7d6c01404c2a07e00353fab79785036dcd9ba8967a929d67b608d718c"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "proposal_id"
+                      },
+                      "val": {
+                        "u64": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4096
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
                   "symbol": "UsedSalt"
                 },
                 {
@@ -640,7 +780,7 @@
                           ]
                         },
                         "val": {
-                          "bytes": "6a0efca8bd21d50a73455494417546197795ee66234c5b6b991bba0d714b17e4"
+                          "bytes": "50ffe82c4517a915e4ee4ed163e55afdf56d3d2e401c16133fd069446806ab9d"
                         }
                       },
                       {
@@ -671,6 +811,22 @@
                             },
                             {
                               "key": {
+                                "symbol": "creation_quota_max"
+                              },
+                              "val": {
+                                "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "creation_quota_window_seconds"
+                              },
+                              "val": {
+                                "u64": 3600
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "deadline_grace_seconds"
                               },
                               "val": {
@@ -695,10 +851,42 @@
                             },
                             {
                               "key": {
+                                "symbol": "max_breaches_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_evidence_per_dispute"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "max_metadata_entries"
                               },
                               "val": {
                                 "u32": 5
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_milestones_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_notes_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
                               }
                             },
                             {
@@ -928,6 +1116,33 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                     }
                   ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000003",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "proposal_digest"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "u64": 2
+                },
+                {
+                  "bytes": "972209d7d6c01404c2a07e00353fab79785036dcd9ba8967a929d67b608d718c"
                 }
               ]
             }

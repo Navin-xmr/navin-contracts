@@ -171,7 +171,7 @@ pub fn advance_past_multisig_expiry(env: &Env) {
 /// ```text
 /// let deadline = test_utils::future_deadline(&env, 3_600); // 1 h from now
 /// let id = client.create_shipment(&company, &receiver, &carrier,
-///                                  &hash, &milestones, &deadline);
+///                                  &hash, &milestones, &deadline, &None);
 /// ```
 pub fn future_deadline(env: &Env, secs_from_now: u64) -> u64 {
     env.ledger().timestamp() + secs_from_now

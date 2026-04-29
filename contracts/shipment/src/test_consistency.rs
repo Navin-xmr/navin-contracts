@@ -18,6 +18,10 @@ struct MockTokenConsistency;
 
 #[contractimpl]
 impl MockTokenConsistency {
+    pub fn decimals(_env: soroban_sdk::Env) -> u32 {
+        7
+    }
+
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
     pub fn mint(_env: Env, _admin: Address, _to: Address, _amount: i128) {}
 }
@@ -51,6 +55,7 @@ fn create_one(
         &dummy_hash(env, seed),
         &Vec::new(env),
         &deadline,
+        &None,
     )
 }
 
@@ -94,6 +99,7 @@ fn test_healthy_batch_has_no_violations() {
             data_hash: dummy_hash(&env, seed),
             payment_milestones: Vec::new(&env),
             deadline,
+            depends_on: None,
         });
     }
     let ids = client.create_shipments_batch(&company, &inputs);

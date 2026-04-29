@@ -18,8 +18,11 @@
 //! Each event uses a single descriptive `Symbol` as its topic so that
 //! consumers can filter by topic when subscribing to contract events.
 
-use crate::types::{BreachType, MigrationReport, Role, RoleChangeAction, Severity, ShipmentStatus};
-use soroban_sdk::{xdr::ToXdr, Address, BytesN, Env, Symbol};
+use crate::types::{
+    BreachType, EscrowFreezeReason, MigrationReport, Role, RoleChangeAction, Severity,
+    ShipmentStatus,
+};
+use soroban_sdk::{Address, Bytes, BytesN, Env, Symbol};
 
 pub const EVENT_SCHEMA_VERSION: u32 = 2;
 
@@ -27,22 +30,43 @@ fn next_event_counter(env: &Env, shipment_id: u64) -> u32 {
     crate::storage::get_event_count(env, shipment_id).saturating_add(1)
 }
 
-fn generate_idempotency_key(
+fn append_len_prefixed_bytes(env: &Env, payload: &mut Bytes, data: &[u8]) {
+    payload.append(&Bytes::from_array(env, &(data.len() as u32).to_be_bytes()));
+    payload.append(&Bytes::from_slice(env, data));
+}
+
+/// Compute the canonical idempotency key for an event.
+///
+/// The idempotency key is a SHA-256 hash of a canonical binary payload
+/// consisting of length-delimited `domain` and `event_type` fields, with
+/// fixed-width numeric fields in between:
+///
+/// 1. `domain_len` (u32 big-endian), `domain_bytes`
+/// 2. `shipment_id` as big-endian u64 (8 bytes)
+/// 3. `topic_len` (u32 big-endian), `topic_bytes`
+/// 4. `event_counter` as big-endian u32 (4 bytes)
+///
+/// This structured encoding prevents ambiguous concatenation and guarantees
+/// domain separation across event families.
+pub fn generate_idempotency_key(
     env: &Env,
+    domain: u8,
     shipment_id: u64,
     event_type: &str,
     event_counter: u32,
 ) -> BytesN<32> {
-    let mut payload = soroban_sdk::Bytes::new(env);
-    payload.append(&soroban_sdk::Bytes::from_array(
-        env,
-        &shipment_id.to_be_bytes(),
-    ));
-    payload.append(&Symbol::new(env, event_type).to_xdr(env));
-    payload.append(&soroban_sdk::Bytes::from_array(
-        env,
-        &event_counter.to_be_bytes(),
-    ));
+    let mut payload = Bytes::new(env);
+
+    // Build a length-delimited preimage to avoid ambiguous concatenation.
+    let domain_bytes = domain.to_be_bytes();
+    append_len_prefixed_bytes(env, &mut payload, &domain_bytes);
+
+    payload.append(&Bytes::from_array(env, &shipment_id.to_be_bytes()));
+
+    let event_type_bytes = event_type.as_bytes();
+    append_len_prefixed_bytes(env, &mut payload, event_type_bytes);
+
+    payload.append(&Bytes::from_array(env, &event_counter.to_be_bytes()));
     env.crypto().sha256(&payload).into()
 }
 
@@ -86,6 +110,7 @@ pub fn emit_shipment_created(
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_SHIPMENT,
         shipment_id,
         crate::event_topics::SHIPMENT_CREATED,
         event_counter,
@@ -145,6 +170,7 @@ pub fn emit_status_updated(
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_SHIPMENT,
         shipment_id,
         crate::event_topics::STATUS_UPDATED,
         event_counter,
@@ -168,7 +194,7 @@ pub fn emit_status_updated(
 ///
 /// Milestones are **never stored on-chain** — this is the canonical example
 /// of the Hash-and-Emit pattern. The full milestone payload (GPS coordinates,
-/// temperature readings, photos) lives off-chain; only its hash is emitted.
+/// temperature readings, photos) lives off-chain; only its hash is published.
 ///
 /// # Event Data
 ///
@@ -208,6 +234,7 @@ pub fn emit_milestone_recorded(
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_SHIPMENT,
         shipment_id,
         crate::event_topics::MILESTONE_RECORDED,
         event_counter,
@@ -225,6 +252,8 @@ pub fn emit_milestone_recorded(
         ),
     );
     crate::storage::increment_event_count(env, shipment_id);
+    // Also track milestone-specific count for payload size guard
+    crate::storage::increment_milestone_event_count(env, shipment_id);
 }
 
 /// Emits an `escrow_deposited` event when funds are locked for a shipment.
@@ -260,6 +289,7 @@ pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_ESCROW,
         shipment_id,
         crate::event_topics::ESCROW_DEPOSITED,
         event_counter,
@@ -310,6 +340,7 @@ pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_ESCROW,
         shipment_id,
         crate::event_topics::ESCROW_RELEASED,
         event_counter,
@@ -360,6 +391,7 @@ pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_ESCROW,
         shipment_id,
         crate::event_topics::ESCROW_REFUNDED,
         event_counter,
@@ -370,6 +402,132 @@ pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i
             shipment_id,
             to.clone(),
             amount,
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
+
+/// Emits an `observer_assigned` event when an observer role is assigned to an address.
+pub fn emit_observer_assigned(
+    env: &Env,
+    shipment_id: u64,
+    observer: &Address,
+    assigned_by: &Address,
+) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        crate::event_topics::HASH_DOMAIN_RBAC,
+        shipment_id,
+        crate::event_topics::OBSERVER_ASSIGNED,
+        event_counter,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::OBSERVER_ASSIGNED),),
+        (
+            shipment_id,
+            observer.clone(),
+            assigned_by.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
+
+/// Emits an `observer_revoked` event when an observer role is revoked from an address.
+pub fn emit_observer_revoked(
+    env: &Env,
+    shipment_id: u64,
+    observer: &Address,
+    revoked_by: &Address,
+) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        crate::event_topics::HASH_DOMAIN_RBAC,
+        shipment_id,
+        crate::event_topics::OBSERVER_REVOKED,
+        event_counter,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::OBSERVER_REVOKED),),
+        (
+            shipment_id,
+            observer.clone(),
+            revoked_by.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
+
+/// Emits an `escrow_partially_refunded` event when a partial refund is executed.
+pub fn emit_escrow_partially_refunded(
+    env: &Env,
+    shipment_id: u64,
+    sender_refund: i128,
+    carrier_compensation: i128,
+    refund_percentage: u32,
+) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        crate::event_topics::HASH_DOMAIN_ESCROW,
+        shipment_id,
+        crate::event_topics::ESCROW_PARTIALLY_REFUNDED,
+        event_counter,
+    );
+    env.events().publish(
+        (Symbol::new(
+            env,
+            crate::event_topics::ESCROW_PARTIALLY_REFUNDED,
+        ),),
+        (
+            shipment_id,
+            sender_refund,
+            carrier_compensation,
+            refund_percentage,
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
+
+/// Emits a `milestone_payment_released` event when a partial escrow release occurs.
+pub fn emit_milestone_payment_released(
+    env: &Env,
+    shipment_id: u64,
+    milestone: &Symbol,
+    amount: i128,
+    to: &Address,
+) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        crate::event_topics::HASH_DOMAIN_ESCROW,
+        shipment_id,
+        crate::event_topics::MILESTONE_PAYMENT_RELEASED,
+        event_counter,
+    );
+    env.events().publish(
+        (Symbol::new(
+            env,
+            crate::event_topics::MILESTONE_PAYMENT_RELEASED,
+        ),),
+        (
+            shipment_id,
+            milestone.clone(),
+            amount,
+            to.clone(),
             EVENT_SCHEMA_VERSION,
             event_counter,
             idempotency_key,
@@ -454,6 +612,7 @@ pub fn emit_shipment_cancelled(
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_SHIPMENT,
         shipment_id,
         crate::event_topics::SHIPMENT_CANCELLED,
         event_counter,
@@ -661,6 +820,7 @@ pub fn emit_shipment_expired(env: &Env, shipment_id: u64) {
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_SHIPMENT,
         shipment_id,
         crate::event_topics::SHIPMENT_EXPIRED,
         event_counter,
@@ -698,6 +858,7 @@ pub fn emit_delivery_success(env: &Env, carrier: &Address, shipment_id: u64, del
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_SHIPMENT,
         shipment_id,
         crate::event_topics::DELIVERY_SUCCESS,
         event_counter,
@@ -1127,6 +1288,7 @@ pub fn emit_dispute_resolved(
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
+        crate::event_topics::HASH_DOMAIN_DISPUTE,
         shipment_id,
         crate::event_topics::DISPUTE_RESOLVED,
         event_counter,
@@ -1321,6 +1483,109 @@ pub fn emit_finalization_clear_event(
             admin.clone(),
             reason_hash.clone(),
             env.ledger().timestamp(),
+        ),
+    );
+}
+
+/// Emits an `escrow_frozen` event when escrow is blocked due to a dispute or safety control.
+///
+/// # Event Data
+///
+/// | Field       | Type                | Description                                       |
+/// |-------------|---------------------|---------------------------------------------------|
+/// | shipment_id | `u64`               | Shipment whose escrow is now frozen                |
+/// | reason      | `EscrowFreezeReason`| Structured code explaining why escrow was frozen  |
+/// | caller      | `Address`           | Address that triggered the freeze (e.g. disputer) |
+/// | timestamp   | `u64`               | Ledger timestamp of the freeze                    |
+///
+/// # Arguments
+/// * `env`         - Execution environment.
+/// * `shipment_id` - ID of the shipment with frozen escrow.
+/// * `reason`      - `EscrowFreezeReason` variant classifying the freeze.
+/// * `caller`      - The address that triggered the freeze action.
+///
+/// # Returns
+/// No value returned.
+///
+/// # Examples
+/// ```rust
+/// // events::emit_escrow_frozen(&env, shipment_id, EscrowFreezeReason::DisputeRaised, &caller);
+/// ```
+pub fn emit_escrow_frozen(
+    env: &Env,
+    shipment_id: u64,
+    reason: EscrowFreezeReason,
+    caller: &Address,
+) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::ESCROW_FROZEN),),
+        (
+            shipment_id,
+            reason,
+            caller.clone(),
+            env.ledger().timestamp(),
+        ),
+    );
+}
+
+/// Emits a `shipment_blocked` event when a shipment cannot transition to InTransit or Delivered
+/// due to unmet dependencies.
+///
+/// # Event Data
+///
+/// | Field                   | Type        | Description                                |
+/// |-------------------------|-------------|--------------------------------------------|
+/// | shipment_id             | `u64`       | Shipment that cannot proceed                |
+/// | caller                  | `Address`   | Address that attempted the transition      |
+/// | unmet_dependencies      | `Vec<u64>`  | Prerequisite shipment IDs not yet complete |
+pub fn emit_shipment_blocked(
+    env: &Env,
+    shipment_id: u64,
+    caller: &Address,
+    unmet_dependencies: soroban_sdk::Vec<u64>,
+) {
+    env.events().publish(
+        (crate::event_topics::SHIPMENT_BLOCKED,),
+        (shipment_id, caller.clone(), unmet_dependencies),
+          );
+}
+
+/// Emits a `platform_fee_collected` event when a fee is deducted from a deposit.
+pub fn emit_platform_fee_collected(env: &Env, shipment_id: u64, treasury: &Address, amount: i128) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        crate::event_topics::HASH_DOMAIN_PLATFORM,
+        shipment_id,
+        crate::event_topics::PLATFORM_FEE_COLLECTED,
+        event_counter,
+    );
+    env.events().publish(
+        (Symbol::new(
+            env,
+            crate::event_topics::PLATFORM_FEE_COLLECTED,
+        ),),
+        (
+            shipment_id,
+            treasury.clone(),
+            amount,
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
+
+/// Emits a `fee_config_updated` event when the platform fee configuration changes.
+pub fn emit_fee_config_updated(env: &Env, admin: &Address, fee_bps: u32, treasury: &Address) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::FEE_CONFIG_UPDATED),),
+        (
+            admin.clone(),
+            fee_bps,
+            treasury.clone(),
+            EVENT_SCHEMA_VERSION,
         ),
     );
 }

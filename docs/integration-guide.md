@@ -11,12 +11,13 @@ Complete guide for integrating the Navin shipment tracking smart contract with y
 
 1. [Architecture Overview](#architecture-overview)
 2. [Contract Schema (ABI)](#contract-schema-abi)
-3. [Setup & Configuration](#setup--configuration)
-4. [Contract Invocation](#contract-invocation)
-5. [Immutable Provenance Queries](#immutable-provenance-queries)
-6. [Event Listening](#event-listening)
-7. [Transaction Verification](#transaction-verification)
-8. [Complete Examples](#complete-examples)
+3. [Event Payload Schemas](#event-payload-schemas)
+4. [Setup & Configuration](#setup--configuration)
+5. [Contract Invocation](#contract-invocation)
+6. [Immutable Provenance Queries](#immutable-provenance-queries)
+7. [Event Listening](#event-listening)
+8. [Transaction Verification](#transaction-verification)
+9. [Complete Examples](#complete-examples)
 
 ## Contract Schema (ABI)
 
@@ -95,6 +96,17 @@ CI will fail if the committed `docs/contract-schema.shipment.json` diverges from
 4. Fails the workflow if any difference is found
 
 This ensures the schema file stays in sync with the contract code on every PR. If CI fails with a schema drift error, run `make generate-schema-shipment` locally, commit the updated JSON, and push again.
+
+## Event Payload Schemas
+
+Use `docs/event_schemas.md` as the central JSON-schema-like reference for emitted event payloads and field ordering.
+
+Indexer conformance fixtures are validated by tests in:
+
+- `contracts/shipment/src/test_event_fixtures.rs`
+- `contracts/shipment/test_snapshots/test_event_fixtures/`
+
+When parser logic changes, regenerate and re-validate against these fixture outputs before release.
 
 ## Architecture Overview
 
@@ -1013,6 +1025,123 @@ MONGODB_URI=mongodb://localhost:27017/navin
 4. **Event Deduplication**: Handle duplicate events that may occur during network issues
 5. **Transaction Fees**: Monitor and adjust transaction fees based on network conditions
 6. **Security**: Never expose private keys in client-side code or logs
+
+
+## Error Code Mapping
+
+Every contract invocation that fails returns a Soroban `ContractError` whose numeric code maps to a `NavinError` variant. The authoritative mapping — including user-facing category and retry guidance — lives in
+[`contracts/shipment/src/error_map.rs`](../contracts/shipment/src/error_map.rs).
+
+### Categories
+
+| Category | Meaning |
+|---|---|
+| `InvalidInput` | Caller supplied bad data; fix the request before resubmitting. |
+| `Unauthorized` | Missing role or signature; check auth setup. |
+| `NotFound` | Referenced resource does not exist. |
+| `InvalidState` | Operation not allowed in the current shipment state. |
+| `LimitExceeded` | A resource cap or rate limit was hit. |
+| `Transient` | Infrastructure or arithmetic failure; may resolve on retry. |
+| `Configuration` | Contract initialisation or config problem. |
+
+### Retry Guidance
+
+| Guidance | Action |
+|---|---|
+| `NoRetry` | Do not retry; the request must be corrected first. |
+| `RetryAfterDelay` | Retry after a short back-off (transient / rate-limit). |
+| `RetryAfterStateChange` | Retry only after the relevant on-chain state changes. |
+
+### Quick Reference Table
+
+| Code | Variant | Category | Retry |
+|---|---|---|---|
+| 1 | `AlreadyInitialized` | Configuration | NoRetry |
+| 2 | `NotInitialized` | Configuration | NoRetry |
+| 3 | `Unauthorized` | Unauthorized | NoRetry |
+| 4 | `ShipmentNotFound` | NotFound | NoRetry |
+| 5 | `InvalidStatus` | InvalidState | RetryAfterStateChange |
+| 6 | `InvalidHash` | InvalidInput | NoRetry |
+| 7 | `EscrowLocked` | InvalidState | RetryAfterStateChange |
+| 8 | `InsufficientFunds` | InvalidInput | NoRetry |
+| 9 | `ShipmentAlreadyCompleted` | InvalidState | NoRetry |
+| 10 | `InvalidTimestamp` | InvalidInput | NoRetry |
+| 11 | `CounterOverflow` | Transient | NoRetry |
+| 14 | `InvalidAmount` | InvalidInput | NoRetry |
+| 15 | `EscrowAlreadyDeposited` | InvalidState | NoRetry |
+| 16 | `BatchTooLarge` | LimitExceeded | NoRetry |
+| 17 | `InvalidShipmentInput` | InvalidInput | NoRetry |
+| 18 | `MilestoneSumInvalid` | InvalidInput | NoRetry |
+| 19 | `MilestoneAlreadyPaid` | InvalidState | NoRetry |
+| 20 | `MetadataLimitExceeded` | LimitExceeded | NoRetry |
+| 21 | `RateLimitExceeded` | LimitExceeded | RetryAfterDelay |
+| 22 | `ProposalNotFound` | NotFound | NoRetry |
+| 23 | `ProposalAlreadyExecuted` | InvalidState | NoRetry |
+| 24 | `ProposalExpired` | InvalidState | NoRetry |
+| 25 | `AlreadyApproved` | InvalidState | NoRetry |
+| 26 | `InsufficientApprovals` | InvalidState | RetryAfterStateChange |
+| 27 | `NotAnAdmin` | Unauthorized | NoRetry |
+| 28 | `InvalidMultiSigConfig` | InvalidInput | NoRetry |
+| 29 | `NotExpired` | InvalidState | RetryAfterStateChange |
+| 30 | `ShipmentLimitReached` | LimitExceeded | RetryAfterStateChange |
+| 31 | `InvalidConfig` | InvalidInput | NoRetry |
+| 32 | `CannotSelfRevoke` | InvalidInput | NoRetry |
+| 33 | `CarrierSuspended` | Unauthorized | RetryAfterStateChange |
+| 34 | `ForceCancelReasonHashMissing` | InvalidInput | NoRetry |
+| 35 | `ArithmeticError` | Transient | NoRetry |
+| 36 | `DisputeReasonHashMissing` | InvalidInput | NoRetry |
+| 37 | `CompanySuspended` | Unauthorized | RetryAfterStateChange |
+| 38 | `ShipmentFinalized` | InvalidState | NoRetry |
+| 39 | `TokenTransferFailed` | Transient | RetryAfterDelay |
+| 40 | `TokenMintFailed` | Transient | RetryAfterDelay |
+| 41 | `DuplicateAction` | InvalidInput | NoRetry |
+| 42 | `ShipmentUnavailable` | InvalidState | RetryAfterStateChange |
+| 43 | `ContractPaused` | InvalidState | RetryAfterStateChange |
+| 44 | `StatusHashNotFound` | NotFound | NoRetry |
+| 45 | `DataHashMismatch` | InvalidInput | NoRetry |
+| 46 | `CircuitBreakerOpen` | Transient | RetryAfterDelay |
+| 47 | `InvalidMigrationEdge` | InvalidInput | NoRetry |
+| 48 | `MilestoneLimitExceeded` | LimitExceeded | NoRetry |
+| 49 | `NoteLimitExceeded` | LimitExceeded | NoRetry |
+| 50 | `EvidenceLimitExceeded` | LimitExceeded | NoRetry |
+| 51 | `BreachLimitExceeded` | LimitExceeded | NoRetry |
+| 52 | `InvalidTokenDecimals` | InvalidInput | NoRetry |
+
+### TypeScript Usage
+
+```typescript
+const ERROR_MAP: Record<number, { category: string; retry: string; message: string }> = {
+  1:  { category: "Configuration",  retry: "NoRetry",               message: "Contract is already initialised; call init only once." },
+  2:  { category: "Configuration",  retry: "NoRetry",               message: "Contract has not been initialised; call init first." },
+  3:  { category: "Unauthorized",   retry: "NoRetry",               message: "Caller does not hold the required role or signature." },
+  4:  { category: "NotFound",       retry: "NoRetry",               message: "Shipment ID does not exist." },
+  5:  { category: "InvalidState",   retry: "RetryAfterStateChange", message: "State transition not allowed from current status." },
+  6:  { category: "InvalidInput",   retry: "NoRetry",               message: "Provided data hash does not match the stored value." },
+  7:  { category: "InvalidState",   retry: "RetryAfterStateChange", message: "Escrow is locked; wait for terminal state." },
+  8:  { category: "InvalidInput",   retry: "NoRetry",               message: "Caller balance too low for escrow deposit." },
+  9:  { category: "InvalidState",   retry: "NoRetry",               message: "Shipment already in a terminal state." },
+  21: { category: "LimitExceeded",  retry: "RetryAfterDelay",       message: "Rate limit hit; retry after the interval elapses." },
+  39: { category: "Transient",      retry: "RetryAfterDelay",       message: "Token transfer failed; retry after verifying token state." },
+  43: { category: "InvalidState",   retry: "RetryAfterStateChange", message: "Contract is paused; wait for operator to resume." },
+  46: { category: "Transient",      retry: "RetryAfterDelay",       message: "Circuit breaker open; token transfers temporarily disabled." },
+  // … see error_map.rs for the full list
+};
+
+function handleContractError(code: number): void {
+  const info = ERROR_MAP[code];
+  if (!info) {
+    console.error(`Unknown contract error code: ${code}`);
+    return;
+  }
+  console.error(`[${info.category}] ${info.message}`);
+  if (info.retry === "RetryAfterDelay") {
+    scheduleRetry();
+  } else if (info.retry === "RetryAfterStateChange") {
+    waitForStateChange();
+  }
+  // NoRetry → surface error to the user
+}
+```
 
 ## Testing
 

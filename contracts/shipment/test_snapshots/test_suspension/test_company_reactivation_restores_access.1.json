@@ -100,7 +100,8 @@
                 },
                 {
                   "u64": 3600
-                }
+                },
+                "void"
               ]
             }
           },
@@ -411,6 +412,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "depends_on"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "escrow_amount"
                       },
                       "val": {
@@ -449,6 +456,14 @@
                         "symbol": "metadata"
                       },
                       "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestones_completed"
+                      },
+                      "val": {
+                        "vec": []
+                      }
                     },
                     {
                       "key": {
@@ -581,7 +596,7 @@
                           ]
                         },
                         "val": {
-                          "bytes": "6a0efca8bd21d50a73455494417546197795ee66234c5b6b991bba0d714b17e4"
+                          "bytes": "50ffe82c4517a915e4ee4ed163e55afdf56d3d2e401c16133fd069446806ab9d"
                         }
                       },
                       {
@@ -612,6 +627,22 @@
                             },
                             {
                               "key": {
+                                "symbol": "creation_quota_max"
+                              },
+                              "val": {
+                                "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "creation_quota_window_seconds"
+                              },
+                              "val": {
+                                "u64": 3600
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "deadline_grace_seconds"
                               },
                               "val": {
@@ -636,10 +667,42 @@
                             },
                             {
                               "key": {
+                                "symbol": "max_breaches_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_evidence_per_dispute"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "max_metadata_entries"
                               },
                               "val": {
                                 "u32": 5
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_milestones_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_notes_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
                               }
                             },
                             {
@@ -942,7 +1005,7 @@
                   "u32": 1
                 },
                 {
-                  "bytes": "48036a3c386667380c9d1eefc1e85f17238824a8e53365283beee4c03b090321"
+                  "bytes": "4d665e5885d370938b6ef4915d3e18cce2280979a315d468afc7bef8d99362b4"
                 }
               ]
             }

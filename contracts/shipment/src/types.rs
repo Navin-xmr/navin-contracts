@@ -3,6 +3,14 @@ use soroban_sdk::{contracttype, Address, BytesN, Map, Symbol, Vec};
 pub const HASH_ALGO_SHA256: u32 = 1;
 pub const DEFAULT_HASH_ALGO: u32 = HASH_ALGO_SHA256;
 
+/// Expected number of decimal places for tokens used with this contract.
+///
+/// The contract assumes the Stellar/Soroban standard of 7 decimal places
+/// (i.e., 1 token = 10_000_000 stroops). Tokens that return a different
+/// value from their `decimals()` method will be rejected to prevent
+/// mismatched amount interpretations during escrow operations.
+pub const EXPECTED_TOKEN_DECIMALS: u32 = 7;
+
 /// Storage keys for contract data.
 ///
 /// # Examples
@@ -10,7 +18,7 @@ pub const DEFAULT_HASH_ALGO: u32 = HASH_ALGO_SHA256;
 /// use crate::types::DataKey;
 /// let key = DataKey::Admin;
 /// ```
-#[contracttype]
+#[contracttype(export = false)]
 pub enum DataKey {
     /// The contract admin address.
     Admin,
@@ -62,6 +70,8 @@ pub enum DataKey {
     StatusCount(ShipmentStatus),
     /// Configurable limit on active shipments per company.
     ShipmentLimit,
+    /// Per-company override for active shipment limit.
+    CompanyShipmentLimit(Address),
     /// Counter for active shipments per company.
     ActiveShipmentCount(Address),
     /// Contract configuration parameters.
@@ -80,12 +90,18 @@ pub enum DataKey {
     DisputeEvidenceCount(u64),
     /// SHA-256 checksum of critical config fields for drift detection.
     ConfigChecksum,
+    /// Counter for milestone events emitted for a shipment.
+    MilestoneEventCount(u64),
     /// Temporary idempotency window key — present while the action hash is within its window.
     IdempotencyWindow(BytesN<32>),
     /// IoT sensor data hash stored per shipment status transition.
     StatusHash(u64, ShipmentStatus),
     /// Contract pause state flag.
     IsPaused,
+    /// Platform fee configuration.
+    FeeConfig,
+    /// Designated address for platform fee collection.
+    Treasury,
     /// Rate limit quota tracker per actor (company/carrier).
     ActorQuota(Address),
     /// Circuit breaker state for token transfers.
@@ -94,14 +110,62 @@ pub enum DataKey {
     AuditEntry(u64),
     /// Total count of audit log entries.
     AuditEntryCount,
+    /// Counter for condition breach events emitted for a shipment.
+    BreachEventCount(u64),
+    /// Contract-wide reentrancy lock flag for escrow-sensitive execution paths.
+    ReentrancyLock,
     /// Settlement counter for generating unique settlement IDs.
     SettlementCounter,
     /// Settlement record keyed by settlement ID.
     Settlement(u64),
     /// Active settlement ID for a shipment (only one active settlement per shipment).
     ActiveSettlement(u64),
+    /// Latest escrow freeze reason code keyed by shipment ID.
+    EscrowFreezeReasonByShipment(u64),
+    /// Per-company shipment creation quota tracker (for rate-limiting creation).
+    CompanyCreationQuota(Address),
+    /// Global shipment creation quota window configuration.
+    CreationQuotaConfig,
+    /// Deterministic action digest stored on proposal creation.
+    ProposalDigest(u64),
+    /// Prerequisites for a shipment — shipment_id -> Vec<u64> of prerequisite shipment IDs.
+    ShipmentDeps(u64),
+    /// Shipments depending on this shipment — shipment_id -> Vec<u64> of dependent shipment IDs.
+    ShipmentDependents(u64),
+    /// Observer assignment for a specific shipment (shipment_id, observer_address) -> bool.
+    ShipmentObserver(u64, Address),
+    /// Count of observers for a specific shipment.
+    ObserverCount(u64),
+    /// Partial refund record for a shipment.
+    PartialRefundRecord(u64),
     /// One-time anti-replay salt used in a proposal; presence means "already used".
     UsedSalt(BytesN<32>),
+}
+
+/// Structured reason codes for escrow freeze events.
+///
+/// Attached to `escrow_frozen` events so that off-chain indexers and
+/// auditing systems can distinguish *why* an escrow was frozen without
+/// parsing free-form fields.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::EscrowFreezeReason;
+/// let reason = EscrowFreezeReason::DisputeRaised;
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum EscrowFreezeReason {
+    /// Escrow frozen because a dispute was raised on the shipment.
+    DisputeRaised,
+    /// Escrow frozen because the carrier account was suspended.
+    CarrierSuspended,
+    /// Escrow frozen because the company account was suspended.
+    CompanySuspended,
+    /// Escrow frozen because the contract was paused by an admin.
+    ContractPaused,
+    /// Escrow frozen due to the token-transfer circuit breaker opening.
+    CircuitBreakerOpen,
 }
 
 /// Supported user roles.
@@ -122,6 +186,8 @@ pub enum Role {
     Guardian,
     /// An operator that can perform operational tasks.
     Operator,
+    /// An observer that can read shipment data without modification rights.
+    Observer,
     /// No role assigned.
     Unassigned,
 }
@@ -162,12 +228,16 @@ pub enum ShipmentStatus {
     InTransit,
     /// Shipment has arrived at an intermediate checkpoint.
     AtCheckpoint,
+    /// Shipment has been partially delivered and partially settled.
+    PartiallyDelivered,
     /// Shipment has been delivered to the receiver.
     Delivered,
     /// Shipment is under dispute.
     Disputed,
     /// Shipment has been cancelled.
     Cancelled,
+    /// Escrow has been partially refunded.
+    PartiallyRefunded,
 }
 
 impl ShipmentStatus {
@@ -216,11 +286,17 @@ impl ShipmentStatus {
             (Self::Created, Self::Cancelled) => true,
             (Self::Created, Self::Disputed) => true,
             (Self::InTransit, Self::AtCheckpoint) => true,
+            (Self::InTransit, Self::PartiallyDelivered) => true,
             (Self::InTransit, Self::Delivered) => true,
             (Self::InTransit, Self::Disputed) => true,
             (Self::InTransit, Self::Cancelled) => true,
             (Self::AtCheckpoint, Self::InTransit) => true,
+            (Self::AtCheckpoint, Self::PartiallyDelivered) => true,
             (Self::AtCheckpoint, Self::Delivered) => true,
+            (Self::PartiallyDelivered, Self::PartiallyDelivered) => true,
+            (Self::PartiallyDelivered, Self::Delivered) => true,
+            (Self::PartiallyDelivered, Self::Disputed) => true,
+            (Self::PartiallyDelivered, Self::Cancelled) => true,
             (Self::AtCheckpoint, Self::Disputed) => true,
             (Self::AtCheckpoint, Self::Cancelled) => true,
             (Self::Disputed, Self::Cancelled) => true,
@@ -268,12 +344,16 @@ pub struct Shipment {
     pub payment_milestones: Vec<(Symbol, u32)>,
     /// List of symbols for milestones that have already been paid.
     pub paid_milestones: Vec<Symbol>,
+    /// List of symbols for checkpoints that have been hit and recorded.
+    pub milestones_completed: Vec<Symbol>,
     /// Timestamp after which the shipment is considered expired and can be auto-cancelled.
     pub deadline: u64,
     /// Counter to prevent replay of external actions and correlate off-chain integrations.
     pub integration_nonce: u32,
     /// Whether the shipment is finalized (terminal state reached and escrow cleared).
     pub finalized: bool,
+    /// Optional list of shipment IDs that must be completed before this shipment can transition to InTransit or Delivered.
+    pub depends_on: Option<Vec<u64>>,
 }
 
 /// A checkpoint milestone recorded during shipment transit.
@@ -414,6 +494,22 @@ pub struct SettlementRecord {
     pub error_code: Option<u32>,
 }
 
+/// Record of a partial refund operation.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PartialRefundRecord {
+    /// The shipment ID this refund belongs to.
+    pub shipment_id: u64,
+    /// Amount refunded to the sender.
+    pub sender_refund: i128,
+    /// Amount paid to the carrier as compensation.
+    pub carrier_compensation: i128,
+    /// The percentage (1-100) of original escrow refunded to sender.
+    pub refund_percentage: u32,
+    /// Ledger timestamp when the partial refund was executed.
+    pub executed_at: u64,
+}
+
 /// Geofence event types for tracking shipment location events.
 ///
 /// # Examples
@@ -446,6 +542,7 @@ pub struct ShipmentInput {
     pub data_hash: BytesN<32>,
     pub payment_milestones: Vec<(Symbol, u32)>,
     pub deadline: u64,
+    pub depends_on: Option<Vec<u64>>,
 }
 
 /// Cursor page result for searching shipment IDs by status.
@@ -635,46 +732,74 @@ pub struct Analytics {
     pub cancelled_count: u64,
 }
 
-/// TTL health summary for active datasets.
-///
-/// Provides aggregated metrics for proactive archival risk monitoring.
-/// Supports operations dashboards and indexers to detect datasets approaching
-/// expiration and trigger preventive TTL extension or archival workflows.
-///
-/// **Note on TTL Metrics**: Direct TTL values are not queryable from within
-/// Soroban contracts in production. This summary provides observable metrics
-/// about persistent storage presence and configuration parameters that operators
-/// can use to assess TTL health externally.
-///
-/// # Examples
-/// ```rust
-/// // Struct represents TTL health metrics for the contract.
-/// ```
+/// Compact summary of shipment counts aggregated by status.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
-pub struct TtlHealthSummary {
-    /// Total number of shipments created (from counter).
-    pub total_shipment_count: u64,
-    /// Number of shipments sampled for health check.
-    /// Due to gas constraints, only a representative sample is checked.
-    pub sampled_count: u32,
-    /// Number of sampled shipments found in persistent storage.
-    /// Shipments not in persistent storage may be archived or expired.
-    pub persistent_count: u32,
-    /// Number of sampled shipments not found in persistent storage.
-    /// These may be archived in temporary storage or fully expired.
-    pub missing_or_archived_count: u32,
-    /// Percentage of sampled shipments in persistent storage (0-100).
-    /// High percentage indicates good TTL health.
-    pub persistent_percentage: u32,
-    /// Configured TTL threshold (in ledgers) from contract config.
-    /// Shipments with TTL below this value should be extended.
-    pub ttl_threshold: u32,
-    /// Configured TTL extension (in ledgers) from contract config.
-    /// This is the amount by which TTL is extended when threshold is reached.
-    pub ttl_extension: u32,
-    /// Current ledger sequence number at the time of query.
-    pub current_ledger: u32,
-    /// Timestamp of the query for correlation with external monitoring.
-    pub query_timestamp: u64,
+pub struct ShipmentStatusSummary {
+    /// Count of shipments in 'Created' state.
+    pub created: u64,
+    /// Count of shipments in 'InTransit' state.
+    pub in_transit: u64,
+    /// Count of shipments in 'AtCheckpoint' state.
+    pub at_checkpoint: u64,
+    /// Count of shipments in 'PartiallyDelivered' state.
+    pub partially_delivered: u64,
+    /// Count of shipments in 'Delivered' state.
+    pub delivered: u64,
+    /// Count of shipments in 'Disputed' state.
+    pub disputed: u64,
+    /// Count of shipments in 'Cancelled' state.
+    pub cancelled: u64,
+}
+
+/// Paginated result for company-carrier relationship queries (issue #295).
+///
+/// Returns a page of carrier addresses whitelisted by a company, with a
+/// cursor for deterministic pagination.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CarrierRelationshipPage {
+    /// Carrier addresses in this page.
+    pub carriers: Vec<Address>,
+    /// Cursor to pass on the next call, or `None` if this is the last page.
+    pub next_cursor: Option<u32>,
+    /// Total number of entries scanned (not total whitelisted — use for diagnostics).
+    pub total_scanned: u32,
+}
+
+/// Per-company creation quota tracker for the sliding-window rate limit (issue #296).
+///
+/// Stored under `DataKey::CompanyCreationQuota(company)` in instance storage.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CreationQuotaTracker {
+    /// Number of shipments created in the current window.
+    pub count: u32,
+    /// Ledger timestamp when the current window started.
+    pub window_start: u64,
+}
+
+/// Deterministic action digest stored on proposal creation (issue #297).
+///
+/// Stored under `DataKey::ProposalDigest(proposal_id)` in persistent storage.
+/// Enables off-chain signers to verify the exact payload before approving.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProposalActionDigest {
+    /// The proposal ID this digest belongs to.
+    pub proposal_id: u64,
+    /// SHA-256 hash of the canonical serialization of the proposal action.
+    pub digest: BytesN<32>,
+    /// Ledger timestamp when the digest was computed.
+    pub computed_at: u64,
+}
+
+/// Configuration for platform revenue collection.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct FeeConfig {
+    /// The fee in basis points (1 bps = 0.01%). Capped at 1000 (10%).
+    pub fee_bps: u32,
+    /// The address where collected fees are sent.
+    pub treasury: Address,
 }

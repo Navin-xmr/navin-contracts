@@ -12,6 +12,10 @@ mod tests {
 
     #[contractimpl]
     impl MockToken {
+        pub fn decimals(_env: soroban_sdk::Env) -> u32 {
+            7
+        }
+
         pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {
             // Mock implementation - always succeeds
         }
@@ -41,7 +45,7 @@ mod tests {
         let deadline = future_deadline(&env, 86400);
 
         let shipment_id =
-            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline, &None);
 
         // Update status to InTransit
         let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
@@ -74,7 +78,7 @@ mod tests {
         let deadline = future_deadline(&env, 86400);
 
         let shipment_id =
-            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline, &None);
 
         // Update status to InTransit
         let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
@@ -108,7 +112,7 @@ mod tests {
         let deadline = future_deadline(&env, 86400);
 
         let shipment_id =
-            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline, &None);
 
         // Update status to InTransit
         let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
@@ -143,7 +147,7 @@ mod tests {
         let deadline = future_deadline(&env, 86400);
 
         let shipment_id =
-            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline, &None);
 
         // Update to InTransit
         let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
@@ -190,7 +194,7 @@ mod tests {
         let deadline = future_deadline(&env, 86400);
 
         let shipment_id =
-            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline, &None);
 
         // Try to get hash for status that was never set
         client.get_status_hash(&shipment_id, &ShipmentStatus::Delivered);
@@ -224,7 +228,7 @@ mod tests {
         let deadline = future_deadline(&env, 86400);
 
         let shipment_id =
-            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline, &None);
 
         // Update status
         let transit_hash = BytesN::from_array(&env, &[2u8; 32]);

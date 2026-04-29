@@ -10,7 +10,7 @@ use soroban_sdk::contracterror;
 /// use crate::errors::NavinError;
 /// let error = NavinError::ShipmentNotFound;
 /// ```
-#[contracterror]
+#[contracterror(export = false)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum NavinError {
@@ -42,8 +42,8 @@ pub enum NavinError {
     //    CarrierNotAuthorized = 13,
     /// Amount provided is invalid (zero or negative).
     InvalidAmount = 14,
-    /// Escrow for shipment has already been deposited.
-    EscrowAlreadyDeposited = 15,
+    /// Escrow operation attempted while the reentrancy lock is already active.
+    ReentrancyDetected = 15,
     /// Batch creation array exceeds maximum allowed item limit.
     BatchTooLarge = 16,
     /// Shipment input contained invalid parameters (e.g., receiver equals carrier).
@@ -108,6 +108,23 @@ pub enum NavinError {
     CircuitBreakerOpen = 46,
     /// Migration version transition is not allowed.
     InvalidMigrationEdge = 47,
+    /// Maximum allowed milestone events for a shipment has been reached.
+    MilestoneLimitExceeded = 48,
+    /// Maximum allowed note events for a shipment has been reached.
+    NoteLimitExceeded = 49,
+    /// Maximum allowed evidence entries for a dispute has been reached.
+    EvidenceLimitExceeded = 50,
+    /// Maximum allowed condition breach events for a shipment has been reached.
+    BreachLimitExceeded = 51,
+    /// Token decimals do not match the expected value (7 for Stellar standard).
+    /// Prevents mismatched amount interpretations across different token types.
+    InvalidTokenDecimals = 52,
+    /// Company has exceeded the shipment creation quota for the current time window.
+    CreationQuotaExceeded = 53,
+    /// Shipment cannot transition to a delivery state because its prerequisite shipments are not yet completed.
+    DependenciesNotMet = 54,
+    /// A circular dependency was detected in the shipment prerequisites.
+    CircularDependency = 55,
     /// Proposal salt was already used in a prior proposal; replay attack prevented.
-    ProposalSaltReused = 48,
+    ProposalSaltReused = 56,
 }

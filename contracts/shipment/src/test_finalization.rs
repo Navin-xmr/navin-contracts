@@ -5,6 +5,10 @@ use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Symbol, Vec};
 struct MockToken;
 #[soroban_sdk::contractimpl]
 impl MockToken {
+    pub fn decimals(_env: soroban_sdk::Env) -> u32 {
+        7
+    }
+
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
 }
 
@@ -37,6 +41,7 @@ fn test_finalization_on_delivery_settlement() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
 
     // Initial state: not finalized
@@ -81,6 +86,7 @@ fn test_finalization_on_cancel_with_zero_escrow() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
 
     // Initial state: not finalized
@@ -116,6 +122,7 @@ fn test_mutation_rejected_after_finalization() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
 
     // Finalize it
@@ -151,6 +158,7 @@ fn test_archival_permitted_after_finalization() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
 
     // Finalize it

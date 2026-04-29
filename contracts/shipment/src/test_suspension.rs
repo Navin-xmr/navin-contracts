@@ -8,6 +8,10 @@ struct MockToken;
 
 #[contractimpl]
 impl MockToken {
+    pub fn decimals(_env: soroban_sdk::Env) -> u32 {
+        7
+    }
+
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {
         // Mock implementation - always succeeds
     }
@@ -47,6 +51,7 @@ fn test_company_suspension_blocks_create_shipment() {
         &data_hash,
         &milestones,
         &deadline,
+        &None,
     );
 
     assert!(result.is_err());
@@ -76,6 +81,7 @@ fn test_company_suspension_blocks_metadata_update() {
         &data_hash,
         &milestones,
         &deadline,
+        &None,
     );
 
     // Suspend company
@@ -119,6 +125,7 @@ fn test_company_reactivation_restores_access() {
             &data_hash,
             &milestones,
             &deadline,
+            &None,
         )
         .is_err());
 
@@ -133,6 +140,7 @@ fn test_company_reactivation_restores_access() {
         &data_hash,
         &milestones,
         &deadline,
+        &None,
     );
     assert!(result.is_ok());
 }
@@ -159,6 +167,7 @@ fn test_company_suspension_blocks_cancel_shipment() {
         &data_hash,
         &milestones,
         &deadline,
+        &None,
     );
 
     // Suspend

@@ -87,7 +87,8 @@
                 },
                 {
                   "u64": 90000
-                }
+                },
+                "void"
               ]
             }
           },
@@ -632,6 +633,76 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "ProposalDigest"
+                },
+                {
+                  "u64": 1
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "ProposalDigest"
+                    },
+                    {
+                      "u64": 1
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "computed_at"
+                      },
+                      "val": {
+                        "u64": 86400
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "digest"
+                      },
+                      "val": {
+                        "bytes": "10ed018688d816c153152dd74702c4b07c645204f0dc556cd5f36d3b022ed360"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "proposal_id"
+                      },
+                      "val": {
+                        "u64": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4096
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
                   "symbol": "Settlement"
                 },
                 {
@@ -831,6 +902,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "depends_on"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "escrow_amount"
                       },
                       "val": {
@@ -869,6 +946,14 @@
                         "symbol": "metadata"
                       },
                       "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestones_completed"
+                      },
+                      "val": {
+                        "vec": []
+                      }
                     },
                     {
                       "key": {
@@ -1065,7 +1150,7 @@
                           ]
                         },
                         "val": {
-                          "bytes": "6a0efca8bd21d50a73455494417546197795ee66234c5b6b991bba0d714b17e4"
+                          "bytes": "50ffe82c4517a915e4ee4ed163e55afdf56d3d2e401c16133fd069446806ab9d"
                         }
                       },
                       {
@@ -1096,6 +1181,22 @@
                             },
                             {
                               "key": {
+                                "symbol": "creation_quota_max"
+                              },
+                              "val": {
+                                "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "creation_quota_window_seconds"
+                              },
+                              "val": {
+                                "u64": 3600
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "deadline_grace_seconds"
                               },
                               "val": {
@@ -1120,10 +1221,42 @@
                             },
                             {
                               "key": {
+                                "symbol": "max_breaches_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_evidence_per_dispute"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "max_metadata_entries"
                               },
                               "val": {
                                 "u32": 5
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_milestones_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_notes_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
                               }
                             },
                             {
@@ -1199,6 +1332,18 @@
                         },
                         "val": {
                           "u64": 1
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ReentrancyLock"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
                         }
                       },
                       {

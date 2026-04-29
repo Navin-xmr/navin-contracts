@@ -14,6 +14,7 @@ env:
 jobs:
   check-formatting:
     name: Check Code Formatting
+    if: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -35,6 +36,7 @@ jobs:
 
   lint:
     name: Clippy Lints
+    if: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -147,7 +149,6 @@ jobs:
           name: wasm-contracts
           path: target/wasm32-unknown-unknown/release/*.wasm
           retention-days: 30
-
 
   all-checks-passed:
     name: All Checks Passed

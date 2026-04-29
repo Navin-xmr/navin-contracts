@@ -77,7 +77,8 @@
                 },
                 {
                   "u64": 90000
-                }
+                },
+                "void"
               ]
             }
           },
@@ -118,6 +119,22 @@
                     },
                     {
                       "key": {
+                        "symbol": "creation_quota_max"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "creation_quota_window_seconds"
+                      },
+                      "val": {
+                        "u64": 3600
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "deadline_grace_seconds"
                       },
                       "val": {
@@ -142,10 +159,42 @@
                     },
                     {
                       "key": {
+                        "symbol": "max_breaches_per_shipment"
+                      },
+                      "val": {
+                        "u32": 255
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "max_evidence_per_dispute"
+                      },
+                      "val": {
+                        "u32": 255
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "max_metadata_entries"
                       },
                       "val": {
                         "u32": 5
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "max_milestones_per_shipment"
+                      },
+                      "val": {
+                        "u32": 255
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "max_notes_per_shipment"
+                      },
+                      "val": {
+                        "u32": 255
                       }
                     },
                     {
@@ -474,6 +523,51 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "BreachEventCount"
+                },
+                {
+                  "u64": 1
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "BreachEventCount"
+                    },
+                    {
+                      "u64": 1
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u32": 3
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4096
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
                   "symbol": "EventCount"
                 },
                 {
@@ -628,6 +722,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "depends_on"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "escrow_amount"
                       },
                       "val": {
@@ -666,6 +766,14 @@
                         "symbol": "metadata"
                       },
                       "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestones_completed"
+                      },
+                      "val": {
+                        "vec": []
+                      }
                     },
                     {
                       "key": {
@@ -798,7 +906,7 @@
                           ]
                         },
                         "val": {
-                          "bytes": "74dfc7c7e8f55000bedcacfd14613d57e1cd54cb9c17e22a0e6fa56db2976f32"
+                          "bytes": "4ceeef6980ff9e1e6f07f3314854df0ae801f4514b389a83334aafaa3c1889f7"
                         }
                       },
                       {
@@ -829,6 +937,22 @@
                             },
                             {
                               "key": {
+                                "symbol": "creation_quota_max"
+                              },
+                              "val": {
+                                "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "creation_quota_window_seconds"
+                              },
+                              "val": {
+                                "u64": 3600
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "deadline_grace_seconds"
                               },
                               "val": {
@@ -853,10 +977,42 @@
                             },
                             {
                               "key": {
+                                "symbol": "max_breaches_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_evidence_per_dispute"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "max_metadata_entries"
                               },
                               "val": {
                                 "u32": 5
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_milestones_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_notes_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
                               }
                             },
                             {

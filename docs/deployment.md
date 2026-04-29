@@ -206,3 +206,38 @@ After successful deployment:
 3. Monitor transactions on [Stellar Expert](https://stellar.expert/explorer/testnet)
 
 For production deployment, follow similar steps but use mainnet configuration and thoroughly test all functionality on testnet first.
+
+## Release Readiness Checklist
+
+Before opening a release PR, run the one-command release audit script:
+
+```bash
+./scripts/release-check.sh
+```
+
+This validates:
+
+- `cargo fmt --check`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace`
+- `cargo build --workspace --target wasm32-unknown-unknown --release`
+- docs consistency references for critical APIs and error/schema changes
+
+If any step fails, fix issues before release.
+
+## Reference Docs for Storage and API Evolution
+
+- Storage key policy and reserved ranges: `docs/storage-key-registry.md`
+- Storage layout deep-dive: `docs/storage.md`
+
+### Shipment Query APIs (Release-Sensitive)
+
+- `get_shipments_batch(shipment_ids)`
+- `get_shipments_by_sender(sender, limit)` / `get_shipments_by_sender_page(sender, offset, limit)`
+- `get_shipments_by_carrier(carrier, limit)` / `get_shipments_by_carrier_page(carrier, offset, limit)`
+- `get_shipments_by_status(status, limit)` / `get_shipments_by_status_page(status, offset, limit)`
+
+### Escrow Reentrancy Guard Signals
+
+- Storage lock key: `DataKey::ReentrancyLock`
+- Error on lock contention: `NavinError::ReentrancyDetected`

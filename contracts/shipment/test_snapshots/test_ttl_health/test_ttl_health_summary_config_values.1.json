@@ -71,7 +71,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 },
                 {
-                  "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+                  "bytes": "00ab000000000000000000000000000000000000000000000000000000000000"
                 },
                 {
                   "vec": []
@@ -251,7 +251,7 @@
                   "symbol": "IdempotencyWindow"
                 },
                 {
-                  "bytes": "92cfce0a756e41f916339226f898fa89cb92af248efb138f99c66ebd0d3caea6"
+                  "bytes": "a012cefd5a9b09a81958a9e0941b573ff0f2fd99d7af5823821589524dd25293"
                 }
               ]
             },
@@ -271,7 +271,7 @@
                       "symbol": "IdempotencyWindow"
                     },
                     {
-                      "bytes": "92cfce0a756e41f916339226f898fa89cb92af248efb138f99c66ebd0d3caea6"
+                      "bytes": "a012cefd5a9b09a81958a9e0941b573ff0f2fd99d7af5823821589524dd25293"
                     }
                   ]
                 },
@@ -344,7 +344,7 @@
                         "symbol": "data_hash"
                       },
                       "val": {
-                        "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+                        "bytes": "00ab000000000000000000000000000000000000000000000000000000000000"
                       }
                     },
                     {
@@ -527,7 +527,7 @@
                           ]
                         },
                         "val": {
-                          "bytes": "6a0efca8bd21d50a73455494417546197795ee66234c5b6b991bba0d714b17e4"
+                          "bytes": "50ffe82c4517a915e4ee4ed163e55afdf56d3d2e401c16133fd069446806ab9d"
                         }
                       },
                       {
@@ -582,10 +582,42 @@
                             },
                             {
                               "key": {
+                                "symbol": "max_breaches_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_evidence_per_dispute"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "max_metadata_entries"
                               },
                               "val": {
                                 "u32": 5
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_milestones_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_notes_per_shipment"
+                              },
+                              "val": {
+                                "u32": 255
                               }
                             },
                             {

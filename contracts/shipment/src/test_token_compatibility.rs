@@ -2,6 +2,7 @@
 //!
 //! Validates the shipment contract's escrow and payment flows against both
 //! Stellar Asset Contract (SAC) tokens and custom token contracts (NavinToken).
+#![allow(deprecated)]
 
 use crate::{test_utils, types::ShipmentStatus, NavinError, NavinShipment, NavinShipmentClient};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, IntoVal, Vec};
@@ -136,6 +137,7 @@ fn run_escrow_flow_test(variant: TokenVariant) {
         &dummy_hash(&ctx.env),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     );
 
     ctx.shipment_client
@@ -187,6 +189,7 @@ fn run_refund_flow_test(variant: TokenVariant) {
         &dummy_hash(&ctx.env),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     );
 
     ctx.shipment_client
@@ -230,6 +233,7 @@ fn run_milestone_payment_flow_test(variant: TokenVariant) {
         &dummy_hash(&ctx.env),
         &milestones,
         &deadline,
+        &None,
     );
 
     ctx.shipment_client
@@ -289,6 +293,7 @@ fn run_insufficient_funds_test(variant: TokenVariant) {
         &dummy_hash(&ctx.env),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     );
 
     let result = ctx

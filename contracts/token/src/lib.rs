@@ -60,6 +60,11 @@ impl NavinToken {
         Ok(storage::get_name(&env))
     }
 
+    /// Get token decimals
+    pub fn decimals(_env: Env) -> Result<u32, TokenError> {
+        Ok(7)
+    }
+
     /// Get token symbol
     pub fn symbol(env: Env) -> Result<String, TokenError> {
         if !storage::is_initialized(&env) {

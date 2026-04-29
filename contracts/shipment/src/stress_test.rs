@@ -10,6 +10,10 @@ struct MockToken;
 
 #[contractimpl]
 impl MockToken {
+    pub fn decimals(_env: soroban_sdk::Env) -> u32 {
+        7
+    }
+
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
 }
 
@@ -41,7 +45,8 @@ fn test_create_50_shipments_sequentially() {
             &data_hash,
             &soroban_sdk::Vec::new(&env),
             &deadline,
-        );
+        &None,
+    );
         assert_eq!(shipment_id, i);
     }
 
@@ -76,7 +81,8 @@ fn test_20_concurrent_status_updates() {
             &data_hash,
             &soroban_sdk::Vec::new(&env),
             &deadline,
-        );
+        &None,
+    );
     }
 
     for i in 0..20 {
@@ -119,7 +125,8 @@ fn test_verify_shipment_count_after_mass_operations() {
             &data_hash,
             &soroban_sdk::Vec::new(&env),
             &deadline,
-        );
+        &None,
+    );
     }
 
     assert_eq!(client.get_shipment_counter(), 75);
@@ -155,7 +162,8 @@ fn test_no_data_corruption_between_shipments() {
             &data_hash,
             &soroban_sdk::Vec::new(&env),
             &deadline,
-        );
+        &None,
+    );
     }
 
     for i in 1..=60 {

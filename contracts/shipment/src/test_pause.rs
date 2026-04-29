@@ -12,6 +12,10 @@ mod tests {
 
     #[contractimpl]
     impl MockToken {
+        pub fn decimals(_env: soroban_sdk::Env) -> u32 {
+            7
+        }
+
         pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {
             // Mock implementation - always succeeds
         }
@@ -82,7 +86,7 @@ mod tests {
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
 
-        client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+        client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline, &None);
     }
 
     #[test]
@@ -103,7 +107,7 @@ mod tests {
         let deadline = future_deadline(&env, 86400);
 
         let shipment_id =
-            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline, &None);
 
         // Pause the contract
         client.pause(&admin);
@@ -135,7 +139,7 @@ mod tests {
         let deadline = future_deadline(&env, 86400);
 
         let shipment_id =
-            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline, &None);
 
         // Pause the contract
         client.pause(&admin);
@@ -174,7 +178,8 @@ mod tests {
             &hash1,
             &milestones,
             &deadline,
-        );
+        &None,
+    );
 
         // Pause
         client.pause(&admin);
@@ -193,7 +198,8 @@ mod tests {
             &hash2,
             &milestones,
             &deadline,
-        );
+        &None,
+    );
 
         assert_eq!(shipment_id2, shipment_id1 + 1);
     }

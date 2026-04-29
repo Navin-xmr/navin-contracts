@@ -1,6 +1,6 @@
 use crate::errors::NavinError;
 use crate::storage;
-use crate::types::Shipment;
+use crate::types::{Shipment, ShipmentStatus};
 use soroban_sdk::{xdr::ToXdr, BytesN, Env, Symbol};
 
 /// Maximum reasonable escrow amount (1 quadrillion stroops ≈ 1 billion XLM).
@@ -48,7 +48,13 @@ pub fn validate_hash(hash: &BytesN<32>) -> Result<(), NavinError> {
 /// - Metadata keys and values
 /// - Event topic names
 ///
+/// Stellar Symbol Constraints:
+/// - Length: 1-12 characters (enforced by Stellar protocol)
+/// - Format: Alphanumeric and underscore only (A-Z, a-z, 0-9, _)
+/// - Invalid: spaces, hyphens, special characters, unicode, null bytes
+///
 /// # Arguments
+/// * `env` - Execution environment.
 /// * `symbol` - The Symbol to validate.
 ///
 /// # Returns
@@ -57,15 +63,20 @@ pub fn validate_hash(hash: &BytesN<32>) -> Result<(), NavinError> {
 ///
 /// # Examples
 /// ```rust
-/// validate_symbol(&Symbol::new(&env, "warehouse"))?;
+/// validate_symbol(&env, &Symbol::new(&env, "warehouse"))?;
 /// ```
 pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
-    // Convert Symbol to XDR representation for length checking.
-    // In Soroban, we check the XDR-encoded length as a proxy for symbol size.
-    // Typical XDR overhead is ~8 bytes, so we allow up to 40 bytes for safety margin.
+    // XDR layout: 4-byte ScValType tag + 4-byte length field + content padded to 4-byte boundary.
+    // Byte counts by character count:
+    //   0 chars  →  8 bytes  (empty — rejected)
+    //   1–4 chars → 12 bytes
+    //   5–8 chars → 16 bytes
+    //   9–12 chars → 20 bytes  (12-char is the Stellar Symbol maximum)
+    //   13+ chars → 24+ bytes  (rejected)
     let symbol_bytes = symbol.to_xdr(env);
+    let len = symbol_bytes.len();
 
-    if symbol_bytes.len() > 40 {
+    if !(12..=20).contains(&len) {
         return Err(NavinError::InvalidShipmentInput);
     }
 
@@ -156,6 +167,21 @@ pub fn validate_metadata_symbols(
 /// validate_amount(5_000_000)?;
 /// ```
 pub fn validate_amount(amount: i128) -> Result<(), NavinError> {
+    if amount <= 0 || amount > MAX_AMOUNT {
+        return Err(NavinError::InvalidAmount);
+    }
+    Ok(())
+}
+
+/// Ensure an amount is strictly positive.
+///
+/// # Arguments
+/// * `amount` - The `i128` value to validate.
+///
+/// # Returns
+/// * `Ok(())` if `amount > 0`.
+/// * `Err(NavinError::InvalidAmount)` otherwise.
+pub fn validate_positive_amount(amount: i128) -> Result<(), NavinError> {
     if amount <= 0 || amount > MAX_AMOUNT {
         return Err(NavinError::InvalidAmount);
     }
@@ -268,10 +294,77 @@ pub fn preflight_check_shipment_available(
     Ok(shipment)
 }
 
+/// Compute a canonical hash for an off-chain payload.
+///
+/// This helper standardizes how off-chain data is hashed to ensure consistency
+/// between the contract and external backends/frontends. It uses a deterministic
+/// ordering and XDR encoding of the fields.
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `fields` - A vector of values to be included in the hash.
+///
+/// # Returns
+/// * `BytesN<32>` - The computed SHA-256 hash.
+///
+/// # Design Rationale
+///
+/// **Why XDR Encoding?**:
+/// - XDR is the native serialization format for Soroban.
+/// - It is deterministic and handles various types (Address, Symbol, u64, etc.) consistently.
+/// - Frontends can use the Stellar SDK to produce matching XDR blobs.
+///
+/// # Examples
+/// ```rust
+/// let mut fields = Vec::new(&env);
+/// fields.push_back(Symbol::new(&env, "event_type").into_val(&env));
+/// fields.push_back(shipment_id.into_val(&env));
+/// let hash = compute_offchain_payload_hash(&env, fields);
+/// ```
+pub fn compute_offchain_payload_hash(
+    env: &Env,
+    fields: soroban_sdk::Vec<soroban_sdk::Val>,
+) -> BytesN<32> {
+    env.crypto().sha256(&fields.to_xdr(env)).into()
+}
+
+/// Validate cross-field shipment state-machine invariants.
+///
+/// This validator protects against impossible state combinations and is intended
+/// to be called on every write path before persisting shipment state.
+pub fn validate_shipment_invariants(shipment: &Shipment) -> Result<(), NavinError> {
+    if shipment.total_escrow < 0 || shipment.escrow_amount < 0 {
+        return Err(NavinError::InvalidStatus);
+    }
+
+    if shipment.escrow_amount > shipment.total_escrow {
+        return Err(NavinError::InvalidStatus);
+    }
+
+    if shipment.finalized {
+        let terminal = shipment.status == ShipmentStatus::Delivered
+            || shipment.status == ShipmentStatus::Cancelled;
+        if !terminal || shipment.escrow_amount != 0 {
+            return Err(NavinError::InvalidStatus);
+        }
+    }
+
+    if shipment.status == ShipmentStatus::Disputed && shipment.finalized {
+        return Err(NavinError::InvalidStatus);
+    }
+
+    if shipment.status == ShipmentStatus::Created && !shipment.paid_milestones.is_empty() {
+        return Err(NavinError::InvalidStatus);
+    }
+
+    Ok(())
+}
+
 // Tests
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soroban_sdk::testutils::Address as _;
     use soroban_sdk::{testutils::Ledger, BytesN, Env, Symbol};
 
     // validate_hash
@@ -296,6 +389,63 @@ mod tests {
         let env = Env::default();
         let hash: BytesN<32> = BytesN::from_array(&env, &[0xFF_u8; 32]);
         assert_eq!(validate_hash(&hash), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_shipment_invariants_accepts_valid_shipment() {
+        let env = Env::default();
+        let shipment = Shipment {
+            id: 1,
+            sender: soroban_sdk::Address::generate(&env),
+            receiver: soroban_sdk::Address::generate(&env),
+            carrier: soroban_sdk::Address::generate(&env),
+            status: ShipmentStatus::InTransit,
+            data_hash: BytesN::from_array(&env, &[1_u8; 32]),
+            created_at: 100,
+            updated_at: 100,
+            escrow_amount: 10,
+            total_escrow: 10,
+            metadata: None,
+            payment_milestones: soroban_sdk::Vec::new(&env),
+            paid_milestones: soroban_sdk::Vec::new(&env),
+            milestones_completed: soroban_sdk::Vec::new(&env),
+            deadline: 200,
+            integration_nonce: 0,
+            finalized: false,
+            depends_on: None,
+        };
+
+        assert_eq!(validate_shipment_invariants(&shipment), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_shipment_invariants_rejects_escrow_greater_than_total() {
+        let env = Env::default();
+        let shipment = Shipment {
+            id: 1,
+            sender: soroban_sdk::Address::generate(&env),
+            receiver: soroban_sdk::Address::generate(&env),
+            carrier: soroban_sdk::Address::generate(&env),
+            status: ShipmentStatus::InTransit,
+            data_hash: BytesN::from_array(&env, &[2_u8; 32]),
+            created_at: 100,
+            updated_at: 100,
+            escrow_amount: 20,
+            total_escrow: 10,
+            metadata: None,
+            payment_milestones: soroban_sdk::Vec::new(&env),
+            paid_milestones: soroban_sdk::Vec::new(&env),
+            milestones_completed: soroban_sdk::Vec::new(&env),
+            deadline: 200,
+            integration_nonce: 0,
+            finalized: false,
+            depends_on: None,
+        };
+
+        assert_eq!(
+            validate_shipment_invariants(&shipment),
+            Err(NavinError::InvalidStatus)
+        );
     }
 
     // validate_amount
@@ -386,11 +536,11 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_symbol_valid_long_passes() {
+    fn test_validate_symbol_valid_max_length_passes() {
         let env = Env::default();
-        // Create a 32-character symbol (maximum safe length)
-        let long_name = "a".repeat(32);
-        let symbol = Symbol::new(&env, &long_name);
+        // Exactly 12 characters — the Stellar Symbol maximum
+        let max_name = "a".repeat(12);
+        let symbol = Symbol::new(&env, &max_name);
         assert_eq!(validate_symbol(&env, &symbol), Ok(()));
     }
 
@@ -404,7 +554,8 @@ mod tests {
     #[test]
     fn test_validate_symbol_common_names_pass() {
         let env = Env::default();
-        let test_names = ["port", "warehouse", "checkpoint", "final_destination"];
+        // All names are ≤ 12 chars (Stellar Symbol maximum)
+        let test_names = ["port", "warehouse", "checkpoint", "delivered"];
         for name in &test_names {
             let symbol = Symbol::new(&env, name);
             assert_eq!(
@@ -482,13 +633,11 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_metadata_symbols_long_names_pass() {
+    fn test_validate_metadata_symbols_max_length_names_pass() {
         let env = Env::default();
-        // Create long symbol names by concatenating strings
-        let long_key = "key_aaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let long_value = "val_bbbbbbbbbbbbbbbbbbbbbbbbbb";
-        let key = Symbol::new(&env, long_key);
-        let value = Symbol::new(&env, long_value);
+        // 12-character key and value — at the Stellar Symbol maximum
+        let key = Symbol::new(&env, "shipment_key");
+        let value = Symbol::new(&env, "shipment_val");
         assert_eq!(validate_metadata_symbols(&env, &key, &value), Ok(()));
     }
 
@@ -511,4 +660,305 @@ mod tests {
             );
         }
     }
+}
+
+// ============================================================================
+// Additional Symbol Validation Tests - Comprehensive Coverage
+// ============================================================================
+
+#[cfg(test)]
+mod symbol_validation_tests {
+    extern crate std;
+
+    use super::*;
+    use soroban_sdk::{Env, Symbol, Vec};
+
+    // Boundary tests for symbol length
+    #[test]
+    fn test_symbol_length_boundary_12_chars() {
+        let env = Env::default();
+
+        // Exactly 12 characters - maximum allowed by Stellar
+        let symbols_12_chars = std::vec![
+            "VERYLONGNAME", // 12 uppercase
+            "verylongname", // 12 lowercase
+            "VeryLongName", // 12 mixed case
+            "SYMBOL123456", // 12 alphanumeric
+            "symbol_12345", // 12 with underscore
+            "ABCDEFGHIJKL", // 12 letters
+            "123456789012", // 12 digits
+        ];
+
+        for name in symbols_12_chars {
+            let symbol = Symbol::new(&env, name);
+            let result = validate_symbol(&env, &symbol);
+            assert!(
+                result.is_ok(),
+                "12-character symbol '{}' should be valid",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn test_symbol_length_30_chars_rejected() {
+        let env = Env::default();
+        // 30 chars: within Soroban SDK's 32-char limit but above our 12-char max
+        let long_30 = "A".repeat(30);
+        let symbol = Symbol::new(&env, &long_30);
+        let result = validate_symbol(&env, &symbol);
+        assert!(
+            result.is_err(),
+            "Symbol of length 30 should be rejected (exceeds 12-char max)"
+        );
+    }
+
+    #[test]
+    fn test_symbol_length_25_chars_rejected() {
+        let env = Env::default();
+        let long_25 = "A".repeat(25);
+        let symbol = Symbol::new(&env, &long_25);
+        let result = validate_symbol(&env, &symbol);
+        assert!(
+            result.is_err(),
+            "Symbol of length 25 should be rejected (exceeds 12-char max)"
+        );
+    }
+
+    // Format validation tests
+    #[test]
+    fn test_symbol_alphanumeric_formats() {
+        let env = Env::default();
+
+        let valid_formats = std::vec![
+            "SHIPMENT",    // uppercase
+            "shipment",    // lowercase
+            "Shipment",    // mixed case
+            "SHIP123",     // alphanumeric
+            "ship_123",    // with underscore
+            "ABC",         // short uppercase
+            "xyz",         // short lowercase
+            "A1B2C3",      // mixed alphanumeric
+            "_underscore", // leading underscore
+            "trailing_",   // trailing underscore
+        ];
+
+        for name in valid_formats {
+            let symbol = Symbol::new(&env, name);
+            let result = validate_symbol(&env, &symbol);
+            assert!(
+                result.is_ok(),
+                "Alphanumeric symbol '{}' should be valid",
+                name
+            );
+        }
+    }
+
+    // Milestone validation tests
+    #[test]
+    fn test_milestone_symbols_no_duplicates() {
+        let env = Env::default();
+
+        let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+        milestones.push_back((Symbol::new(&env, "pickup"), 25));
+        milestones.push_back((Symbol::new(&env, "transit"), 25));
+        milestones.push_back((Symbol::new(&env, "delivery"), 50));
+
+        let result = validate_milestone_symbols(&env, &milestones);
+        assert!(result.is_ok(), "Unique milestone symbols should be valid");
+    }
+
+    #[test]
+    fn test_milestone_symbols_with_duplicates_rejected() {
+        let env = Env::default();
+
+        let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+        milestones.push_back((Symbol::new(&env, "warehouse"), 50));
+        milestones.push_back((Symbol::new(&env, "warehouse"), 50)); // Duplicate
+
+        let result = validate_milestone_symbols(&env, &milestones);
+        assert_eq!(
+            result,
+            Err(NavinError::InvalidShipmentInput),
+            "Duplicate milestone symbols should be rejected"
+        );
+    }
+
+    #[test]
+    fn test_milestone_symbols_many_unique() {
+        let env = Env::default();
+
+        let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+        let names = ["pickup", "warehouse", "port", "transit", "delivery"];
+        for name in &names {
+            milestones.push_back((Symbol::new(&env, name), 20));
+        }
+
+        let result = validate_milestone_symbols(&env, &milestones);
+        assert!(
+            result.is_ok(),
+            "Many unique milestone symbols should be valid"
+        );
+    }
+
+    // Metadata validation tests
+    #[test]
+    fn test_metadata_symbols_various_pairs() {
+        let env = Env::default();
+
+        let test_pairs = std::vec![
+            ("weight", "kg_100"),
+            ("priority", "high"),
+            ("category", "fragile"),
+            ("temp", "controlled"),
+            ("status", "active"),
+            ("tracking", "enabled"),
+        ];
+
+        for (key_str, val_str) in test_pairs {
+            let key = Symbol::new(&env, key_str);
+            let value = Symbol::new(&env, val_str);
+
+            let result = validate_metadata_symbols(&env, &key, &value);
+            assert!(
+                result.is_ok(),
+                "Metadata pair ({}, {}) should be valid",
+                key_str,
+                val_str
+            );
+        }
+    }
+
+    #[test]
+    fn test_metadata_symbols_max_length() {
+        let env = Env::default();
+
+        // 12-character key and value (maximum)
+        let key = Symbol::new(&env, "verylongkey1");
+        let value = Symbol::new(&env, "verylongval1");
+
+        let result = validate_metadata_symbols(&env, &key, &value);
+        assert!(
+            result.is_ok(),
+            "12-character metadata symbols should be valid"
+        );
+    }
+
+    // Error message tests
+    #[test]
+    fn test_validation_error_types() {
+        let env = Env::default();
+        // 30 chars: within Soroban SDK's 32-char limit but above our 12-char max
+        let oversized = "A".repeat(30);
+        let oversized_symbol = Symbol::new(&env, &oversized);
+        let result = validate_symbol(&env, &oversized_symbol);
+        assert_eq!(
+            result,
+            Err(NavinError::InvalidShipmentInput),
+            "Oversized symbol must return InvalidShipmentInput"
+        );
+    }
+
+    #[test]
+    fn test_duplicate_milestone_error_type() {
+        let env = Env::default();
+
+        let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+        milestones.push_back((Symbol::new(&env, "checkpoint"), 50));
+        milestones.push_back((Symbol::new(&env, "checkpoint"), 50));
+
+        let result = validate_milestone_symbols(&env, &milestones);
+
+        assert_eq!(
+            result,
+            Err(NavinError::InvalidShipmentInput),
+            "Duplicate milestone should return InvalidShipmentInput"
+        );
+    }
+}
+
+/// Maximum number of dependencies allowed per shipment.
+const MAX_DEPENDENCIES: usize = 10;
+
+/// Maximum recursion depth for cycle detection.
+const MAX_DEPTH: usize = 64;
+
+/// Validate shipment dependencies before persistence.
+///
+/// Ensures:
+/// - Dependency count does not exceed MAX_DEPENDENCIES (10)
+/// - All referenced shipment IDs exist
+/// - No circular dependencies are present
+pub fn validate_dependencies(
+    env: &Env,
+    shipment_id: u64,
+    dependencies: &Option<soroban_sdk::Vec<u64>>,
+) -> Result<(), NavinError> {
+    let deps = match dependencies {
+        Some(d) => d,
+        None => return Ok(()),
+    };
+
+    if deps.len() as usize > MAX_DEPENDENCIES {
+        return Err(NavinError::InvalidShipmentInput);
+    }
+
+    for i in 0..deps.len() {
+        let dep_id = deps.get_unchecked(i);
+        if dep_id == shipment_id {
+            return Err(NavinError::CircularDependency);
+        }
+        let _ = storage::get_shipment(env, dep_id)
+            .ok_or(NavinError::ShipmentNotFound)?;
+        if transitive_has_dependency(env, dep_id, shipment_id, 0)? {
+            return Err(NavinError::CircularDependency);
+        }
+    }
+
+    Ok(())
+}
+
+fn transitive_has_dependency(
+    env: &Env,
+    target: u64,
+    shipment_id: u64,
+    depth: usize,
+) -> Result<bool, NavinError> {
+    if depth > MAX_DEPTH {
+        return Err(NavinError::CircularDependency);
+    }
+
+    if let Some(target_deps) = storage::get_dependencies(env, target) {
+        for i in 0..target_deps.len() {
+            let dep = target_deps.get_unchecked(i);
+            if dep == shipment_id {
+                return Ok(true);
+            }
+            if transitive_has_dependency(env, dep, shipment_id, depth + 1)? {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+pub fn collect_unmet_dependencies(
+    env: &Env,
+    shipment_id: u64,
+) -> Result<soroban_sdk::Vec<u64>, NavinError> {
+    let mut unmet = soroban_sdk::Vec::new(env);
+
+    if let Some(deps) = storage::get_dependencies(env, shipment_id) {
+        for i in 0..deps.len() {
+            let dep_id = deps.get_unchecked(i);
+            match storage::get_shipment(env, dep_id) {
+                Some(shipment) if shipment.status == ShipmentStatus::Delivered => {}
+                _ => {
+                    unmet.push_back(dep_id);
+                }
+            }
+        }
+    }
+
+    Ok(unmet)
 }

@@ -612,6 +612,32 @@ pub fn set_escrow(env: &Env, shipment_id: u64, amount: i128) {
         .set(&DataKey::Escrow(shipment_id), &amount);
 }
 
+/// Get the latest escrow freeze reason code for a shipment.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// * `Option<EscrowFreezeReason>` - Structured freeze reason if present.
+pub fn get_escrow_freeze_reason(env: &Env, shipment_id: u64) -> Option<EscrowFreezeReason> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EscrowFreezeReasonByShipment(shipment_id))
+}
+
+/// Store the latest escrow freeze reason code for a shipment.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+/// * `reason` - Structured freeze reason.
+pub fn set_escrow_freeze_reason(env: &Env, shipment_id: u64, reason: &EscrowFreezeReason) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::EscrowFreezeReasonByShipment(shipment_id), reason);
+}
+
 /// Remove escrow for a shipment from persistent storage.
 ///
 /// # Arguments
@@ -630,6 +656,51 @@ pub fn remove_escrow(env: &Env, shipment_id: u64) {
     env.storage()
         .persistent()
         .remove(&DataKey::Escrow(shipment_id));
+}
+
+/// Check if an address is an observer for a specific shipment.
+#[allow(dead_code)]
+pub fn is_shipment_observer(env: &Env, shipment_id: u64, address: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ShipmentObserver(shipment_id, address.clone()))
+        .unwrap_or(false)
+}
+
+/// Assign observer role to an address for a specific shipment.
+pub fn set_shipment_observer(env: &Env, shipment_id: u64, observer: &Address) {
+    env.storage().persistent().set(
+        &DataKey::ShipmentObserver(shipment_id, observer.clone()),
+        &true,
+    );
+    let count = get_observer_count(env, shipment_id);
+    set_observer_count(env, shipment_id, count + 1);
+}
+
+/// Revoke observer role from an address for a specific shipment.
+pub fn remove_shipment_observer(env: &Env, shipment_id: u64, observer: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::ShipmentObserver(shipment_id, observer.clone()));
+    let count = get_observer_count(env, shipment_id);
+    if count > 0 {
+        set_observer_count(env, shipment_id, count - 1);
+    }
+}
+
+/// Get the count of observers for a shipment.
+pub fn get_observer_count(env: &Env, shipment_id: u64) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ObserverCount(shipment_id))
+        .unwrap_or(0)
+}
+
+/// Set the count of observers for a shipment.
+fn set_observer_count(env: &Env, shipment_id: u64, count: u32) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ObserverCount(shipment_id), &count);
 }
 
 /// Backwards-compatible name used by tests: set escrow balance.
@@ -742,6 +813,13 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
         env.storage()
             .persistent()
             .extend_ttl(&hash_key, threshold, extend_to);
+    }
+
+    let freeze_reason_key = DataKey::EscrowFreezeReasonByShipment(shipment_id);
+    if env.storage().persistent().has(&freeze_reason_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&freeze_reason_key, threshold, extend_to);
     }
 }
 
@@ -1170,6 +1248,46 @@ pub fn set_shipment_limit(env: &Env, limit: u32) {
         .set(&DataKey::ShipmentLimit, &limit);
 }
 
+/// Get the company-specific shipment limit override, if set.
+pub fn get_company_shipment_limit(env: &Env, company: &Address) -> Option<u32> {
+    env.storage()
+        .instance()
+        .get(&DataKey::CompanyShipmentLimit(company.clone()))
+}
+
+/// Set the company-specific shipment limit override.
+pub fn set_company_shipment_limit(env: &Env, company: &Address, limit: u32) {
+    env.storage()
+        .instance()
+        .set(&DataKey::CompanyShipmentLimit(company.clone()), &limit);
+}
+
+/// Resolve effective shipment limit (company override first, then global).
+pub fn get_effective_shipment_limit(env: &Env, company: &Address) -> u32 {
+    get_company_shipment_limit(env, company).unwrap_or_else(|| get_shipment_limit(env))
+}
+
+/// Get the platform fee configuration from instance storage.
+pub fn get_fee_config(env: &Env) -> Option<FeeConfig> {
+    env.storage().instance().get(&DataKey::FeeConfig)
+}
+
+/// Set the platform fee configuration in instance storage.
+pub fn set_fee_config(env: &Env, config: &FeeConfig) {
+    env.storage().instance().set(&DataKey::FeeConfig, config);
+}
+
+/// Get the platform treasury address from instance storage.
+#[allow(dead_code)]
+pub fn get_treasury(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::Treasury)
+}
+
+/// Set the platform treasury address in instance storage.
+pub fn set_treasury(env: &Env, treasury: &Address) {
+    env.storage().instance().set(&DataKey::Treasury, treasury);
+}
+
 /// Get the current active shipment count for a company from instance storage.
 ///
 /// # Arguments
@@ -1239,6 +1357,78 @@ pub fn increment_active_shipment_count(env: &Env, company: &Address) {
 pub fn decrement_active_shipment_count(env: &Env, company: &Address) {
     let current = get_active_shipment_count(env, company);
     set_active_shipment_count(env, company, current.saturating_sub(1));
+}
+
+// ============= Milestone Event Counter Storage Functions =============
+
+/// Get the milestone event count for a shipment.
+/// Returns 0 if no milestone events have been emitted yet.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// * `u32` - The number of milestone events emitted for this shipment.
+///
+/// # Examples
+/// ```rust
+/// // let count = storage::get_milestone_event_count(&env, 1);
+/// ```
+pub fn get_milestone_event_count(env: &Env, shipment_id: u64) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::MilestoneEventCount(shipment_id))
+        .unwrap_or(0)
+}
+
+/// Increment the milestone event count for a shipment.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// No return value.
+///
+/// # Examples
+/// ```rust
+/// // storage::increment_milestone_event_count(&env, 1);
+/// ```
+pub fn increment_milestone_event_count(env: &Env, shipment_id: u64) {
+    let current = get_milestone_event_count(env, shipment_id);
+    env.storage().persistent().set(
+        &DataKey::MilestoneEventCount(shipment_id),
+        &current.saturating_add(1),
+    );
+}
+
+/// Get the condition breach event count for a shipment.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// * `u32` - The number of condition breach events emitted for this shipment.
+pub fn get_breach_event_count(env: &Env, shipment_id: u64) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::BreachEventCount(shipment_id))
+        .unwrap_or(0)
+}
+
+/// Increment the condition breach event count for a shipment.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+pub fn increment_breach_event_count(env: &Env, shipment_id: u64) {
+    let current = get_breach_event_count(env, shipment_id);
+    env.storage().persistent().set(
+        &DataKey::BreachEventCount(shipment_id),
+        &current.saturating_add(1),
+    );
 }
 
 // ============= Event Counter Storage Functions =============
@@ -1423,6 +1613,8 @@ pub fn get_evidence_hash(env: &Env, shipment_id: u64, index: u32) -> Option<Byte
         .get(&DataKey::DisputeEvidence(shipment_id, index))
 }
 
+// ============= Milestone Event Counter Storage Functions =============
+
 // ============= Idempotency Window Storage Functions =============
 
 /// Returns true if the action hash is already within an active idempotency window.
@@ -1456,6 +1648,21 @@ pub fn is_paused(env: &Env) -> bool {
 /// Set the contract pause state.
 pub fn set_paused(env: &Env, paused: bool) {
     env.storage().instance().set(&DataKey::IsPaused, &paused);
+}
+
+/// Returns whether the reentrancy lock is currently active.
+pub fn is_reentrancy_locked(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::ReentrancyLock)
+        .unwrap_or(false)
+}
+
+/// Sets the reentrancy lock flag.
+pub fn set_reentrancy_lock(env: &Env, locked: bool) {
+    env.storage()
+        .instance()
+        .set(&DataKey::ReentrancyLock, &locked);
 }
 
 // ============= IoT Hash Verification Storage Functions =============
@@ -1492,6 +1699,7 @@ pub fn get_status_hash(env: &Env, shipment_id: u64, status: &ShipmentStatus) -> 
 /// ```rust
 /// // let exists = storage::shipment_exists_in_persistent(&env, 1);
 /// ```
+#[allow(dead_code)]
 pub fn shipment_exists_in_persistent(env: &Env, shipment_id: u64) -> bool {
     env.storage()
         .persistent()
@@ -1510,9 +1718,9 @@ pub fn mark_salt_used(env: &Env, salt: &BytesN<32>) {
         .set(&DataKey::UsedSalt(salt.clone()), &true);
 }
 
-// ============= Settlement State Storage Functions =============
+// ============= Settlement Tracking Functions =============
 
-/// Get the current settlement counter.
+/// Get the settlement counter value from instance storage.
 ///
 /// # Arguments
 /// * `env` - The execution environment.
@@ -1524,6 +1732,7 @@ pub fn mark_salt_used(env: &Env, salt: &BytesN<32>) {
 /// ```rust
 /// // let counter = storage::get_settlement_counter(&env);
 /// ```
+#[allow(dead_code)]
 pub fn get_settlement_counter(env: &Env) -> u64 {
     env.storage()
         .instance()
@@ -1544,6 +1753,7 @@ pub fn get_settlement_counter(env: &Env) -> u64 {
 /// ```rust
 /// // storage::set_settlement_counter(&env, 10);
 /// ```
+#[allow(dead_code)]
 pub fn set_settlement_counter(env: &Env, counter: u64) {
     env.storage()
         .instance()
@@ -1562,6 +1772,7 @@ pub fn set_settlement_counter(env: &Env, counter: u64) {
 /// ```rust
 /// // let next_id = storage::increment_settlement_counter(&env);
 /// ```
+#[allow(dead_code)]
 pub fn increment_settlement_counter(env: &Env) -> u64 {
     let cur = get_settlement_counter(env);
     let next = cur.checked_add(1).unwrap_or(cur);
@@ -1582,6 +1793,7 @@ pub fn increment_settlement_counter(env: &Env) -> u64 {
 /// ```rust
 /// // let settlement = storage::get_settlement(&env, 1);
 /// ```
+#[allow(dead_code)]
 pub fn get_settlement(env: &Env, settlement_id: u64) -> Option<crate::types::SettlementRecord> {
     env.storage()
         .persistent()
@@ -1601,10 +1813,28 @@ pub fn get_settlement(env: &Env, settlement_id: u64) -> Option<crate::types::Set
 /// ```rust
 /// // storage::set_settlement(&env, &settlement);
 /// ```
+#[allow(dead_code)]
 pub fn set_settlement(env: &Env, settlement: &crate::types::SettlementRecord) {
     env.storage()
         .persistent()
         .set(&DataKey::Settlement(settlement.settlement_id), settlement);
+}
+
+/// Get the partial refund record for a shipment.
+pub fn get_partial_refund_record(
+    env: &Env,
+    shipment_id: u64,
+) -> Option<crate::types::PartialRefundRecord> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::PartialRefundRecord(shipment_id))
+}
+
+/// Set the partial refund record for a shipment.
+pub fn set_partial_refund_record(env: &Env, record: &crate::types::PartialRefundRecord) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::PartialRefundRecord(record.shipment_id), record);
 }
 
 /// Get the active settlement ID for a shipment.
@@ -1620,6 +1850,7 @@ pub fn set_settlement(env: &Env, settlement: &crate::types::SettlementRecord) {
 /// ```rust
 /// // let active_id = storage::get_active_settlement(&env, 1);
 /// ```
+#[allow(dead_code)]
 pub fn get_active_settlement(env: &Env, shipment_id: u64) -> Option<u64> {
     env.storage()
         .persistent()
@@ -1640,6 +1871,7 @@ pub fn get_active_settlement(env: &Env, shipment_id: u64) -> Option<u64> {
 /// ```rust
 /// // storage::set_active_settlement(&env, 1, 100);
 /// ```
+#[allow(dead_code)]
 pub fn set_active_settlement(env: &Env, shipment_id: u64, settlement_id: u64) {
     env.storage()
         .persistent()
@@ -1659,12 +1891,104 @@ pub fn set_active_settlement(env: &Env, shipment_id: u64, settlement_id: u64) {
 /// ```rust
 /// // storage::clear_active_settlement(&env, 1);
 /// ```
+#[allow(dead_code)]
 pub fn clear_active_settlement(env: &Env, shipment_id: u64) {
     env.storage()
         .persistent()
         .remove(&DataKey::ActiveSettlement(shipment_id));
 }
+
+// ============= Creation Quota Storage Functions (issue #296) =============
+
+/// Get the creation quota tracker for a company.
+pub fn get_creation_quota(
+    env: &Env,
+    company: &Address,
+) -> Option<crate::types::CreationQuotaTracker> {
+    env.storage()
+        .instance()
+        .get(&DataKey::CompanyCreationQuota(company.clone()))
+}
+
+/// Set the creation quota tracker for a company.
+pub fn set_creation_quota(
+    env: &Env,
+    company: &Address,
+    tracker: &crate::types::CreationQuotaTracker,
+) {
+    env.storage()
+        .instance()
+        .set(&DataKey::CompanyCreationQuota(company.clone()), tracker);
+}
+
+// ============= Proposal Digest Storage Functions (issue #297) =============
+
+/// Store the action digest for a proposal.
+pub fn set_proposal_digest(
+    env: &Env,
+    proposal_id: u64,
+    digest: &crate::types::ProposalActionDigest,
+) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ProposalDigest(proposal_id), digest);
+}
+
+/// Retrieve the action digest for a proposal.
+pub fn get_proposal_digest(
+    env: &Env,
+    proposal_id: u64,
+) -> Option<crate::types::ProposalActionDigest> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ProposalDigest(proposal_id))
+}
+
+// ============= Shipment Dependency Storage Functions =============
+
+/// Store prerequisites for a shipment.
+pub fn set_dependencies(env: &Env, shipment_id: u64, dependencies: &soroban_sdk::Vec<u64>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ShipmentDeps(shipment_id), dependencies);
+    env.storage().persistent().extend_ttl(
+        &DataKey::ShipmentDeps(shipment_id),
+        env.storage().max_ttl() - 100,
+        env.storage().max_ttl(),
+    );
+}
+
+/// Retrieve prerequisites for a shipment.
+pub fn get_dependencies(env: &Env, shipment_id: u64) -> Option<soroban_sdk::Vec<u64>> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ShipmentDeps(shipment_id))
+}
+
+/// Store shipments that depend on a specific shipment.
+pub fn add_dependent(env: &Env, prerequisite_id: u64, dependent_shipment_id: u64) {
+    let mut dependents =
+        get_dependents(env, prerequisite_id).unwrap_or_else(|| soroban_sdk::Vec::new(env));
+    dependents.push_back(dependent_shipment_id);
+    env.storage()
+        .persistent()
+        .set(&DataKey::ShipmentDependents(prerequisite_id), &dependents);
+    env.storage().persistent().extend_ttl(
+        &DataKey::ShipmentDependents(prerequisite_id),
+        env.storage().max_ttl() - 100,
+        env.storage().max_ttl(),
+    );
+}
+
+/// Retrieve shipments depending on a shipment.
+pub fn get_dependents(env: &Env, shipment_id: u64) -> Option<soroban_sdk::Vec<u64>> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ShipmentDependents(shipment_id))
+}
+
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use crate::test_utils;
@@ -1774,3 +2098,5 @@ mod tests {
         });
     }
 }
+
+// ============= Settlement State Storage Functions =============
