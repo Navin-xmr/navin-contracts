@@ -572,6 +572,17 @@ fn require_shipment(env: &Env, shipment_id: u64) -> Result<Shipment, NavinError>
     storage::get_shipment(env, shipment_id).ok_or(NavinError::ShipmentNotFound)
 }
 
+/// Preflight existence check: returns `Err(ShipmentNotFound)` early if the
+/// shipment does not exist, without loading the full record. Use this at the
+/// top of mutation handlers so callers receive a clear domain error before any
+/// deeper logic runs.
+fn require_shipment_exists(env: &Env, shipment_id: u64) -> Result<(), NavinError> {
+    if !storage::has_persistent_shipment(env, shipment_id) {
+        return Err(NavinError::ShipmentNotFound);
+    }
+    Ok(())
+}
+
 /// Require that `caller` is the assigned carrier for a shipment (or admin).
 /// Returns the shipment on success.
 fn require_carrier_for_shipment(
@@ -2456,6 +2467,7 @@ impl NavinShipment {
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
+        require_shipment_exists(&env, shipment_id)?;
         caller.require_auth();
 
         // Validate hash before storage
@@ -3766,6 +3778,7 @@ impl NavinShipment {
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
+        require_shipment_exists(&env, shipment_id)?;
         caller.require_auth();
 
         // Validate hash before storage

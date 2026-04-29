@@ -207,6 +207,65 @@ mod tests {
         assert!(matches!(result, Err(Ok(NavinError::ShipmentNotFound))));
     }
 
+    // ── require_shipment_exists preflight ────────────────────────────────────
+
+    #[test]
+    fn preflight_update_status_missing_shipment_returns_not_found() {
+        let (env, client, _admin, _company, carrier) = setup();
+        let hash = make_hash(&env, 20);
+        let result = client.try_update_status(&carrier, &9999, &ShipmentStatus::InTransit, &hash);
+        assert_eq!(result, Err(Ok(NavinError::ShipmentNotFound)));
+    }
+
+    #[test]
+    fn preflight_cancel_shipment_missing_shipment_returns_not_found() {
+        let (env, client, admin, _company, _carrier) = setup();
+        let hash = make_hash(&env, 21);
+        let result = client.try_cancel_shipment(&admin, &9999, &hash);
+        assert_eq!(result, Err(Ok(NavinError::ShipmentNotFound)));
+    }
+
+    #[test]
+    fn preflight_update_status_existing_shipment_passes_through() {
+        let (env, client, _admin, company, carrier) = setup();
+        let receiver = Address::generate(&env);
+        let hash = make_hash(&env, 22);
+        let deadline = future_deadline(&env);
+        let id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &deadline,
+            &None,
+        );
+        let hash2 = make_hash(&env, 23);
+        // Should not return ShipmentNotFound — passes the preflight and proceeds to status logic.
+        let result = client.try_update_status(&carrier, &id, &ShipmentStatus::InTransit, &hash2);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn preflight_cancel_shipment_existing_shipment_passes_through() {
+        let (env, client, _admin, company, carrier) = setup();
+        let receiver = Address::generate(&env);
+        let hash = make_hash(&env, 24);
+        let deadline = future_deadline(&env);
+        let id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &deadline,
+            &None,
+        );
+        let hash2 = make_hash(&env, 25);
+        let result = client.try_cancel_shipment(&company, &id, &hash2);
+        assert!(result.is_ok());
+    }
+
     // ── require_not_finalized ────────────────────────────────────────────────
 
     #[test]
