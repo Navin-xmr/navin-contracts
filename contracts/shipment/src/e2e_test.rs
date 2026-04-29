@@ -14,7 +14,7 @@
 
 extern crate std;
 
-use crate::{test_utils::setup_env, NavinShipment, NavinShipmentClient, ShipmentStatus};
+use crate::{test_utils, NavinShipment, NavinShipmentClient, ShipmentStatus};
 use navin_token::{NavinToken, NavinTokenClient};
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger as _},
@@ -108,7 +108,7 @@ fn contract_event_topics_since(
 
 #[test]
 fn test_debug_event_structure() {
-    let (env, admin) = setup_env();
+    let (env, admin) = test_utils::setup_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -161,7 +161,7 @@ fn test_debug_event_structure() {
 // =============================================================================
 #[test]
 fn test_e2e_happy_path_with_milestones_and_token_balances() {
-    let (env, admin) = setup_env();
+    let (env, admin) = test_utils::setup_env();
 
     // ── Actors ────────────────────────────────────────────────────────────────
     let company = Address::generate(&env);
@@ -393,7 +393,7 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
 // =============================================================================
 #[test]
 fn test_e2e_cancel_refund_path_with_token_balances() {
-    let (env, admin) = setup_env();
+    let (env, admin) = test_utils::setup_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -483,7 +483,7 @@ fn test_e2e_cancel_refund_path_with_token_balances() {
 // =============================================================================
 #[test]
 fn test_e2e_partial_milestones_then_cancel_via_deadline() {
-    let (env, admin) = setup_env();
+    let (env, admin) = test_utils::setup_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -632,7 +632,7 @@ fn test_e2e_partial_milestones_then_cancel_via_deadline() {
 // =============================================================================
 #[test]
 fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
-    let (env, admin) = setup_env();
+    let (env, admin) = test_utils::setup_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -725,7 +725,7 @@ fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
 
 #[test]
 fn test_regression_milestone_release_event_ordering() {
-    let (env, admin) = setup_env();
+    let (env, admin) = test_utils::setup_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -782,7 +782,7 @@ fn test_regression_milestone_release_event_ordering() {
 
 #[test]
 fn test_regression_deadline_refund_event_ordering() {
-    let (env, admin) = setup_env();
+    let (env, admin) = test_utils::setup_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
