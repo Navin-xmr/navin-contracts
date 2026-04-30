@@ -2459,7 +2459,7 @@ fn test_record_milestone_success() {
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let checkpoint = soroban_sdk::Symbol::new(&env, "port_arrival");
+    let checkpoint = super::test_utils::checkpoint_symbol(&env, "port_arrival");
     let deadline = env.ledger().timestamp() + 3600;
 
     client.initialize(&admin, &token_contract);
@@ -2529,7 +2529,7 @@ fn test_record_milestone_wrong_status() {
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let checkpoint = soroban_sdk::Symbol::new(&env, "port_arrival");
+    let checkpoint = super::test_utils::checkpoint_symbol(&env, "port_arrival");
     let deadline = env.ledger().timestamp() + 3600;
 
     client.initialize(&admin, &token_contract);
@@ -2576,7 +2576,7 @@ fn test_record_milestone_unauthorized() {
     );
 
     let outsider = Address::generate(&env);
-    let checkpoint = soroban_sdk::Symbol::new(&env, "port_arrival");
+    let checkpoint = super::test_utils::checkpoint_symbol(&env, "port_arrival");
 
     env.as_contract(&client.address, || {
         let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
@@ -2619,7 +2619,7 @@ fn test_suspended_carrier_blocked_from_milestone_handlers() {
 
     client.suspend_carrier(&admin, &carrier);
 
-    let checkpoint = Symbol::new(&env, "port_arrival");
+    let checkpoint = super::test_utils::checkpoint_symbol(&env, "port_arrival");
     let single_res = client.try_record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
     assert_eq!(single_res, Err(Ok(crate::NavinError::CarrierSuspended)));
 
@@ -2664,15 +2664,15 @@ fn test_record_milestones_batch_success() {
     // Create batch of milestones
     let mut milestones = soroban_sdk::Vec::new(&env);
     milestones.push_back((
-        Symbol::new(&env, "warehouse"),
+        super::test_utils::checkpoint_symbol(&env, "warehouse"),
         BytesN::from_array(&env, &[10u8; 32]),
     ));
     milestones.push_back((
-        Symbol::new(&env, "port"),
+        super::test_utils::checkpoint_symbol(&env, "port"),
         BytesN::from_array(&env, &[20u8; 32]),
     ));
     milestones.push_back((
-        Symbol::new(&env, "customs"),
+        super::test_utils::checkpoint_symbol(&env, "customs"),
         BytesN::from_array(&env, &[30u8; 32]),
     ));
 
@@ -2721,7 +2721,7 @@ fn test_record_milestones_batch_single_milestone() {
     // Create batch with single milestone
     let mut milestones = soroban_sdk::Vec::new(&env);
     milestones.push_back((
-        Symbol::new(&env, "warehouse"),
+        super::test_utils::checkpoint_symbol(&env, "warehouse"),
         BytesN::from_array(&env, &[10u8; 32]),
     ));
 
