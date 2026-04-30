@@ -1085,6 +1085,64 @@ fn test_get_role_assigned() {
     assert_eq!(client.get_role(&carrier), crate::Role::Carrier);
 }
 
+#[test]
+fn test_get_role_all_types() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let guardian = Address::generate(&env);
+    let operator = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+
+    // Test Company role
+    client.add_company(&admin, &company);
+    assert_eq!(client.get_role(&company), crate::Role::Company);
+
+    // Test Carrier role
+    client.add_carrier(&admin, &carrier);
+    assert_eq!(client.get_role(&carrier), crate::Role::Carrier);
+
+    // Test Guardian role
+    client.add_guardian(&admin, &guardian);
+    assert_eq!(client.get_role(&guardian), crate::Role::Guardian);
+
+    // Test Operator role
+    client.add_operator(&admin, &operator);
+    assert_eq!(client.get_role(&operator), crate::Role::Operator);
+}
+
+#[test]
+fn test_get_role_multiple_unassigned() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+    let user3 = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+
+    // All unassigned addresses should return Unassigned role
+    assert_eq!(client.get_role(&user1), crate::Role::Unassigned);
+    assert_eq!(client.get_role(&user2), crate::Role::Unassigned);
+    assert_eq!(client.get_role(&user3), crate::Role::Unassigned);
+}
+
+#[test]
+fn test_get_role_after_revocation() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+
+    // Assign role
+    client.add_company(&admin, &company);
+    assert_eq!(client.get_role(&company), crate::Role::Company);
+
+    // Revoke role
+    client.revoke_role(&admin, &company);
+    assert_eq!(client.get_role(&company), crate::Role::Unassigned);
+}
+
 // ============= Get Shipment Tests =============
 
 #[test]
