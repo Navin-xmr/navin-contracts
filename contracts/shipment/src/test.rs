@@ -12,8 +12,8 @@ use soroban_sdk::{
     Address, BytesN, Env, IntoVal, Symbol, TryFromVal,
 };
 
-use std::println;
 use soroban_sdk::testutils::Ledger;
+use std::println;
 
 #[contract]
 struct MockToken;
@@ -320,8 +320,8 @@ fn test_create_shipments_batch_invalid_input() {
         data_hash: BytesN::from_array(&env, &[1u8; 32]),
         payment_milestones: soroban_sdk::Vec::new(&env),
         deadline,
-            depends_on: None,
-        });
+        depends_on: None,
+    });
     let user = Address::generate(&env);
     shipments.push_back(ShipmentInput {
         receiver: user.clone(),
@@ -329,8 +329,8 @@ fn test_create_shipments_batch_invalid_input() {
         data_hash: BytesN::from_array(&env, &[2u8; 32]),
         payment_milestones: soroban_sdk::Vec::new(&env),
         deadline,
-            depends_on: None,
-        });
+        depends_on: None,
+    });
 
     client.create_shipments_batch(&company, &shipments);
 }
@@ -4924,7 +4924,8 @@ fn test_propose_action_upgrade() {
     let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
     let action = crate::AdminAction::Upgrade(new_wasm_hash);
 
-    let proposal_id = client.propose_action(&admin1, &action);
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
     assert_eq!(proposal_id, 1);
 
     let proposal = client.get_proposal(&proposal_id);
@@ -4955,7 +4956,7 @@ fn test_propose_action_not_admin() {
     let action = crate::AdminAction::Upgrade(new_wasm_hash);
 
     // Outsider tries to propose
-    client.propose_action(&outsider, &action);
+    client.propose_action(&outsider, &action, &BytesN::from_array(&env, &[1u8; 32]));
 }
 
 #[test]
@@ -4979,7 +4980,8 @@ fn test_approve_action_success() {
     let new_admin = Address::generate(&env);
     let action = crate::AdminAction::TransferAdmin(new_admin);
 
-    let proposal_id = client.propose_action(&admin1, &action);
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Admin2 approves
     client.approve_action(&admin2, &proposal_id);
@@ -5008,7 +5010,8 @@ fn test_approve_action_already_approved() {
     let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
     let action = crate::AdminAction::Upgrade(new_wasm_hash);
 
-    let proposal_id = client.propose_action(&admin1, &action);
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Admin1 tries to approve again (already approved when proposing)
     client.approve_action(&admin1, &proposal_id);
@@ -5034,7 +5037,8 @@ fn test_approve_action_not_admin() {
     let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
     let action = crate::AdminAction::Upgrade(new_wasm_hash);
 
-    let proposal_id = client.propose_action(&admin1, &action);
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Outsider tries to approve
     client.approve_action(&outsider, &proposal_id);
@@ -5061,7 +5065,8 @@ fn test_execute_proposal_auto_on_threshold() {
     client.init_multisig(&admin, &admins, &2);
 
     let action = crate::AdminAction::Upgrade(new_wasm_hash);
-    let proposal_id = client.propose_action(&admin1, &action);
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Admin2 approves - this should auto-execute since threshold is met
     client.approve_action(&admin2, &proposal_id);
@@ -5098,7 +5103,8 @@ fn test_execute_proposal_already_executed() {
 
     // Use TransferAdmin action instead of Upgrade
     let action = crate::AdminAction::TransferAdmin(new_admin);
-    let proposal_id = client.propose_action(&admin1, &action);
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     client.approve_action(&admin2, &proposal_id);
 
@@ -5124,7 +5130,8 @@ fn test_proposal_expiration() {
     let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
     let action = crate::AdminAction::Upgrade(new_wasm_hash);
 
-    let proposal_id = client.propose_action(&admin1, &action);
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Fast forward time beyond expiration (7 days + 1 second)
     super::test_utils::advance_past_multisig_expiry(&env);
@@ -5176,7 +5183,8 @@ fn test_force_release_action() {
 
     // Propose force release
     let action = crate::AdminAction::ForceRelease(shipment_id);
-    let proposal_id = client.propose_action(&admin1, &action);
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Approve and execute
     client.approve_action(&admin2, &proposal_id);
@@ -5225,7 +5233,8 @@ fn test_force_refund_action() {
 
     // Propose force refund
     let action = crate::AdminAction::ForceRefund(shipment_id);
-    let proposal_id = client.propose_action(&admin1, &action);
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Approve and execute
     client.approve_action(&admin2, &proposal_id);
@@ -5253,7 +5262,8 @@ fn test_transfer_admin_action() {
 
     // Propose admin transfer
     let action = crate::AdminAction::TransferAdmin(new_admin.clone());
-    let proposal_id = client.propose_action(&admin1, &action);
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Approve and execute
     client.approve_action(&admin2, &proposal_id);
@@ -5288,7 +5298,8 @@ fn test_three_of_five_multisig() {
     client.init_multisig(&admin, &admins, &3);
 
     let action = crate::AdminAction::Upgrade(new_wasm_hash);
-    let proposal_id = client.propose_action(&admin1, &action);
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // First approval (proposer)
     let proposal = client.get_proposal(&proposal_id);
@@ -5338,7 +5349,8 @@ fn test_execute_proposal_insufficient_approvals() {
     let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
     let action = crate::AdminAction::Upgrade(new_wasm_hash);
 
-    let proposal_id = client.propose_action(&admin1, &action);
+    let proposal_id =
+        client.propose_action(&admin1, &action, &BytesN::from_array(&env, &[1u8; 32]));
 
     // Only 1 approval, need 3
     client.execute_proposal(&proposal_id);
@@ -6279,9 +6291,9 @@ fn test_get_status_summary_populated() {
             &BytesN::from_array(&env, &[i as u8; 32]),
             &soroban_sdk::Vec::new(&env),
             &deadline,
-        &None,
-    );
-    println!("Created shipment with ID: {}", id);
+            &None,
+        );
+        println!("Created shipment with ID: {}", id);
     }
 
     // Status: 3 Created
@@ -7427,7 +7439,11 @@ fn test_execute_proposal_returns_proposal_already_executed() {
         &None,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id),
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
 
     client.approve_action(&admin2, &proposal_id);
     client.execute_proposal(&proposal_id);
@@ -7466,7 +7482,11 @@ fn test_approve_action_returns_proposal_expired() {
         &None,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id),
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
 
     // Fast forward time past expiration (7 days)
     super::test_utils::advance_past_multisig_expiry(&env);
@@ -7503,7 +7523,11 @@ fn test_execute_proposal_returns_proposal_expired() {
         &None,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id),
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
 
     client.approve_action(&admin2, &proposal_id);
 
@@ -7546,7 +7570,11 @@ fn test_approve_action_returns_already_approved() {
         &None,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id),
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
 
     client.approve_action(&admin2, &proposal_id);
     // Try to approve again with the same admin
@@ -7586,7 +7614,11 @@ fn test_execute_proposal_returns_insufficient_approvals() {
         &None,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id),
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
 
     // Only 1 approval (proposer), but threshold is 3
     client.execute_proposal(&proposal_id);
@@ -7625,7 +7657,11 @@ fn test_propose_action_returns_not_an_admin() {
     );
 
     // Outsider tries to propose
-    client.propose_action(&outsider, &crate::AdminAction::ForceRelease(shipment_id));
+    client.propose_action(
+        &outsider,
+        &crate::AdminAction::ForceRelease(shipment_id),
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
 }
 
 #[test]
@@ -7658,7 +7694,11 @@ fn test_approve_action_returns_not_an_admin() {
         &None,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id),
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
 
     // Outsider tries to approve
     client.approve_action(&outsider, &proposal_id);
@@ -9342,14 +9382,29 @@ fn test_revoke_role_then_create_shipment_fails() {
     let deadline = env.ledger().timestamp() + 86400;
 
     // Company can create a shipment
-    let _id = client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline, &None);
+    let _id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &hash,
+        &milestones,
+        &deadline,
+        &None,
+    );
 
     // Revoke company role
     client.revoke_role(&admin, &company);
 
     // Now creating a shipment should fail with Unauthorized
-    let result =
-        client.try_create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline, &None);
+    let result = client.try_create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &hash,
+        &milestones,
+        &deadline,
+        &None,
+    );
     assert!(result.is_err());
 }
 
@@ -9560,8 +9615,8 @@ fn test_suspended_role_cannot_perform_actions() {
             &data_hash,
             &soroban_sdk::Vec::new(&env),
             &deadline,
-        &None,
-    );
+            &None,
+        );
     }));
 
     assert!(
@@ -10543,8 +10598,8 @@ fn test_create_shipments_batch_validates_milestone_symbols() {
         data_hash: data_hash1,
         payment_milestones: milestones1,
         deadline,
-            depends_on: None,
-        });
+        depends_on: None,
+    });
 
     // Second shipment with valid milestones
     let mut milestones2 = soroban_sdk::Vec::new(&env);
@@ -10558,8 +10613,8 @@ fn test_create_shipments_batch_validates_milestone_symbols() {
         data_hash: data_hash2,
         payment_milestones: milestones2,
         deadline,
-            depends_on: None,
-        });
+        depends_on: None,
+    });
 
     let ids = client.create_shipments_batch(&company, &inputs);
     assert_eq!(ids.len(), 2);
@@ -10944,6 +10999,7 @@ fn test_observer_can_read_shipment() {
         &data_hash,
         &milestones,
         &deadline,
+        &None,
     );
 
     client.assign_observer_role(&admin, &observer, &shipment_id);
@@ -10978,6 +11034,7 @@ fn test_observer_cannot_update_status() {
         &data_hash,
         &milestones,
         &deadline,
+        &None,
     );
 
     client.assign_observer_role(&admin, &observer, &shipment_id);
@@ -11016,6 +11073,7 @@ fn test_observer_assignment_by_non_admin_fails() {
         &data_hash,
         &milestones,
         &deadline,
+        &None,
     );
 
     let result = client.try_assign_observer_role(&company, &observer, &shipment_id);
@@ -11048,6 +11106,7 @@ fn test_multiple_observers_on_one_shipment() {
         &data_hash,
         &milestones,
         &deadline,
+        &None,
     );
 
     client.assign_observer_role(&admin, &observer1, &shipment_id);
@@ -11088,6 +11147,7 @@ fn test_observer_revocation_works() {
         &data_hash,
         &milestones,
         &deadline,
+        &None,
     );
 
     client.assign_observer_role(&admin, &observer, &shipment_id);
@@ -11124,6 +11184,7 @@ fn test_observer_can_call_read_only_functions() {
         &data_hash,
         &milestones,
         &deadline,
+        &None,
     );
 
     client.assign_observer_role(&admin, &observer, &shipment_id);
@@ -11133,8 +11194,6 @@ fn test_observer_can_call_read_only_functions() {
     let _receiver = client.get_shipment_receiver(&shipment_id);
     let _sender = client.get_shipment_sender(&shipment_id);
     let _carrier = client.get_shipment_carrier(&shipment_id);
-
-    assert!(true);
 }
 
 #[test]
@@ -11161,6 +11220,7 @@ fn test_partial_refund_50_percent() {
         &data_hash,
         &milestones,
         &deadline,
+        &None,
     );
 
     let deposit_amount = 1000i128;
@@ -11204,6 +11264,7 @@ fn test_partial_refund_100_percent_equals_full_refund() {
         &data_hash,
         &milestones,
         &deadline,
+        &None,
     );
 
     let deposit_amount = 1000i128;
@@ -11243,6 +11304,7 @@ fn test_partial_refund_zero_percent_fails() {
         &data_hash,
         &milestones,
         &deadline,
+        &None,
     );
 
     client.deposit_escrow(&company, &shipment_id, &1000);
@@ -11276,6 +11338,7 @@ fn test_partial_refund_unauthorized_fails() {
         &data_hash,
         &milestones,
         &deadline,
+        &None,
     );
 
     client.deposit_escrow(&company, &shipment_id, &1000);
@@ -11308,6 +11371,7 @@ fn test_partial_refund_on_non_escrowed_shipment_fails() {
         &data_hash,
         &milestones,
         &deadline,
+        &None,
     );
 
     let result = client.try_partial_refund_escrow(&admin, &shipment_id, &50);
@@ -11338,6 +11402,7 @@ fn test_partial_refund_twice_fails() {
         &data_hash,
         &milestones,
         &deadline,
+        &None,
     );
 
     client.deposit_escrow(&company, &shipment_id, &1000);

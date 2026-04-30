@@ -99,7 +99,8 @@
                 },
                 {
                   "u64": 2678402
-                }
+                },
+                "void"
               ]
             }
           },
@@ -134,7 +135,8 @@
                 },
                 {
                   "u64": 2678404
-                }
+                },
+                "void"
               ]
             }
           },
@@ -169,7 +171,8 @@
                 },
                 {
                   "u64": 2678406
-                }
+                },
+                "void"
               ]
             }
           },
@@ -204,7 +207,8 @@
                 },
                 {
                   "u64": 2678408
-                }
+                },
+                "void"
               ]
             }
           },
@@ -239,7 +243,8 @@
                 },
                 {
                   "u64": 2678410
-                }
+                },
+                "void"
               ]
             }
           },
@@ -911,6 +916,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "depends_on"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "escrow_amount"
                       },
                       "val": {
@@ -1098,6 +1109,12 @@
                       "val": {
                         "u64": 2678404
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "depends_on"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {
@@ -1291,6 +1308,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "depends_on"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "escrow_amount"
                       },
                       "val": {
@@ -1481,6 +1504,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "depends_on"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "escrow_amount"
                       },
                       "val": {
@@ -1668,6 +1697,12 @@
                       "val": {
                         "u64": 2678410
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "depends_on"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {

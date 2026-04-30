@@ -68,15 +68,15 @@ fn hash_from_seed(env: &Env, seed: u64) -> BytesN<32> {
 
 /// Build a valid milestone Vec that sums to exactly 100.
 fn build_milestones_summing_to_100(env: &Env, count: usize) -> Vec<(Symbol, u32)> {
-    assert!(count >= 1 && count <= 5);
+    assert!((1..=5).contains(&count));
     let mut milestones = Vec::new(env);
     let per = 100u32 / count as u32;
     let remainder = 100u32 - per * count as u32;
 
     let names = ["alpha", "beta", "gamma", "delta", "epsilon"];
-    for i in 0..count {
+    for (i, name) in names.iter().enumerate().take(count) {
         let pct = if i == count - 1 { per + remainder } else { per };
-        milestones.push_back((Symbol::new(env, names[i]), pct));
+        milestones.push_back((Symbol::new(env, name), pct));
     }
     milestones
 }
@@ -139,8 +139,8 @@ fn fuzz_milestone_sum_must_be_100() {
             &data_hash,
             &bad_milestones,
             &deadline,
-        &None,
-    );
+            &None,
+        );
         assert!(
             result.is_err(),
             "Milestones summing to {} (not 100) must be rejected",
@@ -183,8 +183,8 @@ fn fuzz_milestone_valid_sum_accepted() {
             &data_hash,
             &milestones,
             &deadline,
-        &None,
-    );
+            &None,
+        );
         assert!(
             result.is_ok(),
             "Valid milestones summing to 100 (count={count}) must be accepted"
@@ -227,8 +227,8 @@ fn fuzz_milestone_partial_releases_never_exceed_escrow() {
             &data_hash,
             &milestones,
             &deadline,
-        &None,
-    );
+            &None,
+        );
 
         let deposit_amount = ((seed % 999_999) + 1) as i128;
         client.deposit_escrow(&company, &id, &deposit_amount);
@@ -314,8 +314,8 @@ fn fuzz_milestone_idempotency_single_payment() {
             &data_hash,
             &milestones,
             &deadline,
-        &None,
-    );
+            &None,
+        );
 
         let amount = ((seed % 999_999) + 1) as i128;
         client.deposit_escrow(&company, &id, &amount);
@@ -387,8 +387,8 @@ fn fuzz_milestone_random_valid_percentages() {
             &data_hash,
             &milestones,
             &deadline,
-        &None,
-    );
+            &None,
+        );
         assert!(
             result.is_ok(),
             "Random valid milestones ({p1}+{p2}=100) must be accepted"

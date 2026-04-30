@@ -27,27 +27,30 @@ mod test_consistency;
 #[cfg(test)]
 mod test_cross_contract_integration;
 #[cfg(test)]
-mod test_mixed_token_shipments;
-#[cfg(test)]
-mod test_reentrancy_guard;
-#[cfg(test)]
-mod test_token_compatibility;
-
-#[cfg(test)]
 mod test_event_fixtures;
 #[cfg(test)]
 mod test_finalization;
 #[cfg(test)]
 mod test_hash_emit_vectors;
 #[cfg(test)]
+mod test_mixed_token_shipments;
+#[cfg(test)]
 mod test_performance;
 #[cfg(test)]
+mod test_reentrancy_guard;
+#[cfg(test)]
 mod test_rollback;
+#[cfg(test)]
+mod test_settlement;
+#[cfg(test)]
+mod test_token_compatibility;
 mod types;
 mod validation;
 
 #[cfg(test)]
 mod test_auth;
+#[cfg(test)]
+mod test_auth_matrix;
 #[cfg(test)]
 mod test_auto_dispute;
 #[cfg(test)]
@@ -68,6 +71,8 @@ mod test_pause;
 mod test_precondition_guards;
 #[cfg(test)]
 mod test_proposal_digest;
+#[cfg(test)]
+mod test_replay_protection;
 #[cfg(test)]
 mod test_require_auth_for_args;
 #[cfg(test)]
@@ -569,6 +574,7 @@ fn require_admin(env: &Env, caller: &Address) -> Result<(), NavinError> {
 
 /// Require that a shipment exists and return it. Centralizes the repeated
 /// `storage::get_shipment(&env, id).ok_or(ShipmentNotFound)?` pattern.
+#[allow(dead_code)]
 fn require_shipment(env: &Env, shipment_id: u64) -> Result<Shipment, NavinError> {
     storage::get_shipment(env, shipment_id).ok_or(NavinError::ShipmentNotFound)
 }
@@ -586,6 +592,7 @@ fn require_shipment_exists(env: &Env, shipment_id: u64) -> Result<(), NavinError
 
 /// Require that `caller` is the assigned carrier for a shipment (or admin).
 /// Returns the shipment on success.
+#[allow(dead_code)]
 fn require_carrier_for_shipment(
     env: &Env,
     caller: &Address,
@@ -1862,6 +1869,7 @@ impl NavinShipment {
     /// , &None);
     /// assert_eq!(shipment_id, 1);
     /// ```
+    #[allow(clippy::too_many_arguments)]
     pub fn create_shipment(
         env: Env,
         sender: Address,
@@ -2051,11 +2059,7 @@ impl NavinShipment {
                 .checked_add(1)
                 .ok_or(NavinError::CounterOverflow)?;
 
-            validation::validate_dependencies(
-                &env,
-                shipment_id,
-                &shipment_input.depends_on,
-            )?;
+            validation::validate_dependencies(&env, shipment_id, &shipment_input.depends_on)?;
 
             let shipment = Shipment {
                 id: shipment_id,
@@ -2512,7 +2516,10 @@ impl NavinShipment {
             return Err(NavinError::InvalidStatus);
         }
 
-        if matches!(new_status, ShipmentStatus::InTransit | ShipmentStatus::Delivered) {
+        if matches!(
+            new_status,
+            ShipmentStatus::InTransit | ShipmentStatus::Delivered
+        ) {
             let unmet = validation::collect_unmet_dependencies(&env, shipment_id)?;
             if !unmet.is_empty() {
                 events::emit_shipment_blocked(&env, shipment_id, &caller, unmet);
@@ -4204,15 +4211,36 @@ impl NavinShipment {
             let token_contract =
                 storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
 
-            // Transfer tokens from this contract to company
             let contract_address = env.current_contract_address();
-            invoke_token_transfer(
+
+            // Create settlement record in Pending state
+            let settlement_id = create_settlement(
+                &env,
+                shipment_id,
+                SettlementOperation::Refund,
+                escrow_amount,
+                &contract_address,
+                &shipment.sender,
+            )?;
+
+            // Transfer tokens from this contract to company
+            let transfer_result = invoke_token_transfer(
                 &env,
                 &token_contract,
                 &contract_address,
                 &shipment.sender,
                 escrow_amount,
-            )?;
+            );
+
+            match transfer_result {
+                Ok(()) => {
+                    complete_settlement(&env, settlement_id, shipment_id)?;
+                }
+                Err(e) => {
+                    fail_settlement(&env, settlement_id, shipment_id, e as u32)?;
+                    return Err(e);
+                }
+            }
 
             shipment.escrow_amount = 0;
             let old_status = shipment.status.clone();
@@ -5074,6 +5102,7 @@ impl NavinShipment {
         env: Env,
         proposer: Address,
         action: crate::types::AdminAction,
+        salt: BytesN<32>,
     ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
         proposer.require_auth();
@@ -5082,6 +5111,12 @@ impl NavinShipment {
         if !storage::is_admin(&env, &proposer) {
             return Err(NavinError::NotAnAdmin);
         }
+
+        // Anti-replay: reject if this salt has been used before.
+        if storage::is_salt_used(&env, &salt) {
+            return Err(NavinError::ProposalSaltReused);
+        }
+        storage::mark_salt_used(&env, &salt);
 
         let proposal_id = storage::get_proposal_counter(&env)
             .checked_add(1)
@@ -5102,6 +5137,7 @@ impl NavinShipment {
             created_at: now,
             expires_at,
             executed: false,
+            salt: salt.clone(),
         };
 
         storage::set_proposal(&env, &proposal);

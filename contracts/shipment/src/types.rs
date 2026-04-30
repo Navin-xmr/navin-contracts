@@ -138,6 +138,8 @@ pub enum DataKey {
     ObserverCount(u64),
     /// Partial refund record for a shipment.
     PartialRefundRecord(u64),
+    /// One-time anti-replay salt used in a proposal; presence means "already used".
+    UsedSalt(BytesN<32>),
 }
 
 /// Structured reason codes for escrow freeze events.
@@ -671,6 +673,8 @@ pub struct Proposal {
     pub expires_at: u64,
     /// Whether the proposal has been executed.
     pub executed: bool,
+    /// One-time anti-replay salt; permanently recorded to prevent reuse.
+    pub salt: BytesN<32>,
 }
 
 /// Notification types for backend indexing and push notifications.

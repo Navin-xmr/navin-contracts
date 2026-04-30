@@ -87,7 +87,15 @@ fn create_shipment(
     let receiver = Address::generate(env);
     let data_hash = hash_from_seed(env, seed);
     let deadline = env.ledger().timestamp() + 86_400 * 30;
-    client.create_shipment(company, &receiver, carrier, &data_hash, &Vec::new(env), &deadline, &None)
+    client.create_shipment(
+        company,
+        &receiver,
+        carrier,
+        &data_hash,
+        &Vec::new(env),
+        &deadline,
+        &None,
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -273,8 +281,8 @@ fn fuzz_escrow_release_never_exceeds_balance() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
-        &None,
-    );
+            &None,
+        );
 
         let amount = ((seed % 999_999) + 1) as i128;
         client.deposit_escrow(&company, &id, &amount);
@@ -338,8 +346,8 @@ fn fuzz_escrow_double_release_fails() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
-        &None,
-    );
+            &None,
+        );
 
         let amount = ((seed % 999_999) + 1) as i128;
         client.deposit_escrow(&company, &id, &amount);
@@ -429,8 +437,8 @@ fn fuzz_escrow_invariant_amount_lte_total() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
-        &None,
-    );
+            &None,
+        );
 
         let amount = ((seed % 999_999) + 1) as i128;
         client.deposit_escrow(&company, &id, &amount);

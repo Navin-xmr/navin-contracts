@@ -225,7 +225,7 @@ fn create_shipment_and_status_update_auth_args_are_stable() {
             data_hash.clone().into_val(&ctx.env),
             milestones.clone().into_val(&ctx.env),
             deadline.into_val(&ctx.env),
-            None::<Vec<u64>>.into_val(&ctx.env)
+            None::<Vec<u64>>.into_val(&ctx.env),
         ],
     );
 

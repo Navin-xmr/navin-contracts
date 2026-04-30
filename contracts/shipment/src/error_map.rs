@@ -374,6 +374,12 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "A circular dependency was detected in the shipment prerequisites.",
         ),
+        NavinError::ProposalSaltReused => (
+            56,
+            InvalidInput,
+            NoRetry,
+            "Proposal salt was already used in a prior proposal; replay attack prevented.",
+        ),
     };
 
     ContractErrorInfo {

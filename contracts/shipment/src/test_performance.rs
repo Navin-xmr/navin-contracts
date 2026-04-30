@@ -127,7 +127,7 @@ fn test_batch_cheaper_per_item_than_individual_calls() {
             &dummy_hash(&ctx_single.env, seed),
             &Vec::new(&ctx_single.env),
             &deadline_s,
-            &None
+            &None,
         );
     }
     let individual_cpu = ctx_single
@@ -148,7 +148,7 @@ fn test_batch_cheaper_per_item_than_individual_calls() {
             data_hash: dummy_hash(&ctx_batch.env, seed),
             payment_milestones: Vec::new(&ctx_batch.env),
             deadline: deadline_b,
-        depends_on: None,
+            depends_on: None,
         });
     }
     ctx_batch.env.cost_estimate().budget().reset_unlimited();

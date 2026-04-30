@@ -9,11 +9,7 @@
 #[cfg(test)]
 mod tests {
     use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
-    use soroban_sdk::{
-        contract, contractimpl,
-        testutils::{Address as _, Ledger as _},
-        Address, BytesN, Env, Vec,
-    };
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
 
     #[contract]
     struct MockToken;
@@ -83,8 +79,8 @@ mod tests {
             &hash,
             &Vec::new(&env),
             &deadline,
-        &None,
-    );
+            &None,
+        );
         assert_eq!(result, Err(Ok(NavinError::ContractPaused)));
     }
 
@@ -92,7 +88,7 @@ mod tests {
 
     #[test]
     fn require_admin_rejects_non_admin() {
-        let (env, client, _admin, company, _carrier) = setup();
+        let (_env, client, _admin, company, _carrier) = setup();
 
         // set_shipment_limit uses require_admin internally.
         let result = client.try_set_shipment_limit(&company, &10);
@@ -120,8 +116,8 @@ mod tests {
             &hash,
             &Vec::new(&env),
             &deadline,
-        &None,
-    );
+            &None,
+        );
         assert_eq!(result, Err(Ok(NavinError::Unauthorized)));
     }
 
@@ -133,16 +129,15 @@ mod tests {
         let hash = make_hash(&env, 3);
         let deadline = future_deadline(&env);
 
-        let id = client
-            .create_shipment(
-                &company,
-                &Address::generate(&env),
-                &carrier,
-                &hash,
-                &Vec::new(&env),
-                &deadline,
-        &None,
-    );
+        let id = client.create_shipment(
+            &company,
+            &Address::generate(&env),
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &deadline,
+            &None,
+        );
 
         let hash2 = make_hash(&env, 4);
         // company is not the carrier — should be Unauthorized.
@@ -167,8 +162,8 @@ mod tests {
             &hash,
             &Vec::new(&env),
             &deadline,
-        &None,
-    );
+            &None,
+        );
         assert_eq!(result, Err(Ok(NavinError::CompanySuspended)));
     }
 
@@ -180,16 +175,15 @@ mod tests {
         let hash = make_hash(&env, 6);
         let deadline = future_deadline(&env);
 
-        let id = client
-            .create_shipment(
-                &company,
-                &Address::generate(&env),
-                &carrier,
-                &hash,
-                &Vec::new(&env),
-                &deadline,
-        &None,
-    );
+        let id = client.create_shipment(
+            &company,
+            &Address::generate(&env),
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &deadline,
+            &None,
+        );
 
         client.suspend_carrier(&admin, &carrier);
 
@@ -275,16 +269,15 @@ mod tests {
         let hash = make_hash(&env, 8);
         let deadline = future_deadline(&env);
 
-        let id = client
-            .create_shipment(
-                &company,
-                &receiver,
-                &carrier,
-                &hash,
-                &Vec::new(&env),
-                &deadline,
-        &None,
-    );
+        let id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &deadline,
+            &None,
+        );
 
         // Transition to Delivered (finalized when escrow == 0).
         let h2 = make_hash(&env, 9);

@@ -659,6 +659,7 @@ pub fn remove_escrow(env: &Env, shipment_id: u64) {
 }
 
 /// Check if an address is an observer for a specific shipment.
+#[allow(dead_code)]
 pub fn is_shipment_observer(env: &Env, shipment_id: u64, address: &Address) -> bool {
     env.storage()
         .persistent()
@@ -1277,6 +1278,7 @@ pub fn set_fee_config(env: &Env, config: &FeeConfig) {
 }
 
 /// Get the platform treasury address from instance storage.
+#[allow(dead_code)]
 pub fn get_treasury(env: &Env) -> Option<Address> {
     env.storage().instance().get(&DataKey::Treasury)
 }
@@ -1704,6 +1706,18 @@ pub fn shipment_exists_in_persistent(env: &Env, shipment_id: u64) -> bool {
         .has(&DataKey::Shipment(shipment_id))
 }
 
+pub fn is_salt_used(env: &Env, salt: &BytesN<32>) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::UsedSalt(salt.clone()))
+}
+
+pub fn mark_salt_used(env: &Env, salt: &BytesN<32>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::UsedSalt(salt.clone()), &true);
+}
+
 // ============= Settlement Tracking Functions =============
 
 /// Get the settlement counter value from instance storage.
@@ -1930,7 +1944,6 @@ pub fn get_proposal_digest(
         .get(&DataKey::ProposalDigest(proposal_id))
 }
 
-
 // ============= Shipment Dependency Storage Functions =============
 
 /// Store prerequisites for a shipment.
@@ -1938,13 +1951,11 @@ pub fn set_dependencies(env: &Env, shipment_id: u64, dependencies: &soroban_sdk:
     env.storage()
         .persistent()
         .set(&DataKey::ShipmentDeps(shipment_id), dependencies);
-    env.storage()
-        .persistent()
-        .extend_ttl(
-            &DataKey::ShipmentDeps(shipment_id),
-            env.storage().max_ttl() - 100,
-            env.storage().max_ttl(),
-        );
+    env.storage().persistent().extend_ttl(
+        &DataKey::ShipmentDeps(shipment_id),
+        env.storage().max_ttl() - 100,
+        env.storage().max_ttl(),
+    );
 }
 
 /// Retrieve prerequisites for a shipment.
@@ -1956,19 +1967,17 @@ pub fn get_dependencies(env: &Env, shipment_id: u64) -> Option<soroban_sdk::Vec<
 
 /// Store shipments that depend on a specific shipment.
 pub fn add_dependent(env: &Env, prerequisite_id: u64, dependent_shipment_id: u64) {
-    let mut dependents = get_dependents(env, prerequisite_id)
-        .unwrap_or_else(|| soroban_sdk::Vec::new(env));
+    let mut dependents =
+        get_dependents(env, prerequisite_id).unwrap_or_else(|| soroban_sdk::Vec::new(env));
     dependents.push_back(dependent_shipment_id);
     env.storage()
         .persistent()
         .set(&DataKey::ShipmentDependents(prerequisite_id), &dependents);
-    env.storage()
-        .persistent()
-        .extend_ttl(
-            &DataKey::ShipmentDependents(prerequisite_id),
-            env.storage().max_ttl() - 100,
-            env.storage().max_ttl(),
-        );
+    env.storage().persistent().extend_ttl(
+        &DataKey::ShipmentDependents(prerequisite_id),
+        env.storage().max_ttl() - 100,
+        env.storage().max_ttl(),
+    );
 }
 
 /// Retrieve shipments depending on a shipment.

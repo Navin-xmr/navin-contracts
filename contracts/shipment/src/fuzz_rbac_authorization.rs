@@ -88,7 +88,7 @@ fn fuzz_iterations() -> u32 {
 
 #[test]
 fn fuzz_rbac_unauthorized_always_rejected() {
-    let (env, client, admin) = setup();
+    let (env, client, _admin) = setup();
 
     let mut rng: u64 = 0xA000_0000_F000_0100;
     let iterations = fuzz_iterations();
@@ -200,8 +200,8 @@ fn fuzz_rbac_role_checks_consistent() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
-        &None,
-    );
+            &None,
+        );
 
         // Same call with same inputs must yield same result type
         env.ledger().with_mut(|l| l.timestamp += 2);
@@ -262,8 +262,8 @@ fn fuzz_rbac_suspended_roles_unauthorized() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
-        &None,
-    );
+            &None,
+        );
 
         env.ledger().with_mut(|l| l.timestamp += 65);
         let status_hash = hash_from_seed(&env, seed.wrapping_add(1));
@@ -310,8 +310,8 @@ fn fuzz_rbac_non_company_cannot_create_shipment() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
-        &None,
-    );
+            &None,
+        );
         assert!(
             result.is_err(),
             "Non-company address must not create shipment"
@@ -326,8 +326,8 @@ fn fuzz_rbac_non_company_cannot_create_shipment() {
             &data_hash2,
             &Vec::new(&env),
             &deadline,
-        &None,
-    );
+            &None,
+        );
         assert!(
             result2.is_err(),
             "Carrier must not create shipment (wrong role)"
@@ -364,8 +364,8 @@ fn fuzz_rbac_non_carrier_cannot_update_status() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
-        &None,
-    );
+            &None,
+        );
 
         env.ledger().with_mut(|l| l.timestamp += 65);
         let status_hash = hash_from_seed(&env, seed.wrapping_add(1));
@@ -437,8 +437,8 @@ fn fuzz_rbac_role_assignment_idempotent() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
-        &None,
-    );
+            &None,
+        );
         assert!(
             result.is_ok(),
             "Role must still be active after idempotent assignment"
@@ -480,11 +480,8 @@ fn fuzz_rbac_revoked_role_loses_access() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
-        &None,
-    );
-        assert!(
-            result.is_err(),
-            "Revoked address must not create shipment"
+            &None,
         );
+        assert!(result.is_err(), "Revoked address must not create shipment");
     }
 }

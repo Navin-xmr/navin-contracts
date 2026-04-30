@@ -43,6 +43,9 @@ pub const SHIPMENT_EXPIRED: &str = "shipment_expired";
 /// Emitted when a shipment is moved to temporary (archived) storage.
 pub const SHIPMENT_ARCHIVED: &str = "shipment_archived";
 
+/// Emitted when a shipment is blocked from transitioning because dependencies are unmet.
+pub const SHIPMENT_BLOCKED: &str = "shipment_blocked";
+
 /// Emitted when a shipment is successfully delivered.
 pub const DELIVERY_SUCCESS: &str = "delivery_success";
 
@@ -227,6 +230,7 @@ pub const HASH_DOMAIN_NOTIFICATION: u8 = 0x08;
 pub const HASH_DOMAIN_NOTE: u8 = 0x09;
 
 /// Domain tag for dispute-evidence events (`evidence_added`).
+#[allow(dead_code)]
 pub const HASH_DOMAIN_EVIDENCE: u8 = 0x0A;
 
 /// Domain tag for platform-level events (`platform_fee_collected`, `fee_config_updated`).
@@ -426,4 +430,3 @@ mod tests {
         assert_eq!(HASH_DOMAIN_EVIDENCE, 0x0A);
     }
 }
-pub const SHIPMENT_BLOCKED: &str = "shipment_blocked";
