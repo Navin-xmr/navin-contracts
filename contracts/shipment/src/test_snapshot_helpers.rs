@@ -50,7 +50,7 @@
 //! ```bash
 //! #!/bin/bash
 //! # scripts/sanitize_snapshots.sh
-//! 
+//!
 //! cargo test --lib
 //! cargo run --bin sanitize_snapshots
 //! ```
@@ -60,7 +60,7 @@
 extern crate std;
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Sanitizes all JSON snapshot files in a directory recursively.
 ///
@@ -73,20 +73,20 @@ use std::path::{Path, PathBuf};
 /// # Example
 /// ```rust,no_run
 /// use crate::test_snapshot_helpers::sanitize_snapshot_directory;
-/// 
+///
 /// let count = sanitize_snapshot_directory("test_snapshots").unwrap();
 /// println!("Sanitized {} snapshot files", count);
 /// ```
 #[allow(dead_code)]
 pub fn sanitize_snapshot_directory<P: AsRef<Path>>(snapshot_dir: P) -> std::io::Result<usize> {
     let mut count = 0;
-    
+
     fn visit_dir(dir: &Path, count: &mut usize) -> std::io::Result<()> {
         if dir.is_dir() {
             for entry in fs::read_dir(dir)? {
                 let entry = entry?;
                 let path = entry.path();
-                
+
                 if path.is_dir() {
                     visit_dir(&path, count)?;
                 } else if path.extension().and_then(|s| s.to_str()) == Some("json") {
@@ -101,7 +101,7 @@ pub fn sanitize_snapshot_directory<P: AsRef<Path>>(snapshot_dir: P) -> std::io::
         }
         Ok(())
     }
-    
+
     visit_dir(snapshot_dir.as_ref(), &mut count)?;
     Ok(count)
 }
@@ -114,7 +114,7 @@ pub fn sanitize_snapshot_directory<P: AsRef<Path>>(snapshot_dir: P) -> std::io::
 /// # Example
 /// ```rust,no_run
 /// use crate::test_snapshot_helpers::sanitize_snapshot_file;
-/// 
+///
 /// sanitize_snapshot_file("test_snapshots/e2e_test/test_happy_path.1.json").unwrap();
 /// ```
 #[allow(dead_code)]
@@ -141,13 +141,11 @@ pub fn verify_snapshot_is_sanitized<P: AsRef<Path>>(snapshot_path: P) -> std::io
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_sanitize_snapshot_file_example() {
         // This test demonstrates the workflow but doesn't actually run
         // because we don't want to modify real snapshot files in tests
-        
+
         let example_json = r#"{
             "generators": { "address": 10, "nonce": 5 },
             "ledger": { "timestamp": 123456, "sequence_number": 99 },
@@ -167,14 +165,17 @@ mod tests {
                 }
             }]
         }"#;
-        
+
         let sanitized = crate::test_utils::sanitize_json_snapshot(example_json);
-        
+
         // Verify normalization
         assert!(sanitized.contains(r#""address": 0"#));
         assert!(sanitized.contains(r#""timestamp": 86400"#));
-        assert!(sanitized.contains(r#""contract_id": "0000000000000000000000000000000000000000000000000000000000000000""#));
-        assert!(sanitized.contains(r#""bytes": "0000000000000000000000000000000000000000000000000000000000000000""#));
+        assert!(sanitized.contains(
+            r#""contract_id": "0000000000000000000000000000000000000000000000000000000000000000""#
+        ));
+        assert!(sanitized.contains(
+            r#""bytes": "0000000000000000000000000000000000000000000000000000000000000000""#
+        ));
     }
 }
-

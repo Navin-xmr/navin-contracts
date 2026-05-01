@@ -77,11 +77,15 @@ fn sanitize_json_snapshot(json: &str) -> String {
                     if let Some(body) = map.get_mut("body").and_then(|b| b.as_object_mut()) {
                         if let Some(v0) = body.get_mut("v0").and_then(|v| v.as_object_mut()) {
                             if let Some(data) = v0.get_mut("data").and_then(|d| d.as_object_mut()) {
-                                if let Some(vec) = data.get_mut("vec").and_then(|v| v.as_array_mut()) {
+                                if let Some(vec) =
+                                    data.get_mut("vec").and_then(|v| v.as_array_mut())
+                                {
                                     if let Some(last) = vec.last_mut() {
                                         if let Some(obj) = last.as_object_mut() {
                                             if obj.contains_key("bytes") {
-                                                if let Some(bytes_val) = obj.get("bytes").and_then(|b| b.as_str()) {
+                                                if let Some(bytes_val) =
+                                                    obj.get("bytes").and_then(|b| b.as_str())
+                                                {
                                                     if bytes_val.len() == 64 {
                                                         obj.insert(
                                                             "bytes".to_string(),
@@ -115,12 +119,16 @@ fn sanitize_json_snapshot(json: &str) -> String {
     serde_json::to_string_pretty(&v).expect("Failed to serialize sanitized JSON")
 }
 
-fn sanitize_directory(dir: &Path, count: &mut usize, errors: &mut Vec<String>) -> std::io::Result<()> {
+fn sanitize_directory(
+    dir: &Path,
+    count: &mut usize,
+    errors: &mut Vec<String>,
+) -> std::io::Result<()> {
     if dir.is_dir() {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            
+
             if path.is_dir() {
                 sanitize_directory(&path, count, errors)?;
             } else if path.extension().and_then(|s| s.to_str()) == Some("json") {
@@ -130,7 +138,7 @@ fn sanitize_directory(dir: &Path, count: &mut usize, errors: &mut Vec<String>) -
                         match serde_json::from_str::<serde_json::Value>(&raw) {
                             Ok(_) => {
                                 let sanitized = sanitize_json_snapshot(&raw);
-                                
+
                                 // Only write if changed
                                 if raw != sanitized {
                                     fs::write(&path, sanitized)?;
@@ -141,7 +149,8 @@ fn sanitize_directory(dir: &Path, count: &mut usize, errors: &mut Vec<String>) -
                                 }
                             }
                             Err(e) => {
-                                let error_msg = format!("⚠ Skipping invalid JSON {}: {}", path.display(), e);
+                                let error_msg =
+                                    format!("⚠ Skipping invalid JSON {}: {}", path.display(), e);
                                 eprintln!("{}", error_msg);
                                 errors.push(error_msg);
                             }
@@ -161,15 +170,15 @@ fn sanitize_directory(dir: &Path, count: &mut usize, errors: &mut Vec<String>) -
 
 fn main() {
     let snapshot_dir = Path::new("test_snapshots");
-    
+
     if !snapshot_dir.exists() {
         eprintln!("❌ Error: test_snapshots directory not found");
         eprintln!("   Run 'cargo test --lib' first to generate snapshots");
         std::process::exit(1);
     }
-    
+
     println!("Sanitizing snapshots in {}...\n", snapshot_dir.display());
-    
+
     let mut count = 0;
     let mut errors = Vec::new();
     match sanitize_directory(snapshot_dir, &mut count, &mut errors) {

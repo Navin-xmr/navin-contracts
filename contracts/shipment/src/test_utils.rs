@@ -316,13 +316,17 @@ pub fn sanitize_json_snapshot(json: &str) -> std::string::String {
                     if let Some(body) = map.get_mut("body").and_then(|b| b.as_object_mut()) {
                         if let Some(v0) = body.get_mut("v0").and_then(|v| v.as_object_mut()) {
                             if let Some(data) = v0.get_mut("data").and_then(|d| d.as_object_mut()) {
-                                if let Some(vec) = data.get_mut("vec").and_then(|v| v.as_array_mut()) {
+                                if let Some(vec) =
+                                    data.get_mut("vec").and_then(|v| v.as_array_mut())
+                                {
                                     // Check if the last element is a bytes field (potential idempotency key)
                                     if let Some(last) = vec.last_mut() {
                                         if let Some(obj) = last.as_object_mut() {
                                             if obj.contains_key("bytes") {
                                                 // Normalize to zero hash (64 hex chars = 32 bytes)
-                                                if let Some(bytes_val) = obj.get("bytes").and_then(|b| b.as_str()) {
+                                                if let Some(bytes_val) =
+                                                    obj.get("bytes").and_then(|b| b.as_str())
+                                                {
                                                     if bytes_val.len() == 64 {
                                                         obj.insert(
                                                             "bytes".to_string(),
@@ -539,7 +543,9 @@ mod tests {
         }"#;
         let sanitized = sanitize_json_snapshot(json);
         assert!(
-            sanitized.contains(r#""bytes": "0000000000000000000000000000000000000000000000000000000000000000""#),
+            sanitized.contains(
+                r#""bytes": "0000000000000000000000000000000000000000000000000000000000000000""#
+            ),
             "Event idempotency key (last bytes field) should be normalized to zero hash"
         );
     }
@@ -569,12 +575,16 @@ mod tests {
         let sanitized = sanitize_json_snapshot(json);
         // First bytes field (data hash) should be preserved
         assert!(
-            sanitized.contains(r#""bytes": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""#),
+            sanitized.contains(
+                r#""bytes": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""#
+            ),
             "Non-idempotency bytes fields should be preserved"
         );
         // Last bytes field (idempotency key) should be normalized
         assert!(
-            sanitized.contains(r#""bytes": "0000000000000000000000000000000000000000000000000000000000000000""#),
+            sanitized.contains(
+                r#""bytes": "0000000000000000000000000000000000000000000000000000000000000000""#
+            ),
             "Last bytes field (idempotency key) should be normalized"
         );
     }
@@ -617,14 +627,16 @@ mod tests {
         }"#;
         let sanitized = sanitize_json_snapshot(json);
         // All contract_ids should be normalized
-        let zero_hash = r#""contract_id": "0000000000000000000000000000000000000000000000000000000000000000""#;
+        let zero_hash =
+            r#""contract_id": "0000000000000000000000000000000000000000000000000000000000000000""#;
         assert_eq!(
             sanitized.matches(zero_hash).count(),
             2,
             "All event contract_ids should be normalized"
         );
         // All idempotency keys should be normalized
-        let zero_bytes = r#""bytes": "0000000000000000000000000000000000000000000000000000000000000000""#;
+        let zero_bytes =
+            r#""bytes": "0000000000000000000000000000000000000000000000000000000000000000""#;
         assert_eq!(
             sanitized.matches(zero_bytes).count(),
             2,
@@ -632,4 +644,3 @@ mod tests {
         );
     }
 }
-
