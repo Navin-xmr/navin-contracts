@@ -1036,6 +1036,20 @@ pub fn emit_carrier_on_time_delivery(env: &Env, carrier: &Address, shipment_id: 
     );
 }
 
+/// Emits a `late_delivery_penalty` event when a penalty is applied for late delivery.
+pub fn emit_late_delivery_penalty(
+    env: &Env,
+    carrier: &Address,
+    shipment_id: u64,
+    penalty_amount: i128,
+    days_late: u64,
+) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::LATE_DELIVERY_PENALTY),),
+        (carrier.clone(), shipment_id, penalty_amount, days_late),
+    );
+}
+
 /// Emits a `carrier_handoff_completed` event when a shipment is transferred between carriers.
 pub fn emit_carrier_handoff_completed(
     env: &Env,
