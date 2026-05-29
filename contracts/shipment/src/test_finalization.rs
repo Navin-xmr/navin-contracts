@@ -173,3 +173,228 @@ fn test_archival_permitted_after_finalization() {
     let archived = client.get_shipment(&shipment_id);
     assert_eq!(archived.id, shipment_id);
 }
+
+// ── Recovery flow regression tests ───────────────────────────────────────────
+
+fn setup_recovery_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
+    let (env, client, admin, token) = setup_shipment_env();
+    client.initialize(&admin, &token);
+    client.add_company(&admin, &admin);
+    // init_multisig requires 2–10 admins; use admin twice to satisfy the minimum.
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin.clone());
+    client.init_multisig(&admin, &admins, &1);
+    (env, client, admin, token)
+}
+
+fn make_shipment(
+    env: &Env,
+    client: &NavinShipmentClient,
+    company: &Address,
+    carrier: &Address,
+    seed: u8,
+) -> u64 {
+    let data_hash = BytesN::from_array(env, &[seed; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+    client.create_shipment(
+        company,
+        &Address::generate(env),
+        carrier,
+        &data_hash,
+        &Vec::new(env),
+        &deadline,
+        &None,
+    )
+}
+
+/// Non-terminal shipments (Created, InTransit, Disputed) are recoverable;
+/// Cancelled is the only terminal state that cannot transition to non-Cancelled targets.
+/// Delivered can only go to Cancelled (the catch-all `(_, Cancelled)` arm fires first).
+#[test]
+fn test_recoverable_vs_unrecoverable_states() {
+    use crate::recovery::is_valid_recovery_transition;
+
+    // Any state → Cancelled is always allowed (catch-all arm in the function).
+    for from in [
+        ShipmentStatus::Created,
+        ShipmentStatus::InTransit,
+        ShipmentStatus::AtCheckpoint,
+        ShipmentStatus::Disputed,
+        ShipmentStatus::Delivered,
+        ShipmentStatus::Cancelled,
+    ] {
+        assert!(
+            is_valid_recovery_transition(&from, &ShipmentStatus::Cancelled),
+            "{from:?} → Cancelled should be allowed"
+        );
+    }
+
+    // Cancelled cannot transition to any non-Cancelled state.
+    for to in [
+        ShipmentStatus::Created,
+        ShipmentStatus::InTransit,
+        ShipmentStatus::AtCheckpoint,
+        ShipmentStatus::Delivered,
+        ShipmentStatus::Disputed,
+    ] {
+        assert!(
+            !is_valid_recovery_transition(&ShipmentStatus::Cancelled, &to),
+            "Cancelled → {to:?} must be unrecoverable"
+        );
+    }
+
+    // Delivered cannot transition to non-Cancelled states (terminal guard fires after catch-all).
+    for to in [
+        ShipmentStatus::Created,
+        ShipmentStatus::InTransit,
+        ShipmentStatus::AtCheckpoint,
+        ShipmentStatus::Disputed,
+    ] {
+        assert!(
+            !is_valid_recovery_transition(&ShipmentStatus::Delivered, &to),
+            "Delivered → {to:?} must be unrecoverable"
+        );
+    }
+}
+
+/// unlock_escrow zeroes the shipment's escrow_amount in storage and the
+/// dedicated escrow storage entry is left as-is (the function only clears
+/// the struct field — callers are responsible for the storage key).
+#[test]
+fn test_unlock_escrow_clears_shipment_escrow_amount() {
+    let (env, client, admin, _) = setup_recovery_env();
+    let carrier = Address::generate(&env);
+    client.add_carrier(&admin, &carrier);
+
+    let id = make_shipment(&env, &client, &admin, &carrier, 0xAA);
+    let reason = BytesN::from_array(&env, &[0x01u8; 32]);
+
+    env.as_contract(&client.address, || {
+        // Manually set a non-zero escrow on the shipment struct.
+        let mut shipment = crate::storage::get_shipment(&env, id).unwrap();
+        shipment.escrow_amount = 5_000;
+        shipment.total_escrow = 5_000;
+        crate::storage::set_shipment(&env, &shipment);
+
+        crate::recovery::unlock_escrow(&env, &admin, id, &reason).unwrap();
+
+        let after = crate::storage::get_shipment(&env, id).unwrap();
+        assert_eq!(
+            after.escrow_amount, 0,
+            "escrow_amount must be zeroed after unlock"
+        );
+    });
+}
+
+/// recover_shipment transitions a stuck InTransit shipment to Cancelled and
+/// persists the new status.
+#[test]
+fn test_recover_shipment_transitions_stuck_state() {
+    let (env, client, admin, _) = setup_recovery_env();
+    let carrier = Address::generate(&env);
+    client.add_carrier(&admin, &carrier);
+
+    let id = make_shipment(&env, &client, &admin, &carrier, 0xBB);
+    let reason = BytesN::from_array(&env, &[0x02u8; 32]);
+
+    env.as_contract(&client.address, || {
+        // Force the shipment into InTransit (a "stuck" intermediate state).
+        let mut shipment = crate::storage::get_shipment(&env, id).unwrap();
+        shipment.status = ShipmentStatus::InTransit;
+        crate::storage::set_shipment(&env, &shipment);
+
+        crate::recovery::recover_shipment(&env, &admin, id, ShipmentStatus::Cancelled, &reason)
+            .unwrap();
+
+        let after = crate::storage::get_shipment(&env, id).unwrap();
+        assert_eq!(after.status, ShipmentStatus::Cancelled);
+    });
+}
+
+/// recover_shipment on a terminal (Delivered) shipment must fail — terminal
+/// states are unrecoverable.
+#[test]
+fn test_recover_shipment_fails_for_terminal_state() {
+    let (env, client, admin, _) = setup_recovery_env();
+    let carrier = Address::generate(&env);
+    client.add_carrier(&admin, &carrier);
+
+    let id = make_shipment(&env, &client, &admin, &carrier, 0xCC);
+    let reason = BytesN::from_array(&env, &[0x03u8; 32]);
+
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, id).unwrap();
+        shipment.status = ShipmentStatus::Delivered;
+        crate::storage::set_shipment(&env, &shipment);
+
+        let result =
+            crate::recovery::recover_shipment(&env, &admin, id, ShipmentStatus::InTransit, &reason);
+        assert!(
+            matches!(result, Err(crate::NavinError::InvalidStatus)),
+            "recovery from Delivered must return InvalidStatus"
+        );
+    });
+}
+
+/// unlock_escrow on a shipment with zero escrow must fail predictably.
+#[test]
+fn test_unlock_escrow_fails_when_escrow_already_zero() {
+    let (env, client, admin, _) = setup_recovery_env();
+    let carrier = Address::generate(&env);
+    client.add_carrier(&admin, &carrier);
+
+    let id = make_shipment(&env, &client, &admin, &carrier, 0xDD);
+    let reason = BytesN::from_array(&env, &[0x04u8; 32]);
+
+    env.as_contract(&client.address, || {
+        // escrow_amount is 0 by default after creation.
+        let result = crate::recovery::unlock_escrow(&env, &admin, id, &reason);
+        assert!(
+            matches!(result, Err(crate::NavinError::EscrowLocked)),
+            "unlock with zero escrow must return EscrowLocked"
+        );
+    });
+}
+
+/// clear_finalization on a non-finalized shipment must fail predictably.
+#[test]
+fn test_clear_finalization_fails_when_not_finalized() {
+    let (env, client, admin, _) = setup_recovery_env();
+    let carrier = Address::generate(&env);
+    client.add_carrier(&admin, &carrier);
+
+    let id = make_shipment(&env, &client, &admin, &carrier, 0xEE);
+    let reason = BytesN::from_array(&env, &[0x05u8; 32]);
+
+    env.as_contract(&client.address, || {
+        let result = crate::recovery::clear_finalization(&env, &admin, id, &reason);
+        assert!(
+            matches!(result, Err(crate::NavinError::InvalidStatus)),
+            "clear_finalization on non-finalized shipment must return InvalidStatus"
+        );
+    });
+}
+
+/// clear_finalization on a finalized shipment clears the flag.
+#[test]
+fn test_clear_finalization_succeeds_on_finalized_shipment() {
+    let (env, client, admin, _) = setup_recovery_env();
+    let carrier = Address::generate(&env);
+    client.add_carrier(&admin, &carrier);
+
+    let id = make_shipment(&env, &client, &admin, &carrier, 0xFF);
+    let reason = BytesN::from_array(&env, &[0x06u8; 32]);
+
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, id).unwrap();
+        shipment.finalized = true;
+        shipment.status = ShipmentStatus::Cancelled;
+        crate::storage::set_shipment(&env, &shipment);
+
+        crate::recovery::clear_finalization(&env, &admin, id, &reason).unwrap();
+
+        let after = crate::storage::get_shipment(&env, id).unwrap();
+        assert!(!after.finalized, "finalized flag must be cleared");
+    });
+}

@@ -11471,3 +11471,93 @@ fn test_partial_refund_twice_fails() {
     let result2 = client.try_partial_refund_escrow(&admin, &shipment_id, &30);
     assert_eq!(result2, Err(Ok(crate::NavinError::InvalidStatus)));
 }
+
+// ── Regression: batch query / count consistency ───────────────────────────────
+
+/// Creates shipments with different senders and carriers, then verifies:
+/// 1. `get_shipment_count` matches the number of created shipments after each insert.
+/// 2. `get_shipments_batch` output agrees field-by-field with individual `get_shipment` reads.
+/// 3. Querying non-existent IDs via batch returns `None` without failing the call.
+#[test]
+fn test_batch_query_and_count_regression() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+
+    let sender_a = Address::generate(&env);
+    let sender_b = Address::generate(&env);
+    let carrier_a = Address::generate(&env);
+    let carrier_b = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &sender_a);
+    client.add_company(&admin, &sender_b);
+
+    // --- Insert shipments one by one and verify count after each ---
+    let id1 = client.create_shipment(
+        &sender_a,
+        &receiver,
+        &carrier_a,
+        &BytesN::from_array(&env, &[0xA1u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+        &None,
+    );
+    assert_eq!(client.get_shipment_count(), 1, "count after 1st insert");
+
+    let id2 = client.create_shipment(
+        &sender_b,
+        &receiver,
+        &carrier_b,
+        &BytesN::from_array(&env, &[0xB2u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+        &None,
+    );
+    assert_eq!(client.get_shipment_count(), 2, "count after 2nd insert");
+
+    let id3 = client.create_shipment(
+        &sender_a,
+        &receiver,
+        &carrier_b,
+        &BytesN::from_array(&env, &[0xC3u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+        &None,
+    );
+    assert_eq!(client.get_shipment_count(), 3, "count after 3rd insert");
+
+    // --- Batch read agrees with individual reads ---
+    let mut ids = soroban_sdk::Vec::new(&env);
+    ids.push_back(id1);
+    ids.push_back(id2);
+    ids.push_back(id3);
+
+    let batch = client.get_shipments_batch(&ids);
+    assert_eq!(batch.len(), 3);
+
+    for (pos, id) in [id1, id2, id3].iter().enumerate() {
+        let from_batch = batch.get(pos as u32).unwrap().unwrap();
+        let individual = client.get_shipment(id);
+        assert_eq!(from_batch.id, individual.id);
+        assert_eq!(from_batch.sender, individual.sender);
+        assert_eq!(from_batch.carrier, individual.carrier);
+        assert_eq!(from_batch.status, individual.status);
+        assert_eq!(from_batch.data_hash, individual.data_hash);
+    }
+
+    // --- Missing IDs are handled gracefully ---
+    let mut mixed_ids = soroban_sdk::Vec::new(&env);
+    mixed_ids.push_back(id1);
+    mixed_ids.push_back(9999_u64); // never created
+    mixed_ids.push_back(id3);
+
+    let mixed = client.get_shipments_batch(&mixed_ids);
+    assert_eq!(mixed.len(), 3);
+    assert!(mixed.get(0).unwrap().is_some());
+    assert!(
+        mixed.get(1).unwrap().is_none(),
+        "non-existent ID must be None"
+    );
+    assert!(mixed.get(2).unwrap().is_some());
+}

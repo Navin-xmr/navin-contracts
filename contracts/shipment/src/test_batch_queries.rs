@@ -141,3 +141,204 @@ fn test_get_shipments_by_status_rejects_zero_limit() {
     let result = client.try_get_shipments_by_status(&ShipmentStatus::Created, &0);
     assert!(matches!(result, Err(Ok(NavinError::InvalidConfig))));
 }
+
+// ── Regression: batch vs individual read consistency ─────────────────────────
+
+/// Create shipments with distinct senders and carriers, then verify that every
+/// field returned by `get_shipments_batch` exactly matches the corresponding
+/// `get_shipment` single-fetch result.
+#[test]
+fn test_batch_and_individual_reads_agree() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+
+    let sender_a = Address::generate(&env);
+    let sender_b = Address::generate(&env);
+    let carrier_a = Address::generate(&env);
+    let carrier_b = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &sender_a);
+    client.add_company(&admin, &sender_b);
+
+    // Three shipments: two different senders, two different carriers.
+    let id1 = create_shipment_for(&client, &env, &sender_a, &receiver, &carrier_a, 0xAA);
+    let id2 = create_shipment_for(&client, &env, &sender_b, &receiver, &carrier_b, 0xBB);
+    let id3 = create_shipment_for(&client, &env, &sender_a, &receiver, &carrier_b, 0xCC);
+
+    let mut ids = Vec::new(&env);
+    ids.push_back(id1);
+    ids.push_back(id2);
+    ids.push_back(id3);
+
+    let batch = client.get_shipments_batch(&ids);
+    assert_eq!(batch.len(), 3);
+
+    for (i, id) in [id1, id2, id3].iter().enumerate() {
+        let from_batch = batch.get(i as u32).unwrap().unwrap();
+        let individual = client.get_shipment(id);
+
+        assert_eq!(from_batch.id, individual.id);
+        assert_eq!(from_batch.sender, individual.sender);
+        assert_eq!(from_batch.carrier, individual.carrier);
+        assert_eq!(from_batch.receiver, individual.receiver);
+        assert_eq!(from_batch.status, individual.status);
+        assert_eq!(from_batch.data_hash, individual.data_hash);
+        assert_eq!(from_batch.escrow_amount, individual.escrow_amount);
+    }
+}
+
+/// `get_shipment_count` must equal the number of shipments actually created,
+/// checked after each individual insert.
+#[test]
+fn test_shipment_count_increments_after_each_create() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    assert_eq!(client.get_shipment_count(), 0);
+
+    for n in 1u8..=5 {
+        create_shipment_for(&client, &env, &company, &receiver, &carrier, n);
+        assert_eq!(client.get_shipment_count(), n as u64);
+    }
+}
+
+/// Batch query over a mix of valid and non-existent IDs: valid entries must
+/// match individual reads and missing IDs must produce `None`.
+#[test]
+fn test_batch_handles_missing_ids_gracefully() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let id1 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 0x01);
+    let id2 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 0x02);
+
+    // Mix real IDs with IDs that were never created.
+    let mut ids = Vec::new(&env);
+    ids.push_back(id1);
+    ids.push_back(9000_u64);
+    ids.push_back(id2);
+    ids.push_back(9001_u64);
+
+    let batch = client.get_shipments_batch(&ids);
+    assert_eq!(batch.len(), 4);
+
+    // Real IDs agree with individual reads.
+    let s1 = batch.get(0).unwrap().unwrap();
+    assert_eq!(s1.id, client.get_shipment(&id1).id);
+
+    // Missing IDs return None.
+    assert!(batch.get(1).unwrap().is_none());
+
+    let s2 = batch.get(2).unwrap().unwrap();
+    assert_eq!(s2.id, client.get_shipment(&id2).id);
+
+    assert!(batch.get(3).unwrap().is_none());
+}
+
+/// `get_shipment_count` must equal the total number of shipments created across
+/// multiple senders and carriers.
+#[test]
+fn test_shipment_count_matches_across_multiple_senders_and_carriers() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+
+    let sender_a = Address::generate(&env);
+    let sender_b = Address::generate(&env);
+    let carrier_a = Address::generate(&env);
+    let carrier_b = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &sender_a);
+    client.add_company(&admin, &sender_b);
+
+    create_shipment_for(&client, &env, &sender_a, &receiver, &carrier_a, 0x10);
+    assert_eq!(client.get_shipment_count(), 1);
+
+    create_shipment_for(&client, &env, &sender_b, &receiver, &carrier_b, 0x20);
+    assert_eq!(client.get_shipment_count(), 2);
+
+    create_shipment_for(&client, &env, &sender_a, &receiver, &carrier_b, 0x30);
+    assert_eq!(client.get_shipment_count(), 3);
+
+    create_shipment_for(&client, &env, &sender_b, &receiver, &carrier_a, 0x40);
+    assert_eq!(client.get_shipment_count(), 4);
+
+    // Batch over all IDs must return 4 non-None entries.
+    let mut ids = Vec::new(&env);
+    for i in 1..=4_u64 {
+        ids.push_back(i);
+    }
+    let batch = client.get_shipments_batch(&ids);
+    assert_eq!(batch.len(), 4);
+    for i in 0..4_u32 {
+        assert!(batch.get(i).unwrap().is_some());
+    }
+}
+
+/// Sender-filter and carrier-filter queries must be consistent with the full
+/// batch result: every shipment returned by a filter must appear in the batch
+/// with identical fields.
+#[test]
+fn test_filter_queries_consistent_with_batch() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+
+    let sender_a = Address::generate(&env);
+    let sender_b = Address::generate(&env);
+    let carrier_a = Address::generate(&env);
+    let carrier_b = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &sender_a);
+    client.add_company(&admin, &sender_b);
+
+    let id1 = create_shipment_for(&client, &env, &sender_a, &receiver, &carrier_a, 0x11);
+    let id2 = create_shipment_for(&client, &env, &sender_b, &receiver, &carrier_b, 0x22);
+    let id3 = create_shipment_for(&client, &env, &sender_a, &receiver, &carrier_b, 0x33);
+
+    // Fetch all via batch.
+    let mut ids = Vec::new(&env);
+    ids.push_back(id1);
+    ids.push_back(id2);
+    ids.push_back(id3);
+    let batch = client.get_shipments_batch(&ids);
+
+    // sender_a filter must return id1 and id3.
+    let by_sender = client.get_shipments_by_sender(&sender_a, &10);
+    assert_eq!(by_sender.len(), 2);
+    for s in by_sender.iter() {
+        // Find the matching entry in the batch and compare.
+        let batch_entry = batch
+            .iter()
+            .find_map(|opt| opt.filter(|b| b.id == s.id))
+            .expect("shipment from sender filter must be in batch");
+        assert_eq!(batch_entry.sender, s.sender);
+        assert_eq!(batch_entry.carrier, s.carrier);
+        assert_eq!(batch_entry.status, s.status);
+    }
+
+    // carrier_b filter must return id2 and id3.
+    let by_carrier = client.get_shipments_by_carrier(&carrier_b, &10);
+    assert_eq!(by_carrier.len(), 2);
+    for s in by_carrier.iter() {
+        let batch_entry = batch
+            .iter()
+            .find_map(|opt| opt.filter(|b| b.id == s.id))
+            .expect("shipment from carrier filter must be in batch");
+        assert_eq!(batch_entry.carrier, s.carrier);
+        assert_eq!(batch_entry.status, s.status);
+    }
+}
