@@ -124,7 +124,12 @@ fn test_delivery_event_confirmation_payload_indexer_friendly() {
     );
 
     client.deposit_escrow(&sender, &shipment_id, &1_000i128);
-    client.update_status(&carrier, &shipment_id, &crate::types::ShipmentStatus::InTransit, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::types::ShipmentStatus::InTransit,
+        &data_hash,
+    );
     client.confirm_delivery(&receiver, &shipment_id, &data_hash);
 
     let events = env.events().all();
@@ -179,7 +184,12 @@ fn test_status_updated_event_payload_locked_down() {
         &None,
     );
 
-    client.update_status(&carrier, &shipment_id, &crate::types::ShipmentStatus::InTransit, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::types::ShipmentStatus::InTransit,
+        &data_hash,
+    );
 
     let events = env.events().all();
     let target_topic = Symbol::new(&env, "status_updated");
@@ -259,5 +269,9 @@ fn test_created_event_payload_pinned() {
     assert_eq!(event_data_hash, data_hash, "data_hash at index 3");
     assert_eq!(event_schema_version, 2, "schema_version at index 4");
     assert_eq!(event_counter, 1, "event_counter at index 5");
-    assert_eq!(event_idempotency_key.len(), 32, "idempotency_key at index 6");
+    assert_eq!(
+        event_idempotency_key.len(),
+        32,
+        "idempotency_key at index 6"
+    );
 }

@@ -200,7 +200,11 @@ fn test_snapshot_status_updated_payload_shape() {
     let event_idempotency_key: BytesN<32> = payload.get(6).unwrap().try_into_val(&env).unwrap();
 
     assert_eq!(event_shipment_id, id, "shipment_id must be at index 0");
-    assert_eq!(event_data_hash, BytesN::from_array(&env, &[3u8; 32]), "data_hash must be at index 3");
+    assert_eq!(
+        event_data_hash,
+        BytesN::from_array(&env, &[3u8; 32]),
+        "data_hash must be at index 3"
+    );
     assert_eq!(event_schema_version, 2, "schema_version must be at index 4");
     assert_eq!(event_counter, 2, "event_counter must be at index 5");
     assert_eq!(
@@ -642,7 +646,10 @@ fn test_snapshot_delivery_success_payload_shape() {
 
     assert_eq!(event_carrier, carrier, "carrier must be at index 0");
     assert_eq!(event_shipment_id, id, "shipment_id must be at index 1");
-    assert!(event_timestamp > 0, "timestamp must be at index 2 and non-zero");
+    assert!(
+        event_timestamp > 0,
+        "timestamp must be at index 2 and non-zero"
+    );
     assert_eq!(event_schema_version, 2, "schema_version must be at index 3");
     assert_eq!(event_counter, 5, "event_counter must be at index 4");
     assert_eq!(

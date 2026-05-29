@@ -6463,22 +6463,42 @@ fn test_get_non_terminal_count_verification() {
     );
 
     // Initial state: 3 Created (non-terminal)
-    assert_eq!(client.get_non_terminal_count(), 3, "All shipments should be non-terminal initially");
+    assert_eq!(
+        client.get_non_terminal_count(),
+        3,
+        "All shipments should be non-terminal initially"
+    );
 
     // Move id1 to InTransit (non-terminal)
     client.update_status(&carrier, &id1, &ShipmentStatus::InTransit, &data_hash);
-    assert_eq!(client.get_non_terminal_count(), 3, "InTransit is non-terminal");
+    assert_eq!(
+        client.get_non_terminal_count(),
+        3,
+        "InTransit is non-terminal"
+    );
 
     // Move id1 to Delivered (terminal)
     client.confirm_delivery(&receiver, &id1, &data_hash);
-    assert_eq!(client.get_non_terminal_count(), 2, "Delivered is terminal and excluded");
+    assert_eq!(
+        client.get_non_terminal_count(),
+        2,
+        "Delivered is terminal and excluded"
+    );
 
     // Move id2 to Cancelled (terminal)
     client.cancel_shipment(&company, &id2, &data_hash);
-    assert_eq!(client.get_non_terminal_count(), 1, "Cancelled is terminal and excluded");
+    assert_eq!(
+        client.get_non_terminal_count(),
+        1,
+        "Cancelled is terminal and excluded"
+    );
 
     // Verify remaining non-terminal shipment is id3 (Created)
-    assert_eq!(client.get_non_terminal_count(), 1, "Only id3 remains non-terminal");
+    assert_eq!(
+        client.get_non_terminal_count(),
+        1,
+        "Only id3 remains non-terminal"
+    );
 }
 
 // ============= Shipment Limit Tests =============
