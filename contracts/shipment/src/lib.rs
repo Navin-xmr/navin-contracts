@@ -17,7 +17,7 @@ mod errors;
 mod event_topics;
 mod events;
 mod rate_limit;
-mod recovery;
+pub(crate) mod recovery;
 mod storage;
 mod stress_test;
 pub mod test;

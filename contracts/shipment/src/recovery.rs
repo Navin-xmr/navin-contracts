@@ -238,7 +238,7 @@ pub fn clear_finalization(
 /// Recovery allows transitions that would normally be invalid, but only
 /// to terminal or safe states. This prevents cascading corruption.
 #[allow(dead_code)]
-fn is_valid_recovery_transition(from: &ShipmentStatus, to: &ShipmentStatus) -> bool {
+pub(crate) fn is_valid_recovery_transition(from: &ShipmentStatus, to: &ShipmentStatus) -> bool {
     use ShipmentStatus::*;
 
     match (from, to) {
