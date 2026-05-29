@@ -148,6 +148,21 @@ pub fn advance_past_rate_limit(env: &Env) {
     advance_ledger_time(env, 61);
 }
 
+/// Advance the ledger sequence by **61 ledgers** — past the 60-ledger
+/// idempotency window (300 s ÷ 5 s/ledger) — so that a previously recorded
+/// action hash expires from temporary storage and the same payload can be
+/// submitted again without triggering `DuplicateAction` (#41).
+///
+/// # Example
+/// ```text
+/// client.create_shipment(...); // records action hash
+/// test_utils::advance_past_idempotency_window(&env);
+/// client.create_shipment(...); // same payload, now accepted
+/// ```
+pub fn advance_past_idempotency_window(env: &Env) {
+    advance_ledger_sequence(env, 61);
+}
+
 /// Advance ledger time by **7 days + 1 second** (604 801 s) — past the
 /// multi-sig proposal expiry window — so that subsequent `approve_action`
 /// or `execute_proposal` calls return `ProposalExpired` (#24).
