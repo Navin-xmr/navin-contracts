@@ -293,3 +293,64 @@ fn test_lengths_13_to_17_all_rejected() {
         );
     }
 }
+
+// ── Additional edge case tests ────────────────────────────────────────────────
+
+#[test]
+fn test_milestone_empty_vector_valid() {
+    let env = Env::default();
+    let milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+    assert_eq!(
+        validate_milestone_symbols(&env, &milestones),
+        Ok(()),
+        "Empty milestone vector should be valid"
+    );
+}
+
+#[test]
+fn test_milestone_single_symbol_100_percent_valid() {
+    let env = Env::default();
+    let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+    milestones.push_back((sym(&env, "CHECKPOINT"), 100));
+    assert_eq!(
+        validate_milestone_symbols(&env, &milestones),
+        Ok(()),
+        "Single milestone with 100% should be valid"
+    );
+}
+
+#[test]
+fn test_metadata_single_char_key_and_value_valid() {
+    let env = Env::default();
+    let key = sym(&env, "K");
+    let val = sym(&env, "V");
+    assert_eq!(
+        validate_metadata_symbols(&env, &key, &val),
+        Ok(()),
+        "Single character key and value should be valid"
+    );
+}
+
+#[test]
+fn test_symbol_with_underscores_and_numbers_valid() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol(&env, &sym(&env, "ship_123_id")),
+        Ok(()),
+        "Symbol with underscores and numbers should be valid"
+    );
+}
+
+#[test]
+fn test_milestone_three_symbols_equal_split_valid() {
+    let env = Env::default();
+    let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+    milestones.push_back((sym(&env, "PICKUP"), 33));
+    milestones.push_back((sym(&env, "TRANSIT"), 33));
+    milestones.push_back((sym(&env, "DELIVERY"), 34));
+    assert_eq!(
+        validate_milestone_symbols(&env, &milestones),
+        Ok(()),
+        "Three milestones with equal split (33-33-34) should be valid"
+    );
+}
