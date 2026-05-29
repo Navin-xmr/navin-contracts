@@ -351,6 +351,246 @@ fn test_milestone_three_symbols_equal_split_valid() {
     assert_eq!(
         validate_milestone_symbols(&env, &milestones),
         Ok(()),
-        "Three milestones with equal split (33-33-34) should be valid"
+        "Three milestones with equal split (33-33-34) should be valid (regression)"
     );
+}
+
+// ── Regression tests added for issue #380 ────────────────────────────────────
+// These cases expand coverage for exact-length boundaries, overlong symbols,
+// and event-related symbol usage so that milestone, metadata, and event-topic
+// symbols all keep the same bounded-input guarantees.
+
+// ── Exact-length boundary: 2 chars ───────────────────────────────────────────
+
+#[test]
+fn test_valid_two_char_symbol() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol(&env, &sym(&env, "AB")),
+        Ok(()),
+        "2-char symbol must be accepted"
+    );
+}
+
+#[test]
+fn test_valid_two_char_numeric_symbol() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol(&env, &sym(&env, "99")),
+        Ok(()),
+        "2-char all-digit symbol must be accepted"
+    );
+}
+
+// ── Exact-length boundary: 4 chars (XDR boundary word) ───────────────────────
+
+#[test]
+fn test_valid_four_char_symbol_abcd() {
+    let env = Env::default();
+    assert_eq!(validate_symbol(&env, &sym(&env, "ABCD")), Ok(()));
+}
+
+#[test]
+fn test_valid_four_char_symbol_with_underscore() {
+    let env = Env::default();
+    assert_eq!(validate_symbol(&env, &sym(&env, "a_b_")), Ok(()));
+}
+
+// ── Exact-length boundary: 9 chars ───────────────────────────────────────────
+
+#[test]
+fn test_valid_nine_char_symbol() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol(&env, &sym(&env, "WAREHOUSE")),
+        Ok(()),
+        "9-char symbol 'WAREHOUSE' must be accepted"
+    );
+}
+
+// ── Exact-length boundary: 10 chars ──────────────────────────────────────────
+
+#[test]
+fn test_valid_ten_char_symbol() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol(&env, &sym(&env, "CHECKPOINT")),
+        Ok(()),
+        "10-char symbol must be accepted"
+    );
+}
+
+// ── Boundary just above limit: 13 chars  (regression guard) ──────────────────
+
+#[test]
+fn test_regression_13_chars_always_rejected() {
+    let env = Env::default();
+    // Regression: ensure the boundary has not drifted above 12.
+    let s: std::string::String = "Z".repeat(13);
+    assert_eq!(
+        validate_symbol(&env, &sym(&env, &s)),
+        Err(crate::errors::NavinError::InvalidShipmentInput),
+        "regression: 13-char symbol must always map to InvalidShipmentInput"
+    );
+}
+
+// ── Event-topic symbol regression ────────────────────────────────────────────
+// Event topic names are Symbols and must follow the same length constraints.
+
+#[test]
+fn test_event_topic_transfer_valid() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol(&env, &sym(&env, "transfer")),
+        Ok(()),
+        "event topic 'transfer' (8 chars) must be valid"
+    );
+}
+
+#[test]
+fn test_event_topic_deposit_valid() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol(&env, &sym(&env, "deposit")),
+        Ok(()),
+        "event topic 'deposit' (7 chars) must be valid"
+    );
+}
+
+#[test]
+fn test_event_topic_status_update_valid() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol(&env, &sym(&env, "StatusUpd")),
+        Ok(()),
+        "event topic 'StatusUpd' (9 chars) must be valid"
+    );
+}
+
+#[test]
+fn test_event_topic_milestone_complete_valid() {
+    let env = Env::default();
+    // 12 chars — at the Stellar Symbol maximum
+    assert_eq!(
+        validate_symbol(&env, &sym(&env, "MilestoneDon")),
+        Ok(()),
+        "event topic 'MilestoneDon' (12 chars) must be valid"
+    );
+}
+
+#[test]
+fn test_event_topic_too_long_rejected() {
+    let env = Env::default();
+    // 13 chars — one over the Stellar Symbol maximum
+    let s: std::string::String = "E".repeat(13);
+    assert_eq!(
+        validate_symbol(&env, &sym(&env, &s)),
+        Err(crate::errors::NavinError::InvalidShipmentInput),
+        "event topic symbol > 12 chars must be rejected"
+    );
+}
+
+// ── Milestone: all 12-char symbols unique → accepted ─────────────────────────
+
+#[test]
+fn test_milestone_five_unique_12_char_symbols_valid() {
+    let env = Env::default();
+    let mut milestones: soroban_sdk::Vec<(soroban_sdk::Symbol, u32)> =
+        soroban_sdk::Vec::new(&env);
+    milestones.push_back((sym(&env, "VERYLONGNAM1"), 20));
+    milestones.push_back((sym(&env, "VERYLONGNAM2"), 20));
+    milestones.push_back((sym(&env, "VERYLONGNAM3"), 20));
+    milestones.push_back((sym(&env, "VERYLONGNAM4"), 20));
+    milestones.push_back((sym(&env, "VERYLONGNAM5"), 20));
+    assert_eq!(
+        validate_milestone_symbols(&env, &milestones),
+        Ok(()),
+        "Five unique 12-char milestone symbols must all pass validation"
+    );
+}
+
+// ── Metadata: key at exact max, value at exact max ───────────────────────────
+
+#[test]
+fn test_metadata_both_12_chars_valid() {
+    let env = Env::default();
+    let key = sym(&env, "ABCDEFGHIJKL"); // 12 chars
+    let val = sym(&env, "123456789012"); // 12 chars
+    assert_eq!(
+        validate_metadata_symbols(&env, &key, &val),
+        Ok(()),
+        "Metadata key and value both at 12-char boundary must be valid"
+    );
+}
+
+#[test]
+fn test_metadata_key_at_12_value_at_1_valid() {
+    let env = Env::default();
+    let key = sym(&env, "ABCDEFGHIJKL");
+    let val = sym(&env, "V");
+    assert_eq!(
+        validate_metadata_symbols(&env, &key, &val),
+        Ok(()),
+        "12-char key with 1-char value must be valid"
+    );
+}
+
+#[test]
+fn test_metadata_key_at_1_value_at_12_valid() {
+    let env = Env::default();
+    let key = sym(&env, "K");
+    let val = sym(&env, "ABCDEFGHIJKL");
+    assert_eq!(
+        validate_metadata_symbols(&env, &key, &val),
+        Ok(()),
+        "1-char key with 12-char value must be valid"
+    );
+}
+
+// ── Overlong metadata symbols ─────────────────────────────────────────────────
+
+#[test]
+fn test_metadata_key_13_chars_rejected() {
+    let env = Env::default();
+    let key = sym(&env, "AAAAAAAAAAAAA"); // 13 chars
+    let val = sym(&env, "fine");
+    assert_eq!(
+        validate_metadata_symbols(&env, &key, &val),
+        Err(crate::errors::NavinError::InvalidShipmentInput),
+        "13-char metadata key must be rejected"
+    );
+}
+
+#[test]
+fn test_metadata_value_20_chars_rejected() {
+    let env = Env::default();
+    let key = sym(&env, "fine");
+    let val = sym(&env, "AAAAAAAAAAAAAAAAAAAA"); // 20 chars
+    assert_eq!(
+        validate_metadata_symbols(&env, &key, &val),
+        Err(crate::errors::NavinError::InvalidShipmentInput),
+        "20-char metadata value must be rejected"
+    );
+}
+
+// ── Idempotency of validate_symbol ────────────────────────────────────────────
+
+#[test]
+fn test_validate_symbol_is_idempotent() {
+    let env = Env::default();
+    // Calling validate_symbol twice on the same input must return identical results.
+    let s = sym(&env, "SHIPMENT");
+    let first = validate_symbol(&env, &s);
+    let second = validate_symbol(&env, &s);
+    assert_eq!(first, second, "validate_symbol must be idempotent");
+}
+
+#[test]
+fn test_validate_symbol_overlong_is_idempotent() {
+    let env = Env::default();
+    let long: std::string::String = "X".repeat(15);
+    let s = sym(&env, &long);
+    let first = validate_symbol(&env, &s);
+    let second = validate_symbol(&env, &s);
+    assert_eq!(first, second, "validate_symbol (overlong) must be idempotent");
 }
