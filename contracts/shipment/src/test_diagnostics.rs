@@ -210,6 +210,90 @@ fn test_config_checksum_restored_after_revert() {
     assert_eq!(client.get_config_checksum(), original);
 }
 
+/// Archive a shipment in a controlled fixture and check the restore diagnostics after archival
+#[test]
+fn test_archival_diagnostics_and_restore_paths() {
+    let (env, client, admin, _token) = prepare_test();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    // Verify initial state
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Created);
+    assert!(!shipment.archived);
+
+    // Archive the shipment
+    client.archive_shipment(&admin, &shipment_id);
+
+    // Verify archived state
+    let archived = client.get_shipment(&shipment_id);
+    assert!(archived.archived);
+    assert_eq!(archived.id, shipment_id);
+
+    // Check restore diagnostics
+    let health = client.check_contract_health(&admin);
+    assert_eq!(health.archived_shipments_counted, 1);
+    assert_eq!(health.total_shipments, 1);
+}
+
+/// Confirm the expected data is retained or cleared after archival
+#[test]
+fn test_archival_data_retention_and_clearing() {
+    let (env, client, admin, _token) = prepare_test();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    // Add some metadata to verify retention
+    client.set_shipment_metadata(&company, &shipment_id, &Symbol::new(&env, "test_key"), &Symbol::new(&env, "test_value"));
+
+    // Deposit some escrow to verify clearing
+    client.deposit_escrow(&company, &shipment_id, &500);
+
+    // Archive the shipment
+    client.archive_shipment(&admin, &shipment_id);
+
+    // Verify archived state
+    let archived = client.get_shipment(&shipment_id);
+    assert!(archived.archived);
+    
+    // Verify metadata is still accessible
+    let metadata = client.get_shipment_metadata(&shipment_id, &Symbol::new(&env, "test_key"));
+    assert_eq!(metadata, Symbol::new(&env, "test_value"));
+    
+    // Verify escrow is cleared (archival should clear escrow)
+    assert_eq!(archived.escrow_amount, 0);
+}
+
 /// Each distinct field mutation produces a distinct checksum.
 #[test]
 fn test_each_field_mutation_produces_unique_checksum() {
