@@ -6452,7 +6452,7 @@ fn test_get_non_terminal_count_verification() {
         &deadline,
         &None,
     );
-    let id3 = client.create_shipment(
+    let _id3 = client.create_shipment(
         &company,
         &receiver,
         &carrier,

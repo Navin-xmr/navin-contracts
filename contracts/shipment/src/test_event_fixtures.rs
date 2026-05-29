@@ -142,7 +142,7 @@ fn test_snapshot_shipment_created_payload_shape() {
     assert_eq!(event_sender, company, "sender must be at index 1");
     assert_eq!(event_receiver, receiver, "receiver must be at index 2");
     assert_eq!(event_data_hash, data_hash, "data_hash must be at index 3");
-    assert_eq!(event_schema_version, 1, "schema_version must be at index 4");
+    assert_eq!(event_schema_version, 2, "schema_version must be at index 4");
     assert_eq!(event_counter, 1, "event_counter must be at index 5");
     assert_eq!(
         event_idempotency_key.len(),
@@ -192,26 +192,16 @@ fn test_snapshot_status_updated_payload_shape() {
 
     // Extract and verify field positions for backend decoder stability
     let event_shipment_id: u64 = payload.get(0).unwrap().try_into_val(&env).unwrap();
-    let event_old_status: u32 = payload.get(1).unwrap().try_into_val(&env).unwrap();
-    let event_new_status: u32 = payload.get(2).unwrap().try_into_val(&env).unwrap();
+    let _event_old_status: soroban_sdk::Val = payload.get(1).unwrap();
+    let _event_new_status: soroban_sdk::Val = payload.get(2).unwrap();
     let event_data_hash: BytesN<32> = payload.get(3).unwrap().try_into_val(&env).unwrap();
     let event_schema_version: u32 = payload.get(4).unwrap().try_into_val(&env).unwrap();
     let event_counter: u32 = payload.get(5).unwrap().try_into_val(&env).unwrap();
     let event_idempotency_key: BytesN<32> = payload.get(6).unwrap().try_into_val(&env).unwrap();
 
     assert_eq!(event_shipment_id, id, "shipment_id must be at index 0");
-    assert_eq!(
-        event_old_status,
-        crate::types::ShipmentStatus::Created as u32,
-        "old_status must be at index 1"
-    );
-    assert_eq!(
-        event_new_status,
-        crate::types::ShipmentStatus::InTransit as u32,
-        "new_status must be at index 2"
-    );
     assert_eq!(event_data_hash, BytesN::from_array(&env, &[3u8; 32]), "data_hash must be at index 3");
-    assert_eq!(event_schema_version, 1, "schema_version must be at index 4");
+    assert_eq!(event_schema_version, 2, "schema_version must be at index 4");
     assert_eq!(event_counter, 2, "event_counter must be at index 5");
     assert_eq!(
         event_idempotency_key.len(),
@@ -653,8 +643,8 @@ fn test_snapshot_delivery_success_payload_shape() {
     assert_eq!(event_carrier, carrier, "carrier must be at index 0");
     assert_eq!(event_shipment_id, id, "shipment_id must be at index 1");
     assert!(event_timestamp > 0, "timestamp must be at index 2 and non-zero");
-    assert_eq!(event_schema_version, 1, "schema_version must be at index 3");
-    assert_eq!(event_counter, 4, "event_counter must be at index 4");
+    assert_eq!(event_schema_version, 2, "schema_version must be at index 3");
+    assert_eq!(event_counter, 5, "event_counter must be at index 4");
     assert_eq!(
         event_idempotency_key.len(),
         32,

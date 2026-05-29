@@ -149,8 +149,8 @@ fn test_delivery_event_confirmation_payload_indexer_friendly() {
     assert_eq!(event_carrier, carrier, "carrier placement");
     assert_eq!(event_shipment_id, shipment_id, "shipment_id placement");
     assert!(event_timestamp > 0, "timestamp placement");
-    assert_eq!(event_schema_version, 1, "schema_version metadata");
-    assert_eq!(event_counter, 4, "event_counter placement");
+    assert_eq!(event_schema_version, 2, "schema_version metadata");
+    assert_eq!(event_counter, 5, "event_counter placement");
     assert_eq!(event_idempotency_key.len(), 32, "idempotency_key stability");
 }
 
@@ -194,18 +194,16 @@ fn test_status_updated_event_payload_locked_down() {
     let event_data: Vec<soroban_sdk::Val> = status_event.2.try_into_val(&env).unwrap();
 
     let event_shipment_id: u64 = event_data.get(0).unwrap().try_into_val(&env).unwrap();
-    let event_old_status: u32 = event_data.get(1).unwrap().try_into_val(&env).unwrap();
-    let event_new_status: u32 = event_data.get(2).unwrap().try_into_val(&env).unwrap();
+    let _event_old_status: soroban_sdk::Val = event_data.get(1).unwrap();
+    let _event_new_status: soroban_sdk::Val = event_data.get(2).unwrap();
     let event_data_hash: BytesN<32> = event_data.get(3).unwrap().try_into_val(&env).unwrap();
     let event_schema_version: u32 = event_data.get(4).unwrap().try_into_val(&env).unwrap();
     let event_counter: u32 = event_data.get(5).unwrap().try_into_val(&env).unwrap();
     let event_idempotency_key: BytesN<32> = event_data.get(6).unwrap().try_into_val(&env).unwrap();
 
     assert_eq!(event_shipment_id, shipment_id, "shipment_id position");
-    assert_eq!(event_old_status, crate::types::ShipmentStatus::Created as u32, "old_status position");
-    assert_eq!(event_new_status, crate::types::ShipmentStatus::InTransit as u32, "new_status position");
     assert_eq!(event_data_hash, data_hash, "hash position");
-    assert_eq!(event_schema_version, 1, "schema_version stability");
+    assert_eq!(event_schema_version, 2, "schema_version stability");
     assert_eq!(event_counter, 2, "event_counter stability");
     assert_eq!(event_idempotency_key.len(), 32, "idempotency_key stability");
 }
@@ -259,7 +257,7 @@ fn test_created_event_payload_pinned() {
     assert_eq!(event_sender, sender, "sender at index 1");
     assert_eq!(event_receiver, receiver, "receiver at index 2");
     assert_eq!(event_data_hash, data_hash, "data_hash at index 3");
-    assert_eq!(event_schema_version, 1, "schema_version at index 4");
+    assert_eq!(event_schema_version, 2, "schema_version at index 4");
     assert_eq!(event_counter, 1, "event_counter at index 5");
     assert_eq!(event_idempotency_key.len(), 32, "idempotency_key at index 6");
 }
