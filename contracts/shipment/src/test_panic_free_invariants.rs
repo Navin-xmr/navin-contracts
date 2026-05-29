@@ -627,6 +627,185 @@ fn test_force_cancel_shipment_unauthorized_caller() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 16. auth failure cases - Additional panic-free tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_auth_failure_case_for_admin_role() {
+    let (env, client, _admin, _token) = setup_env();
+    let unauthorized = Address::generate(&env);
+
+    // Try to call admin-only method with unauthorized caller
+    let result = client.try_set_shipment_limit(&unauthorized, &10);
+    assert!(
+        result.is_err(),
+        "set_shipment_limit must fail for non-admin caller"
+    );
+        
+    // Verify it returns Unauthorized error instead of panicking
+    match result {
+        Ok(_) => panic!("expected error but got success"),
+        Err(e) => {
+            // Check that it's the expected error type
+            assert_eq!(e, Err(Ok(crate::NavinError::Unauthorized)));
+        }
+    }
+}
+
+#[test]
+fn test_auth_failure_case_for_company_role() {
+    let (env, client, _admin, _token) = setup_env();
+    let unauthorized = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_carrier(&env.register(NavinShipment, ()), &carrier);
+
+    // Try to create shipment with unauthorized caller (not a company)
+    let result = client.try_create_shipment(
+        &unauthorized,
+        &Address::generate(&env),
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+    assert!(
+        result.is_err(),
+        "create_shipment must fail for non-company caller"
+    );
+        
+    // Verify it returns Unauthorized error instead of panicking
+    match result {
+        Ok(_) => panic!("expected error but got success"),
+        Err(e) => {
+            // Check that it's the expected error type
+            assert_eq!(e, Err(Ok(crate::NavinError::Unauthorized)));
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 17. storage-missing cases - Additional panic-free tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_storage_missing_case_for_escrow() {
+    let (env, client, admin, _token) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    // Manually remove escrow storage entry to simulate missing storage
+    env.as_contract(&client.address, || {
+        crate::storage::remove_escrow(&env, shipment_id);
+    });
+
+    // Try to release escrow - should handle missing storage gracefully
+    let result = client.try_release_escrow(&receiver, &shipment_id);
+    assert!(
+        result.is_err(),
+        "release_escrow must fail gracefully when escrow storage is missing"
+    );
+        
+    // Verify it returns appropriate error instead of panicking
+    match result {
+        Ok(_) => panic!("expected error but got success"),
+        Err(e) => {
+            // Should return EscrowNotFound or similar
+            assert!(matches!(e, Err(Ok(crate::NavinError::EscrowNotFound)) | Err(Ok(crate::NavinError::EscrowLocked))));
+        }
+    }
+}
+
+#[test]
+fn test_storage_missing_case_for_shipment() {
+    let (env, client, _admin, _token) = setup_env();
+        
+    // Try to get non-existent shipment
+    let result = client.try_get_shipment(&9999);
+    assert!(
+        result.is_err(),
+        "get_shipment must fail gracefully for non-existent shipment"
+    );
+        
+    // Verify it returns appropriate error instead of panicking
+    match result {
+        Ok(_) => panic!("expected error but got success"),
+        Err(e) => {
+            // Should return ShipmentNotFound
+            assert_eq!(e, Err(Ok(crate::NavinError::ShipmentNotFound)));
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Summary: All tests verify panic-free error handling
+// ─────────────────────────────────────────────────────────────────────────────
+// Each test ensures that invalid inputs return Err instead of panicking.
+// This guarantees wallet/dApp stability.
+
+#[test]
+fn test_force_cancel_shipment_nonexistent_shipment() {
+    let (env, client, admin, _token) = setup_env();
+    let reason_hash = BytesN::from_array(&env, &[6u8; 32]);
+
+    let result = client.try_force_cancel_shipment(&admin, &999u64, &reason_hash);
+    assert!(
+        result.is_err(),
+        "force_cancel_shipment must fail for nonexistent shipment"
+    );
+}
+
+#[test]
+fn test_force_cancel_shipment_unauthorized_caller() {
+    let (env, client, admin, _token) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[6u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    let unauthorized = Address::generate(&env);
+    let result = client.try_force_cancel_shipment(&unauthorized, &shipment_id, &reason_hash);
+    assert!(
+        result.is_err(),
+        "force_cancel_shipment must fail for unauthorized caller"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Summary: All tests verify panic-free error handling
 // ─────────────────────────────────────────────────────────────────────────────
 // Each test ensures that invalid inputs return Err instead of panicking.

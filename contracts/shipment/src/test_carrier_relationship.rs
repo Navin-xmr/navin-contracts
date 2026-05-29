@@ -244,4 +244,130 @@ mod tests {
         assert_eq!(page.carriers.get(0).unwrap(), c1);
         assert_eq!(page.carriers.get(1).unwrap(), c3);
     }
+
+    // ── carrier handoff event flow ───────────────────────────────────────────────
+
+    #[test]
+    fn test_handoff_event_flow_with_valid_carrier_transition() {
+        let (env, client, admin) = setup();
+        let company = Address::generate(&env);
+        client.add_company(&admin, &company);
+
+        let carrier_a = Address::generate(&env);
+        let carrier_b = Address::generate(&env);
+        client.add_carrier(&admin, &carrier_a);
+        client.add_carrier(&admin, &carrier_b);
+
+        // Add both carriers to whitelist
+        client.add_carrier_to_whitelist(&company, &carrier_a);
+        client.add_carrier_to_whitelist(&company, &carrier_b);
+
+        // Create shipment with carrier_a
+        let receiver = Address::generate(&env);
+        let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+        let deadline = env.ledger().timestamp() + 3600;
+        let id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier_a,
+            &data_hash,
+            &Vec::new(&env),
+            &deadline,
+            &None,
+        );
+
+        // Verify initial state
+        let shipment = client.get_shipment(&id);
+        assert_eq!(shipment.carrier, carrier_a);
+
+        // Perform handoff to carrier_b
+        client.handoff_shipment(&carrier_a, &id, &carrier_b, &data_hash);
+
+        // Verify carrier transition
+        let after = client.get_shipment(&id);
+        assert_eq!(after.carrier, carrier_b);
+        
+        // Verify handoff event was emitted
+        let events = env.events().all();
+        assert_eq!(events.len(), 1);
+        let event = &events[0];
+        assert_eq!(event.topics.get(0).unwrap(), Symbol::new(&env, "handoff"));
+        
+        // Check from/to in payload
+        let from_carrier = event.data.get(0).unwrap().to_address().unwrap();
+        let to_carrier = event.data.get(1).unwrap().to_address().unwrap();
+        assert_eq!(from_carrier, carrier_a);
+        assert_eq!(to_carrier, carrier_b);
+    }
+
+    #[test]
+    fn test_handoff_event_flow_rejects_invalid_transitions() {
+        let (env, client, admin) = setup();
+        let company = Address::generate(&env);
+        client.add_company(&admin, &company);
+
+        let carrier_a = Address::generate(&env);
+        let carrier_b = Address::generate(&env);
+        client.add_carrier(&admin, &carrier_a);
+        client.add_carrier(&admin, &carrier_b);
+
+        // Add only carrier_a to whitelist
+        client.add_carrier_to_whitelist(&company, &carrier_a);
+
+        // Create shipment with carrier_a
+        let receiver = Address::generate(&env);
+        let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+        let deadline = env.ledger().timestamp() + 3600;
+        let id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier_a,
+            &data_hash,
+            &Vec::new(&env),
+            &deadline,
+            &None,
+        );
+
+        // Try to handoff to carrier_b who is not whitelisted
+        let result = client.try_handoff_shipment(&carrier_a, &id, &carrier_b, &data_hash);
+        
+        assert!(
+            result.is_err(),
+            "handoff should fail when target carrier is not whitelisted"
+        );
+        
+        // Verify it returns appropriate error instead of panicking
+        match result {
+            Ok(_) => panic!("expected error but got success"),
+            Err(e) => {
+                assert_eq!(e, Err(Ok(crate::NavinError::CarrierNotWhitelisted)));
+            }
+        }
+    }
+
+    #[test]
+    fn list_deterministic_order_matches_candidates_order() {
+        let (env, client, admin) = setup();
+        let company = Address::generate(&env);
+        client.add_company(&admin, &company);
+
+        let c1 = Address::generate(&env);
+        let c2 = Address::generate(&env);
+        let c3 = Address::generate(&env);
+        client.add_carrier(&admin, &c1);
+        client.add_carrier(&admin, &c2);
+        client.add_carrier(&admin, &c3);
+        client.add_carrier_to_whitelist(&company, &c1);
+        client.add_carrier_to_whitelist(&company, &c3);
+
+        let mut candidates = Vec::new(&env);
+        candidates.push_back(c1.clone());
+        candidates.push_back(c2.clone()); // not whitelisted
+        candidates.push_back(c3.clone());
+
+        let page = client.list_company_carriers(&company, &candidates, &0, &10);
+        assert_eq!(page.carriers.len(), 2);
+        assert_eq!(page.carriers.get(0).unwrap(), c1);
+        assert_eq!(page.carriers.get(1).unwrap(), c3);
+    }
 }

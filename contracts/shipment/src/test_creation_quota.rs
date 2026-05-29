@@ -354,4 +354,77 @@ mod tests {
         // Should now succeed.
         assert!(create_one(&env, &client, &company, &carrier, 3).is_ok());
     }
+
+    // ── metadata limits enforcement ─────────────────────────────────────────────
+
+    #[test]
+    fn test_metadata_limits_enforcement() {
+        let (env, client, admin, company, carrier) = setup();
+        let receiver = Address::generate(&env);
+        let data_hash = make_hash(&env, 1);
+        let deadline = future_deadline(&env);
+
+        client.add_company(&admin, &company);
+
+        // Get current config to understand metadata limits
+        let config = client.get_contract_config();
+        let max_metadata_entries = config.max_metadata_entries;
+        
+        // Create a shipment
+        let id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &data_hash,
+            &Vec::new(&env),
+            &deadline,
+            &None,
+        );
+
+        // Add metadata entries up to the limit
+        for i in 0..max_metadata_entries {
+            let key = Symbol::new(&env, &format!("key{}", i));
+            let value = Symbol::new(&env, &format!("value{}", i));
+            client.set_shipment_metadata(&company, &id, &key, &value);
+        }
+
+        // Verify we can read back the last entry
+        let last_key = Symbol::new(&env, &format!("key{}", max_metadata_entries - 1));
+        let last_value = client.get_shipment_metadata(&id, &last_key);
+        assert_eq!(last_value, Symbol::new(&env, &format!("value{}", max_metadata_entries - 1)));
+
+        // Try to add one more metadata entry - should fail
+        let overflow_key = Symbol::new(&env, "overflow_key");
+        let overflow_value = Symbol::new(&env, "overflow_value");
+        
+        let result = client.try_set_shipment_metadata(&company, &id, &overflow_key, &overflow_value);
+        assert!(
+            matches!(result, Err(Ok(crate::NavinError::MetadataLimitExceeded))),
+            "metadata limit should be enforced"
+        );
+    }
+
+    // ── quota with very short window enforces tightly ──────────────────────────
+
+    #[test]
+    fn quota_with_very_short_window_enforces_tightly() {
+        let (env, client, admin, company, carrier) = setup();
+
+        // Set quota: max 1 per 100-second window.
+        client.set_creation_quota(&admin, &1, &100);
+
+        assert!(create_one(&env, &client, &company, &carrier, 1).is_ok());
+        let initial_time = env.ledger().timestamp();
+
+        // Try immediately after — should fail.
+        env.ledger().with_mut(|l| l.timestamp += 1);
+        let result = create_one(&env, &client, &company, &carrier, 2);
+        assert_eq!(result, Err(NavinError::CreationQuotaExceeded));
+
+        // Advance past the short window.
+        env.ledger().with_mut(|l| l.timestamp = initial_time + 101);
+
+        // Should now succeed.
+        assert!(create_one(&env, &client, &company, &carrier, 3).is_ok());
+    }
 }

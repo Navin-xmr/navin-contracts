@@ -11561,3 +11561,64 @@ fn test_batch_query_and_count_regression() {
     );
     assert!(mixed.get(2).unwrap().is_some());
 }
+
+/// Test creation quota enforcement
+#[test]
+fn test_creation_quota_enforcement() {
+    let (env, client, admin, token_contract) = crate::test_utils::setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Get current config to understand creation quota
+    let config = client.get_contract_config();
+    
+    // If creation quota is disabled (max=0), skip this test
+    if config.creation_quota_max == 0 {
+        return;
+    }
+    
+    // Test with current creation quota limit
+    let quota_max = config.creation_quota_max;
+    
+    // Create shipments up to the quota limit
+    for i in 0..quota_max {
+        let data_hash = BytesN::from_array(&env, &[i as u8; 32]);
+        let deadline = env.ledger().timestamp() + 3600;
+        client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &data_hash,
+            &soroban_sdk::Vec::new(&env),
+            &deadline,
+            &None,
+        );
+    }
+
+    // Verify count matches quota
+    assert_eq!(client.get_shipment_count(), quota_max as u64);
+    
+    // Try to create one more shipment - should fail
+    let overflow_data_hash = BytesN::from_array(&env, &[255u8; 32]);
+    let overflow_deadline = env.ledger().timestamp() + 3600;
+    
+    let result = client.try_create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &overflow_data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &overflow_deadline,
+        &None,
+    );
+    
+    assert!(
+        matches!(result, Err(Ok(crate::NavinError::CreationQuotaExceeded))),
+        "creation quota should be enforced"
+    );
+}

@@ -209,6 +209,65 @@ fn test_shipment_count_increments_after_each_create() {
     }
 }
 
+/// Test batch-operation limits enforcement
+#[test]
+fn test_batch_operation_limits_enforcement() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    // Get current config to understand current limits
+    let config = client.get_contract_config();
+    
+    // Test with current batch_operation_limit
+    let limit = config.batch_operation_limit;
+    
+    // Create a batch that exceeds the limit
+    let mut ids = Vec::new(&env);
+    for i in 0..(limit + 1) as u64 {
+        ids.push_back(i + 1);
+    }
+    
+    let result = client.try_get_shipments_batch(&ids);
+    assert!(
+        matches!(result, Err(Ok(crate::NavinError::BatchTooLarge))),
+        "batch_operation_limit should reject batches larger than configured limit"
+    );
+    
+    // Test with batch that matches the limit exactly
+    let mut ids_exact = Vec::new(&env);
+    for i in 0..limit as u64 {
+        ids_exact.push_back(i + 1);
+    }
+    
+    // This should succeed
+    let result_exact = client.try_get_shipments_batch(&ids_exact);
+    assert!(
+        result_exact.is_ok(),
+        "batch_operation_limit should allow batches up to configured limit"
+    );
+}
+
+/// `get_shipment_count` must equal the number of shipments actually created,
+/// checked after each individual insert.
+#[test]
+fn test_shipment_count_increments_after_each_create() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    assert_eq!(client.get_shipment_count(), 0);
+
+    for n in 1u8..=5 {
+        create_shipment_for(&client, &env, &company, &receiver, &carrier, n);
+        assert_eq!(client.get_shipment_count(), n as u64);
+    }
+}
+
 /// Batch query over a mix of valid and non-existent IDs: valid entries must
 /// match individual reads and missing IDs must produce `None`.
 #[test]
