@@ -184,7 +184,7 @@ fn test_config_checksum_changes_after_config_update() {
     let before = client.get_config_checksum();
 
     let mut new_cfg = client.get_contract_config();
-    new_cfg.batch_operation_limit = new_cfg.batch_operation_limit + 1;
+    new_cfg.batch_operation_limit += 1;
     client.update_config(&admin, &new_cfg);
 
     let after = client.get_config_checksum();
@@ -218,19 +218,19 @@ fn test_each_field_mutation_produces_unique_checksum() {
     let base = client.get_config_checksum();
 
     let mutations: &[fn(&mut crate::ContractConfig)] = &[
-        |c| c.shipment_ttl_threshold = c.shipment_ttl_threshold + 1,
-        |c| c.shipment_ttl_extension = c.shipment_ttl_extension + 1,
-        |c| c.min_status_update_interval = c.min_status_update_interval + 10,
-        |c| c.batch_operation_limit = c.batch_operation_limit + 1,
-        |c| c.max_metadata_entries = c.max_metadata_entries + 1,
-        |c| c.default_shipment_limit = c.default_shipment_limit + 1,
-        |c| c.proposal_expiry_seconds = c.proposal_expiry_seconds + 3600,
-        |c| c.deadline_grace_seconds = c.deadline_grace_seconds + 60,
+        |c| c.shipment_ttl_threshold += 1,
+        |c| c.shipment_ttl_extension += 1,
+        |c| c.min_status_update_interval += 10,
+        |c| c.batch_operation_limit += 1,
+        |c| c.max_metadata_entries += 1,
+        |c| c.default_shipment_limit += 1,
+        |c| c.proposal_expiry_seconds += 3600,
+        |c| c.deadline_grace_seconds += 60,
         |c| c.auto_dispute_breach = !c.auto_dispute_breach,
-        |c| c.max_milestones_per_shipment = c.max_milestones_per_shipment - 1,
-        |c| c.max_notes_per_shipment = c.max_notes_per_shipment - 1,
-        |c| c.max_evidence_per_dispute = c.max_evidence_per_dispute - 1,
-        |c| c.max_breaches_per_shipment = c.max_breaches_per_shipment - 1,
+        |c| c.max_milestones_per_shipment -= 1,
+        |c| c.max_notes_per_shipment -= 1,
+        |c| c.max_evidence_per_dispute -= 1,
+        |c| c.max_breaches_per_shipment -= 1,
     ];
 
     let base_cfg = client.get_contract_config();
