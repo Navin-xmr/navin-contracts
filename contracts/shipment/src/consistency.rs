@@ -12,6 +12,8 @@
 //! - `MilestoneViolation`: every entry in `paid_milestones` must appear in `payment_milestones`.
 //! - `TimestampAnomaly`: `updated_at >= created_at`.
 //! - `DeadlineAnomaly`: `deadline > created_at`.
+//! - `EscrowConservation`: `escrow_amount <= total_escrow` (amount never exceeds total).
+//! - `NonNegativeEscrow`: `escrow_amount >= 0` (never negative).
 //!
 //! **Batch (cross-shipment) invariants:**
 //! - `BatchSenderMismatch`: all shipments in a batch must share the same `sender`.
@@ -43,6 +45,10 @@ pub enum ConsistencyViolation {
     BatchSenderMismatch(u64),
     /// Batch member has a different `created_at` than the first shipment in the batch.
     BatchTimestampMismatch(u64),
+    /// `escrow_amount > total_escrow` — escrow conservation violated.
+    EscrowConservation(u64),
+    /// `escrow_amount < 0` — negative escrow detected.
+    NegativeEscrow(u64),
 }
 
 /// Check all per-shipment invariants for a single shipment.
@@ -67,6 +73,16 @@ pub fn check_shipment_invariants(env: &Env, shipment_id: u64) -> Vec<Consistency
     let stored_escrow = storage::get_escrow(env, shipment_id);
     if shipment.escrow_amount != stored_escrow {
         violations.push_back(ConsistencyViolation::EscrowMismatch(shipment_id));
+    }
+
+    // Escrow conservation: amount must not exceed total.
+    if shipment.escrow_amount > shipment.total_escrow {
+        violations.push_back(ConsistencyViolation::EscrowConservation(shipment_id));
+    }
+
+    // Non-negative escrow: amount must be >= 0.
+    if shipment.escrow_amount < 0 {
+        violations.push_back(ConsistencyViolation::NegativeEscrow(shipment_id));
     }
 
     // Finalization: finalized shipments must be terminal with zero escrow.
@@ -96,8 +112,8 @@ pub fn check_shipment_invariants(env: &Env, shipment_id: u64) -> Vec<Consistency
         violations.push_back(ConsistencyViolation::TimestampAnomaly(shipment_id));
     }
 
-    // Deadline: must be strictly after creation time.
-    if shipment.deadline <= shipment.created_at {
+    // Deadline: must be strictly after creation time (or zero if not set).
+    if shipment.deadline > 0 && shipment.deadline <= shipment.created_at {
         violations.push_back(ConsistencyViolation::DeadlineAnomaly(shipment_id));
     }
 

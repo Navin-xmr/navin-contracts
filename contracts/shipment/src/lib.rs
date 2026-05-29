@@ -19,6 +19,7 @@ mod events;
 mod rate_limit;
 pub(crate) mod recovery;
 mod storage;
+pub mod storage_footprint;
 mod stress_test;
 pub mod test;
 #[cfg(test)]
@@ -402,12 +403,32 @@ fn internal_release_escrow(
         let token_contract = storage::get_token_contract(env).ok_or(NavinError::NotInitialized)?;
         let contract_address = env.current_contract_address();
 
+        // Calculate penalty if delivery is late
+        let current_time = env.ledger().timestamp();
+        let (carrier_amount, penalty_amount, days_late) = if shipment.deadline > 0
+            && current_time > shipment.deadline
+        {
+            // Calculate days late (in seconds, then convert to days)
+            let seconds_late = current_time.saturating_sub(shipment.deadline);
+            let days_late_calc = seconds_late / 86400; // 86400 seconds per day
+
+            // Penalty: 5% per day late, capped at 25%
+            let penalty_percentage = core::cmp::min(days_late_calc * 5, 25);
+            let penalty = checked_mul_div_i128(actual_release, penalty_percentage as i128, 100)?;
+
+            let carrier_payout = checked_sub_i128(actual_release, penalty)?;
+            (carrier_payout, penalty, days_late_calc)
+        } else {
+            // No penalty for on-time delivery
+            (actual_release, 0, 0)
+        };
+
         // Create settlement record in Pending state
         let settlement_id = create_settlement(
             env,
             shipment.id,
             SettlementOperation::Release,
-            actual_release,
+            carrier_amount,
             &contract_address,
             &shipment.carrier,
         )?;
@@ -418,7 +439,7 @@ fn internal_release_escrow(
             &token_contract,
             &contract_address,
             &shipment.carrier,
-            actual_release,
+            carrier_amount,
         );
 
         match transfer_result {
@@ -426,13 +447,26 @@ fn internal_release_escrow(
                 // Mark settlement as completed
                 complete_settlement(env, settlement_id, shipment.id)?;
 
+                let is_full_release = actual_release == shipment.escrow_amount;
                 shipment.escrow_amount = checked_sub_i128(shipment.escrow_amount, actual_release)?;
                 shipment.updated_at = env.ledger().timestamp();
                 shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
                 persist_shipment(env, shipment)?;
                 storage::set_escrow(env, shipment.id, shipment.escrow_amount);
 
-                events::emit_escrow_released(env, shipment.id, &shipment.carrier, actual_release);
+                events::emit_escrow_released(env, shipment.id, &shipment.carrier, carrier_amount);
+
+                // Emit penalty event only for full releases (not for milestone releases)
+                // Note: on-time delivery event is emitted by confirm_delivery, not here
+                if is_full_release && penalty_amount > 0 {
+                    events::emit_late_delivery_penalty(
+                        env,
+                        &shipment.carrier,
+                        shipment.id,
+                        penalty_amount,
+                        days_late,
+                    );
+                }
             }
             Err(e) => {
                 // Mark settlement as failed
@@ -2144,6 +2178,72 @@ impl NavinShipment {
     pub fn get_shipment(env: Env, shipment_id: u64) -> Result<Shipment, NavinError> {
         require_initialized(&env)?;
         storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)
+    }
+
+    /// Retrieve the immutable creator identity for a shipment.
+    ///
+    /// Set a deadline for a shipment. Only the Company (sender) or admin can set the deadline.
+    /// The deadline can be set during or after shipment creation.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `caller` - Address calling the function (must be Company or admin).
+    /// * `shipment_id` - ID of the shipment.
+    /// * `deadline` - New deadline timestamp (UNIX timestamp in seconds).
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok on successful deadline update.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
+    /// * `NavinError::Unauthorized` - If caller is not the sender or admin.
+    /// * `NavinError::InvalidTimestamp` - If deadline is not in the future.
+    /// * `NavinError::ShipmentAlreadyCompleted` - If shipment is in terminal state.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let deadline = env.ledger().timestamp() + 86_400; // 1 day from now
+    /// // contract.set_deadline(&env, &company, 1, deadline);
+    /// ```
+    pub fn set_deadline(
+        env: Env,
+        caller: Address,
+        shipment_id: u64,
+        deadline: u64,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        caller.require_auth();
+
+        let admin = storage::get_admin(&env);
+        let mut shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        // Only sender (Company) or admin can set deadline
+        if caller != shipment.sender && caller != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // Cannot set deadline on completed shipments
+        if matches!(
+            shipment.status,
+            ShipmentStatus::Delivered | ShipmentStatus::Cancelled | ShipmentStatus::Disputed
+        ) {
+            return Err(NavinError::ShipmentAlreadyCompleted);
+        }
+
+        let now = env.ledger().timestamp();
+        if deadline <= now {
+            return Err(NavinError::InvalidTimestamp);
+        }
+
+        shipment.deadline = deadline;
+        shipment.updated_at = now;
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
+        persist_shipment(&env, &shipment)?;
+        extend_shipment_ttl(&env, shipment_id);
+
+        Ok(())
     }
 
     /// Retrieve the immutable creator identity for a shipment.
@@ -5637,6 +5737,30 @@ impl NavinShipment {
         Ok(soroban_sdk::String::from_str(&env, unsafe {
             core::str::from_utf8_unchecked(&hex_chars)
         }))
+    }
+
+    /// Generate a storage footprint report for the contract.
+    ///
+    /// This function estimates storage usage by key family based on the number of
+    /// shipments and related data structures. Useful for identifying high-footprint
+    /// areas and guiding optimization work.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    ///
+    /// # Returns
+    /// * `Result<StorageFootprintReport, NavinError>` - Detailed breakdown of storage usage.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let report = contract.get_storage_footprint_report(&env);
+    /// // println!("Total storage: {} bytes", report.total_bytes);
+    /// ```
+    pub fn get_storage_footprint_report(
+        env: Env,
+    ) -> Result<storage_footprint::StorageFootprintReport, NavinError> {
+        require_initialized(&env)?;
+        Ok(storage_footprint::generate_report(&env))
     }
 
     /// Pause the contract, disabling all state-changing operations.
