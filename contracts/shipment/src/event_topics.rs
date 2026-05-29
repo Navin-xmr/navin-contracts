@@ -93,6 +93,9 @@ pub const CARRIER_LATE_DELIVERY: &str = "carrier_late_delivery";
 /// Emitted when a carrier completes delivery on or before the deadline.
 pub const CARRIER_ON_TIME_DELIVERY: &str = "carrier_on_time_delivery";
 
+/// Emitted when a late delivery penalty is applied to a carrier's escrow.
+pub const LATE_DELIVERY_PENALTY: &str = "late_delivery_penalty";
+
 /// Emitted when a carrier-to-carrier handoff is completed.
 pub const CARRIER_HANDOFF_COMPLETED: &str = "carrier_handoff_completed";
 
@@ -321,6 +324,7 @@ mod tests {
         assert_eq!(CARRIER_DISPUTE_LOSS, "carrier_dispute_loss");
         assert_eq!(CARRIER_LATE_DELIVERY, "carrier_late_delivery");
         assert_eq!(CARRIER_ON_TIME_DELIVERY, "carrier_on_time_delivery");
+        assert_eq!(LATE_DELIVERY_PENALTY, "late_delivery_penalty");
         assert_eq!(CARRIER_HANDOFF_COMPLETED, "carrier_handoff_completed");
         assert_eq!(CARRIER_MILESTONE_RATE, "carrier_milestone_rate");
         assert_eq!(ADMIN_PROPOSED, "admin_proposed");
