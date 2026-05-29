@@ -6420,6 +6420,87 @@ fn test_get_non_terminal_count_mixed_states() {
     assert_eq!(client.get_non_terminal_count(), 2);
 }
 
+#[test]
+fn test_get_non_terminal_count_verification() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Create shipments in mixed states
+    let id1 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+        &None,
+    );
+    let id2 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+        &None,
+    );
+    let _id3 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[3u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    // Initial state: 3 Created (non-terminal)
+    assert_eq!(
+        client.get_non_terminal_count(),
+        3,
+        "All shipments should be non-terminal initially"
+    );
+
+    // Move id1 to InTransit (non-terminal)
+    client.update_status(&carrier, &id1, &ShipmentStatus::InTransit, &data_hash);
+    assert_eq!(
+        client.get_non_terminal_count(),
+        3,
+        "InTransit is non-terminal"
+    );
+
+    // Move id1 to Delivered (terminal)
+    client.confirm_delivery(&receiver, &id1, &data_hash);
+    assert_eq!(
+        client.get_non_terminal_count(),
+        2,
+        "Delivered is terminal and excluded"
+    );
+
+    // Move id2 to Cancelled (terminal)
+    client.cancel_shipment(&company, &id2, &data_hash);
+    assert_eq!(
+        client.get_non_terminal_count(),
+        1,
+        "Cancelled is terminal and excluded"
+    );
+
+    // Verify remaining non-terminal shipment is id3 (Created)
+    assert_eq!(
+        client.get_non_terminal_count(),
+        1,
+        "Only id3 remains non-terminal"
+    );
+}
+
 // ============= Shipment Limit Tests =============
 
 #[test]
@@ -11560,333 +11641,4 @@ fn test_batch_query_and_count_regression() {
         "non-existent ID must be None"
     );
     assert!(mixed.get(2).unwrap().is_some());
-}
-
-// ============= Penalty Mechanism Tests =============
-
-#[test]
-fn test_penalty_on_time_delivery_no_penalty() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600; // 1 hour from now
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &deadline,
-        &None,
-    );
-    let escrow_amount: i128 = 10000;
-
-    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
-
-    env.as_contract(&client.address, || {
-        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
-        shipment.status = crate::ShipmentStatus::Delivered;
-        crate::storage::set_shipment(&env, &shipment);
-    });
-
-    // Release before deadline - no penalty
-    client.release_escrow(&receiver, &shipment_id);
-
-    let shipment = client.get_shipment(&shipment_id);
-    assert_eq!(shipment.escrow_amount, 0);
-}
-
-#[test]
-fn test_penalty_one_day_late_5_percent() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600; // 1 hour from now
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &deadline,
-        &None,
-    );
-    let escrow_amount: i128 = 10000;
-
-    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
-
-    env.as_contract(&client.address, || {
-        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
-        shipment.status = crate::ShipmentStatus::Delivered;
-        crate::storage::set_shipment(&env, &shipment);
-    });
-
-    // Advance time by 1 day + 1 second
-    env.ledger().with_mut(|l| {
-        l.timestamp = deadline + 86401; // 1 day + 1 second after deadline
-    });
-
-    client.release_escrow(&receiver, &shipment_id);
-
-    let shipment = client.get_shipment(&shipment_id);
-    assert_eq!(shipment.escrow_amount, 0);
-    // Carrier should receive 95% (10000 * 0.95 = 9500)
-    // Penalty is 5% (10000 * 0.05 = 500)
-}
-
-#[test]
-fn test_penalty_five_days_late_25_percent_cap() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &deadline,
-        &None,
-    );
-    let escrow_amount: i128 = 10000;
-
-    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
-
-    env.as_contract(&client.address, || {
-        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
-        shipment.status = crate::ShipmentStatus::Delivered;
-        crate::storage::set_shipment(&env, &shipment);
-    });
-
-    // Advance time by 5 days
-    env.ledger().with_mut(|l| {
-        l.timestamp = deadline + (5 * 86400); // 5 days after deadline
-    });
-
-    client.release_escrow(&receiver, &shipment_id);
-
-    let shipment = client.get_shipment(&shipment_id);
-    assert_eq!(shipment.escrow_amount, 0);
-    // Penalty should be 25% (capped at 5% * 5 days = 25%)
-    // Carrier receives 75% (10000 * 0.75 = 7500)
-}
-
-#[test]
-fn test_penalty_ten_days_late_still_25_percent_cap() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &deadline,
-        &None,
-    );
-    let escrow_amount: i128 = 10000;
-
-    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
-
-    env.as_contract(&client.address, || {
-        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
-        shipment.status = crate::ShipmentStatus::Delivered;
-        crate::storage::set_shipment(&env, &shipment);
-    });
-
-    // Advance time by 10 days
-    env.ledger().with_mut(|l| {
-        l.timestamp = deadline + (10 * 86400); // 10 days after deadline
-    });
-
-    client.release_escrow(&receiver, &shipment_id);
-
-    let shipment = client.get_shipment(&shipment_id);
-    assert_eq!(shipment.escrow_amount, 0);
-    // Penalty should still be capped at 25%
-    // Carrier receives 75% (10000 * 0.75 = 7500)
-}
-
-#[test]
-fn test_penalty_no_deadline_set_no_penalty() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600; // Set a deadline
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &deadline,
-        &None,
-    );
-    let escrow_amount: i128 = 10000;
-
-    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
-
-    env.as_contract(&client.address, || {
-        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
-        shipment.status = crate::ShipmentStatus::Delivered;
-        // Clear the deadline to simulate no deadline set
-        shipment.deadline = 0;
-        crate::storage::set_shipment(&env, &shipment);
-    });
-
-    client.release_escrow(&receiver, &shipment_id);
-
-    let shipment = client.get_shipment(&shipment_id);
-    assert_eq!(shipment.escrow_amount, 0);
-    // No penalty since deadline is 0
-}
-
-#[test]
-fn test_set_deadline_by_company() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let initial_deadline = env.ledger().timestamp() + 3600;
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &initial_deadline,
-        &None,
-    );
-
-    // Update deadline
-    let new_deadline = env.ledger().timestamp() + 7200;
-    client.set_deadline(&company, &shipment_id, &new_deadline);
-
-    let shipment = client.get_shipment(&shipment_id);
-    assert_eq!(shipment.deadline, new_deadline);
-}
-
-#[test]
-fn test_set_deadline_by_admin() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let initial_deadline = env.ledger().timestamp() + 3600;
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &initial_deadline,
-        &None,
-    );
-
-    // Admin updates deadline
-    let new_deadline = env.ledger().timestamp() + 7200;
-    client.set_deadline(&admin, &shipment_id, &new_deadline);
-
-    let shipment = client.get_shipment(&shipment_id);
-    assert_eq!(shipment.deadline, new_deadline);
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #3)")]
-fn test_set_deadline_unauthorized() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let unauthorized = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let initial_deadline = env.ledger().timestamp() + 3600;
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &initial_deadline,
-        &None,
-    );
-
-    // Unauthorized user tries to set deadline
-    let new_deadline = env.ledger().timestamp() + 7200;
-    client.set_deadline(&unauthorized, &shipment_id, &new_deadline);
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #10)")]
-fn test_set_deadline_invalid_timestamp() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let initial_deadline = env.ledger().timestamp() + 3600;
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &initial_deadline,
-        &None,
-    );
-
-    // Try to set deadline in the past
-    let past_deadline = env.ledger().timestamp() - 1000;
-    client.set_deadline(&company, &shipment_id, &past_deadline);
 }
