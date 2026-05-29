@@ -163,3 +163,89 @@ fn test_detect_storage_inconsistencies() {
     // Because escrow_amount is 5000 but the Escrow persisted entry is killed by remove_escrow
     assert!(health.storage_inconsistencies.contains(shipment_id));
 }
+
+// ── Regression: config checksum stability and mutation ───────────────────────
+
+/// Same config always produces the same checksum (deterministic across reruns).
+#[test]
+fn test_config_checksum_is_stable_when_config_unchanged() {
+    let (_env, client, _admin, _token) = prepare_test();
+
+    let c1 = client.get_config_checksum();
+    let c2 = client.get_config_checksum();
+    assert_eq!(c1, c2);
+}
+
+/// Checksum changes when a critical config field is mutated.
+#[test]
+fn test_config_checksum_changes_after_config_update() {
+    let (_env, client, admin, _token) = prepare_test();
+
+    let before = client.get_config_checksum();
+
+    let mut new_cfg = client.get_contract_config();
+    new_cfg.batch_operation_limit = new_cfg.batch_operation_limit + 1;
+    client.update_config(&admin, &new_cfg);
+
+    let after = client.get_config_checksum();
+    assert_ne!(before, after);
+}
+
+/// Reverting a config change restores the original checksum.
+#[test]
+fn test_config_checksum_restored_after_revert() {
+    let (_env, client, admin, _token) = prepare_test();
+
+    let original = client.get_config_checksum();
+
+    let mut mutated = client.get_contract_config();
+    mutated.deadline_grace_seconds = 120;
+    client.update_config(&admin, &mutated);
+    assert_ne!(client.get_config_checksum(), original);
+
+    // Revert
+    let mut reverted = client.get_contract_config();
+    reverted.deadline_grace_seconds = 0;
+    client.update_config(&admin, &reverted);
+    assert_eq!(client.get_config_checksum(), original);
+}
+
+/// Each distinct field mutation produces a distinct checksum.
+#[test]
+fn test_each_field_mutation_produces_unique_checksum() {
+    let (_env, client, admin, _token) = prepare_test();
+
+    let base = client.get_config_checksum();
+
+    let mutations: &[fn(&mut crate::ContractConfig)] = &[
+        |c| c.shipment_ttl_threshold = c.shipment_ttl_threshold + 1,
+        |c| c.shipment_ttl_extension = c.shipment_ttl_extension + 1,
+        |c| c.min_status_update_interval = c.min_status_update_interval + 10,
+        |c| c.batch_operation_limit = c.batch_operation_limit + 1,
+        |c| c.max_metadata_entries = c.max_metadata_entries + 1,
+        |c| c.default_shipment_limit = c.default_shipment_limit + 1,
+        |c| c.proposal_expiry_seconds = c.proposal_expiry_seconds + 3600,
+        |c| c.deadline_grace_seconds = c.deadline_grace_seconds + 60,
+        |c| c.auto_dispute_breach = !c.auto_dispute_breach,
+        |c| c.max_milestones_per_shipment = c.max_milestones_per_shipment - 1,
+        |c| c.max_notes_per_shipment = c.max_notes_per_shipment - 1,
+        |c| c.max_evidence_per_dispute = c.max_evidence_per_dispute - 1,
+        |c| c.max_breaches_per_shipment = c.max_breaches_per_shipment - 1,
+    ];
+
+    let base_cfg = client.get_contract_config();
+
+    for mutate in mutations {
+        let mut cfg = base_cfg.clone();
+        mutate(&mut cfg);
+        client.update_config(&admin, &cfg);
+        assert_ne!(
+            client.get_config_checksum(),
+            base,
+            "checksum must differ after field mutation"
+        );
+        // Restore
+        client.update_config(&admin, &base_cfg);
+        assert_eq!(client.get_config_checksum(), base, "checksum must be restored");
+    }
+}
