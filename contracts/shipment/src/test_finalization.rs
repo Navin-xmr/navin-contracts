@@ -280,7 +280,10 @@ fn test_unlock_escrow_clears_shipment_escrow_amount() {
         crate::recovery::unlock_escrow(&env, &admin, id, &reason).unwrap();
 
         let after = crate::storage::get_shipment(&env, id).unwrap();
-        assert_eq!(after.escrow_amount, 0, "escrow_amount must be zeroed after unlock");
+        assert_eq!(
+            after.escrow_amount, 0,
+            "escrow_amount must be zeroed after unlock"
+        );
     });
 }
 
@@ -301,14 +304,8 @@ fn test_recover_shipment_transitions_stuck_state() {
         shipment.status = ShipmentStatus::InTransit;
         crate::storage::set_shipment(&env, &shipment);
 
-        crate::recovery::recover_shipment(
-            &env,
-            &admin,
-            id,
-            ShipmentStatus::Cancelled,
-            &reason,
-        )
-        .unwrap();
+        crate::recovery::recover_shipment(&env, &admin, id, ShipmentStatus::Cancelled, &reason)
+            .unwrap();
 
         let after = crate::storage::get_shipment(&env, id).unwrap();
         assert_eq!(after.status, ShipmentStatus::Cancelled);
@@ -331,13 +328,8 @@ fn test_recover_shipment_fails_for_terminal_state() {
         shipment.status = ShipmentStatus::Delivered;
         crate::storage::set_shipment(&env, &shipment);
 
-        let result = crate::recovery::recover_shipment(
-            &env,
-            &admin,
-            id,
-            ShipmentStatus::InTransit,
-            &reason,
-        );
+        let result =
+            crate::recovery::recover_shipment(&env, &admin, id, ShipmentStatus::InTransit, &reason);
         assert!(
             matches!(result, Err(crate::NavinError::InvalidStatus)),
             "recovery from Delivered must return InvalidStatus"
