@@ -246,6 +246,10 @@ fn test_each_field_mutation_produces_unique_checksum() {
         );
         // Restore
         client.update_config(&admin, &base_cfg);
-        assert_eq!(client.get_config_checksum(), base, "checksum must be restored");
+        assert_eq!(
+            client.get_config_checksum(),
+            base,
+            "checksum must be restored"
+        );
     }
 }
