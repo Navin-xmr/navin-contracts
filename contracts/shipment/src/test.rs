@@ -6420,6 +6420,67 @@ fn test_get_non_terminal_count_mixed_states() {
     assert_eq!(client.get_non_terminal_count(), 2);
 }
 
+#[test]
+fn test_get_non_terminal_count_verification() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Create shipments in mixed states
+    let id1 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+        &None,
+    );
+    let id2 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+        &None,
+    );
+    let id3 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[3u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    // Initial state: 3 Created (non-terminal)
+    assert_eq!(client.get_non_terminal_count(), 3, "All shipments should be non-terminal initially");
+
+    // Move id1 to InTransit (non-terminal)
+    client.update_status(&carrier, &id1, &ShipmentStatus::InTransit, &data_hash);
+    assert_eq!(client.get_non_terminal_count(), 3, "InTransit is non-terminal");
+
+    // Move id1 to Delivered (terminal)
+    client.confirm_delivery(&receiver, &id1, &data_hash);
+    assert_eq!(client.get_non_terminal_count(), 2, "Delivered is terminal and excluded");
+
+    // Move id2 to Cancelled (terminal)
+    client.cancel_shipment(&company, &id2, &data_hash);
+    assert_eq!(client.get_non_terminal_count(), 1, "Cancelled is terminal and excluded");
+
+    // Verify remaining non-terminal shipment is id3 (Created)
+    assert_eq!(client.get_non_terminal_count(), 1, "Only id3 remains non-terminal");
+}
+
 // ============= Shipment Limit Tests =============
 
 #[test]
