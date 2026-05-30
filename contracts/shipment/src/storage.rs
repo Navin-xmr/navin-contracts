@@ -612,6 +612,24 @@ pub fn set_escrow(env: &Env, shipment_id: u64, amount: i128) {
         .set(&DataKey::Escrow(shipment_id), &amount);
 }
 
+/// Get the immutable token contract address for a shipment.
+///
+/// This mirrors the documented storage key pattern
+/// `(Symbol("shipment_token"), shipment_id) -> Address` using the typed
+/// `DataKey::ShipmentToken(shipment_id)` key.
+pub fn get_shipment_token(env: &Env, shipment_id: u64) -> Option<Address> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ShipmentToken(shipment_id))
+}
+
+/// Store the immutable token contract address for a shipment.
+pub fn set_shipment_token(env: &Env, shipment_id: u64, token_address: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ShipmentToken(shipment_id), token_address);
+}
+
 /// Get the latest escrow freeze reason code for a shipment.
 ///
 /// # Arguments
@@ -806,6 +824,13 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
         env.storage()
             .persistent()
             .extend_ttl(&escrow_key, threshold, extend_to);
+    }
+
+    let token_key = DataKey::ShipmentToken(shipment_id);
+    if env.storage().persistent().has(&token_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&token_key, threshold, extend_to);
     }
 
     let hash_key = DataKey::ConfirmationHash(shipment_id);

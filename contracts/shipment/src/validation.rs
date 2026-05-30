@@ -1,7 +1,9 @@
+use alloc::string::ToString;
+
 use crate::errors::NavinError;
 use crate::storage;
-use crate::types::{Shipment, ShipmentStatus};
-use soroban_sdk::{xdr::ToXdr, BytesN, Env, Symbol};
+use crate::types::{Shipment, ShipmentInput, ShipmentStatus};
+use soroban_sdk::{xdr::ToXdr, Address, BytesN, Env, Symbol};
 
 /// Maximum reasonable escrow amount (1 quadrillion stroops ≈ 1 billion XLM).
 const MAX_AMOUNT: i128 = 1_000_000_000_000_000;
@@ -110,12 +112,165 @@ pub fn validate_milestone_symbols(
             let other = &milestones.get_unchecked(j).0;
             let other_xdr = other.to_xdr(env);
             if current_xdr == other_xdr {
-                return Err(NavinError::InvalidShipmentInput);
+                return Err(NavinError::DuplicatePaymentMilestone);
             }
         }
     }
 
     Ok(())
+}
+
+/// Validate the addresses involved in shipment creation.
+///
+/// The sender, receiver, and carrier must be three distinct addresses so the
+/// shipment does not collapse multiple parties into the same role.
+pub fn validate_shipment_participants(
+    sender: &Address,
+    receiver: &Address,
+    carrier: &Address,
+) -> Result<(), NavinError> {
+    if sender == receiver || sender == carrier || receiver == carrier {
+        return Err(NavinError::InvalidShipmentParticipants);
+    }
+
+    Ok(())
+}
+
+/// Validate the symbol format used for checkpoint names.
+///
+/// Symbols are already bounded by the Stellar symbol type, but this helper
+/// adds an explicit format gate so checkpoint names remain readable and
+/// machine-friendly: only ASCII letters, digits, and underscores are allowed.
+pub fn validate_checkpoint_name_format(symbol: &Symbol) -> Result<(), NavinError> {
+    let checkpoint_name = symbol.to_string();
+    if checkpoint_name
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    {
+        Ok(())
+    } else {
+        Err(NavinError::InvalidPaymentMilestoneName)
+    }
+}
+
+/// Validate a shipment's payment milestone structure.
+///
+/// This enforces the creation-time contract for milestone payments:
+/// - every checkpoint name must pass symbol and format validation,
+/// - checkpoint names must be unique,
+/// - each percentage must be between 1 and 100,
+/// - the percentages must sum to exactly 100 when milestones are present.
+pub fn validate_payment_milestones(
+    env: &Env,
+    milestones: &soroban_sdk::Vec<(Symbol, u32)>,
+) -> Result<(), NavinError> {
+    if milestones.is_empty() {
+        return Ok(());
+    }
+
+    validate_milestone_symbols(env, milestones)?;
+
+    for milestone in milestones.iter() {
+        validate_symbol(env, &milestone.0)?;
+        validate_checkpoint_name_format(&milestone.0)?;
+
+        if milestone.1 == 0 || milestone.1 > 100 {
+            return Err(NavinError::InvalidPaymentMilestones);
+        }
+    }
+
+    let mut total_percentage = 0u32;
+    for milestone in milestones.iter() {
+        total_percentage = total_percentage
+            .checked_add(milestone.1)
+            .ok_or(NavinError::InvalidPaymentMilestones)?;
+    }
+
+    if total_percentage != 100 {
+        return Err(NavinError::MilestoneSumInvalid);
+    }
+
+    for i in 0..milestones.len() {
+        let current = &milestones.get_unchecked(i).0;
+        for j in (i + 1)..milestones.len() {
+            let other = &milestones.get_unchecked(j).0;
+            if current == other {
+                return Err(NavinError::DuplicatePaymentMilestone);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate the deadline supplied at shipment creation time.
+///
+/// Deadlines must be strictly in the future so newly-created shipments cannot
+/// start in an already-expired state.
+pub fn validate_shipment_deadline(env: &Env, deadline: u64) -> Result<(), NavinError> {
+    if deadline <= env.ledger().timestamp() {
+        return Err(NavinError::InvalidShipmentDeadline);
+    }
+
+    Ok(())
+}
+
+/// Validate the shared inputs for shipment creation.
+pub fn validate_shipment_creation_inputs(
+    env: &Env,
+    sender: &Address,
+    receiver: &Address,
+    carrier: &Address,
+    payment_milestones: &soroban_sdk::Vec<(Symbol, u32)>,
+    deadline: u64,
+) -> Result<(), NavinError> {
+    validate_shipment_participants(sender, receiver, carrier)?;
+    validate_payment_milestones(env, payment_milestones)?;
+    validate_shipment_deadline(env, deadline)?;
+    Ok(())
+}
+
+/// Validate a shipment token address before it is stored on a shipment.
+///
+/// Soroban addresses are typed and cannot be an empty string, so this guard
+/// rejects the only sentinel value this contract can confuse for "unset": the
+/// shipment contract's own address. Token contracts must be external contracts.
+pub fn validate_token_address(env: &Env, token_address: &Address) -> Result<(), NavinError> {
+    if *token_address == env.current_contract_address() {
+        return Err(NavinError::InvalidTokenAddress);
+    }
+    Ok(())
+}
+
+/// Validate the full input payload used to create a shipment.
+///
+/// Rules:
+/// - `sender`, `receiver`, and `carrier` must be three distinct addresses.
+/// - `data_hash` must be non-zero.
+/// - `deadline` must be strictly greater than the current ledger timestamp.
+/// - `token_address` must pass token-address validation.
+/// - `payment_milestones` may be empty; when present each percentage must be
+///   between 1 and 100 inclusive, all checkpoint names must be valid Symbols,
+///   names must be unique, and percentages must sum exactly to 100.
+///
+/// The function returns domain errors only and does not panic.
+pub fn validate_shipment_input(
+    env: &Env,
+    sender: &Address,
+    input: &ShipmentInput,
+) -> Result<(), NavinError> {
+    if *sender == input.receiver || *sender == input.carrier || input.receiver == input.carrier {
+        return Err(NavinError::InvalidShipmentParticipants);
+    }
+
+    validate_hash(&input.data_hash)?;
+    validate_token_address(env, &input.token_address)?;
+
+    if input.deadline <= env.ledger().timestamp() {
+        return Err(NavinError::InvalidShipmentDeadline);
+    }
+
+    validate_payment_milestones(env, &input.payment_milestones)
 }
 
 /// Validate metadata key-value pair symbols for bounded usage.
@@ -513,6 +668,7 @@ mod tests {
             sender: soroban_sdk::Address::generate(&env),
             receiver: soroban_sdk::Address::generate(&env),
             carrier: soroban_sdk::Address::generate(&env),
+            token_address: soroban_sdk::Address::generate(&env),
             status: ShipmentStatus::InTransit,
             data_hash: BytesN::from_array(&env, &[1_u8; 32]),
             created_at: 100,
@@ -540,6 +696,7 @@ mod tests {
             sender: soroban_sdk::Address::generate(&env),
             receiver: soroban_sdk::Address::generate(&env),
             carrier: soroban_sdk::Address::generate(&env),
+            token_address: soroban_sdk::Address::generate(&env),
             status: ShipmentStatus::InTransit,
             data_hash: BytesN::from_array(&env, &[2_u8; 32]),
             created_at: 100,
@@ -785,6 +942,7 @@ mod symbol_validation_tests {
     extern crate std;
 
     use super::*;
+    use soroban_sdk::testutils::Address as _;
     use soroban_sdk::{Env, Symbol, Vec};
 
     // Boundary tests for symbol length
@@ -988,6 +1146,123 @@ mod symbol_validation_tests {
             Err(NavinError::InvalidShipmentInput),
             "Duplicate milestone should return InvalidShipmentInput"
         );
+    }
+
+    #[test]
+    fn test_validate_shipment_input_accepts_valid_payload() {
+        let env = Env::default();
+        let contract_id = env.register(crate::NavinShipment, ());
+        let sender = soroban_sdk::Address::generate(&env);
+        let receiver = soroban_sdk::Address::generate(&env);
+        let carrier = soroban_sdk::Address::generate(&env);
+        let token_address = soroban_sdk::Address::generate(&env);
+        let deadline = env.ledger().timestamp() + 3_600;
+
+        let mut payment_milestones = Vec::new(&env);
+        payment_milestones.push_back((Symbol::new(&env, "warehouse"), 50));
+        payment_milestones.push_back((Symbol::new(&env, "delivery"), 50));
+
+        let input = ShipmentInput {
+            receiver,
+            carrier,
+            token_address,
+            data_hash: BytesN::from_array(&env, &[1u8; 32]),
+            payment_milestones,
+            deadline,
+            depends_on: None,
+        };
+
+        let result = env.as_contract(&contract_id, || {
+            validate_shipment_input(&env, &sender, &input)
+        });
+
+        assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn test_validate_shipment_input_rejects_duplicate_participants() {
+        let env = Env::default();
+        let contract_id = env.register(crate::NavinShipment, ());
+        let sender = soroban_sdk::Address::generate(&env);
+        let carrier = soroban_sdk::Address::generate(&env);
+        let token_address = soroban_sdk::Address::generate(&env);
+        let deadline = env.ledger().timestamp() + 3_600;
+
+        let input = ShipmentInput {
+            receiver: sender.clone(),
+            carrier,
+            token_address,
+            data_hash: BytesN::from_array(&env, &[2u8; 32]),
+            payment_milestones: Vec::new(&env),
+            deadline,
+            depends_on: None,
+        };
+
+        let result = env.as_contract(&contract_id, || {
+            validate_shipment_input(&env, &sender, &input)
+        });
+
+        assert_eq!(result, Err(NavinError::InvalidShipmentParticipants));
+    }
+
+    #[test]
+    fn test_validate_shipment_input_rejects_past_deadline() {
+        let env = Env::default();
+        let contract_id = env.register(crate::NavinShipment, ());
+        let sender = soroban_sdk::Address::generate(&env);
+        let receiver = soroban_sdk::Address::generate(&env);
+        let carrier = soroban_sdk::Address::generate(&env);
+        let token_address = soroban_sdk::Address::generate(&env);
+        let deadline = env.ledger().timestamp();
+
+        let input = ShipmentInput {
+            receiver,
+            carrier,
+            token_address,
+            data_hash: BytesN::from_array(&env, &[3u8; 32]),
+            payment_milestones: Vec::new(&env),
+            deadline,
+            depends_on: None,
+        };
+
+        let result = env.as_contract(&contract_id, || {
+            validate_shipment_input(&env, &sender, &input)
+        });
+
+        assert_eq!(result, Err(NavinError::InvalidShipmentDeadline));
+    }
+
+    #[test]
+    fn test_validate_payment_milestones_rejects_non_100_sum() {
+        let env = Env::default();
+        let mut milestones = Vec::new(&env);
+        milestones.push_back((Symbol::new(&env, "warehouse"), 30));
+        milestones.push_back((Symbol::new(&env, "delivery"), 60));
+
+        assert_eq!(
+            validate_payment_milestones(&env, &milestones),
+            Err(NavinError::MilestoneSumInvalid)
+        );
+    }
+
+    #[test]
+    fn test_validate_payment_milestones_accepts_exact_100_sum() {
+        let env = Env::default();
+        let mut milestones = Vec::new(&env);
+        milestones.push_back((Symbol::new(&env, "warehouse"), 40));
+        milestones.push_back((Symbol::new(&env, "delivery"), 60));
+
+        assert_eq!(validate_payment_milestones(&env, &milestones), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_token_address_rejects_contract_address() {
+        let env = Env::default();
+        let contract_id = env.register(crate::NavinShipment, ());
+
+        let result = env.as_contract(&contract_id, || validate_token_address(&env, &contract_id));
+
+        assert_eq!(result, Err(NavinError::InvalidTokenAddress));
     }
 }
 
