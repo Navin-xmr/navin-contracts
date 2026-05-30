@@ -191,7 +191,7 @@ fn test_batch_and_individual_reads_agree() {
 /// `get_shipment_count` must equal the number of shipments actually created,
 /// checked after each individual insert.
 #[test]
-fn test_shipment_count_increments_after_each_create() {
+fn test_shipment_count_increments_after_each_create_regression() {
     let (env, client, admin, token_contract) = setup_shipment_env();
 
     let company = Address::generate(&env);

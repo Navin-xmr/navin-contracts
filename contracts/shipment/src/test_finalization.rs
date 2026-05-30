@@ -614,6 +614,9 @@ fn test_archival_tests_cover_both_archived_and_active_states() {
     assert!(batch.get(0).unwrap().is_some());
     assert!(batch.get(1).unwrap().is_some());
 }
+
+#[test]
+fn test_recovery_clear_finalization_unsets_finalized_flag() {
     let (env, client, admin, _) = setup_recovery_env();
     let carrier = Address::generate(&env);
     client.add_carrier(&admin, &carrier);
