@@ -370,4 +370,143 @@ mod tests {
         assert_eq!(page.carriers.get(0).unwrap(), c1);
         assert_eq!(page.carriers.get(1).unwrap(), c3);
     }
+
+    // ── Additional edge case and integration tests ────────────────────────────
+
+    #[test]
+    fn allowed_with_multiple_companies_independent_whitelists() {
+        let (env, client, admin) = setup();
+        let company1 = Address::generate(&env);
+        let company2 = Address::generate(&env);
+        let carrier = Address::generate(&env);
+
+        client.add_company(&admin, &company1);
+        client.add_company(&admin, &company2);
+        client.add_carrier(&admin, &carrier);
+
+        // Whitelist carrier only for company1
+        client.add_carrier_to_whitelist(&company1, &carrier);
+
+        // Verify company1 sees carrier as allowed
+        assert!(client.is_company_carrier_allowed(&company1, &carrier));
+
+        // Verify company2 does not see carrier as allowed
+        assert!(!client.is_company_carrier_allowed(&company2, &carrier));
+
+        // Whitelist carrier for company2
+        client.add_carrier_to_whitelist(&company2, &carrier);
+        assert!(client.is_company_carrier_allowed(&company2, &carrier));
+
+        // Remove from company1 whitelist
+        client.remove_carrier_from_whitelist(&company1, &carrier);
+        assert!(!client.is_company_carrier_allowed(&company1, &carrier));
+        assert!(client.is_company_carrier_allowed(&company2, &carrier));
+    }
+
+    #[test]
+    fn list_with_suspended_carriers_in_candidates() {
+        let (env, client, admin) = setup();
+        let company = Address::generate(&env);
+        client.add_company(&admin, &company);
+
+        let carrier1 = Address::generate(&env);
+        let carrier2 = Address::generate(&env);
+        let carrier3 = Address::generate(&env);
+
+        client.add_carrier(&admin, &carrier1);
+        client.add_carrier(&admin, &carrier2);
+        client.add_carrier(&admin, &carrier3);
+
+        // Whitelist all three
+        client.add_carrier_to_whitelist(&company, &carrier1);
+        client.add_carrier_to_whitelist(&company, &carrier2);
+        client.add_carrier_to_whitelist(&company, &carrier3);
+
+        // Suspend carrier2
+        client.suspend_carrier(&admin, &carrier2);
+
+        let mut candidates = Vec::new(&env);
+        candidates.push_back(carrier1.clone());
+        candidates.push_back(carrier2.clone());
+        candidates.push_back(carrier3.clone());
+
+        // List should exclude suspended carrier2
+        let page = client.list_company_carriers(&company, &candidates, &0, &10);
+        assert_eq!(page.carriers.len(), 2);
+        assert_eq!(page.carriers.get(0).unwrap(), carrier1);
+        assert_eq!(page.carriers.get(1).unwrap(), carrier3);
+    }
+
+    #[test]
+    fn list_pagination_with_exact_page_boundary() {
+        let (env, client, admin) = setup();
+        let company = Address::generate(&env);
+        client.add_company(&admin, &company);
+
+        let mut carriers = Vec::new(&env);
+        for _ in 0..10u32 {
+            let c = Address::generate(&env);
+            client.add_carrier(&admin, &c);
+            client.add_carrier_to_whitelist(&company, &c);
+            carriers.push_back(c);
+        }
+
+        // Request exactly 10 items with page_size 10
+        let page = client.list_company_carriers(&company, &carriers, &0, &10);
+        assert_eq!(page.carriers.len(), 10);
+        assert!(page.next_cursor.is_none());
+
+        // Request with page_size 5 should have next_cursor
+        let page1 = client.list_company_carriers(&company, &carriers, &0, &5);
+        assert_eq!(page1.carriers.len(), 5);
+        assert!(page1.next_cursor.is_some());
+
+        let page2 = client.list_company_carriers(&company, &carriers, &5, &5);
+        assert_eq!(page2.carriers.len(), 5);
+        assert!(page2.next_cursor.is_none());
+    }
+
+    #[test]
+    fn handoff_preserves_shipment_state_except_carrier() {
+        let (env, client, admin) = setup();
+        let company = Address::generate(&env);
+        client.add_company(&admin, &company);
+
+        let carrier_a = Address::generate(&env);
+        let carrier_b = Address::generate(&env);
+        client.add_carrier(&admin, &carrier_a);
+        client.add_carrier(&admin, &carrier_b);
+
+        client.add_carrier_to_whitelist(&company, &carrier_a);
+        client.add_carrier_to_whitelist(&company, &carrier_b);
+
+        let receiver = Address::generate(&env);
+        let data_hash = BytesN::from_array(&env, &[42u8; 32]);
+        let deadline = env.ledger().timestamp() + 7200;
+        let id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier_a,
+            &data_hash,
+            &Vec::new(&env),
+            &deadline,
+            &None,
+        );
+
+        let before = client.get_shipment(&id);
+        
+        // Perform handoff
+        client.handoff_shipment(&carrier_a, &id, &carrier_b, &data_hash);
+
+        let after = client.get_shipment(&id);
+
+        // Verify carrier changed
+        assert_eq!(after.carrier, carrier_b);
+
+        // Verify other fields remain unchanged
+        assert_eq!(after.company, before.company);
+        assert_eq!(after.receiver, before.receiver);
+        assert_eq!(after.data_hash, before.data_hash);
+        assert_eq!(after.deadline, before.deadline);
+    }
 }
