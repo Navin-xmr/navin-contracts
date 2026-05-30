@@ -11703,3 +11703,173 @@ fn test_creation_quota_enforcement() {
         "creation quota should be enforced"
     );
 }
+
+// ============= Rate-limit boundary regression tests =============
+// These tests pin the exact boundary behaviour of the min_status_update_interval
+// check in update_status:
+//   `if now.saturating_sub(last) < config.min_status_update_interval { Err(RateLimitExceeded) }`
+// Default interval is 60 seconds.
+
+/// Helper: create a shipment already in InTransit so boundary tests can
+/// attempt a second status update without needing to advance time for the
+/// first one.
+fn setup_in_transit_shipment(
+    env: &Env,
+    client: &NavinShipmentClient,
+    admin: &Address,
+    token_contract: &Address,
+) -> (Address, Address, u64) {
+    let company = Address::generate(env);
+    let carrier = Address::generate(env);
+    let receiver = Address::generate(env);
+
+    client.initialize(admin, token_contract);
+    client.add_company(admin, &company);
+    client.add_carrier(admin, &carrier);
+
+    let data_hash = BytesN::from_array(env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 7200;
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(env),
+        &deadline,
+        &None,
+    );
+
+    // Admin does the first transition so no rate-limit timestamp is set for carrier yet.
+    let hash2 = BytesN::from_array(env, &[2u8; 32]);
+    client.update_status(admin, &shipment_id, &ShipmentStatus::InTransit, &hash2);
+
+    (carrier, admin.clone(), shipment_id)
+}
+
+/// At exactly `min_status_update_interval` seconds the update must succeed.
+/// elapsed == interval → `elapsed < interval` is false → allowed.
+#[test]
+fn test_rate_limit_boundary_exact_interval_is_allowed() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let (carrier, _, shipment_id) =
+        setup_in_transit_shipment(&env, &client, &admin, &token_contract);
+
+    // Carrier makes first update; this sets LastStatusUpdate.
+    let hash3 = BytesN::from_array(&env, &[3u8; 32]);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &hash3,
+    );
+
+    // Advance exactly 60 seconds (== min_status_update_interval).
+    super::test_utils::advance_ledger_time(&env, 60);
+
+    let hash4 = BytesN::from_array(&env, &[4u8; 32]);
+    let result = client.try_update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &hash4,
+    );
+    assert!(
+        result.is_ok(),
+        "update at exactly the interval boundary must be allowed"
+    );
+}
+
+/// One second before the boundary the update must be rejected.
+/// elapsed == interval - 1 → `elapsed < interval` is true → blocked.
+#[test]
+fn test_rate_limit_boundary_one_second_before_is_blocked() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let (carrier, _, shipment_id) =
+        setup_in_transit_shipment(&env, &client, &admin, &token_contract);
+
+    let hash3 = BytesN::from_array(&env, &[3u8; 32]);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &hash3,
+    );
+
+    // Advance 59 seconds — one short of the 60-second boundary.
+    super::test_utils::advance_ledger_time(&env, 59);
+
+    let hash4 = BytesN::from_array(&env, &[4u8; 32]);
+    let result = client.try_update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &hash4,
+    );
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::RateLimitExceeded)),
+        "update one second before the boundary must be blocked"
+    );
+}
+
+/// One second after the boundary the update must succeed.
+#[test]
+fn test_rate_limit_boundary_one_second_after_is_allowed() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let (carrier, _, shipment_id) =
+        setup_in_transit_shipment(&env, &client, &admin, &token_contract);
+
+    let hash3 = BytesN::from_array(&env, &[3u8; 32]);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &hash3,
+    );
+
+    // Advance 61 seconds — one past the boundary.
+    super::test_utils::advance_ledger_time(&env, 61);
+
+    let hash4 = BytesN::from_array(&env, &[4u8; 32]);
+    let result = client.try_update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &hash4,
+    );
+    assert!(
+        result.is_ok(),
+        "update one second after the boundary must be allowed"
+    );
+}
+
+/// Admin bypasses the rate limit regardless of elapsed time.
+/// Documents that the bypass is intentional and must remain stable.
+#[test]
+fn test_rate_limit_admin_bypasses_interval() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let (carrier, _, shipment_id) =
+        setup_in_transit_shipment(&env, &client, &admin, &token_contract);
+
+    // Carrier sets the LastStatusUpdate timestamp.
+    let hash3 = BytesN::from_array(&env, &[3u8; 32]);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &hash3,
+    );
+
+    // No time advance — admin updates immediately (0 seconds elapsed).
+    let hash4 = BytesN::from_array(&env, &[4u8; 32]);
+    let result = client.try_update_status(
+        &admin,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &hash4,
+    );
+    assert!(
+        result.is_ok(),
+        "admin must bypass the rate-limit interval entirely"
+    );
+}
