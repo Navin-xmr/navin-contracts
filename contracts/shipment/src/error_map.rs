@@ -380,6 +380,42 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "Proposal salt was already used in a prior proposal; replay attack prevented.",
         ),
+        NavinError::InvalidShipmentParticipants => (
+            57,
+            InvalidInput,
+            NoRetry,
+            "Shipment sender, receiver, and carrier must be three distinct addresses.",
+        ),
+        NavinError::InvalidShipmentDeadline => (
+            58,
+            InvalidInput,
+            NoRetry,
+            "Shipment deadline must be strictly in the future.",
+        ),
+        NavinError::InvalidPaymentMilestones => (
+            59,
+            InvalidInput,
+            NoRetry,
+            "Payment milestone structure is invalid; each percentage must be 1-100.",
+        ),
+        NavinError::DuplicatePaymentMilestone => (
+            60,
+            InvalidInput,
+            NoRetry,
+            "Payment milestone checkpoint names must be unique.",
+        ),
+        NavinError::InvalidTokenAddress => (
+            61,
+            InvalidInput,
+            NoRetry,
+            "Shipment token address is invalid for this shipment.",
+        ),
+        NavinError::InvalidPaymentMilestoneName => (
+            62,
+            InvalidInput,
+            NoRetry,
+            "Payment milestone checkpoint name has an invalid format.",
+        ),
     };
 
     ContractErrorInfo {

@@ -44,6 +44,8 @@ pub enum DataKey {
     RoleSuspended(Address, Role),
     /// Escrow balance for a shipment.
     Escrow(u64),
+    /// Token contract address for a specific shipment — (shipment_id) -> Address.
+    ShipmentToken(u64),
     /// Legacy single-role storage key for compatibility.
     Role(Address),
     /// Hash of proof-of-delivery data for a shipment.
@@ -326,6 +328,8 @@ pub struct Shipment {
     pub receiver: Address,
     /// Carrier responsible for transport.
     pub carrier: Address,
+    /// Token contract used for this shipment's escrow operations.
+    pub token_address: Address,
     /// Current status in the shipment lifecycle.
     pub status: ShipmentStatus,
     /// SHA-256 hash of the off-chain shipment data.
@@ -539,6 +543,7 @@ pub enum GeofenceEvent {
 pub struct ShipmentInput {
     pub receiver: Address,
     pub carrier: Address,
+    pub token_address: Address,
     pub data_hash: BytesN<32>,
     pub payment_milestones: Vec<(Symbol, u32)>,
     pub deadline: u64,
