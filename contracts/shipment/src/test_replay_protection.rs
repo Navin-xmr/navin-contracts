@@ -297,3 +297,69 @@ fn test_auth_replay_force_release_salt_reuse_rejected() {
     let err = result.unwrap_err().unwrap();
     assert_eq!(err, NavinError::ProposalSaltReused);
 }
+
+// ── Idempotency window boundary tests ────────────────────────────────────────
+
+/// test_idempotency_create_shipment_replay_within_window_rejected — an
+/// immediate replay of `create_shipment` with the same payload must return
+/// `DuplicateAction` (#41) while the idempotency window is still active.
+#[test]
+fn test_idempotency_create_shipment_replay_within_window_rejected() {
+    let (env, client, admin) = setup();
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let data_hash = BytesN::from_array(&env, &[0xABu8; 32]);
+    let deadline = env.ledger().timestamp() + 3_600;
+    let milestones = Vec::new(&env);
+
+    // First call succeeds.
+    client.create_shipment(&company, &receiver, &carrier, &data_hash, &milestones, &deadline, &None);
+
+    // Immediate replay must be rejected.
+    let result = client.try_create_shipment(
+        &company, &receiver, &carrier, &data_hash, &milestones, &deadline, &None,
+    );
+    assert!(result.is_err());
+    let err = result.unwrap_err().unwrap();
+    assert_eq!(err, NavinError::DuplicateAction);
+}
+
+/// test_idempotency_create_shipment_replay_after_window_accepted — the same
+/// payload must be accepted once the idempotency window has expired (ledger
+/// sequence advances past the 60-ledger TTL).
+#[test]
+fn test_idempotency_create_shipment_replay_after_window_accepted() {
+    let (env, client, admin) = setup();
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let data_hash = BytesN::from_array(&env, &[0xABu8; 32]);
+    let milestones = Vec::new(&env);
+
+    // First call — records the action hash in temporary storage.
+    let deadline1 = env.ledger().timestamp() + 3_600;
+    let id1 = client.create_shipment(
+        &company, &receiver, &carrier, &data_hash, &milestones, &deadline1, &None,
+    );
+
+    // Advance past the 60-ledger idempotency TTL so the key expires.
+    crate::test_utils::advance_past_idempotency_window(&env);
+
+    // Same payload after expiry must succeed (window no longer blocks it).
+    let deadline2 = env.ledger().timestamp() + 3_600;
+    let id2 = client.create_shipment(
+        &company, &receiver, &carrier, &data_hash, &milestones, &deadline2, &None,
+    );
+
+    assert_eq!(id1, 1);
+    assert_eq!(id2, 2);
+}
