@@ -14,25 +14,18 @@ const MAX_PAST_OFFSET: u64 = 365 * 24 * 60 * 60;
 /// Roughly 10 years.
 const MAX_FUTURE_OFFSET: u64 = 10 * 365 * 24 * 60 * 60;
 
-/// Ensure a `BytesN<32>` hash is not the all-zeros sentinel value.
+/// Ensure a `BytesN<32>` hash is valid and not malformed.
 ///
-/// This validator performs a sanity check on external hashes (data_hash, reason_hash, etc.)
-/// to reject the all-zeros pattern which is commonly used as a sentinel for "no data".
-/// This prevents accidental or malicious use of zero hashes in critical fields.
+/// Rejects the all-zeros sentinel used to represent "no data". All other 32-byte
+/// values are accepted, including repeated-byte test vectors.
 ///
 /// # Arguments
 /// * `hash` - The 32-byte hash to validate.
 ///
 /// # Returns
-/// * `Ok(())` if the hash contains at least one non-zero byte.
-/// * `Err(NavinError::InvalidHash)` if every byte is zero.
-///
-/// # Examples
-/// ```rust
-/// validate_hash(&hash)?;
-/// ```
+/// * `Ok(())` if the hash is non-zero.
+/// * `Err(NavinError::InvalidHash)` if the hash is all zeros.
 pub fn validate_hash(hash: &BytesN<32>) -> Result<(), NavinError> {
-    // BytesN::iter() is not available in no_std soroban; use to_array().
     let bytes: [u8; 32] = hash.to_array();
     if bytes.iter().all(|&b| b == 0) {
         return Err(NavinError::InvalidHash);
@@ -167,6 +160,21 @@ pub fn validate_metadata_symbols(
 /// validate_amount(5_000_000)?;
 /// ```
 pub fn validate_amount(amount: i128) -> Result<(), NavinError> {
+    if amount <= 0 || amount > MAX_AMOUNT {
+        return Err(NavinError::InvalidAmount);
+    }
+    Ok(())
+}
+
+/// Ensure an amount is strictly positive.
+///
+/// # Arguments
+/// * `amount` - The `i128` value to validate.
+///
+/// # Returns
+/// * `Ok(())` if `amount > 0`.
+/// * `Err(NavinError::InvalidAmount)` otherwise.
+pub fn validate_positive_amount(amount: i128) -> Result<(), NavinError> {
     if amount <= 0 || amount > MAX_AMOUNT {
         return Err(NavinError::InvalidAmount);
     }
@@ -372,7 +380,128 @@ mod tests {
     #[test]
     fn test_validate_hash_all_ones_passes() {
         let env = Env::default();
+        // All-0xFF is a non-zero hash and should pass
         let hash: BytesN<32> = BytesN::from_array(&env, &[0xFF_u8; 32]);
+        assert_eq!(validate_hash(&hash), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_hash_all_same_bytes_nonzero_pass() {
+        let env = Env::default();
+        // Any repeated non-zero byte is a valid hash value
+        let patterns = [0x01u8, 0x02, 0x07, 0x0A, 0x0B, 0x2A, 0x42, 0xAA, 0x7F, 0xFF];
+        for byte in patterns {
+            let hash: BytesN<32> = BytesN::from_array(&env, &[byte; 32]);
+            assert_eq!(
+                validate_hash(&hash),
+                Ok(()),
+                "All-{:#04x} bytes should be accepted",
+                byte
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_hash_realistic_patterns_pass() {
+        let env = Env::default();
+        // Test realistic hash patterns that should pass validation
+        let valid_hashes = [
+            // Single non-zero byte at different positions
+            (
+                [
+                    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0,
+                ],
+                "first byte non-zero",
+            ),
+            (
+                [
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 1,
+                ],
+                "last byte non-zero",
+            ),
+            (
+                [
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0,
+                ],
+                "middle byte non-zero",
+            ),
+            // Multiple different bytes
+            (
+                [
+                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+                    23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+                ],
+                "sequential bytes",
+            ),
+            (
+                [
+                    0xFF, 0xFE, 0xFD, 0xFC, 0xFB, 0xFA, 0xF9, 0xF8, 0xF7, 0xF6, 0xF5, 0xF4, 0xF3,
+                    0xF2, 0xF1, 0xF0, 0xEF, 0xEE, 0xED, 0xEC, 0xEB, 0xEA, 0xE9, 0xE8, 0xE7, 0xE6,
+                    0xE5, 0xE4, 0xE3, 0xE2, 0xE1, 0xE0,
+                ],
+                "descending bytes",
+            ),
+            // Random-looking pattern
+            (
+                [
+                    0x4A, 0x1F, 0x8B, 0x2C, 0x7D, 0x93, 0x0E, 0xF5, 0x66, 0xB1, 0x2A, 0x47, 0x8C,
+                    0x35, 0x9D, 0x70, 0x13, 0xA8, 0x5F, 0xE2, 0x94, 0x27, 0x6B, 0x0C, 0xD1, 0x48,
+                    0x9A, 0x33, 0x7E, 0xC5, 0x10, 0x8F,
+                ],
+                "random pattern",
+            ),
+        ];
+
+        for (bytes, description) in valid_hashes {
+            let hash: BytesN<32> = BytesN::from_array(&env, &bytes);
+            assert_eq!(
+                validate_hash(&hash),
+                Ok(()),
+                "Valid hash ({}) should pass validation",
+                description
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_hash_boundary_cases() {
+        let env = Env::default();
+
+        // Test hash with exactly one non-zero byte
+        let mut single_nonzero = [0u8; 32];
+        single_nonzero[31] = 1;
+        let hash: BytesN<32> = BytesN::from_array(&env, &single_nonzero);
+        assert_eq!(validate_hash(&hash), Ok(()));
+
+        // Test hash with alternating pattern
+        let mut alternating = [0u8; 32];
+        for (i, byte) in alternating.iter_mut().enumerate() {
+            *byte = if i % 2 == 0 { 0xAA } else { 0x55 };
+        }
+        alternating[15] = 0x33;
+        let hash: BytesN<32> = BytesN::from_array(&env, &alternating);
+        assert_eq!(validate_hash(&hash), Ok(()));
+
+        // Test hash with two different bytes alternating (not perfectly repeated)
+        let mut two_byte_pattern = [0u8; 32];
+        for i in 0..16 {
+            two_byte_pattern[i * 2] = 0x12;
+            two_byte_pattern[i * 2 + 1] = 0x34;
+        }
+        // Break the pattern at one position
+        two_byte_pattern[10] = 0x56;
+        let hash: BytesN<32> = BytesN::from_array(&env, &two_byte_pattern);
+        assert_eq!(validate_hash(&hash), Ok(()));
+
+        // Test hash with mostly zeros but a few different bytes
+        let mut mostly_zeros = [0u8; 32];
+        mostly_zeros[5] = 0x42;
+        mostly_zeros[17] = 0x7F;
+        mostly_zeros[28] = 0x01;
+        let hash: BytesN<32> = BytesN::from_array(&env, &mostly_zeros);
         assert_eq!(validate_hash(&hash), Ok(()));
     }
 
@@ -393,9 +522,11 @@ mod tests {
             metadata: None,
             payment_milestones: soroban_sdk::Vec::new(&env),
             paid_milestones: soroban_sdk::Vec::new(&env),
+            milestones_completed: soroban_sdk::Vec::new(&env),
             deadline: 200,
             integration_nonce: 0,
             finalized: false,
+            depends_on: None,
         };
 
         assert_eq!(validate_shipment_invariants(&shipment), Ok(()));
@@ -418,9 +549,11 @@ mod tests {
             metadata: None,
             payment_milestones: soroban_sdk::Vec::new(&env),
             paid_milestones: soroban_sdk::Vec::new(&env),
+            milestones_completed: soroban_sdk::Vec::new(&env),
             deadline: 200,
             integration_nonce: 0,
             finalized: false,
+            depends_on: None,
         };
 
         assert_eq!(
@@ -856,4 +989,89 @@ mod symbol_validation_tests {
             "Duplicate milestone should return InvalidShipmentInput"
         );
     }
+}
+
+/// Maximum number of dependencies allowed per shipment.
+const MAX_DEPENDENCIES: usize = 10;
+
+/// Maximum recursion depth for cycle detection.
+const MAX_DEPTH: usize = 64;
+
+/// Validate shipment dependencies before persistence.
+///
+/// Ensures:
+/// - Dependency count does not exceed MAX_DEPENDENCIES (10)
+/// - All referenced shipment IDs exist
+/// - No circular dependencies are present
+pub fn validate_dependencies(
+    env: &Env,
+    shipment_id: u64,
+    dependencies: &Option<soroban_sdk::Vec<u64>>,
+) -> Result<(), NavinError> {
+    let deps = match dependencies {
+        Some(d) => d,
+        None => return Ok(()),
+    };
+
+    if deps.len() as usize > MAX_DEPENDENCIES {
+        return Err(NavinError::InvalidShipmentInput);
+    }
+
+    for i in 0..deps.len() {
+        let dep_id = deps.get_unchecked(i);
+        if dep_id == shipment_id {
+            return Err(NavinError::CircularDependency);
+        }
+        let _ = storage::get_shipment(env, dep_id).ok_or(NavinError::ShipmentNotFound)?;
+        if transitive_has_dependency(env, dep_id, shipment_id, 0)? {
+            return Err(NavinError::CircularDependency);
+        }
+    }
+
+    Ok(())
+}
+
+fn transitive_has_dependency(
+    env: &Env,
+    target: u64,
+    shipment_id: u64,
+    depth: usize,
+) -> Result<bool, NavinError> {
+    if depth > MAX_DEPTH {
+        return Err(NavinError::CircularDependency);
+    }
+
+    if let Some(target_deps) = storage::get_dependencies(env, target) {
+        for i in 0..target_deps.len() {
+            let dep = target_deps.get_unchecked(i);
+            if dep == shipment_id {
+                return Ok(true);
+            }
+            if transitive_has_dependency(env, dep, shipment_id, depth + 1)? {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+pub fn collect_unmet_dependencies(
+    env: &Env,
+    shipment_id: u64,
+) -> Result<soroban_sdk::Vec<u64>, NavinError> {
+    let mut unmet = soroban_sdk::Vec::new(env);
+
+    if let Some(deps) = storage::get_dependencies(env, shipment_id) {
+        for i in 0..deps.len() {
+            let dep_id = deps.get_unchecked(i);
+            match storage::get_shipment(env, dep_id) {
+                Some(shipment) if shipment.status == ShipmentStatus::Delivered => {}
+                _ => {
+                    unmet.push_back(dep_id);
+                }
+            }
+        }
+    }
+
+    Ok(unmet)
 }

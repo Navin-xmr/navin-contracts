@@ -296,6 +296,7 @@ fn test_force_cancel_shipment_auth_bound_to_arguments() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
 
     // Clear previous auths

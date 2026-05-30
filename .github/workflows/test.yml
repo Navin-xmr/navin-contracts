@@ -14,7 +14,6 @@ env:
 jobs:
   check-formatting:
     name: Check Code Formatting
-    if: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -36,7 +35,6 @@ jobs:
 
   lint:
     name: Clippy Lints
-    if: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

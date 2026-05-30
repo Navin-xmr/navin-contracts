@@ -14,7 +14,7 @@
 
 extern crate std;
 
-use crate::{test_utils::setup_env, NavinShipment, NavinShipmentClient, ShipmentStatus};
+use crate::{test_utils, NavinShipment, NavinShipmentClient, ShipmentStatus};
 use navin_token::{NavinToken, NavinTokenClient};
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger as _},
@@ -108,7 +108,7 @@ fn contract_event_topics_since(
 
 #[test]
 fn test_debug_event_structure() {
-    let (env, admin) = setup_env();
+    let (env, admin) = test_utils::setup_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -127,6 +127,7 @@ fn test_debug_event_structure() {
         &hash(&env, 0xAA),
         &Vec::new(&env),
         &deadline,
+        &None,
     );
 
     // What does our target symbol look like as a string?
@@ -160,7 +161,7 @@ fn test_debug_event_structure() {
 // =============================================================================
 #[test]
 fn test_e2e_happy_path_with_milestones_and_token_balances() {
-    let (env, admin) = setup_env();
+    let (env, admin) = test_utils::setup_env();
 
     // ── Actors ────────────────────────────────────────────────────────────────
     let company = Address::generate(&env);
@@ -187,9 +188,9 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
 
     // ── Milestone schedule: must sum to 100 % ─────────────────────────────────
     let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
-    milestones.push_back((Symbol::new(&env, "warehouse"), 30_u32));
-    milestones.push_back((Symbol::new(&env, "port"), 30_u32));
-    milestones.push_back((Symbol::new(&env, "final"), 40_u32));
+    milestones.push_back((test_utils::checkpoint_symbol(&env, "warehouse"), 30_u32));
+    milestones.push_back((test_utils::checkpoint_symbol(&env, "port"), 30_u32));
+    milestones.push_back((test_utils::checkpoint_symbol(&env, "final"), 40_u32));
 
     // ── Create shipment ───────────────────────────────────────────────────────
     let deadline = env.ledger().timestamp() + 86_400;
@@ -200,6 +201,7 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
         &hash(&env, 0xAA),
         &milestones,
         &deadline,
+        &None,
     );
     assert_eq!(shipment_id, 1, "first shipment id should be 1");
     assert!(
@@ -262,7 +264,7 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
     shipment.record_milestone(
         &carrier,
         &shipment_id,
-        &Symbol::new(&env, "warehouse"),
+        &test_utils::checkpoint_symbol(&env, "warehouse"),
         &hash(&env, 0xCC),
     );
     let warehouse_topics = contract_event_topics_since(&env, &shipment.address);
@@ -270,6 +272,7 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
         warehouse_topics,
         std::vec![
             "milestone_recorded".to_string(),
+            "milestone_payment_released".to_string(),
             "escrow_released".to_string()
         ],
         "record_milestone must emit milestone_recorded before escrow_released"
@@ -295,7 +298,7 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
     shipment.record_milestone(
         &carrier,
         &shipment_id,
-        &Symbol::new(&env, "port"),
+        &test_utils::checkpoint_symbol(&env, "port"),
         &hash(&env, 0xDD),
     );
     let port_topics = contract_event_topics_since(&env, &shipment.address);
@@ -303,6 +306,7 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
         port_topics,
         std::vec![
             "milestone_recorded".to_string(),
+            "milestone_payment_released".to_string(),
             "escrow_released".to_string()
         ],
         "milestone payment ordering must stay deterministic"
@@ -389,7 +393,7 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
 // =============================================================================
 #[test]
 fn test_e2e_cancel_refund_path_with_token_balances() {
-    let (env, admin) = setup_env();
+    let (env, admin) = test_utils::setup_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -413,6 +417,7 @@ fn test_e2e_cancel_refund_path_with_token_balances() {
         &hash(&env, 0x01),
         &Vec::new(&env),
         &deadline,
+        &None,
     );
     assert_eq!(shipment_id, 1);
     assert!(
@@ -478,7 +483,7 @@ fn test_e2e_cancel_refund_path_with_token_balances() {
 // =============================================================================
 #[test]
 fn test_e2e_partial_milestones_then_cancel_via_deadline() {
-    let (env, admin) = setup_env();
+    let (env, admin) = test_utils::setup_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -507,6 +512,7 @@ fn test_e2e_partial_milestones_then_cancel_via_deadline() {
         &hash(&env, 0xA1),
         &milestones,
         &deadline,
+        &None,
     );
     assert!(
         has_event(&env, "shipment_created"),
@@ -626,7 +632,7 @@ fn test_e2e_partial_milestones_then_cancel_via_deadline() {
 // =============================================================================
 #[test]
 fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
-    let (env, admin) = setup_env();
+    let (env, admin) = test_utils::setup_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -650,6 +656,7 @@ fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
         &hash(&env, 0xB1),
         &Vec::new(&env),
         &deadline,
+        &None,
     );
     assert!(
         has_event(&env, "shipment_created"),
@@ -718,7 +725,7 @@ fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
 
 #[test]
 fn test_regression_milestone_release_event_ordering() {
-    let (env, admin) = setup_env();
+    let (env, admin) = test_utils::setup_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -741,6 +748,7 @@ fn test_regression_milestone_release_event_ordering() {
         &hash(&env, 0x31),
         &milestones,
         &(env.ledger().timestamp() + 86_400),
+        &None,
     );
 
     shipment.deposit_escrow(&company, &shipment_id, &1_000_i128);
@@ -765,6 +773,7 @@ fn test_regression_milestone_release_event_ordering() {
         topics,
         std::vec![
             "milestone_recorded".to_string(),
+            "milestone_payment_released".to_string(),
             "escrow_released".to_string()
         ],
         "regression guard: milestone and escrow release emitters must not be reordered"
@@ -773,7 +782,7 @@ fn test_regression_milestone_release_event_ordering() {
 
 #[test]
 fn test_regression_deadline_refund_event_ordering() {
-    let (env, admin) = setup_env();
+    let (env, admin) = test_utils::setup_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -793,6 +802,7 @@ fn test_regression_deadline_refund_event_ordering() {
         &hash(&env, 0x41),
         &Vec::new(&env),
         &(env.ledger().timestamp() + 1),
+        &None,
     );
     shipment.deposit_escrow(&company, &shipment_id, &1_000_i128);
 

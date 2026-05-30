@@ -117,7 +117,8 @@
                 },
                 {
                   "u64": 172800
-                }
+                },
+                "void"
               ]
             }
           },
@@ -795,7 +796,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "u32": 5
+                  "u32": 6
                 }
               }
             },
@@ -1325,6 +1326,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "depends_on"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "escrow_amount"
                       },
                       "val": {
@@ -1363,6 +1370,18 @@
                         "symbol": "metadata"
                       },
                       "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestones_completed"
+                      },
+                      "val": {
+                        "vec": [
+                          {
+                            "symbol": "pickup"
+                          }
+                        ]
+                      }
                     },
                     {
                       "key": {
@@ -2056,6 +2075,51 @@
     {
       "event": {
         "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000006",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "milestone_payment_released"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "u64": 1
+                },
+                {
+                  "symbol": "pickup"
+                },
+                {
+                  "i128": {
+                    "hi": 0,
+                    "lo": 1000
+                  }
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                },
+                {
+                  "u32": 2
+                },
+                {
+                  "u32": 5
+                },
+                {
+                  "bytes": "754ed977165d5a53778c387c88ff83057b020e406476edf12a8ac6e3ed9abb3e"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
         "contract_id": "0000000000000000000000000000000000000000000000000000000000000005",
         "type_": "contract",
         "body": {
@@ -2116,10 +2180,10 @@
                   "u32": 2
                 },
                 {
-                  "u32": 5
+                  "u32": 6
                 },
                 {
-                  "bytes": "f0b0568a704849637a04285b54152c3bda2fe68ef971a06664eab59cd443062d"
+                  "bytes": "bc2c920e2fa146fca2814b8ada2cbacd13f356df01d509e676cf1f5072657656"
                 }
               ]
             }

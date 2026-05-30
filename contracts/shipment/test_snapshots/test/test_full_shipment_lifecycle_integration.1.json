@@ -110,7 +110,8 @@
                 },
                 {
                   "u64": 93600
-                }
+                },
+                "void"
               ]
             }
           },
@@ -647,7 +648,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "u32": 11
+                  "u32": 13
                 }
               }
             },
@@ -1537,6 +1538,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "depends_on"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "escrow_amount"
                       },
                       "val": {
@@ -1575,6 +1582,21 @@
                         "symbol": "metadata"
                       },
                       "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestones_completed"
+                      },
+                      "val": {
+                        "vec": [
+                          {
+                            "symbol": "warehouse"
+                          },
+                          {
+                            "symbol": "port"
+                          }
+                        ]
+                      }
                     },
                     {
                       "key": {

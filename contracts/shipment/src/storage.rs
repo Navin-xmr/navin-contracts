@@ -658,6 +658,51 @@ pub fn remove_escrow(env: &Env, shipment_id: u64) {
         .remove(&DataKey::Escrow(shipment_id));
 }
 
+/// Check if an address is an observer for a specific shipment.
+#[allow(dead_code)]
+pub fn is_shipment_observer(env: &Env, shipment_id: u64, address: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ShipmentObserver(shipment_id, address.clone()))
+        .unwrap_or(false)
+}
+
+/// Assign observer role to an address for a specific shipment.
+pub fn set_shipment_observer(env: &Env, shipment_id: u64, observer: &Address) {
+    env.storage().persistent().set(
+        &DataKey::ShipmentObserver(shipment_id, observer.clone()),
+        &true,
+    );
+    let count = get_observer_count(env, shipment_id);
+    set_observer_count(env, shipment_id, count + 1);
+}
+
+/// Revoke observer role from an address for a specific shipment.
+pub fn remove_shipment_observer(env: &Env, shipment_id: u64, observer: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::ShipmentObserver(shipment_id, observer.clone()));
+    let count = get_observer_count(env, shipment_id);
+    if count > 0 {
+        set_observer_count(env, shipment_id, count - 1);
+    }
+}
+
+/// Get the count of observers for a shipment.
+pub fn get_observer_count(env: &Env, shipment_id: u64) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ObserverCount(shipment_id))
+        .unwrap_or(0)
+}
+
+/// Set the count of observers for a shipment.
+fn set_observer_count(env: &Env, shipment_id: u64, count: u32) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ObserverCount(shipment_id), &count);
+}
+
 /// Backwards-compatible name used by tests: set escrow balance.
 ///
 /// # Arguments
@@ -1222,6 +1267,27 @@ pub fn get_effective_shipment_limit(env: &Env, company: &Address) -> u32 {
     get_company_shipment_limit(env, company).unwrap_or_else(|| get_shipment_limit(env))
 }
 
+/// Get the platform fee configuration from instance storage.
+pub fn get_fee_config(env: &Env) -> Option<FeeConfig> {
+    env.storage().instance().get(&DataKey::FeeConfig)
+}
+
+/// Set the platform fee configuration in instance storage.
+pub fn set_fee_config(env: &Env, config: &FeeConfig) {
+    env.storage().instance().set(&DataKey::FeeConfig, config);
+}
+
+/// Get the platform treasury address from instance storage.
+#[allow(dead_code)]
+pub fn get_treasury(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::Treasury)
+}
+
+/// Set the platform treasury address in instance storage.
+pub fn set_treasury(env: &Env, treasury: &Address) {
+    env.storage().instance().set(&DataKey::Treasury, treasury);
+}
+
 /// Get the current active shipment count for a company from instance storage.
 ///
 /// # Arguments
@@ -1640,6 +1706,18 @@ pub fn shipment_exists_in_persistent(env: &Env, shipment_id: u64) -> bool {
         .has(&DataKey::Shipment(shipment_id))
 }
 
+pub fn is_salt_used(env: &Env, salt: &BytesN<32>) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::UsedSalt(salt.clone()))
+}
+
+pub fn mark_salt_used(env: &Env, salt: &BytesN<32>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::UsedSalt(salt.clone()), &true);
+}
+
 // ============= Settlement Tracking Functions =============
 
 /// Get the settlement counter value from instance storage.
@@ -1740,6 +1818,23 @@ pub fn set_settlement(env: &Env, settlement: &crate::types::SettlementRecord) {
     env.storage()
         .persistent()
         .set(&DataKey::Settlement(settlement.settlement_id), settlement);
+}
+
+/// Get the partial refund record for a shipment.
+pub fn get_partial_refund_record(
+    env: &Env,
+    shipment_id: u64,
+) -> Option<crate::types::PartialRefundRecord> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::PartialRefundRecord(shipment_id))
+}
+
+/// Set the partial refund record for a shipment.
+pub fn set_partial_refund_record(env: &Env, record: &crate::types::PartialRefundRecord) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::PartialRefundRecord(record.shipment_id), record);
 }
 
 /// Get the active settlement ID for a shipment.
@@ -1847,6 +1942,49 @@ pub fn get_proposal_digest(
     env.storage()
         .persistent()
         .get(&DataKey::ProposalDigest(proposal_id))
+}
+
+// ============= Shipment Dependency Storage Functions =============
+
+/// Store prerequisites for a shipment.
+pub fn set_dependencies(env: &Env, shipment_id: u64, dependencies: &soroban_sdk::Vec<u64>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ShipmentDeps(shipment_id), dependencies);
+    env.storage().persistent().extend_ttl(
+        &DataKey::ShipmentDeps(shipment_id),
+        env.storage().max_ttl() - 100,
+        env.storage().max_ttl(),
+    );
+}
+
+/// Retrieve prerequisites for a shipment.
+pub fn get_dependencies(env: &Env, shipment_id: u64) -> Option<soroban_sdk::Vec<u64>> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ShipmentDeps(shipment_id))
+}
+
+/// Store shipments that depend on a specific shipment.
+pub fn add_dependent(env: &Env, prerequisite_id: u64, dependent_shipment_id: u64) {
+    let mut dependents =
+        get_dependents(env, prerequisite_id).unwrap_or_else(|| soroban_sdk::Vec::new(env));
+    dependents.push_back(dependent_shipment_id);
+    env.storage()
+        .persistent()
+        .set(&DataKey::ShipmentDependents(prerequisite_id), &dependents);
+    env.storage().persistent().extend_ttl(
+        &DataKey::ShipmentDependents(prerequisite_id),
+        env.storage().max_ttl() - 100,
+        env.storage().max_ttl(),
+    );
+}
+
+/// Retrieve shipments depending on a shipment.
+pub fn get_dependents(env: &Env, shipment_id: u64) -> Option<soroban_sdk::Vec<u64>> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ShipmentDependents(shipment_id))
 }
 
 #[cfg(test)]

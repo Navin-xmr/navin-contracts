@@ -134,6 +134,7 @@ fn test_sac_deposit_does_not_affect_nvn_balance() {
         &dummy_hash(&ctx.env, 1),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     );
 
     ctx.client_sac
@@ -172,6 +173,7 @@ fn test_nvn_deposit_does_not_affect_sac_balance() {
         &dummy_hash(&ctx.env, 2),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     );
 
     ctx.client_nvn
@@ -219,6 +221,7 @@ fn test_concurrent_deliver_balance_isolation() {
         &dummy_hash(&ctx.env, 10),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     );
     let id_b = ctx.client_nvn.create_shipment(
         &ctx.company,
@@ -227,6 +230,7 @@ fn test_concurrent_deliver_balance_isolation() {
         &dummy_hash(&ctx.env, 11),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     );
 
     // Deposit escrow for both
@@ -299,6 +303,7 @@ fn test_sac_refund_does_not_affect_nvn_escrow() {
         &dummy_hash(&ctx.env, 20),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     );
     let id_nvn = ctx.client_nvn.create_shipment(
         &ctx.company,
@@ -307,6 +312,7 @@ fn test_sac_refund_does_not_affect_nvn_escrow() {
         &dummy_hash(&ctx.env, 21),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     );
 
     ctx.client_sac
@@ -352,6 +358,7 @@ fn test_nvn_dispute_does_not_affect_sac_escrow() {
         &dummy_hash(&ctx.env, 30),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     );
     let id_nvn = ctx.client_nvn.create_shipment(
         &ctx.company,
@@ -360,6 +367,7 @@ fn test_nvn_dispute_does_not_affect_sac_escrow() {
         &dummy_hash(&ctx.env, 31),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     );
 
     ctx.client_sac
@@ -405,6 +413,7 @@ fn test_milestone_payments_isolated_per_token() {
         &dummy_hash(&ctx.env, 40),
         &milestones,
         &deadline,
+        &None,
     );
     let id_nvn = ctx.client_nvn.create_shipment(
         &ctx.company,
@@ -413,6 +422,7 @@ fn test_milestone_payments_isolated_per_token() {
         &dummy_hash(&ctx.env, 41),
         &milestones,
         &deadline,
+        &None,
     );
 
     ctx.client_sac
@@ -506,6 +516,7 @@ fn test_escrow_balance_counters_are_per_contract() {
         &dummy_hash(&ctx.env, 50),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     );
     let id_nvn = ctx.client_nvn.create_shipment(
         &ctx.company,
@@ -514,6 +525,7 @@ fn test_escrow_balance_counters_are_per_contract() {
         &dummy_hash(&ctx.env, 51),
         &Vec::new(&ctx.env),
         &deadline,
+        &None,
     );
 
     ctx.client_sac

@@ -98,6 +98,10 @@ pub enum DataKey {
     StatusHash(u64, ShipmentStatus),
     /// Contract pause state flag.
     IsPaused,
+    /// Platform fee configuration.
+    FeeConfig,
+    /// Designated address for platform fee collection.
+    Treasury,
     /// Rate limit quota tracker per actor (company/carrier).
     ActorQuota(Address),
     /// Circuit breaker state for token transfers.
@@ -124,6 +128,18 @@ pub enum DataKey {
     CreationQuotaConfig,
     /// Deterministic action digest stored on proposal creation.
     ProposalDigest(u64),
+    /// Prerequisites for a shipment — shipment_id -> Vec<u64> of prerequisite shipment IDs.
+    ShipmentDeps(u64),
+    /// Shipments depending on this shipment — shipment_id -> Vec<u64> of dependent shipment IDs.
+    ShipmentDependents(u64),
+    /// Observer assignment for a specific shipment (shipment_id, observer_address) -> bool.
+    ShipmentObserver(u64, Address),
+    /// Count of observers for a specific shipment.
+    ObserverCount(u64),
+    /// Partial refund record for a shipment.
+    PartialRefundRecord(u64),
+    /// One-time anti-replay salt used in a proposal; presence means "already used".
+    UsedSalt(BytesN<32>),
 }
 
 /// Structured reason codes for escrow freeze events.
@@ -170,6 +186,8 @@ pub enum Role {
     Guardian,
     /// An operator that can perform operational tasks.
     Operator,
+    /// An observer that can read shipment data without modification rights.
+    Observer,
     /// No role assigned.
     Unassigned,
 }
@@ -218,6 +236,8 @@ pub enum ShipmentStatus {
     Disputed,
     /// Shipment has been cancelled.
     Cancelled,
+    /// Escrow has been partially refunded.
+    PartiallyRefunded,
 }
 
 impl ShipmentStatus {
@@ -324,12 +344,16 @@ pub struct Shipment {
     pub payment_milestones: Vec<(Symbol, u32)>,
     /// List of symbols for milestones that have already been paid.
     pub paid_milestones: Vec<Symbol>,
+    /// List of symbols for checkpoints that have been hit and recorded.
+    pub milestones_completed: Vec<Symbol>,
     /// Timestamp after which the shipment is considered expired and can be auto-cancelled.
     pub deadline: u64,
     /// Counter to prevent replay of external actions and correlate off-chain integrations.
     pub integration_nonce: u32,
     /// Whether the shipment is finalized (terminal state reached and escrow cleared).
     pub finalized: bool,
+    /// Optional list of shipment IDs that must be completed before this shipment can transition to InTransit or Delivered.
+    pub depends_on: Option<Vec<u64>>,
 }
 
 /// A checkpoint milestone recorded during shipment transit.
@@ -470,6 +494,22 @@ pub struct SettlementRecord {
     pub error_code: Option<u32>,
 }
 
+/// Record of a partial refund operation.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PartialRefundRecord {
+    /// The shipment ID this refund belongs to.
+    pub shipment_id: u64,
+    /// Amount refunded to the sender.
+    pub sender_refund: i128,
+    /// Amount paid to the carrier as compensation.
+    pub carrier_compensation: i128,
+    /// The percentage (1-100) of original escrow refunded to sender.
+    pub refund_percentage: u32,
+    /// Ledger timestamp when the partial refund was executed.
+    pub executed_at: u64,
+}
+
 /// Geofence event types for tracking shipment location events.
 ///
 /// # Examples
@@ -502,6 +542,7 @@ pub struct ShipmentInput {
     pub data_hash: BytesN<32>,
     pub payment_milestones: Vec<(Symbol, u32)>,
     pub deadline: u64,
+    pub depends_on: Option<Vec<u64>>,
 }
 
 /// Cursor page result for searching shipment IDs by status.
@@ -632,6 +673,8 @@ pub struct Proposal {
     pub expires_at: u64,
     /// Whether the proposal has been executed.
     pub executed: bool,
+    /// One-time anti-replay salt; permanently recorded to prevent reuse.
+    pub salt: BytesN<32>,
 }
 
 /// Notification types for backend indexing and push notifications.
@@ -749,4 +792,14 @@ pub struct ProposalActionDigest {
     pub digest: BytesN<32>,
     /// Ledger timestamp when the digest was computed.
     pub computed_at: u64,
+}
+
+/// Configuration for platform revenue collection.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct FeeConfig {
+    /// The fee in basis points (1 bps = 0.01%). Capped at 1000 (10%).
+    pub fee_bps: u32,
+    /// The address where collected fees are sent.
+    pub treasury: Address,
 }

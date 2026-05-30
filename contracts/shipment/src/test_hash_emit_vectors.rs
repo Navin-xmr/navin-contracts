@@ -414,6 +414,7 @@ fn test_vector_emitted_keys_match_recomputed() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
 
     // Find the shipment_created event and extract its idempotency_key (last field)

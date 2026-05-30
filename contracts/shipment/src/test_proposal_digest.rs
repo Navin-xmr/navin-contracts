@@ -50,7 +50,8 @@ mod tests {
         let (env, client, admin, _admin2) = setup_multisig();
 
         let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 1));
-        let proposal_id = client.propose_action(&admin, &action);
+        let proposal_id =
+            client.propose_action(&admin, &action, &BytesN::from_array(&env, &[0x01u8; 32]));
 
         let digest = client.get_proposal_action_digest(&proposal_id);
         assert_eq!(digest.proposal_id, proposal_id);
@@ -67,10 +68,10 @@ mod tests {
 
         let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 2));
 
-        let id1 = client.propose_action(&admin, &action);
+        let id1 = client.propose_action(&admin, &action, &BytesN::from_array(&env, &[0x02u8; 32]));
         // Advance time so idempotency window doesn't block the second proposal.
         crate::test_utils::advance_ledger_time(&env, 400);
-        let id2 = client.propose_action(&admin, &action);
+        let id2 = client.propose_action(&admin, &action, &BytesN::from_array(&env, &[0x03u8; 32]));
 
         let d1 = client.get_proposal_action_digest(&id1);
         let d2 = client.get_proposal_action_digest(&id2);
@@ -86,7 +87,8 @@ mod tests {
         let (env, client, admin, _admin2) = setup_multisig();
 
         let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 3));
-        let proposal_id = client.propose_action(&admin, &action);
+        let proposal_id =
+            client.propose_action(&admin, &action, &BytesN::from_array(&env, &[0x04u8; 32]));
 
         let stored = client.get_proposal_action_digest(&proposal_id);
         let computed = client.compute_proposal_digest(&proposal_id, &action);
@@ -103,9 +105,11 @@ mod tests {
         let action_a = crate::types::AdminAction::Upgrade(wasm_hash(&env, 4));
         let action_b = crate::types::AdminAction::Upgrade(wasm_hash(&env, 5));
 
-        let id_a = client.propose_action(&admin, &action_a);
+        let id_a =
+            client.propose_action(&admin, &action_a, &BytesN::from_array(&env, &[0x05u8; 32]));
         crate::test_utils::advance_ledger_time(&env, 400);
-        let id_b = client.propose_action(&admin, &action_b);
+        let id_b =
+            client.propose_action(&admin, &action_b, &BytesN::from_array(&env, &[0x06u8; 32]));
 
         // Use the same proposal_id for both computes to isolate action difference.
         let digest_a = client.compute_proposal_digest(&id_a, &action_a);
@@ -136,7 +140,8 @@ mod tests {
         let (env, client, admin, admin2) = setup_multisig();
 
         let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
-        let proposal_id = client.propose_action(&admin, &action);
+        let proposal_id =
+            client.propose_action(&admin, &action, &BytesN::from_array(&env, &[0x07u8; 32]));
 
         // Digest available before approval.
         let before = client.get_proposal_action_digest(&proposal_id);
@@ -154,7 +159,7 @@ mod tests {
 
     #[test]
     fn force_release_and_force_refund_produce_distinct_digests() {
-        let (env, client, admin, _admin2) = setup_multisig();
+        let (_env, client, _admin, _admin2) = setup_multisig();
 
         let shipment_id = 42u64;
         let action_release = crate::types::AdminAction::ForceRelease(shipment_id);

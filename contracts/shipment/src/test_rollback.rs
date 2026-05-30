@@ -40,6 +40,7 @@ fn test_create_shipments_batch_rollback() {
         data_hash: data_hash.clone(),
         payment_milestones: Vec::new(&env),
         deadline,
+        depends_on: None,
     });
     // 2nd invalid shipment (receiver == carrier)
     shipments.push_back(ShipmentInput {
@@ -48,6 +49,7 @@ fn test_create_shipments_batch_rollback() {
         data_hash: data_hash.clone(),
         payment_milestones: Vec::new(&env),
         deadline,
+        depends_on: None,
     });
 
     // Initial state check
@@ -100,6 +102,7 @@ fn test_record_milestones_batch_rollback() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
 
     client.update_status(

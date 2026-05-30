@@ -91,6 +91,7 @@ fn create_shipment(
         &data_hash,
         &Vec::new(env),
         &deadline,
+        &None,
     )
 }
 

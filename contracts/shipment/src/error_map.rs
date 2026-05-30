@@ -362,6 +362,24 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             RetryAfterStateChange,
             "Company has exceeded the shipment creation quota for the current time window.",
         ),
+        NavinError::DependenciesNotMet => (
+            54,
+            InvalidState,
+            RetryAfterStateChange,
+            "Shipment cannot transition to InTransit or Delivered because its prerequisite shipments are not yet completed.",
+        ),
+        NavinError::CircularDependency => (
+            55,
+            InvalidInput,
+            NoRetry,
+            "A circular dependency was detected in the shipment prerequisites.",
+        ),
+        NavinError::ProposalSaltReused => (
+            56,
+            InvalidInput,
+            NoRetry,
+            "Proposal salt was already used in a prior proposal; replay attack prevented.",
+        ),
     };
 
     ContractErrorInfo {

@@ -24,6 +24,7 @@ fn test_settlement_state_transitions_validation() {
         &dummy_hash(&env),
         &soroban_sdk::Vec::new(&env),
         &(env.ledger().timestamp() + 86400),
+        &None,
     );
 
     // Deposit escrow - creates settlement 1
@@ -57,6 +58,7 @@ fn test_settlement_timestamps() {
         &dummy_hash(&env),
         &soroban_sdk::Vec::new(&env),
         &(env.ledger().timestamp() + 86400),
+        &None,
     );
 
     let before_timestamp = env.ledger().timestamp();
@@ -92,6 +94,7 @@ fn test_settlement_addresses() {
         &dummy_hash(&env),
         &soroban_sdk::Vec::new(&env),
         &(env.ledger().timestamp() + 86400),
+        &None,
     );
 
     // Test deposit: company → contract
@@ -130,6 +133,7 @@ fn test_settlement_counter_increments() {
         &dummy_hash(&env),
         &soroban_sdk::Vec::new(&env),
         &(env.ledger().timestamp() + 86400),
+        &None,
     );
 
     // After deposit, count should be 1
@@ -159,6 +163,7 @@ fn test_settlement_ids_unique_and_sequential() {
         &dummy_hash(&env),
         &soroban_sdk::Vec::new(&env),
         &(env.ledger().timestamp() + 86400),
+        &None,
     );
 
     // Create settlement 1: deposit
@@ -208,6 +213,7 @@ fn test_cannot_cancel_completed_settlement() {
         &dummy_hash(&env),
         &soroban_sdk::Vec::new(&env),
         &(env.ledger().timestamp() + 86400),
+        &None,
     );
 
     // Create a successful settlement
@@ -239,6 +245,7 @@ fn test_release_settlement_record() {
         &dummy_hash(&env),
         &soroban_sdk::Vec::new(&env),
         &(env.ledger().timestamp() + 86400),
+        &None,
     );
 
     // Deposit escrow
@@ -283,6 +290,7 @@ fn test_failed_operation_rollback() {
         &dummy_hash(&env),
         &soroban_sdk::Vec::new(&env),
         &(env.ledger().timestamp() + 86400),
+        &None,
     );
 
     // Attempt deposit - should fail and roll back

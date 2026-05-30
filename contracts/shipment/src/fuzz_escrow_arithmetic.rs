@@ -84,6 +84,7 @@ fn create_shipment(
         &data_hash,
         &Vec::new(env),
         &deadline,
+        &None,
     )
 }
 
@@ -205,6 +206,7 @@ fn fuzz_arithmetic_no_underflow() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
+            &None,
         );
 
         let amount = ((seed % 999_999) + 1) as i128;

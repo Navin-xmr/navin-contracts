@@ -30,7 +30,7 @@ use crate::{test_utils, NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
     testutils::{Address as _, Events},
     token::StellarAssetClient,
-    Address, BytesN, Env, Symbol, TryFromVal, Vec,
+    Address, BytesN, Env, Symbol, TryFromVal, TryIntoVal, Vec,
 };
 use std::string::ToString;
 
@@ -109,13 +109,14 @@ fn test_snapshot_shipment_created_payload_shape() {
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
-    client.create_shipment(
+    let id = client.create_shipment(
         &company,
         &receiver,
         &carrier,
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
 
     let payload = find_event_data(&env, crate::event_topics::SHIPMENT_CREATED)
@@ -126,6 +127,27 @@ fn test_snapshot_shipment_created_payload_shape() {
         7,
         "shipment_created payload must have exactly 7 fields; got {}",
         payload.len()
+    );
+
+    // Extract and verify field positions for indexer stability
+    let event_shipment_id: u64 = payload.get(0).unwrap().try_into_val(&env).unwrap();
+    let event_sender: Address = payload.get(1).unwrap().try_into_val(&env).unwrap();
+    let event_receiver: Address = payload.get(2).unwrap().try_into_val(&env).unwrap();
+    let event_data_hash: BytesN<32> = payload.get(3).unwrap().try_into_val(&env).unwrap();
+    let event_schema_version: u32 = payload.get(4).unwrap().try_into_val(&env).unwrap();
+    let event_counter: u32 = payload.get(5).unwrap().try_into_val(&env).unwrap();
+    let event_idempotency_key: BytesN<32> = payload.get(6).unwrap().try_into_val(&env).unwrap();
+
+    assert_eq!(event_shipment_id, id, "shipment_id must be at index 0");
+    assert_eq!(event_sender, company, "sender must be at index 1");
+    assert_eq!(event_receiver, receiver, "receiver must be at index 2");
+    assert_eq!(event_data_hash, data_hash, "data_hash must be at index 3");
+    assert_eq!(event_schema_version, 2, "schema_version must be at index 4");
+    assert_eq!(event_counter, 1, "event_counter must be at index 5");
+    assert_eq!(
+        event_idempotency_key.len(),
+        32,
+        "idempotency_key must be at index 6 and be 32 bytes"
     );
 }
 
@@ -148,6 +170,7 @@ fn test_snapshot_status_updated_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
 
     client.update_status(
@@ -165,6 +188,29 @@ fn test_snapshot_status_updated_payload_shape() {
         7,
         "status_updated payload must have exactly 7 fields; got {}",
         payload.len()
+    );
+
+    // Extract and verify field positions for backend decoder stability
+    let event_shipment_id: u64 = payload.get(0).unwrap().try_into_val(&env).unwrap();
+    let _event_old_status: soroban_sdk::Val = payload.get(1).unwrap();
+    let _event_new_status: soroban_sdk::Val = payload.get(2).unwrap();
+    let event_data_hash: BytesN<32> = payload.get(3).unwrap().try_into_val(&env).unwrap();
+    let event_schema_version: u32 = payload.get(4).unwrap().try_into_val(&env).unwrap();
+    let event_counter: u32 = payload.get(5).unwrap().try_into_val(&env).unwrap();
+    let event_idempotency_key: BytesN<32> = payload.get(6).unwrap().try_into_val(&env).unwrap();
+
+    assert_eq!(event_shipment_id, id, "shipment_id must be at index 0");
+    assert_eq!(
+        event_data_hash,
+        BytesN::from_array(&env, &[3u8; 32]),
+        "data_hash must be at index 3"
+    );
+    assert_eq!(event_schema_version, 2, "schema_version must be at index 4");
+    assert_eq!(event_counter, 2, "event_counter must be at index 5");
+    assert_eq!(
+        event_idempotency_key.len(),
+        32,
+        "idempotency_key must be at index 6 and be 32 bytes"
     );
 }
 
@@ -187,6 +233,7 @@ fn test_snapshot_escrow_deposited_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
 
     client.deposit_escrow(&company, &id, &1_000i128);
@@ -221,6 +268,7 @@ fn test_snapshot_escrow_released_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
     client.deposit_escrow(&company, &id, &1_000i128);
     client.update_status(
@@ -261,6 +309,7 @@ fn test_snapshot_escrow_refunded_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
     client.deposit_escrow(&company, &id, &1_000i128);
     client.refund_escrow(&company, &id);
@@ -294,6 +343,7 @@ fn test_snapshot_dispute_raised_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
     client.raise_dispute(&company, &id, &data_hash);
 
@@ -328,6 +378,7 @@ fn test_snapshot_dispute_resolved_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
     client.deposit_escrow(&company, &id, &1_000i128);
     client.raise_dispute(&company, &id, &data_hash);
@@ -367,6 +418,7 @@ fn test_snapshot_escrow_frozen_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
     client.raise_dispute(&company, &id, &data_hash);
 
@@ -400,6 +452,7 @@ fn test_snapshot_milestone_recorded_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
     client.update_status(
         &carrier,
@@ -444,6 +497,7 @@ fn test_snapshot_shipment_cancelled_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
     client.cancel_shipment(&company, &id, &BytesN::from_array(&env, &[17u8; 32]));
 
@@ -473,6 +527,7 @@ fn test_all_fixtures_emit_expected_topics() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
     let mut found = topics_emitted(&env);
 
@@ -508,6 +563,7 @@ fn test_fixture_payload_shapes_are_stable() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
+        &None,
     );
 
     client.raise_dispute(&company, &shipment_id, &data_hash);
@@ -538,4 +594,67 @@ fn test_fixture_payload_shapes_are_stable() {
 
     assert!(saw_dispute, "dispute_raised was not emitted");
     assert!(saw_frozen, "escrow_frozen was not emitted");
+}
+
+// ── #299-13: delivery_success payload shape (indexer-friendly) ─────────────
+//
+// Expected tuple: (carrier, shipment_id, timestamp,
+//                  schema_version, event_counter, idempotency_key)
+// Length: 6
+
+#[test]
+fn test_snapshot_delivery_success_payload_shape() {
+    let (env, client, _admin, company, carrier, receiver) = fixture_env();
+    let data_hash = BytesN::from_array(&env, &[18u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+    client.deposit_escrow(&company, &id, &1_000i128);
+    client.update_status(
+        &carrier,
+        &id,
+        &crate::types::ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[19u8; 32]),
+    );
+    client.confirm_delivery(&receiver, &id, &BytesN::from_array(&env, &[20u8; 32]));
+
+    let payload = find_event_data(&env, crate::event_topics::DELIVERY_SUCCESS)
+        .expect("delivery_success event not emitted");
+
+    assert_eq!(
+        payload.len(),
+        6,
+        "delivery_success payload must have exactly 6 fields; got {}",
+        payload.len()
+    );
+
+    // Extract and verify field positions for indexer compatibility
+    let event_carrier: Address = payload.get(0).unwrap().try_into_val(&env).unwrap();
+    let event_shipment_id: u64 = payload.get(1).unwrap().try_into_val(&env).unwrap();
+    let event_timestamp: u64 = payload.get(2).unwrap().try_into_val(&env).unwrap();
+    let event_schema_version: u32 = payload.get(3).unwrap().try_into_val(&env).unwrap();
+    let event_counter: u32 = payload.get(4).unwrap().try_into_val(&env).unwrap();
+    let event_idempotency_key: BytesN<32> = payload.get(5).unwrap().try_into_val(&env).unwrap();
+
+    assert_eq!(event_carrier, carrier, "carrier must be at index 0");
+    assert_eq!(event_shipment_id, id, "shipment_id must be at index 1");
+    assert!(
+        event_timestamp > 0,
+        "timestamp must be at index 2 and non-zero"
+    );
+    assert_eq!(event_schema_version, 2, "schema_version must be at index 3");
+    assert_eq!(event_counter, 5, "event_counter must be at index 4");
+    assert_eq!(
+        event_idempotency_key.len(),
+        32,
+        "idempotency_key must be at index 5 and be 32 bytes"
+    );
 }

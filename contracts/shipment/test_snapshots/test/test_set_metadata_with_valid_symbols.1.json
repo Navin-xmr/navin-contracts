@@ -88,7 +88,8 @@
                 },
                 {
                   "u64": 172800
-                }
+                },
+                "void"
               ]
             }
           },
@@ -395,6 +396,12 @@
                     },
                     {
                       "key": {
+                        "symbol": "depends_on"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "escrow_amount"
                       },
                       "val": {
@@ -443,6 +450,14 @@
                             }
                           }
                         ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestones_completed"
+                      },
+                      "val": {
+                        "vec": []
                       }
                     },
                     {

@@ -9,11 +9,7 @@
 #[cfg(test)]
 mod tests {
     use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
-    use soroban_sdk::{
-        contract, contractimpl,
-        testutils::{Address as _, Ledger as _},
-        Address, BytesN, Env, Vec,
-    };
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
 
     #[contract]
     struct MockToken;
@@ -83,6 +79,7 @@ mod tests {
             &hash,
             &Vec::new(&env),
             &deadline,
+            &None,
         );
         assert_eq!(result, Err(Ok(NavinError::ContractPaused)));
     }
@@ -91,7 +88,7 @@ mod tests {
 
     #[test]
     fn require_admin_rejects_non_admin() {
-        let (env, client, _admin, company, _carrier) = setup();
+        let (_env, client, _admin, company, _carrier) = setup();
 
         // set_shipment_limit uses require_admin internally.
         let result = client.try_set_shipment_limit(&company, &10);
@@ -119,6 +116,7 @@ mod tests {
             &hash,
             &Vec::new(&env),
             &deadline,
+            &None,
         );
         assert_eq!(result, Err(Ok(NavinError::Unauthorized)));
     }
@@ -138,6 +136,7 @@ mod tests {
             &hash,
             &Vec::new(&env),
             &deadline,
+            &None,
         );
 
         let hash2 = make_hash(&env, 4);
@@ -163,6 +162,7 @@ mod tests {
             &hash,
             &Vec::new(&env),
             &deadline,
+            &None,
         );
         assert_eq!(result, Err(Ok(NavinError::CompanySuspended)));
     }
@@ -182,6 +182,7 @@ mod tests {
             &hash,
             &Vec::new(&env),
             &deadline,
+            &None,
         );
 
         client.suspend_carrier(&admin, &carrier);
@@ -200,6 +201,65 @@ mod tests {
         assert!(matches!(result, Err(Ok(NavinError::ShipmentNotFound))));
     }
 
+    // ── require_shipment_exists preflight ────────────────────────────────────
+
+    #[test]
+    fn preflight_update_status_missing_shipment_returns_not_found() {
+        let (env, client, _admin, _company, carrier) = setup();
+        let hash = make_hash(&env, 20);
+        let result = client.try_update_status(&carrier, &9999, &ShipmentStatus::InTransit, &hash);
+        assert_eq!(result, Err(Ok(NavinError::ShipmentNotFound)));
+    }
+
+    #[test]
+    fn preflight_cancel_shipment_missing_shipment_returns_not_found() {
+        let (env, client, admin, _company, _carrier) = setup();
+        let hash = make_hash(&env, 21);
+        let result = client.try_cancel_shipment(&admin, &9999, &hash);
+        assert_eq!(result, Err(Ok(NavinError::ShipmentNotFound)));
+    }
+
+    #[test]
+    fn preflight_update_status_existing_shipment_passes_through() {
+        let (env, client, _admin, company, carrier) = setup();
+        let receiver = Address::generate(&env);
+        let hash = make_hash(&env, 22);
+        let deadline = future_deadline(&env);
+        let id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &deadline,
+            &None,
+        );
+        let hash2 = make_hash(&env, 23);
+        // Should not return ShipmentNotFound — passes the preflight and proceeds to status logic.
+        let result = client.try_update_status(&carrier, &id, &ShipmentStatus::InTransit, &hash2);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn preflight_cancel_shipment_existing_shipment_passes_through() {
+        let (env, client, _admin, company, carrier) = setup();
+        let receiver = Address::generate(&env);
+        let hash = make_hash(&env, 24);
+        let deadline = future_deadline(&env);
+        let id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &deadline,
+            &None,
+        );
+        let hash2 = make_hash(&env, 25);
+        let result = client.try_cancel_shipment(&company, &id, &hash2);
+        assert!(result.is_ok());
+    }
+
     // ── require_not_finalized ────────────────────────────────────────────────
 
     #[test]
@@ -216,6 +276,84 @@ mod tests {
             &hash,
             &Vec::new(&env),
             &deadline,
+            &None,
+        );
+
+        // Transition to Delivered (finalized when escrow == 0).
+        let h2 = make_hash(&env, 9);
+        client.update_status(&carrier, &id, &ShipmentStatus::InTransit, &h2);
+        test_utils::advance_past_rate_limit(&env);
+        let h3 = make_hash(&env, 10);
+        client.update_status(&carrier, &id, &ShipmentStatus::Delivered, &h3);
+
+        // Shipment is now finalized (auto-finalized on Delivered with no escrow) — further mutations should fail.
+        let h5 = make_hash(&env, 12);
+        let result = client.try_cancel_shipment(&company, &id, &h5);
+        assert_eq!(result, Err(Ok(NavinError::ShipmentFinalized)));
+    }
+
+    // ── require_storage_exists ─────────────────────────────────────────────────
+
+    #[test]
+    fn require_storage_exists_rejects_missing_escrow_storage() {
+        let (env, client, admin, company, carrier) = setup();
+        let receiver = Address::generate(&env);
+        let hash = make_hash(&env, 15);
+        let deadline = future_deadline(&env);
+
+        let id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &deadline,
+            &None,
+        );
+
+        // Manually remove escrow storage entry to simulate missing storage
+        env.as_contract(&client.address, || {
+            crate::storage::remove_escrow(&env, id);
+        });
+
+        // Try to release escrow - should return appropriate error instead of panicking
+        let result = client.try_release_escrow(&receiver, &id);
+        assert!(
+            matches!(result, Err(Ok(NavinError::EscrowNotFound)) | Err(Ok(NavinError::EscrowLocked))),
+            "release_escrow must handle missing escrow storage gracefully"
+        );
+    }
+
+    #[test]
+    fn require_storage_exists_rejects_missing_shipment_storage() {
+        let (_env, client, _admin, _company, _carrier) = setup();
+        
+        // Try to get non-existent shipment - should return appropriate error
+        let result = client.try_get_shipment(&9999);
+        assert_eq!(
+            result, 
+            Err(Ok(NavinError::ShipmentNotFound)),
+            "get_shipment must handle missing shipment storage gracefully"
+        );
+    }
+
+    // ── require_not_finalized ────────────────────────────────────────────────
+
+    #[test]
+    fn require_not_finalized_blocks_mutation_on_finalized_shipment() {
+        let (env, client, _admin, company, carrier) = setup();
+        let receiver = Address::generate(&env);
+        let hash = make_hash(&env, 8);
+        let deadline = future_deadline(&env);
+
+        let id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &deadline,
+            &None,
         );
 
         // Transition to Delivered (finalized when escrow == 0).

@@ -43,6 +43,9 @@ pub const SHIPMENT_EXPIRED: &str = "shipment_expired";
 /// Emitted when a shipment is moved to temporary (archived) storage.
 pub const SHIPMENT_ARCHIVED: &str = "shipment_archived";
 
+/// Emitted when a shipment is blocked from transitioning because dependencies are unmet.
+pub const SHIPMENT_BLOCKED: &str = "shipment_blocked";
+
 /// Emitted when a shipment is successfully delivered.
 pub const DELIVERY_SUCCESS: &str = "delivery_success";
 
@@ -56,6 +59,12 @@ pub const ESCROW_RELEASED: &str = "escrow_released";
 
 /// Emitted when escrowed funds are returned to the company.
 pub const ESCROW_REFUNDED: &str = "escrow_refunded";
+
+/// Emitted when a partial milestone-based escrow release is triggered.
+pub const MILESTONE_PAYMENT_RELEASED: &str = "milestone_payment_released";
+
+/// Emitted when a platform fee is collected from a deposit.
+pub const PLATFORM_FEE_COLLECTED: &str = "platform_fee_collected";
 
 // ── Disputes ──────────────────────────────────────────────────────────────────
 
@@ -83,6 +92,9 @@ pub const CARRIER_LATE_DELIVERY: &str = "carrier_late_delivery";
 
 /// Emitted when a carrier completes delivery on or before the deadline.
 pub const CARRIER_ON_TIME_DELIVERY: &str = "carrier_on_time_delivery";
+
+/// Emitted when a late delivery penalty is applied to a carrier's escrow.
+pub const LATE_DELIVERY_PENALTY: &str = "late_delivery_penalty";
 
 /// Emitted when a carrier-to-carrier handoff is completed.
 pub const CARRIER_HANDOFF_COMPLETED: &str = "carrier_handoff_completed";
@@ -113,6 +125,9 @@ pub const CONTRACT_UNPAUSED: &str = "contract_unpaused";
 /// Emitted when an admin forcibly cancels a shipment (privileged path).
 pub const FORCE_CANCELLED: &str = "force_cancelled";
 
+/// Emitted when the platform fee configuration is updated.
+pub const FEE_CONFIG_UPDATED: &str = "fee_config_updated";
+
 // ── RBAC ──────────────────────────────────────────────────────────────────────
 
 /// Emitted when a role is revoked from an address.
@@ -138,6 +153,19 @@ pub const NOTE_APPENDED: &str = "note_appended";
 
 /// Emitted when dispute evidence is appended (append-only).
 pub const EVIDENCE_ADDED: &str = "evidence_added";
+
+// ── Observer role ───────────────────────────────────────────────────────────────
+
+/// Emitted when an observer role is assigned to an address for a shipment.
+pub const OBSERVER_ASSIGNED: &str = "observer_assigned";
+
+/// Emitted when an observer role is revoked from an address for a shipment.
+pub const OBSERVER_REVOKED: &str = "observer_revoked";
+
+// ── Partial refund ──────────────────────────────────────────────────────────────
+
+/// Emitted when a partial refund is executed on a shipment escrow.
+pub const ESCROW_PARTIALLY_REFUNDED: &str = "escrow_partially_refunded";
 
 // ── Hash domain-separation prefixes by event family ──────────────────────────
 //
@@ -207,6 +235,10 @@ pub const HASH_DOMAIN_NOTE: u8 = 0x09;
 /// Domain tag for dispute-evidence events (`evidence_added`).
 #[allow(dead_code)]
 pub const HASH_DOMAIN_EVIDENCE: u8 = 0x0A;
+
+/// Domain tag for platform-level events (`platform_fee_collected`, `fee_config_updated`).
+pub const HASH_DOMAIN_PLATFORM: u8 = 0x0B;
+
 // ── Escrow freeze ─────────────────────────────────────────────────────────────
 
 /// Emitted when escrow is frozen due to a dispute or safety control.
@@ -292,6 +324,7 @@ mod tests {
         assert_eq!(CARRIER_DISPUTE_LOSS, "carrier_dispute_loss");
         assert_eq!(CARRIER_LATE_DELIVERY, "carrier_late_delivery");
         assert_eq!(CARRIER_ON_TIME_DELIVERY, "carrier_on_time_delivery");
+        assert_eq!(LATE_DELIVERY_PENALTY, "late_delivery_penalty");
         assert_eq!(CARRIER_HANDOFF_COMPLETED, "carrier_handoff_completed");
         assert_eq!(CARRIER_MILESTONE_RATE, "carrier_milestone_rate");
         assert_eq!(ADMIN_PROPOSED, "admin_proposed");

@@ -31,10 +31,11 @@
 //! | [`advance_past_rate_limit`] | Clear 60-s `update_status` window |
 //! | [`advance_past_multisig_expiry`] | Expire a multi-sig proposal |
 //! | [`future_deadline`] | Compute a relative deadline timestamp |
+//! | [`checkpoint_symbol`] | Create deterministic checkpoint/milestone symbols |
 
 use soroban_sdk::{
     testutils::{Address as _, Ledger as _},
-    Address, Env,
+    Address, Env, Symbol,
 };
 
 #[cfg(any(test, feature = "testutils"))]
@@ -147,6 +148,21 @@ pub fn advance_past_rate_limit(env: &Env) {
     advance_ledger_time(env, 61);
 }
 
+/// Advance the ledger sequence by **61 ledgers** — past the 60-ledger
+/// idempotency window (300 s ÷ 5 s/ledger) — so that a previously recorded
+/// action hash expires from temporary storage and the same payload can be
+/// submitted again without triggering `DuplicateAction` (#41).
+///
+/// # Example
+/// ```text
+/// client.create_shipment(...); // records action hash
+/// test_utils::advance_past_idempotency_window(&env);
+/// client.create_shipment(...); // same payload, now accepted
+/// ```
+pub fn advance_past_idempotency_window(env: &Env) {
+    advance_ledger_sequence(env, 61);
+}
+
 /// Advance ledger time by **7 days + 1 second** (604 801 s) — past the
 /// multi-sig proposal expiry window — so that subsequent `approve_action`
 /// or `execute_proposal` calls return `ProposalExpired` (#24).
@@ -171,13 +187,91 @@ pub fn advance_past_multisig_expiry(env: &Env) {
 /// ```text
 /// let deadline = test_utils::future_deadline(&env, 3_600); // 1 h from now
 /// let id = client.create_shipment(&company, &receiver, &carrier,
-///                                  &hash, &milestones, &deadline);
+///                                  &hash, &milestones, &deadline, &None);
 /// ```
 pub fn future_deadline(env: &Env, secs_from_now: u64) -> u64 {
     env.ledger().timestamp() + secs_from_now
 }
 
+// ── Symbol helpers ────────────────────────────────────────────────────────────
+
+/// Create a deterministic checkpoint or milestone symbol for tests.
+///
+/// This helper provides a consistent, repeatable way to construct Symbol
+/// instances for milestone and status checkpoint tests, avoiding duplicated
+/// symbol construction code and ensuring deterministic test behavior.
+///
+/// # Naming Pattern
+///
+/// The helper supports common checkpoint/milestone naming conventions:
+/// - **Descriptive names**: "warehouse", "port", "customs", "final"
+/// - **Sequential names**: "M1", "M2", "M3" or "checkpoint1", "checkpoint2"
+/// - **Short codes**: "pickup", "transit", "delivery"
+///
+/// All symbols must conform to Stellar Symbol constraints:
+/// - Length: 1-12 characters
+/// - Format: Alphanumeric and underscore only (A-Z, a-z, 0-9, _)
+///
+/// # Arguments
+/// * `env` - The Soroban environment
+/// * `name` - The checkpoint/milestone name (1-12 chars, alphanumeric + underscore)
+///
+/// # Returns
+/// A `Symbol` instance that can be used in milestone vectors or status updates
+///
+/// # Examples
+/// ```rust
+/// // Create milestone schedule with descriptive names
+/// let mut milestones = Vec::new(&env);
+/// milestones.push_back((checkpoint_symbol(&env, "warehouse"), 30));
+/// milestones.push_back((checkpoint_symbol(&env, "port"), 30));
+/// milestones.push_back((checkpoint_symbol(&env, "final"), 40));
+///
+/// // Create milestone schedule with sequential names
+/// let mut milestones = Vec::new(&env);
+/// milestones.push_back((checkpoint_symbol(&env, "M1"), 50));
+/// milestones.push_back((checkpoint_symbol(&env, "M2"), 50));
+///
+/// // Record a milestone
+/// client.record_milestone(
+///     &carrier,
+///     &shipment_id,
+///     &checkpoint_symbol(&env, "warehouse"),
+///     &data_hash,
+/// );
+/// ```
+///
+/// # Panics
+/// Panics if the provided name exceeds 12 characters or contains invalid
+/// characters (enforced by Stellar Symbol constraints).
+pub fn checkpoint_symbol(env: &Env, name: &str) -> Symbol {
+    Symbol::new(env, name)
+}
+
 /// Normalizes non-deterministic fields in a JSON snapshot.
+///
+/// # Normalized Fields
+///
+/// This sanitizer removes volatility from snapshot tests by normalizing
+/// ledger-dependent and non-deterministic fields that would otherwise create
+/// noisy diffs on every test run.
+///
+/// ## Ledger State Fields
+/// - `generators.address` → `0` (test address counter)
+/// - `generators.nonce` → `0` (test nonce counter)
+/// - `ledger.timestamp` → `86400` (canonical 1-day offset)
+/// - `ledger.sequence_number` → `1` (canonical sequence)
+/// - `ledger_key_nonce.nonce` → `0` (storage nonces)
+///
+/// ## Event Fields
+/// - `event.contract_id` → `"0000...0000"` (32-byte zero hash)
+/// - Event idempotency keys (last `bytes` in event data) → `"0000...0000"`
+///
+/// ## Design Rationale
+///
+/// True event changes (topics, data structure, ordering) still produce diffs,
+/// while ledger-specific noise is eliminated. This keeps snapshot tests
+/// readable and focused on contract behavior rather than test harness state.
 #[cfg(any(test, feature = "testutils"))]
 pub fn sanitize_json_snapshot(json: &str) -> std::string::String {
     use serde_json::Value;
@@ -215,6 +309,52 @@ pub fn sanitize_json_snapshot(json: &str) -> std::string::String {
                     }
                     if ledger.contains_key("sequence_number") {
                         ledger.insert("sequence_number".to_string(), Value::from(1));
+                    }
+                }
+
+                // Sanitize event contract_id (generated contract addresses)
+                if map.contains_key("event") {
+                    if let Some(event_obj) = map.get_mut("event").and_then(|e| e.as_object_mut()) {
+                        if event_obj.contains_key("contract_id") {
+                            event_obj.insert(
+                                "contract_id".to_string(),
+                                Value::from("0000000000000000000000000000000000000000000000000000000000000000"),
+                            );
+                        }
+                    }
+                }
+
+                // Sanitize event idempotency keys
+                // Events emit idempotency keys as the last element in their data vec
+                // These are SHA-256 hashes that include ledger-dependent values
+                if map.contains_key("body") {
+                    if let Some(body) = map.get_mut("body").and_then(|b| b.as_object_mut()) {
+                        if let Some(v0) = body.get_mut("v0").and_then(|v| v.as_object_mut()) {
+                            if let Some(data) = v0.get_mut("data").and_then(|d| d.as_object_mut()) {
+                                if let Some(vec) =
+                                    data.get_mut("vec").and_then(|v| v.as_array_mut())
+                                {
+                                    // Check if the last element is a bytes field (potential idempotency key)
+                                    if let Some(last) = vec.last_mut() {
+                                        if let Some(obj) = last.as_object_mut() {
+                                            if obj.contains_key("bytes") {
+                                                // Normalize to zero hash (64 hex chars = 32 bytes)
+                                                if let Some(bytes_val) =
+                                                    obj.get("bytes").and_then(|b| b.as_str())
+                                                {
+                                                    if bytes_val.len() == 64 {
+                                                        obj.insert(
+                                                            "bytes".to_string(),
+                                                            Value::from("0000000000000000000000000000000000000000000000000000000000000000"),
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -317,6 +457,45 @@ mod tests {
     }
 
     #[test]
+    fn test_checkpoint_symbol_creates_valid_symbol() {
+        let (env, _) = setup_env();
+        let sym = checkpoint_symbol(&env, "warehouse");
+        assert_eq!(sym, Symbol::new(&env, "warehouse"));
+    }
+
+    #[test]
+    fn test_checkpoint_symbol_short_names() {
+        let (env, _) = setup_env();
+        let m1 = checkpoint_symbol(&env, "M1");
+        let m2 = checkpoint_symbol(&env, "M2");
+        assert_eq!(m1, Symbol::new(&env, "M1"));
+        assert_eq!(m2, Symbol::new(&env, "M2"));
+    }
+
+    #[test]
+    fn test_checkpoint_symbol_max_length() {
+        let (env, _) = setup_env();
+        // 12 characters is the Stellar Symbol maximum
+        let sym = checkpoint_symbol(&env, "VERYLONGNAME");
+        assert_eq!(sym, Symbol::new(&env, "VERYLONGNAME"));
+    }
+
+    #[test]
+    fn test_checkpoint_symbol_with_underscore() {
+        let (env, _) = setup_env();
+        let sym = checkpoint_symbol(&env, "port_arrival");
+        assert_eq!(sym, Symbol::new(&env, "port_arrival"));
+    }
+
+    #[test]
+    fn test_checkpoint_symbol_deterministic() {
+        let (env, _) = setup_env();
+        let sym1 = checkpoint_symbol(&env, "warehouse");
+        let sym2 = checkpoint_symbol(&env, "warehouse");
+        assert_eq!(sym1, sym2, "Same name should produce identical symbols");
+    }
+
+    #[test]
     fn test_sanitize_json_snapshot() {
         let json = r#"{
             "generators": { "address": 10, "nonce": 5 },
@@ -332,5 +511,151 @@ mod tests {
         assert!(sanitized.contains(r#""sequence_number": 1"#));
         assert!(sanitized.contains(r#""address": 0"#));
         assert!(sanitized.contains(r#""nonce": 0"#));
+    }
+
+    #[test]
+    fn test_sanitize_json_snapshot_normalizes_event_contract_ids() {
+        let json = r#"{
+            "events": [
+                {
+                    "event": {
+                        "contract_id": "0000000000000000000000000000000000000000000000000000000000000006",
+                        "type_": "contract"
+                    }
+                }
+            ]
+        }"#;
+        let sanitized = sanitize_json_snapshot(json);
+        assert!(
+            sanitized.contains(r#""contract_id": "0000000000000000000000000000000000000000000000000000000000000000""#),
+            "Event contract_id should be normalized to zero hash"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_json_snapshot_normalizes_event_idempotency_keys() {
+        let json = r#"{
+            "events": [
+                {
+                    "event": {
+                        "body": {
+                            "v0": {
+                                "topics": [{"symbol": "shipment_created"}],
+                                "data": {
+                                    "vec": [
+                                        {"u64": 1},
+                                        {"address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"},
+                                        {"u32": 2},
+                                        {"u32": 1},
+                                        {"bytes": "4d665e5885d370938b6ef4915d3e18cce2280979a315d468afc7bef8d99362b4"}
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        }"#;
+        let sanitized = sanitize_json_snapshot(json);
+        assert!(
+            sanitized.contains(
+                r#""bytes": "0000000000000000000000000000000000000000000000000000000000000000""#
+            ),
+            "Event idempotency key (last bytes field) should be normalized to zero hash"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_json_snapshot_preserves_non_idempotency_bytes() {
+        let json = r#"{
+            "events": [
+                {
+                    "event": {
+                        "body": {
+                            "v0": {
+                                "topics": [{"symbol": "shipment_created"}],
+                                "data": {
+                                    "vec": [
+                                        {"bytes": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+                                        {"u64": 1},
+                                        {"bytes": "4d665e5885d370938b6ef4915d3e18cce2280979a315d468afc7bef8d99362b4"}
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        }"#;
+        let sanitized = sanitize_json_snapshot(json);
+        // First bytes field (data hash) should be preserved
+        assert!(
+            sanitized.contains(
+                r#""bytes": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""#
+            ),
+            "Non-idempotency bytes fields should be preserved"
+        );
+        // Last bytes field (idempotency key) should be normalized
+        assert!(
+            sanitized.contains(
+                r#""bytes": "0000000000000000000000000000000000000000000000000000000000000000""#
+            ),
+            "Last bytes field (idempotency key) should be normalized"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_json_snapshot_handles_multiple_events() {
+        let json = r#"{
+            "events": [
+                {
+                    "event": {
+                        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+                        "body": {
+                            "v0": {
+                                "data": {
+                                    "vec": [
+                                        {"u64": 1},
+                                        {"bytes": "1111111111111111111111111111111111111111111111111111111111111111"}
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "event": {
+                        "contract_id": "0000000000000000000000000000000000000000000000000000000000000002",
+                        "body": {
+                            "v0": {
+                                "data": {
+                                    "vec": [
+                                        {"u64": 2},
+                                        {"bytes": "2222222222222222222222222222222222222222222222222222222222222222"}
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        }"#;
+        let sanitized = sanitize_json_snapshot(json);
+        // All contract_ids should be normalized
+        let zero_hash =
+            r#""contract_id": "0000000000000000000000000000000000000000000000000000000000000000""#;
+        assert_eq!(
+            sanitized.matches(zero_hash).count(),
+            2,
+            "All event contract_ids should be normalized"
+        );
+        // All idempotency keys should be normalized
+        let zero_bytes =
+            r#""bytes": "0000000000000000000000000000000000000000000000000000000000000000""#;
+        assert_eq!(
+            sanitized.matches(zero_bytes).count(),
+            2,
+            "All event idempotency keys should be normalized"
+        );
     }
 }
