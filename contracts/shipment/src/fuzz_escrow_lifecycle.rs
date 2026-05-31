@@ -1,4 +1,3 @@
-#![cfg(test)]
 //! # Escrow Lifecycle Fuzzing Harness
 //!
 //! Property-based fuzz tests for the complete escrow lifecycle:

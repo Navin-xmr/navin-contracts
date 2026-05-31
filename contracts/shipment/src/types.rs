@@ -318,7 +318,7 @@ impl ShipmentStatus {
 /// // Struct represents the full shipment payload tracked on-chain.
 /// ```
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Shipment {
     /// Unique shipment identifier.
     pub id: u64,

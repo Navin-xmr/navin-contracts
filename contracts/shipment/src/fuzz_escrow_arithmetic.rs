@@ -1,4 +1,3 @@
-#![cfg(test)]
 //! # Escrow Arithmetic Fuzzing Harness
 //!
 //! Property-based fuzz tests for escrow arithmetic correctness,

@@ -55,8 +55,6 @@
 //! cargo run --bin sanitize_snapshots
 //! ```
 
-#![cfg(test)]
-
 extern crate std;
 
 use std::fs;

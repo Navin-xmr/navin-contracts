@@ -1,4 +1,3 @@
-#![cfg(test)]
 //! # TTL Management Fuzzing Harness
 //!
 //! Property-based fuzz tests for Soroban TTL (Time-To-Live) storage management.

@@ -9,7 +9,7 @@ use crate::{
 use soroban_sdk::{
     contract, contracterror, contractimpl,
     testutils::{storage::Persistent, Address as _, Events},
-    Address, BytesN, Env, IntoVal, Symbol, TryFromVal,
+    Address, BytesN, Env, IntoVal, Symbol, TryFromVal, TryIntoVal,
 };
 
 use soroban_sdk::testutils::Ledger;
@@ -263,6 +263,7 @@ fn test_create_shipments_batch_success() {
         shipments.push_back(ShipmentInput {
             receiver: Address::generate(&env),
             carrier: Address::generate(&env),
+            token_address: token_contract.clone(),
             data_hash: BytesN::from_array(&env, &[i as u8; 32]),
             payment_milestones: soroban_sdk::Vec::new(&env),
             deadline,
@@ -293,6 +294,7 @@ fn test_create_shipments_batch_oversized() {
         shipments.push_back(ShipmentInput {
             receiver: Address::generate(&env),
             carrier: Address::generate(&env),
+            token_address: token_contract.clone(),
             data_hash: BytesN::from_array(&env, &[i as u8; 32]),
             payment_milestones: soroban_sdk::Vec::new(&env),
             deadline,
@@ -304,7 +306,7 @@ fn test_create_shipments_batch_oversized() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #17)")]
+#[should_panic(expected = "Error(Contract, #57)")]
 fn test_create_shipments_batch_invalid_input() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -317,6 +319,7 @@ fn test_create_shipments_batch_invalid_input() {
     shipments.push_back(ShipmentInput {
         receiver: Address::generate(&env),
         carrier: Address::generate(&env),
+        token_address: token_contract.clone(),
         data_hash: BytesN::from_array(&env, &[1u8; 32]),
         payment_milestones: soroban_sdk::Vec::new(&env),
         deadline,
@@ -326,6 +329,7 @@ fn test_create_shipments_batch_invalid_input() {
     shipments.push_back(ShipmentInput {
         receiver: user.clone(),
         carrier: user,
+        token_address: token_contract.clone(),
         data_hash: BytesN::from_array(&env, &[2u8; 32]),
         payment_milestones: soroban_sdk::Vec::new(&env),
         deadline,
@@ -4379,6 +4383,94 @@ fn test_verify_delivery_proof_nonexistent_shipment() {
     client.verify_delivery_proof(&999u64, &BytesN::from_array(&_env, &[1u8; 32]));
 }
 
+// ── Regression: fee configuration updates (#394) ─────────────────────────────
+
+#[test]
+fn test_set_platform_fee_valid_update_persists_config() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let treasury = Address::generate(&env);
+
+    client.set_platform_fee(&admin, &250, &treasury);
+
+    let config = env.as_contract(&client.address, || {
+        crate::storage::get_fee_config(&env).expect("fee config must be stored")
+    });
+    assert_eq!(config.fee_bps, 250);
+    assert_eq!(config.treasury, treasury);
+}
+
+#[test]
+fn test_set_platform_fee_zero_fee_succeeds() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let treasury = Address::generate(&env);
+
+    client.set_platform_fee(&admin, &0, &treasury);
+
+    let config = env.as_contract(&client.address, || {
+        crate::storage::get_fee_config(&env).expect("zero-fee config must be stored")
+    });
+    assert_eq!(config.fee_bps, 0);
+    assert_eq!(config.treasury, treasury);
+}
+
+#[test]
+fn test_set_platform_fee_at_cap_succeeds() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let treasury = Address::generate(&env);
+
+    client.set_platform_fee(&admin, &1000, &treasury);
+
+    let config = env.as_contract(&client.address, || {
+        crate::storage::get_fee_config(&env).expect("max-cap fee config must be stored")
+    });
+    assert_eq!(config.fee_bps, 1000);
+}
+
+#[test]
+fn test_set_platform_fee_over_cap_fails() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let treasury = Address::generate(&env);
+
+    env.mock_all_auths();
+    let result = client.try_set_platform_fee(&admin, &1001, &treasury);
+    assert_eq!(result, Err(Ok(NavinError::InvalidAmount)));
+}
+
+#[test]
+fn test_set_platform_fee_unauthorized_non_admin() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let treasury = Address::generate(&env);
+    let outsider = Address::generate(&env);
+
+    env.mock_all_auths();
+    let result = client.try_set_platform_fee(&outsider, &100, &treasury);
+    assert_eq!(result, Err(Ok(NavinError::Unauthorized)));
+}
+
+#[test]
+fn test_set_platform_fee_emits_fee_config_updated_event() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let treasury = Address::generate(&env);
+
+    client.set_platform_fee(&admin, &150, &treasury);
+
+    let events = env.events().all();
+    let fee_event = events.iter().find(|e| {
+        let topic: Result<Symbol, _> = e.1.get(0).unwrap().try_into_val(&env);
+        topic.is_ok() && topic.unwrap() == Symbol::new(&env, "fee_config_updated")
+    });
+    assert!(
+        fee_event.is_some(),
+        "fee_config_updated event must be emitted on platform fee update"
+    );
+}
+
 // ── Issue #3: Rate limiting ───────────────────────────────────────────────────
 
 #[test]
@@ -6288,6 +6380,7 @@ fn test_analytics_batch_and_cancel() {
         shipments.push_back(ShipmentInput {
             receiver: Address::generate(&env),
             carrier: carrier.clone(),
+            token_address: token_contract.clone(),
             data_hash: BytesN::from_array(&env, &[i as u8; 32]),
             payment_milestones: soroban_sdk::Vec::new(&env),
             deadline,
@@ -6890,6 +6983,7 @@ fn test_batch_limit_reached() {
         shipments.push_back(ShipmentInput {
             receiver: Address::generate(&env),
             carrier: Address::generate(&env),
+            token_address: token_contract.clone(),
             data_hash: BytesN::from_array(&env, &[i as u8; 32]),
             payment_milestones: soroban_sdk::Vec::new(&env),
             deadline,
@@ -7975,6 +8069,7 @@ fn test_create_shipments_batch_returns_shipment_limit_reached() {
         shipments.push_back(ShipmentInput {
             receiver: Address::generate(&env),
             carrier: Address::generate(&env),
+            token_address: token_contract.clone(),
             data_hash: BytesN::from_array(&env, &[i as u8; 32]),
             payment_milestones: soroban_sdk::Vec::new(&env),
             deadline,
@@ -10496,7 +10591,7 @@ fn test_create_shipment_with_valid_milestone_symbols() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #17)")]
+#[should_panic(expected = "Error(Contract, #60)")]
 fn test_create_shipment_with_duplicate_milestone_symbols_fails() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -10734,6 +10829,7 @@ fn test_create_shipments_batch_validates_milestone_symbols() {
     inputs.push_back(ShipmentInput {
         receiver: receiver1,
         carrier: carrier.clone(),
+        token_address: token_contract.clone(),
         data_hash: data_hash1,
         payment_milestones: milestones1,
         deadline,
@@ -10749,6 +10845,7 @@ fn test_create_shipments_batch_validates_milestone_symbols() {
     inputs.push_back(ShipmentInput {
         receiver: receiver2,
         carrier: carrier.clone(),
+        token_address: token_contract.clone(),
         data_hash: data_hash2,
         payment_milestones: milestones2,
         deadline,
@@ -11646,7 +11743,7 @@ fn test_batch_query_and_count_regression() {
 /// Test creation quota enforcement
 #[test]
 fn test_creation_quota_enforcement() {
-    let (env, client, admin, token_contract) = crate::test_utils::setup_shipment_env();
+    let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
     let company = Address::generate(&env);
@@ -11657,15 +11754,15 @@ fn test_creation_quota_enforcement() {
 
     // Get current config to understand creation quota
     let config = client.get_contract_config();
-    
+
     // If creation quota is disabled (max=0), skip this test
     if config.creation_quota_max == 0 {
         return;
     }
-    
+
     // Test with current creation quota limit
     let quota_max = config.creation_quota_max;
-    
+
     // Create shipments up to the quota limit
     for i in 0..quota_max {
         let data_hash = BytesN::from_array(&env, &[i as u8; 32]);
@@ -11683,11 +11780,11 @@ fn test_creation_quota_enforcement() {
 
     // Verify count matches quota
     assert_eq!(client.get_shipment_count(), quota_max as u64);
-    
+
     // Try to create one more shipment - should fail
     let overflow_data_hash = BytesN::from_array(&env, &[255u8; 32]);
     let overflow_deadline = env.ledger().timestamp() + 3600;
-    
+
     let result = client.try_create_shipment(
         &company,
         &receiver,
@@ -11697,7 +11794,7 @@ fn test_creation_quota_enforcement() {
         &overflow_deadline,
         &None,
     );
-    
+
     assert!(
         matches!(result, Err(Ok(crate::NavinError::CreationQuotaExceeded))),
         "creation quota should be enforced"
@@ -11754,6 +11851,8 @@ fn test_rate_limit_boundary_exact_interval_is_allowed() {
     let (carrier, _, shipment_id) =
         setup_in_transit_shipment(&env, &client, &admin, &token_contract);
 
+    super::test_utils::advance_ledger_time(&env, 60);
+
     // Carrier makes first update; this sets LastStatusUpdate.
     let hash3 = BytesN::from_array(&env, &[3u8; 32]);
     client.update_status(
@@ -11767,12 +11866,8 @@ fn test_rate_limit_boundary_exact_interval_is_allowed() {
     super::test_utils::advance_ledger_time(&env, 60);
 
     let hash4 = BytesN::from_array(&env, &[4u8; 32]);
-    let result = client.try_update_status(
-        &carrier,
-        &shipment_id,
-        &ShipmentStatus::InTransit,
-        &hash4,
-    );
+    let result =
+        client.try_update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash4);
     assert!(
         result.is_ok(),
         "update at exactly the interval boundary must be allowed"
@@ -11787,6 +11882,8 @@ fn test_rate_limit_boundary_one_second_before_is_blocked() {
     let (carrier, _, shipment_id) =
         setup_in_transit_shipment(&env, &client, &admin, &token_contract);
 
+    super::test_utils::advance_ledger_time(&env, 60);
+
     let hash3 = BytesN::from_array(&env, &[3u8; 32]);
     client.update_status(
         &carrier,
@@ -11799,12 +11896,8 @@ fn test_rate_limit_boundary_one_second_before_is_blocked() {
     super::test_utils::advance_ledger_time(&env, 59);
 
     let hash4 = BytesN::from_array(&env, &[4u8; 32]);
-    let result = client.try_update_status(
-        &carrier,
-        &shipment_id,
-        &ShipmentStatus::InTransit,
-        &hash4,
-    );
+    let result =
+        client.try_update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash4);
     assert_eq!(
         result,
         Err(Ok(NavinError::RateLimitExceeded)),
@@ -11819,6 +11912,8 @@ fn test_rate_limit_boundary_one_second_after_is_allowed() {
     let (carrier, _, shipment_id) =
         setup_in_transit_shipment(&env, &client, &admin, &token_contract);
 
+    super::test_utils::advance_ledger_time(&env, 60);
+
     let hash3 = BytesN::from_array(&env, &[3u8; 32]);
     client.update_status(
         &carrier,
@@ -11831,12 +11926,8 @@ fn test_rate_limit_boundary_one_second_after_is_allowed() {
     super::test_utils::advance_ledger_time(&env, 61);
 
     let hash4 = BytesN::from_array(&env, &[4u8; 32]);
-    let result = client.try_update_status(
-        &carrier,
-        &shipment_id,
-        &ShipmentStatus::InTransit,
-        &hash4,
-    );
+    let result =
+        client.try_update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash4);
     assert!(
         result.is_ok(),
         "update one second after the boundary must be allowed"
@@ -11850,6 +11941,7 @@ fn test_rate_limit_admin_bypasses_interval() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let (carrier, _, shipment_id) =
         setup_in_transit_shipment(&env, &client, &admin, &token_contract);
+    super::test_utils::advance_ledger_time(&env, 60);
 
     // Carrier sets the LastStatusUpdate timestamp.
     let hash3 = BytesN::from_array(&env, &[3u8; 32]);
@@ -11862,12 +11954,7 @@ fn test_rate_limit_admin_bypasses_interval() {
 
     // No time advance — admin updates immediately (0 seconds elapsed).
     let hash4 = BytesN::from_array(&env, &[4u8; 32]);
-    let result = client.try_update_status(
-        &admin,
-        &shipment_id,
-        &ShipmentStatus::InTransit,
-        &hash4,
-    );
+    let result = client.try_update_status(&admin, &shipment_id, &ShipmentStatus::InTransit, &hash4);
     assert!(
         result.is_ok(),
         "admin must bypass the rate-limit interval entirely"

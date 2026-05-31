@@ -9,8 +9,6 @@
 //! - Expired proposals cannot be approved or executed; both return
 //!   `NavinError::ProposalExpired (#24)`.
 
-#![cfg(test)]
-
 extern crate std;
 
 use crate::{NavinError, NavinShipment, NavinShipmentClient};
@@ -318,11 +316,25 @@ fn test_idempotency_create_shipment_replay_within_window_rejected() {
     let milestones = Vec::new(&env);
 
     // First call succeeds.
-    client.create_shipment(&company, &receiver, &carrier, &data_hash, &milestones, &deadline, &None);
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+        &None,
+    );
 
     // Immediate replay must be rejected.
     let result = client.try_create_shipment(
-        &company, &receiver, &carrier, &data_hash, &milestones, &deadline, &None,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+        &None,
     );
     assert!(result.is_err());
     let err = result.unwrap_err().unwrap();
@@ -348,7 +360,13 @@ fn test_idempotency_create_shipment_replay_after_window_accepted() {
     // First call — records the action hash in temporary storage.
     let deadline1 = env.ledger().timestamp() + 3_600;
     let id1 = client.create_shipment(
-        &company, &receiver, &carrier, &data_hash, &milestones, &deadline1, &None,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline1,
+        &None,
     );
 
     // Advance past the 60-ledger idempotency TTL so the key expires.
@@ -357,7 +375,13 @@ fn test_idempotency_create_shipment_replay_after_window_accepted() {
     // Same payload after expiry must succeed (window no longer blocks it).
     let deadline2 = env.ledger().timestamp() + 3_600;
     let id2 = client.create_shipment(
-        &company, &receiver, &carrier, &data_hash, &milestones, &deadline2, &None,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline2,
+        &None,
     );
 
     assert_eq!(id1, 1);
