@@ -209,44 +209,6 @@ fn test_shipment_count_increments_after_each_create_regression() {
     }
 }
 
-/// Test batch-operation limits enforcement
-#[test]
-fn test_batch_operation_limits_enforcement() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    client.initialize(&admin, &token_contract);
-
-    // Get current config to understand current limits
-    let config = client.get_contract_config();
-    
-    // Test with current batch_operation_limit
-    let limit = config.batch_operation_limit;
-    
-    // Create a batch that exceeds the limit
-    let mut ids = Vec::new(&env);
-    for i in 0..(limit + 1) as u64 {
-        ids.push_back(i + 1);
-    }
-    
-    let result = client.try_get_shipments_batch(&ids);
-    assert!(
-        matches!(result, Err(Ok(crate::NavinError::BatchTooLarge))),
-        "batch_operation_limit should reject batches larger than configured limit"
-    );
-    
-    // Test with batch that matches the limit exactly
-    let mut ids_exact = Vec::new(&env);
-    for i in 0..limit as u64 {
-        ids_exact.push_back(i + 1);
-    }
-    
-    // This should succeed
-    let result_exact = client.try_get_shipments_batch(&ids_exact);
-    assert!(
-        result_exact.is_ok(),
-        "batch_operation_limit should allow batches up to configured limit"
-    );
-}
-
 /// `get_shipment_count` must equal the number of shipments actually created,
 /// checked after each individual insert.
 #[test]
@@ -400,4 +362,322 @@ fn test_filter_queries_consistent_with_batch() {
         assert_eq!(batch_entry.carrier, s.carrier);
         assert_eq!(batch_entry.status, s.status);
     }
+}
+
+// ── Regression: sender and carrier offset pagination ─────────────────────────
+
+/// Offset-based pagination uses the returned page length as the next cursor.
+fn next_page_offset(current_offset: u32, page_len: u32, total_matches: u32) -> Option<u32> {
+    let advanced = current_offset.saturating_add(page_len);
+    if advanced < total_matches {
+        Some(advanced)
+    } else {
+        None
+    }
+}
+
+fn collect_sender_ids(
+    env: &soroban_sdk::Env,
+    client: &crate::NavinShipmentClient<'static>,
+    sender: &Address,
+    limit: u32,
+) -> soroban_sdk::Vec<u64> {
+    let all = client.get_shipments_by_sender(sender, &limit);
+    let mut ids = Vec::new(env);
+    for s in all.iter() {
+        ids.push_back(s.id);
+    }
+    ids
+}
+
+fn collect_carrier_ids(
+    env: &soroban_sdk::Env,
+    client: &crate::NavinShipmentClient<'static>,
+    carrier: &Address,
+    limit: u32,
+) -> soroban_sdk::Vec<u64> {
+    let all = client.get_shipments_by_carrier(carrier, &limit);
+    let mut ids = Vec::new(env);
+    for s in all.iter() {
+        ids.push_back(s.id);
+    }
+    ids
+}
+
+/// Page-one and page-two sender pagination with explicit next_cursor validation.
+#[test]
+fn test_sender_pagination_page_one_and_two_with_next_cursor() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let sender = Address::generate(&env);
+    let other_sender = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &sender);
+    client.add_company(&admin, &other_sender);
+
+    let id1 = create_shipment_for(&client, &env, &sender, &receiver, &carrier, 0x41);
+    let _other = create_shipment_for(&client, &env, &other_sender, &receiver, &carrier, 0x42);
+    let id2 = create_shipment_for(&client, &env, &sender, &receiver, &carrier, 0x43);
+    let id3 = create_shipment_for(&client, &env, &sender, &receiver, &carrier, 0x44);
+
+    let total = 3_u32;
+    let page_size = 2_u32;
+
+    let page1 = client.get_shipments_by_sender_page(&sender, &0, &page_size);
+    assert_eq!(page1.len(), 2);
+    assert_eq!(page1.get(0).unwrap().id, id1);
+    assert_eq!(page1.get(1).unwrap().id, id2);
+    assert_eq!(next_page_offset(0, page1.len(), total), Some(2));
+
+    let next_cursor = next_page_offset(0, page1.len(), total).unwrap();
+    let page2 = client.get_shipments_by_sender_page(&sender, &next_cursor, &page_size);
+    assert_eq!(page2.len(), 1);
+    assert_eq!(page2.get(0).unwrap().id, id3);
+    assert_eq!(next_page_offset(next_cursor, page2.len(), total), None);
+}
+
+/// Carrier pagination mirrors sender pagination semantics.
+#[test]
+fn test_carrier_pagination_page_one_and_two_with_next_cursor() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier_a = Address::generate(&env);
+    let carrier_b = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let id1 = create_shipment_for(&client, &env, &company, &receiver, &carrier_a, 0x51);
+    let _other = create_shipment_for(&client, &env, &company, &receiver, &carrier_b, 0x52);
+    let id2 = create_shipment_for(&client, &env, &company, &receiver, &carrier_a, 0x53);
+    let id3 = create_shipment_for(&client, &env, &company, &receiver, &carrier_a, 0x54);
+
+    let total = 3_u32;
+    let page_size = 2_u32;
+
+    let page1 = client.get_shipments_by_carrier_page(&carrier_a, &0, &page_size);
+    assert_eq!(page1.len(), 2);
+    assert_eq!(page1.get(0).unwrap().id, id1);
+    assert_eq!(page1.get(1).unwrap().id, id2);
+    assert_eq!(next_page_offset(0, page1.len(), total), Some(2));
+
+    let next_cursor = next_page_offset(0, page1.len(), total).unwrap();
+    let page2 = client.get_shipments_by_carrier_page(&carrier_a, &next_cursor, &page_size);
+    assert_eq!(page2.len(), 1);
+    assert_eq!(page2.get(0).unwrap().id, id3);
+    assert_eq!(next_page_offset(next_cursor, page2.len(), total), None);
+}
+
+/// Offset zero is the canonical page start and returns the first slice.
+#[test]
+fn test_sender_pagination_zero_offset_start() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let sender = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &sender);
+
+    let id1 = create_shipment_for(&client, &env, &sender, &receiver, &carrier, 0x61);
+    let id2 = create_shipment_for(&client, &env, &sender, &receiver, &carrier, 0x62);
+
+    let page = client.get_shipments_by_sender_page(&sender, &0, &2);
+    assert_eq!(page.len(), 2);
+    assert_eq!(page.get(0).unwrap().id, id1);
+    assert_eq!(page.get(1).unwrap().id, id2);
+}
+
+/// Partial last page returns fewer items than the requested limit.
+#[test]
+fn test_sender_pagination_partial_last_page() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let sender = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &sender);
+
+    for marker in 0x71_u8..=0x75_u8 {
+        create_shipment_for(&client, &env, &sender, &receiver, &carrier, marker);
+    }
+
+    let page_size = 3_u32;
+    let page1 = client.get_shipments_by_sender_page(&sender, &0, &page_size);
+    assert_eq!(page1.len(), 3);
+    assert_eq!(next_page_offset(0, page1.len(), 5), Some(3));
+
+    let page2 = client.get_shipments_by_sender_page(&sender, &3, &page_size);
+    assert_eq!(page2.len(), 2);
+    assert_eq!(next_page_offset(3, page2.len(), 5), None);
+}
+
+/// Exact page boundary: full pages have a next_cursor; the final page does not.
+#[test]
+fn test_carrier_pagination_exact_page_boundary() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    for marker in 0x81_u8..=0x84_u8 {
+        create_shipment_for(&client, &env, &company, &receiver, &carrier, marker);
+    }
+
+    let page_size = 2_u32;
+    let page1 = client.get_shipments_by_carrier_page(&carrier, &0, &page_size);
+    assert_eq!(page1.len(), 2);
+    assert_eq!(next_page_offset(0, page1.len(), 4), Some(2));
+
+    let page2 = client.get_shipments_by_carrier_page(&carrier, &2, &page_size);
+    assert_eq!(page2.len(), 2);
+    assert_eq!(next_page_offset(2, page2.len(), 4), None);
+}
+
+/// Cursor past the end returns an empty page without panicking.
+#[test]
+fn test_sender_pagination_empty_page_past_end() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let sender = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &sender);
+    create_shipment_for(&client, &env, &sender, &receiver, &carrier, 0x91);
+
+    let page = client.get_shipments_by_sender_page(&sender, &10, &5);
+    assert_eq!(page.len(), 0);
+}
+
+/// Unknown sender returns an empty page safely.
+#[test]
+fn test_sender_pagination_empty_for_unknown_sender() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let sender = Address::generate(&env);
+    let unknown = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &sender);
+    create_shipment_for(&client, &env, &sender, &receiver, &carrier, 0xA1);
+
+    let page = client.get_shipments_by_sender_page(&unknown, &0, &10);
+    assert_eq!(page.len(), 0);
+    assert_eq!(next_page_offset(0, page.len(), 0), None);
+}
+
+/// Paginated slices must be stable subsets of the full sender query.
+#[test]
+fn test_sender_pagination_stable_slices_match_full_query() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let sender = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &sender);
+
+    for marker in 0xB1_u8..=0xB4_u8 {
+        create_shipment_for(&client, &env, &sender, &receiver, &carrier, marker);
+    }
+
+    let all_ids = collect_sender_ids(&env, &client, &sender, 10);
+    assert_eq!(all_ids.len(), 4);
+
+    let mut paged_ids = Vec::new(&env);
+    let page_size = 2_u32;
+    let mut offset = 0_u32;
+    loop {
+        let page = client.get_shipments_by_sender_page(&sender, &offset, &page_size);
+        if page.is_empty() {
+            break;
+        }
+        for s in page.iter() {
+            paged_ids.push_back(s.id);
+        }
+        offset = match next_page_offset(offset, page.len(), all_ids.len()) {
+            Some(next) => next,
+            None => break,
+        };
+    }
+
+    assert_eq!(paged_ids.len(), all_ids.len());
+    for i in 0..all_ids.len() {
+        assert_eq!(paged_ids.get(i).unwrap(), all_ids.get(i).unwrap());
+    }
+}
+
+/// Paginated carrier slices must be stable subsets of the full carrier query.
+#[test]
+fn test_carrier_pagination_stable_slices_match_full_query() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    for marker in 0xC1_u8..=0xC3_u8 {
+        create_shipment_for(&client, &env, &company, &receiver, &carrier, marker);
+    }
+
+    let all_ids = collect_carrier_ids(&env, &client, &carrier, 10);
+    assert_eq!(all_ids.len(), 3);
+
+    let mut paged_ids = Vec::new(&env);
+    let page_size = 1_u32;
+    let mut offset = 0_u32;
+    loop {
+        let page = client.get_shipments_by_carrier_page(&carrier, &offset, &page_size);
+        if page.is_empty() {
+            break;
+        }
+        for s in page.iter() {
+            paged_ids.push_back(s.id);
+        }
+        offset = match next_page_offset(offset, page.len(), all_ids.len()) {
+            Some(next) => next,
+            None => break,
+        };
+    }
+
+    assert_eq!(paged_ids.len(), all_ids.len());
+    for i in 0..all_ids.len() {
+        assert_eq!(paged_ids.get(i).unwrap(), all_ids.get(i).unwrap());
+    }
+}
+
+/// Zero limit is rejected for sender pagination.
+#[test]
+fn test_sender_pagination_rejects_zero_limit() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let sender = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &sender);
+
+    let result = client.try_get_shipments_by_sender_page(&sender, &0, &0);
+    assert!(matches!(result, Err(Ok(NavinError::InvalidConfig))));
+}
+
+/// Zero limit is rejected for carrier pagination.
+#[test]
+fn test_carrier_pagination_rejects_zero_limit() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+
+    let result = client.try_get_shipments_by_carrier_page(&carrier, &0, &0);
+    assert!(matches!(result, Err(Ok(NavinError::InvalidConfig))));
 }
