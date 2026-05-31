@@ -1,8 +1,6 @@
 #![no_std]
 #![allow(clippy::too_many_arguments)]
 
-extern crate alloc;
-
 use soroban_sdk::{
     contract, contractimpl, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal, Map, Symbol,
     Vec,
