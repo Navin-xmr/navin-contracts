@@ -427,11 +427,11 @@ fn test_vector_emitted_keys_match_recomputed() {
             if sym == Symbol::new(&env, crate::event_topics::SHIPMENT_CREATED) {
                 if let Ok(payload) = soroban_sdk::Vec::<soroban_sdk::Val>::try_from_val(&env, &data)
                 {
-                    // payload: (shipment_id, sender, receiver, data_hash, schema_ver, counter, key)
+                    // payload: (shipment_id, sender, receiver, token_address, data_hash, schema_ver, counter, key)
                     let emitted_counter =
-                        u32::try_from_val(&env, &payload.get(5).unwrap()).unwrap();
+                        u32::try_from_val(&env, &payload.get(6).unwrap()).unwrap();
                     let emitted_key =
-                        BytesN::<32>::try_from_val(&env, &payload.get(6).unwrap()).unwrap();
+                        BytesN::<32>::try_from_val(&env, &payload.get(7).unwrap()).unwrap();
 
                     let recomputed = generate_idempotency_key(
                         &env,

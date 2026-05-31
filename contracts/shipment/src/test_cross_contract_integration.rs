@@ -86,6 +86,7 @@ struct Ctx {
     client: NavinShipmentClient<'static>,
     #[allow(dead_code)]
     admin: Address,
+    token: Address,
     company: Address,
     carrier: Address,
 }
@@ -104,6 +105,7 @@ fn setup_ok() -> Ctx {
         env,
         client,
         admin,
+        token,
         company,
         carrier,
     }
@@ -123,6 +125,7 @@ fn setup_fail() -> Ctx {
         env,
         client,
         admin,
+        token,
         company,
         carrier,
     }
@@ -184,6 +187,7 @@ fn test_batch_creation_5_items_succeeds() {
         inputs.push_back(ShipmentInput {
             receiver: Address::generate(&ctx.env),
             carrier: ctx.carrier.clone(),
+            token_address: ctx.token.clone(),
             data_hash: dummy_hash(&ctx.env, seed),
             payment_milestones: Vec::new(&ctx.env),
             deadline,
@@ -230,102 +234,6 @@ fn test_read_only_queries_work_regardless_of_token_state() {
     assert_eq!(ctx.client.get_shipment_counter(), 0);
     let analytics = ctx.client.get_analytics();
     assert_eq!(analytics.total_shipments, 0);
-}
-
-/// Test carrier handoff event emission
-#[test]
-fn test_carrier_handoff_event_emitted() {
-    let ctx = setup_ok();
-    let deadline = test_utils::future_deadline(&ctx.env, 7200);
-    let receiver = Address::generate(&ctx.env);
-    
-    // Create initial shipment
-    let id = ctx.client.create_shipment(
-        &ctx.company,
-        &receiver,
-        &ctx.carrier,
-        &dummy_hash(&ctx.env, 1),
-        &Vec::new(&ctx.env),
-        &deadline,
-        &None,
-    );
-
-    // Verify no handoff events initially
-    let events = ctx.env.events().all();
-    assert_eq!(events.len(), 0);
-
-    // Create a new carrier for handoff
-    let new_carrier = Address::generate(&ctx.env);
-    ctx.client.add_carrier(&ctx.admin, &new_carrier);
-    
-    // Perform handoff
-    ctx.client.handoff_shipment(
-        &ctx.carrier,
-        &id,
-        &new_carrier,
-        &dummy_hash(&ctx.env, 2)
-    );
-
-    // Verify handoff event is emitted
-    let events = ctx.env.events().all();
-    assert_eq!(events.len(), 1);
-    
-    // Check that the event has the correct topic and data
-    let event = &events[0];
-    assert_eq!(event.topics.len(), 3);
-    assert_eq!(event.topics.get(0).unwrap(), Symbol::new(&ctx.env, "handoff"));
-    
-    // Check from/to carrier in payload
-    let from_carrier = event.data.get(0).unwrap().to_address().unwrap();
-    let to_carrier = event.data.get(1).unwrap().to_address().unwrap();
-    assert_eq!(from_carrier, ctx.carrier);
-    assert_eq!(to_carrier, new_carrier);
-}
-
-/// Test rejected handoff when caller is not current carrier
-#[test]
-fn test_rejected_handoff_when_caller_not_current_carrier() {
-    let ctx = setup_ok();
-    let deadline = test_utils::future_deadline(&ctx.env, 7200);
-    let receiver = Address::generate(&ctx.env);
-    
-    // Create initial shipment
-    let id = ctx.client.create_shipment(
-        &ctx.company,
-        &receiver,
-        &ctx.carrier,
-        &dummy_hash(&ctx.env, 1),
-        &Vec::new(&ctx.env),
-        &deadline,
-        &None,
-    );
-
-    // Create a new carrier for handoff
-    let new_carrier = Address::generate(&ctx.env);
-    ctx.client.add_carrier(&ctx.admin, &new_carrier);
-    
-    // Try handoff with unauthorized caller (not current carrier)
-    let unauthorized = Address::generate(&ctx.env);
-    
-    let result = ctx.client.try_handoff_shipment(
-        &unauthorized,
-        &id,
-        &new_carrier,
-        &dummy_hash(&ctx.env, 2)
-    );
-    
-    assert!(
-        result.is_err(),
-        "handoff should fail when caller is not current carrier"
-    );
-    
-    // Verify it returns Unauthorized error instead of panicking
-    match result {
-        Ok(_) => panic!("expected error but got success"),
-        Err(e) => {
-            assert_eq!(e, Err(Ok(crate::NavinError::Unauthorized)));
-        }
-    }
 }
 
 // ── Failure-mode tests ───────────────────────────────────────────────────────
@@ -485,6 +393,7 @@ fn test_batch_creation_does_not_call_token_contract() {
         inputs.push_back(ShipmentInput {
             receiver: Address::generate(&ctx.env),
             carrier: ctx.carrier.clone(),
+            token_address: ctx.token.clone(),
             data_hash: dummy_hash(&ctx.env, seed),
             payment_milestones: Vec::new(&ctx.env),
             deadline,

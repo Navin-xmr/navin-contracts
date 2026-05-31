@@ -163,6 +163,7 @@ fn bench_create_shipments_batch() {
         inputs.push_back(crate::ShipmentInput {
             receiver: Address::generate(&env),
             carrier: Address::generate(&env),
+            token_address: token_contract.clone(),
             data_hash: BytesN::from_array(&env, &[i + 1; 32]),
             payment_milestones: SorobanVec::new(&env),
             deadline,

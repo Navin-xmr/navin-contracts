@@ -23,7 +23,7 @@ fn setup_test() -> (Env, NavinShipmentClient<'static>, Address, Address) {
 
 #[test]
 fn test_create_shipments_batch_rollback() {
-    let (env, client, admin, _token_contract) = setup_test();
+    let (env, client, admin, token_contract) = setup_test();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -37,6 +37,7 @@ fn test_create_shipments_batch_rollback() {
     shipments.push_back(ShipmentInput {
         receiver: receiver.clone(),
         carrier: carrier.clone(),
+        token_address: token_contract.clone(),
         data_hash: data_hash.clone(),
         payment_milestones: Vec::new(&env),
         deadline,
@@ -46,6 +47,7 @@ fn test_create_shipments_batch_rollback() {
     shipments.push_back(ShipmentInput {
         receiver: carrier.clone(),
         carrier: carrier.clone(),
+        token_address: token_contract.clone(),
         data_hash: data_hash.clone(),
         payment_milestones: Vec::new(&env),
         deadline,

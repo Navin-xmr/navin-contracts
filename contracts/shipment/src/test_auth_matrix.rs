@@ -40,8 +40,6 @@
 //! `NavinError::Unauthorized`.  Each allow test verifies the call succeeds
 //! (or returns a domain error that is not Unauthorized).
 
-#![cfg(test)]
-
 extern crate std;
 
 use crate::{NavinError, NavinShipment, NavinShipmentClient};

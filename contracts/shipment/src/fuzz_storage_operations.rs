@@ -1,4 +1,3 @@
-#![cfg(test)]
 //! # Storage Operations Fuzzing Harness
 //!
 //! Property-based fuzz tests for Soroban persistent/instance storage operations.

@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use crate::types::*;
 use crate::{NavinShipment, NavinShipmentClient};
 use soroban_sdk::testutils::Address as _;

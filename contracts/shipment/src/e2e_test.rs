@@ -10,8 +10,6 @@
 // Run: cargo test --lib e2e_test
 // =============================================================================
 
-#![cfg(test)]
-
 extern crate std;
 
 use crate::{test_utils, NavinShipment, NavinShipmentClient, ShipmentStatus};

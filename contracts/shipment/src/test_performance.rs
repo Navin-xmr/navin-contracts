@@ -28,6 +28,7 @@ impl PerfMockToken {
 struct PerfCtx {
     env: Env,
     client: NavinShipmentClient<'static>,
+    token: Address,
     company: Address,
     carrier: Address,
 }
@@ -45,6 +46,7 @@ fn setup_perf() -> PerfCtx {
     PerfCtx {
         env,
         client,
+        token,
         company,
         carrier,
     }
@@ -95,6 +97,7 @@ fn test_batch_creation_10_within_budget() {
         inputs.push_back(ShipmentInput {
             receiver: Address::generate(&ctx.env),
             carrier: ctx.carrier.clone(),
+            token_address: ctx.token.clone(),
             data_hash: dummy_hash(&ctx.env, seed),
             payment_milestones: Vec::new(&ctx.env),
             deadline,
@@ -145,6 +148,7 @@ fn test_batch_cheaper_per_item_than_individual_calls() {
         inputs.push_back(ShipmentInput {
             receiver: Address::generate(&ctx_batch.env),
             carrier: ctx_batch.carrier.clone(),
+            token_address: ctx_batch.token.clone(),
             data_hash: dummy_hash(&ctx_batch.env, seed),
             payment_milestones: Vec::new(&ctx_batch.env),
             deadline: deadline_b,
