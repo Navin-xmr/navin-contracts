@@ -87,6 +87,8 @@ mod test_snapshot_helpers;
 #[cfg(test)]
 mod test_suspension;
 #[cfg(test)]
+mod test_symbol_validation;
+#[cfg(test)]
 mod test_utils;
 #[cfg(test)]
 mod test_verification;
