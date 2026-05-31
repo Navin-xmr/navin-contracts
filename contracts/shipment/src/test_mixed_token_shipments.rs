@@ -17,11 +17,47 @@
 
 extern crate std;
 
-use crate::{test_utils, types::ShipmentStatus, NavinShipment, NavinShipmentClient};
+use crate::{
+    test_utils,
+    types::{SettlementOperation, SettlementState, ShipmentStatus},
+    NavinError, NavinShipment, NavinShipmentClient,
+};
 use navin_token::NavinTokenClient;
 use soroban_sdk::{
     testutils::Address as _, token::StellarAssetClient, Address, BytesN, Env, IntoVal, Vec,
 };
+
+mod mock_fail {
+    use soroban_sdk::{contract, contracterror, contractimpl, Address, Env};
+
+    #[contracterror]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+    #[repr(u32)]
+    pub enum MockTokenError {
+        TransferFailed = 1,
+    }
+
+    #[contract]
+    pub struct MockFailingToken;
+
+    #[contractimpl]
+    impl MockFailingToken {
+        pub fn decimals(_env: Env) -> u32 {
+            7
+        }
+
+        pub fn transfer(
+            _env: Env,
+            _from: Address,
+            _to: Address,
+            _amount: i128,
+        ) -> Result<(), MockTokenError> {
+            Err(MockTokenError::TransferFailed)
+        }
+
+        pub fn mint(_env: Env, _admin: Address, _to: Address, _amount: i128) {}
+    }
+}
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -45,6 +81,42 @@ fn deploy_nvn(env: &Env, admin: &Address) -> Address {
         &1_000_000_000,
     );
     addr
+}
+
+fn deploy_failing_token(env: &Env, _admin: &Address) -> Address {
+    env.register(mock_fail::MockFailingToken {}, ())
+}
+
+fn inject_escrow(env: &Env, client: &NavinShipmentClient<'static>, id: u64, amount: i128) {
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(env, id).unwrap();
+        shipment.escrow_amount = amount;
+        shipment.total_escrow = amount;
+        crate::storage::set_shipment(env, &shipment);
+        crate::storage::set_escrow(env, id, amount);
+    });
+}
+
+fn advance_to_delivered(
+    env: &Env,
+    client: &NavinShipmentClient<'static>,
+    carrier: &Address,
+    id: u64,
+) {
+    test_utils::advance_past_rate_limit(env);
+    client.update_status(
+        carrier,
+        &id,
+        &ShipmentStatus::InTransit,
+        &dummy_hash(env, 200),
+    );
+    test_utils::advance_past_rate_limit(env);
+    client.update_status(
+        carrier,
+        &id,
+        &ShipmentStatus::Delivered,
+        &dummy_hash(env, 201),
+    );
 }
 
 /// Mint `amount` SAC tokens to `to` (SAC mint takes `(to, amount)` — no admin arg).
@@ -282,6 +354,136 @@ fn test_concurrent_deliver_balance_isolation() {
         balance(&ctx.env, &ctx.token_sac, &ctx.client_nvn.address),
         0
     );
+}
+
+#[test]
+fn test_happy_and_failing_token_escrow_and_settlement_flows_are_isolated() {
+    let (env, admin) = test_utils::setup_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    let token_sac = deploy_sac(&env, &admin);
+    let token_bad = deploy_failing_token(&env, &admin);
+
+    let addr_sac = env.register(NavinShipment, ());
+    let client_sac = NavinShipmentClient::new(&env, &addr_sac);
+    client_sac.initialize(&admin, &token_sac);
+    client_sac.add_company(&admin, &company);
+    client_sac.add_carrier(&admin, &carrier);
+    client_sac.add_carrier_to_whitelist(&company, &carrier);
+
+    let addr_bad = env.register(NavinShipment, ());
+    let client_bad = NavinShipmentClient::new(&env, &addr_bad);
+    client_bad.initialize(&admin, &token_bad);
+    client_bad.add_company(&admin, &company);
+    client_bad.add_carrier(&admin, &carrier);
+    client_bad.add_carrier_to_whitelist(&company, &carrier);
+
+    let amount = 1_000i128;
+    mint_sac(&env, &token_sac, &company, amount);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let id_sac = client_sac.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &dummy_hash(&env, 99),
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+    let id_bad_deposit = client_bad.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &dummy_hash(&env, 100),
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    client_sac.deposit_escrow(&company, &id_sac, &amount);
+    let deposit_settlement = client_sac.get_settlement(&1);
+    assert_eq!(deposit_settlement.operation, SettlementOperation::Deposit);
+    assert_eq!(deposit_settlement.state, SettlementState::Completed);
+
+    assert_eq!(balance(&env, &token_sac, &company), 0);
+    assert_eq!(balance(&env, &token_sac, &client_sac.address), amount);
+
+    client_sac.update_status(
+        &carrier,
+        &id_sac,
+        &ShipmentStatus::InTransit,
+        &dummy_hash(&env, 101),
+    );
+    client_sac.confirm_delivery(&receiver, &id_sac, &dummy_hash(&env, 102));
+    let release_settlement = client_sac.get_settlement(&2);
+    assert_eq!(release_settlement.operation, SettlementOperation::Release);
+    assert_eq!(release_settlement.state, SettlementState::Completed);
+    assert_eq!(client_sac.get_settlement_count(), 2);
+
+    assert_eq!(balance(&env, &token_sac, &carrier), amount);
+    assert_eq!(balance(&env, &token_sac, &client_sac.address), 0);
+
+    let err = client_bad
+        .try_deposit_escrow(&company, &id_bad_deposit, &amount)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, NavinError::TokenTransferFailed);
+    assert_eq!(client_bad.get_escrow_balance(&id_bad_deposit), 0);
+
+    let id_bad_release = client_bad.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &dummy_hash(&env, 103),
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+    inject_escrow(&env, &client_bad, id_bad_release, amount);
+    client_bad.update_status(
+        &carrier,
+        &id_bad_release,
+        &ShipmentStatus::InTransit,
+        &dummy_hash(&env, 104),
+    );
+    let err = client_bad
+        .try_confirm_delivery(&receiver, &id_bad_release, &dummy_hash(&env, 105))
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, NavinError::TokenTransferFailed);
+    assert_eq!(
+        client_bad.get_shipment(&id_bad_release).status,
+        ShipmentStatus::InTransit
+    );
+    assert_eq!(client_bad.get_escrow_balance(&id_bad_release), amount);
+
+    let id_bad_refund = client_bad.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &dummy_hash(&env, 106),
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+    inject_escrow(&env, &client_bad, id_bad_refund, amount);
+    let err = client_bad
+        .try_refund_escrow(&company, &id_bad_refund)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, NavinError::TokenTransferFailed);
+    assert_eq!(
+        client_bad.get_shipment(&id_bad_refund).status,
+        ShipmentStatus::Created
+    );
+    assert_eq!(client_bad.get_escrow_balance(&id_bad_refund), amount);
+    assert_eq!(client_bad.get_settlement_count(), 0);
+
+    assert_eq!(balance(&env, &token_sac, &carrier), amount);
+    assert_eq!(balance(&env, &token_sac, &client_sac.address), 0);
 }
 
 // ── #298-4: SAC refund does not affect NVN escrow ────────────────────────────
