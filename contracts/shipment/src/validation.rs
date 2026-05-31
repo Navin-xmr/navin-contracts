@@ -154,11 +154,7 @@ pub fn validate_checkpoint_name_format(env: &Env, symbol: &Symbol) -> Result<(),
 
     for i in 0..len {
         let byte = xdr.get((8 + i) as u32).unwrap_or(0);
-        let valid = (byte >= b'a' && byte <= b'z')
-            || (byte >= b'A' && byte <= b'Z')
-            || (byte >= b'0' && byte <= b'9')
-            || byte == b'_';
-        if !valid {
+        if !(byte.is_ascii_alphanumeric() || byte == b'_') {
             return Err(NavinError::InvalidPaymentMilestoneName);
         }
     }
