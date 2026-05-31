@@ -68,15 +68,16 @@ fn test_frontend_verification_flow() {
 
     // 4. Verification Step: Verify Data Hash and Fields
     // For shipment_created data is a Vec<Val>:
-    // [shipment_id, sender, receiver, data_hash, version, counter, idempotency_key]
+    // [shipment_id, sender, receiver, token_address, data_hash, version, counter, idempotency_key]
     let event_data: Vec<soroban_sdk::Val> = shipment_created_event.2.try_into_val(&env).unwrap();
 
     let shipment_id: u64 = event_data.get(0).unwrap().try_into_val(&env).unwrap();
     let event_sender: Address = event_data.get(1).unwrap().try_into_val(&env).unwrap();
     let event_receiver: Address = event_data.get(2).unwrap().try_into_val(&env).unwrap();
-    let event_data_hash: BytesN<32> = event_data.get(3).unwrap().try_into_val(&env).unwrap();
-    let event_counter: u32 = event_data.get(5).unwrap().try_into_val(&env).unwrap();
-    let event_idempotency_key: BytesN<32> = event_data.get(6).unwrap().try_into_val(&env).unwrap();
+    let _event_token: Address = event_data.get(3).unwrap().try_into_val(&env).unwrap();
+    let event_data_hash: BytesN<32> = event_data.get(4).unwrap().try_into_val(&env).unwrap();
+    let event_counter: u32 = event_data.get(6).unwrap().try_into_val(&env).unwrap();
+    let event_idempotency_key: BytesN<32> = event_data.get(7).unwrap().try_into_val(&env).unwrap();
 
     assert_eq!(shipment_id, 1);
     assert_eq!(event_sender, sender);
@@ -258,20 +259,197 @@ fn test_created_event_payload_pinned() {
     let event_shipment_id: u64 = event_data.get(0).unwrap().try_into_val(&env).unwrap();
     let event_sender: Address = event_data.get(1).unwrap().try_into_val(&env).unwrap();
     let event_receiver: Address = event_data.get(2).unwrap().try_into_val(&env).unwrap();
-    let event_data_hash: BytesN<32> = event_data.get(3).unwrap().try_into_val(&env).unwrap();
-    let event_schema_version: u32 = event_data.get(4).unwrap().try_into_val(&env).unwrap();
-    let event_counter: u32 = event_data.get(5).unwrap().try_into_val(&env).unwrap();
-    let event_idempotency_key: BytesN<32> = event_data.get(6).unwrap().try_into_val(&env).unwrap();
+    let event_token: Address = event_data.get(3).unwrap().try_into_val(&env).unwrap();
+    let event_data_hash: BytesN<32> = event_data.get(4).unwrap().try_into_val(&env).unwrap();
+    let event_schema_version: u32 = event_data.get(5).unwrap().try_into_val(&env).unwrap();
+    let event_counter: u32 = event_data.get(6).unwrap().try_into_val(&env).unwrap();
+    let event_idempotency_key: BytesN<32> = event_data.get(7).unwrap().try_into_val(&env).unwrap();
 
     assert_eq!(event_shipment_id, shipment_id, "shipment_id at index 0");
     assert_eq!(event_sender, sender, "sender at index 1");
     assert_eq!(event_receiver, receiver, "receiver at index 2");
-    assert_eq!(event_data_hash, data_hash, "data_hash at index 3");
-    assert_eq!(event_schema_version, 2, "schema_version at index 4");
-    assert_eq!(event_counter, 1, "event_counter at index 5");
+    assert_eq!(event_token, _token_contract, "token_address at index 3");
+    assert_eq!(event_data_hash, data_hash, "data_hash at index 4");
+    assert_eq!(event_schema_version, 2, "schema_version at index 5");
+    assert_eq!(event_counter, 1, "event_counter at index 6");
     assert_eq!(
         event_idempotency_key.len(),
         32,
-        "idempotency_key at index 6"
+        "idempotency_key at index 7"
     );
+}
+
+// ── Regression: shipment confirmation proof verification (#392) ─────────────
+
+#[test]
+fn test_delivery_proof_verification_happy_path_with_storage_and_event() {
+    let (env, client, admin, token_contract) = crate::test::setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let sender = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let confirmation_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &sender);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &sender,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::types::ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[2u8; 32]),
+    );
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    assert!(
+        client.verify_delivery_proof(&shipment_id, &confirmation_hash),
+        "matching proof hash must verify"
+    );
+
+    let stored = env.as_contract(&client.address, || {
+        crate::storage::get_confirmation_hash(&env, shipment_id)
+    });
+    assert_eq!(stored, Some(confirmation_hash.clone()));
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(
+        shipment.status,
+        crate::types::ShipmentStatus::Delivered,
+        "confirmation must transition shipment to Delivered"
+    );
+}
+
+#[test]
+fn test_delivery_proof_verification_mismatched_hash_fails() {
+    let (env, client, admin, token_contract) = crate::test::setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let sender = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let confirmation_hash = BytesN::from_array(&env, &[0xBBu8; 32]);
+    let wrong_hash = BytesN::from_array(&env, &[0xCCu8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &sender);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &sender,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::types::ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[2u8; 32]),
+    );
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    assert!(
+        !client.verify_delivery_proof(&shipment_id, &wrong_hash),
+        "mismatched proof hash must fail verification"
+    );
+    assert!(
+        client.verify_delivery_proof(&shipment_id, &confirmation_hash),
+        "original stored hash must still verify"
+    );
+}
+
+#[test]
+fn test_delivery_proof_verification_before_confirmation_returns_false() {
+    let (env, client, admin, token_contract) = crate::test::setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let sender = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let candidate_hash = BytesN::from_array(&env, &[0xDDu8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &sender);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &sender,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::types::ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[2u8; 32]),
+    );
+
+    assert!(
+        !client.verify_delivery_proof(&shipment_id, &candidate_hash),
+        "proof verification must fail before confirmation hash is stored"
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_delivery_proof_verification_rejects_zero_hash() {
+    let (env, client, admin, token_contract) = crate::test::setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let sender = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &sender);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &sender,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::types::ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[2u8; 32]),
+    );
+    client.confirm_delivery(
+        &receiver,
+        &shipment_id,
+        &BytesN::from_array(&env, &[0xEEu8; 32]),
+    );
+
+    client.verify_delivery_proof(&shipment_id, &BytesN::from_array(&env, &[0u8; 32]));
 }

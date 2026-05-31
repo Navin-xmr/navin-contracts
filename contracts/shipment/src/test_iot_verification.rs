@@ -286,4 +286,104 @@ mod tests {
             client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &transit_hash);
         assert!(verified);
     }
+
+    #[test]
+    fn test_verify_data_hash_exact_byte_comparison() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+            &None,
+        );
+
+        let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
+        client.update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::InTransit,
+            &transit_hash,
+        );
+
+        let mut almost_hash_bytes = [2u8; 32];
+        almost_hash_bytes[31] = 0xFE;
+        let almost_hash = BytesN::from_array(&env, &almost_hash_bytes);
+
+        assert!(client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &transit_hash));
+        assert!(!client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &almost_hash));
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #44)")]
+    fn test_verify_data_hash_before_status_update_errors() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+            &None,
+        );
+
+        let candidate = BytesN::from_array(&env, &[9u8; 32]);
+        client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &candidate);
+    }
+
+    #[test]
+    fn test_status_update_stores_hash_for_later_verification() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+            &None,
+        );
+
+        let transit_hash = BytesN::from_array(&env, &[0x55u8; 32]);
+        client.update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::InTransit,
+            &transit_hash,
+        );
+
+        let stored = client.get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
+        assert_eq!(stored, transit_hash);
+        assert!(client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &stored));
+    }
 }
