@@ -1,5 +1,3 @@
-use alloc::string::ToString;
-
 use crate::errors::NavinError;
 use crate::storage;
 use crate::types::{Shipment, ShipmentInput, ShipmentStatus};
@@ -141,16 +139,31 @@ pub fn validate_shipment_participants(
 /// Symbols are already bounded by the Stellar symbol type, but this helper
 /// adds an explicit format gate so checkpoint names remain readable and
 /// machine-friendly: only ASCII letters, digits, and underscores are allowed.
-pub fn validate_checkpoint_name_format(symbol: &Symbol) -> Result<(), NavinError> {
-    let checkpoint_name = symbol.to_string();
-    if checkpoint_name
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
-    {
-        Ok(())
-    } else {
-        Err(NavinError::InvalidPaymentMilestoneName)
+pub fn validate_checkpoint_name_format(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
+    let xdr = symbol.to_xdr(env);
+    if xdr.len() < 12 {
+        return Err(NavinError::InvalidPaymentMilestoneName);
     }
+
+    let len = u32::from_be_bytes([
+        xdr.get(4).unwrap_or(0),
+        xdr.get(5).unwrap_or(0),
+        xdr.get(6).unwrap_or(0),
+        xdr.get(7).unwrap_or(0),
+    ]) as usize;
+
+    for i in 0..len {
+        let byte = xdr.get((8 + i) as u32).unwrap_or(0);
+        let valid = (byte >= b'a' && byte <= b'z')
+            || (byte >= b'A' && byte <= b'Z')
+            || (byte >= b'0' && byte <= b'9')
+            || byte == b'_';
+        if !valid {
+            return Err(NavinError::InvalidPaymentMilestoneName);
+        }
+    }
+
+    Ok(())
 }
 
 /// Validate a shipment's payment milestone structure.
@@ -172,7 +185,7 @@ pub fn validate_payment_milestones(
 
     for milestone in milestones.iter() {
         validate_symbol(env, &milestone.0)?;
-        validate_checkpoint_name_format(&milestone.0)?;
+        validate_checkpoint_name_format(env, &milestone.0)?;
 
         if milestone.1 == 0 || milestone.1 > 100 {
             return Err(NavinError::InvalidPaymentMilestones);
