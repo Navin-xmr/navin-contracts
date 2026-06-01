@@ -1,4 +1,5 @@
 use crate::{
+    config,
     test_utils::{advance_ledger_time, setup_env},
     types::ShipmentStatus,
     NavinShipment, NavinShipmentClient,
@@ -731,4 +732,43 @@ fn test_restore_diagnostics_report_shape_stable() {
     let _ = missing_diag.confirmation_hash_present;
     let _ = missing_diag.last_status_update_present;
     let _ = missing_diag.event_count_present;
+}
+
+// ── Config checksum diagnostics query path ──────────────────────────────────
+
+/// The config checksum query path used by diagnostics/indexers must return
+/// a stable checksum across multiple invocations and match a raw recompute.
+#[test]
+fn test_config_checksum_diagnostics_query_path() {
+    let (env, client, admin, _token) = prepare_test();
+
+    // Query path: get_config_checksum (what indexers/diagnostics use)
+    let q1 = client.get_config_checksum();
+    let q2 = client.get_config_checksum();
+    assert_eq!(q1, q2, "diagnostics query path must be idempotent");
+
+    // Recompute from raw config to pin the expected behaviour
+    let cfg = client.get_contract_config();
+    let recomputed = env.as_contract(&client.address, || {
+        config::compute_config_checksum(&cfg, &env)
+    });
+    assert_eq!(
+        q1, recomputed,
+        "diagnostics query path must match raw compute"
+    );
+
+    // After a mutation, the checksum changes predictably
+    let mut mutated = cfg.clone();
+    mutated.batch_operation_limit += 1;
+    client.update_config(&admin, &mutated);
+    let q3 = client.get_config_checksum();
+    assert_ne!(
+        q1, q3,
+        "checksum must change after config mutation via diagnostics query path"
+    );
+
+    // Restore and verify the original checksum returns
+    client.update_config(&admin, &cfg);
+    let q4 = client.get_config_checksum();
+    assert_eq!(q1, q4, "original checksum must be restored after revert");
 }

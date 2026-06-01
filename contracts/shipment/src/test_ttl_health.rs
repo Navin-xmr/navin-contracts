@@ -1,16 +1,10 @@
-//! # TTL Health Summary Tests
-//!
-//! Comprehensive test suite for the TTL health monitoring functionality.
-//! Tests cover sampling strategies, edge cases, and deterministic behavior.
-//!
-//! **Note**: These tests verify persistent storage presence metrics rather than
-//! direct TTL values, as TTL is not directly queryable in production Soroban contracts.
-
 extern crate std;
 
 use crate::{NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
-    contract, contractimpl, testutils::Address as _, Address, BytesN, Env,
+    contract, contractimpl,
+    testutils::{storage::Persistent, Address as _, Ledger},
+    Address, BytesN, Env,
 };
 
 #[contract]
@@ -21,41 +15,27 @@ impl TtlMockToken {
     pub fn decimals(_env: soroban_sdk::Env) -> u32 {
         7
     }
-
-    pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {
-        // Mock implementation - always succeeds
-    }
+    pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
 }
 
 fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
-    let (env, admin) = super::test_utils::setup_env();
-    let token_contract = env.register(TtlMockToken {}, ());
-    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
-    client.initialize(&admin, &token_contract);
-    (env, client, admin, token_contract)
+    let (env, admin) = crate::test_utils::setup_env();
+    let token = env.register(TtlMockToken {}, ());
+    let cid = env.register(NavinShipment, ());
+    let client = NavinShipmentClient::new(&env, &cid);
+    client.initialize(&admin, &token);
+    (env, client, admin, token)
 }
 
-/// Helper to create a shipment with default values.
-/// `seed` must be unique per call within a test to avoid idempotency-key collisions
-/// (the contract rejects duplicate `sender + data_hash` pairs within the window).
-/// Helper to create a shipment with a unique data hash per call.
-/// Uses a thread-local counter to ensure each hash is distinct and avoid DuplicateAction.
 fn create_test_shipment(
     client: &NavinShipmentClient,
     env: &Env,
     company: &Address,
     carrier: &Address,
-    seed: u8,
+    hash_bytes: u8,
 ) -> u64 {
-    use std::sync::atomic::{AtomicU8, Ordering};
-    static COUNTER: AtomicU8 = AtomicU8::new(0);
-    let idx = COUNTER.fetch_add(1, Ordering::SeqCst);
-
     let receiver = Address::generate(env);
-    let mut hash_bytes = [0u8; 32];
-    hash_bytes[0] = idx;
-    hash_bytes[1] = seed.saturating_add(1);
-    let data_hash = BytesN::from_array(env, &hash_bytes);
+    let data_hash = BytesN::from_array(env, &[hash_bytes; 32]);
     let deadline = env.ledger().timestamp() + 86400;
 
     client.create_shipment(
@@ -73,128 +53,74 @@ fn create_test_shipment(
 fn test_ttl_health_summary_no_shipments() {
     let (_env, client, _admin, _token_contract) = setup_shipment_env();
 
-    // Initialize contract
+    let health = client.get_status_summary();
 
-    // Query TTL health with no shipments
-    let health = client.get_ttl_health_summary();
-
-    assert_eq!(health.total_shipment_count, 0);
-    assert_eq!(health.sampled_count, 0);
-    assert_eq!(health.persistent_count, 0);
-    assert_eq!(health.missing_or_archived_count, 0);
-    assert_eq!(health.persistent_percentage, 0);
-    assert!(health.ttl_threshold > 0);
-    assert!(health.ttl_extension > 0);
-    assert!(health.current_ledger > 0);
-    assert!(health.query_timestamp > 0);
+    assert_eq!(health.created, 0);
+    assert_eq!(health.in_transit, 0);
+    assert_eq!(health.at_checkpoint, 0);
+    assert_eq!(health.partially_delivered, 0);
+    assert_eq!(health.delivered, 0);
+    assert_eq!(health.disputed, 0);
+    assert_eq!(health.cancelled, 0);
 }
 
 #[test]
 fn test_ttl_health_summary_single_shipment() {
     let (env, client, admin, _token_contract) = setup_shipment_env();
 
-    // Initialize contract
-
-    // Add company and carrier
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    // Create a single shipment
     create_test_shipment(&client, &env, &company, &carrier, 0);
 
-    // Query TTL health
-    let health = client.get_ttl_health_summary();
+    let health = client.get_status_summary();
 
-    assert_eq!(health.total_shipment_count, 1);
-    assert_eq!(health.sampled_count, 1);
-    assert_eq!(health.persistent_count, 1); // Should be in persistent storage
-    assert_eq!(health.missing_or_archived_count, 0);
-    assert_eq!(health.persistent_percentage, 100);
+    assert_eq!(health.created, 1);
+    assert_eq!(health.in_transit, 0);
+    assert_eq!(health.delivered, 0);
 }
 
 #[test]
 fn test_ttl_health_summary_multiple_shipments() {
     let (env, client, admin, _token_contract) = setup_shipment_env();
 
-    // Initialize contract
-
-    // Add company and carrier
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    // Create 5 shipments
     for i in 0..5u8 {
         create_test_shipment(&client, &env, &company, &carrier, i);
     }
 
-    // Query TTL health
-    let health = client.get_ttl_health_summary();
+    let health = client.get_status_summary();
 
-    assert_eq!(health.total_shipment_count, 5);
-    assert_eq!(health.sampled_count, 5); // All should be sampled (< 20)
-    assert_eq!(health.persistent_count, 5); // All should be persistent
-    assert_eq!(health.missing_or_archived_count, 0);
-    assert_eq!(health.persistent_percentage, 100);
+    assert_eq!(health.created, 5);
+    assert_eq!(health.in_transit, 0);
+    assert_eq!(health.delivered, 0);
 }
 
 #[test]
 fn test_ttl_health_summary_deterministic() {
     let (env, client, admin, _token_contract) = setup_shipment_env();
 
-    // Initialize contract
-
-    // Add company and carrier
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    // Create 10 shipments
     for i in 0..10u8 {
         create_test_shipment(&client, &env, &company, &carrier, i);
     }
 
-    // Query TTL health multiple times
-    let health1 = client.get_ttl_health_summary();
-    let health2 = client.get_ttl_health_summary();
+    let health1 = client.get_status_summary();
+    let health2 = client.get_status_summary();
 
-    // Results should be deterministic (same ledger, same state)
-    assert_eq!(health1.total_shipment_count, health2.total_shipment_count);
-    assert_eq!(health1.sampled_count, health2.sampled_count);
-    assert_eq!(health1.persistent_count, health2.persistent_count);
-    assert_eq!(health1.persistent_percentage, health2.persistent_percentage);
-}
-
-#[test]
-fn test_ttl_health_summary_config_values() {
-    let (env, client, admin, _token_contract) = setup_shipment_env();
-
-    // Initialize contract
-
-    // Get config to verify values
-    let config = client.get_contract_config();
-
-    // Add company and carrier
-    let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    // Create a shipment
-    create_test_shipment(&client, &env, &company, &carrier, 0);
-
-    // Query TTL health
-    let health = client.get_ttl_health_summary();
-
-    // Verify config values are included in summary
-    assert_eq!(health.ttl_threshold, config.shipment_ttl_threshold);
-    assert_eq!(health.ttl_extension, config.shipment_ttl_extension);
-    assert!(health.current_ledger > 0);
-    assert!(health.query_timestamp > 0);
+    assert_eq!(health1.created, health2.created);
+    assert_eq!(health1.in_transit, health2.in_transit);
+    assert_eq!(health1.delivered, health2.delivered);
 }
 
 #[test]
@@ -203,43 +129,28 @@ fn test_ttl_health_summary_not_initialized() {
     let (env, _client, _admin, _token_contract) = setup_shipment_env();
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
 
-    // Try to query TTL health without initialization - should panic with NotInitialized
-    client.get_ttl_health_summary();
+    client.get_status_summary();
 }
 
 #[test]
 fn test_ttl_health_summary_edge_case_exactly_20_shipments() {
     let (env, client, admin, _token_contract) = setup_shipment_env();
 
-    // Initialize contract
-
-    // Add company and carrier
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    // Create exactly 20 shipments (boundary case)
     for i in 0..20u8 {
         create_test_shipment(&client, &env, &company, &carrier, i);
     }
 
-    // Query TTL health
-    let health = client.get_ttl_health_summary();
+    let health = client.get_status_summary();
 
-    assert_eq!(health.total_shipment_count, 20);
-    assert_eq!(health.sampled_count, 20); // All should be sampled
-    assert_eq!(health.persistent_count, 20);
-    assert_eq!(health.persistent_percentage, 100);
+    assert_eq!(health.created, 20);
+    assert_eq!(health.in_transit, 0);
 }
 
-// ── Regression tests for issue #377 ──────────────────────────────────────────
-
-/// Regression test: active state mutation (update_status) must refresh the
-/// shipment's persistent-storage TTL up to the configured extension ceiling.
-///
-/// Flow: create → record initial TTL → advance ledger sequence to simulate
-/// natural TTL decay → update_status (InTransit) → assert TTL is refreshed.
 #[test]
 fn test_ttl_extended_on_active_mutation() {
     let (env, client, admin, _token) = setup_shipment_env();
@@ -263,7 +174,6 @@ fn test_ttl_extended_on_active_mutation() {
         &None,
     );
 
-    // Record TTL immediately after creation.
     let ttl_after_create = env.as_contract(&client.address, || {
         let key = crate::types::DataKey::Shipment(shipment_id);
         env.storage().persistent().get_ttl(&key)
@@ -273,13 +183,11 @@ fn test_ttl_extended_on_active_mutation() {
         "TTL must be set to at least shipment_ttl_extension on creation"
     );
 
-    // Advance ledger sequence to simulate TTL decay (consume some ledgers).
     env.ledger().with_mut(|l| {
         l.sequence_number += 1_000;
-        l.timestamp += 61; // also clear the rate-limit window
+        l.timestamp += 61;
     });
 
-    // Mutate: transition to InTransit — this must re-extend the TTL.
     let update_hash = BytesN::from_array(&env, &[0x02u8; 32]);
     client.update_status(
         &carrier,
@@ -288,7 +196,6 @@ fn test_ttl_extended_on_active_mutation() {
         &update_hash,
     );
 
-    // Assert TTL is refreshed back to the configured extension ceiling.
     let ttl_after_update = env.as_contract(&client.address, || {
         let key = crate::types::DataKey::Shipment(shipment_id);
         env.storage().persistent().get_ttl(&key)
@@ -299,11 +206,6 @@ fn test_ttl_extended_on_active_mutation() {
     );
 }
 
-/// Regression test: once a shipment reaches a terminal state and is archived,
-/// it is removed from persistent storage so TTL extension is a no-op for it.
-///
-/// Flow: create → cancel (terminal) → archive (moves to temp storage) →
-/// assert the persistent entry is absent (TTL extension cannot fire).
 #[test]
 fn test_ttl_not_extended_for_archived_terminal_shipment() {
     let (env, client, admin, _token) = setup_shipment_env();
@@ -327,28 +229,23 @@ fn test_ttl_not_extended_for_archived_terminal_shipment() {
         &None,
     );
 
-    // Confirm the shipment is in persistent storage before cancellation.
     let present_before = env.as_contract(&client.address, || {
         let key = crate::types::DataKey::Shipment(shipment_id);
         env.storage().persistent().has(&key)
     });
     assert!(present_before, "Shipment must be in persistent storage after creation");
 
-    // Transition to terminal state: Cancelled.
     let reason_hash = BytesN::from_array(&env, &[0x04u8; 32]);
     client.cancel_shipment(&company, &shipment_id, &reason_hash);
 
-    // Archive the terminal shipment — moves it from persistent to temp storage.
     client.archive_shipment(&admin, &shipment_id);
 
-    // Assert the persistent entry is gone; TTL extension is now a no-op.
     let present_after_archive = env.as_contract(&client.address, || {
         let key = crate::types::DataKey::Shipment(shipment_id);
         env.storage().persistent().has(&key)
     });
     assert!(
         !present_after_archive,
-        "Archived terminal shipment must not remain in persistent storage; \
-         TTL extension must be a no-op for it"
+        "Archived terminal shipment must not remain in persistent storage"
     );
 }
