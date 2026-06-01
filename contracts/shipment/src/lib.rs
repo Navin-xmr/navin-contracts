@@ -78,6 +78,10 @@ mod test_suspension;
 mod test_utils;
 #[cfg(test)]
 mod test_verification;
+#[cfg(test)]
+mod test_zero_amount_escrow;
+#[cfg(test)]
+mod test_counter_overflow;
 
 // ── Fuzz / property-based test harnesses ─────────────────────────────────────
 #[cfg(test)]

@@ -528,14 +528,14 @@ pub fn has_persistent_shipment(env: &Env, shipment_id: u64) -> bool {
 pub fn has_escrow_entry(env: &Env, shipment_id: u64) -> bool {
     env.storage()
         .persistent()
-        .has(&DataKey::Escrow(shipment_id))
+        .has(&escrow_key(shipment_id))
 }
 
 /// Check whether confirmation hash exists in persistent storage.
 pub fn has_confirmation_hash_entry(env: &Env, shipment_id: u64) -> bool {
     env.storage()
         .persistent()
-        .has(&DataKey::ConfirmationHash(shipment_id))
+        .has(&confirmation_hash_key(shipment_id))
 }
 
 /// Check whether last status update timestamp exists in persistent storage.
@@ -568,7 +568,7 @@ pub fn has_event_count_entry(env: &Env, shipment_id: u64) -> bool {
 pub fn set_shipment(env: &Env, shipment: &Shipment) {
     env.storage()
         .persistent()
-        .set(&DataKey::Shipment(shipment.id), shipment);
+        .set(&shipment_key(shipment.id), shipment);
 }
 
 /// Get escrow amount for a shipment from persistent storage. Returns 0 if unset.
@@ -587,7 +587,7 @@ pub fn set_shipment(env: &Env, shipment: &Shipment) {
 pub fn get_escrow(env: &Env, shipment_id: u64) -> i128 {
     env.storage()
         .persistent()
-        .get(&DataKey::Escrow(shipment_id))
+        .get(&escrow_key(shipment_id))
         .unwrap_or(0)
 }
 
@@ -609,7 +609,7 @@ pub fn get_escrow(env: &Env, shipment_id: u64) -> i128 {
 pub fn set_escrow(env: &Env, shipment_id: u64, amount: i128) {
     env.storage()
         .persistent()
-        .set(&DataKey::Escrow(shipment_id), &amount);
+        .set(&escrow_key(shipment_id), &amount);
 }
 
 /// Get the latest escrow freeze reason code for a shipment.
@@ -623,7 +623,7 @@ pub fn set_escrow(env: &Env, shipment_id: u64, amount: i128) {
 pub fn get_escrow_freeze_reason(env: &Env, shipment_id: u64) -> Option<EscrowFreezeReason> {
     env.storage()
         .persistent()
-        .get(&DataKey::EscrowFreezeReasonByShipment(shipment_id))
+        .get(&escrow_freeze_reason_key(shipment_id))
 }
 
 /// Store the latest escrow freeze reason code for a shipment.
@@ -635,7 +635,7 @@ pub fn get_escrow_freeze_reason(env: &Env, shipment_id: u64) -> Option<EscrowFre
 pub fn set_escrow_freeze_reason(env: &Env, shipment_id: u64, reason: &EscrowFreezeReason) {
     env.storage()
         .persistent()
-        .set(&DataKey::EscrowFreezeReasonByShipment(shipment_id), reason);
+        .set(&escrow_freeze_reason_key(shipment_id), reason);
 }
 
 /// Remove escrow for a shipment from persistent storage.
@@ -655,7 +655,7 @@ pub fn set_escrow_freeze_reason(env: &Env, shipment_id: u64, reason: &EscrowFree
 pub fn remove_escrow(env: &Env, shipment_id: u64) {
     env.storage()
         .persistent()
-        .remove(&DataKey::Escrow(shipment_id));
+        .remove(&escrow_key(shipment_id));
 }
 
 /// Backwards-compatible name used by tests: set escrow balance.
@@ -675,6 +675,92 @@ pub fn remove_escrow(env: &Env, shipment_id: u64) {
 #[allow(dead_code)]
 pub fn set_escrow_balance(env: &Env, shipment_id: u64, amount: i128) {
     set_escrow(env, shipment_id, amount);
+}
+
+// ── Storage Key Wrapper Helpers ──────────────────────────────────────────────────
+// These helpers wrap common storage key construction patterns, making repeated
+// key assembly easier to read and harder to get wrong.
+
+/// Construct a storage key for a shipment's data.
+///
+/// This is a convenience wrapper around `DataKey::Shipment(shipment_id)`.
+/// Use this helper to avoid repeating key construction across the codebase.
+///
+/// # Arguments
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// * `DataKey` - The constructed shipment data key.
+///
+/// # Examples
+/// ```rust
+/// // let key = storage::shipment_key(123);
+/// // env.storage().persistent().get(&key);
+/// ```
+#[inline]
+pub fn shipment_key(shipment_id: u64) -> DataKey {
+    DataKey::Shipment(shipment_id)
+}
+
+/// Construct a storage key for a shipment's escrow amount.
+///
+/// This is a convenience wrapper around `DataKey::Escrow(shipment_id)`.
+/// Use this helper to standardize escrow key construction.
+///
+/// # Arguments
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// * `DataKey` - The constructed escrow key.
+///
+/// # Examples
+/// ```rust
+/// // let key = storage::escrow_key(123);
+/// // env.storage().persistent().get(&key);
+/// ```
+#[inline]
+pub fn escrow_key(shipment_id: u64) -> DataKey {
+    DataKey::Escrow(shipment_id)
+}
+
+/// Construct a storage key for a shipment's confirmation hash.
+///
+/// This is a convenience wrapper around `DataKey::ConfirmationHash(shipment_id)`.
+///
+/// # Arguments
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// * `DataKey` - The constructed confirmation hash key.
+///
+/// # Examples
+/// ```rust
+/// // let key = storage::confirmation_hash_key(123);
+/// // env.storage().persistent().get(&key);
+/// ```
+#[inline]
+pub fn confirmation_hash_key(shipment_id: u64) -> DataKey {
+    DataKey::ConfirmationHash(shipment_id)
+}
+
+/// Construct a storage key for a shipment's escrow freeze reason.
+///
+/// This helper wraps `DataKey::EscrowFreezeReasonByShipment(shipment_id)`.
+///
+/// # Arguments
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// * `DataKey` - The constructed escrow freeze reason key.
+///
+/// # Examples
+/// ```rust
+/// // let key = storage::escrow_freeze_reason_key(123);
+/// // env.storage().persistent().get(&key);
+/// ```
+#[inline]
+pub fn escrow_freeze_reason_key(shipment_id: u64) -> DataKey {
+    DataKey::EscrowFreezeReasonByShipment(shipment_id)
 }
 
 /// Backwards-compatible name used by tests: remove escrow balance.
@@ -749,28 +835,28 @@ pub fn get_confirmation_hash(env: &Env, shipment_id: u64) -> Option<BytesN<32>> 
 /// // storage::extend_shipment_ttl(&env, 1, 1000, 500000);
 /// ```
 pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_to: u32) {
-    let key = DataKey::Shipment(shipment_id);
+    let key = shipment_key(shipment_id);
     if env.storage().persistent().has(&key) {
         env.storage()
             .persistent()
             .extend_ttl(&key, threshold, extend_to);
     }
 
-    let escrow_key = DataKey::Escrow(shipment_id);
+    let escrow_key = escrow_key(shipment_id);
     if env.storage().persistent().has(&escrow_key) {
         env.storage()
             .persistent()
             .extend_ttl(&escrow_key, threshold, extend_to);
     }
 
-    let hash_key = DataKey::ConfirmationHash(shipment_id);
+    let hash_key = confirmation_hash_key(shipment_id);
     if env.storage().persistent().has(&hash_key) {
         env.storage()
             .persistent()
             .extend_ttl(&hash_key, threshold, extend_to);
     }
 
-    let freeze_reason_key = DataKey::EscrowFreezeReasonByShipment(shipment_id);
+    let freeze_reason_key = escrow_freeze_reason_key(shipment_id);
     if env.storage().persistent().has(&freeze_reason_key) {
         env.storage()
             .persistent()
