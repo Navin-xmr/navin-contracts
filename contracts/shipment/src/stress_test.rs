@@ -45,7 +45,6 @@ fn test_create_50_shipments_sequentially() {
             &data_hash,
             &soroban_sdk::Vec::new(&env),
             &deadline,
-            &None,
         );
         assert_eq!(shipment_id, i);
     }
@@ -81,7 +80,6 @@ fn test_20_concurrent_status_updates() {
             &data_hash,
             &soroban_sdk::Vec::new(&env),
             &deadline,
-            &None,
         );
     }
 
@@ -125,7 +123,6 @@ fn test_verify_shipment_count_after_mass_operations() {
             &data_hash,
             &soroban_sdk::Vec::new(&env),
             &deadline,
-            &None,
         );
     }
 
@@ -162,7 +159,6 @@ fn test_no_data_corruption_between_shipments() {
             &data_hash,
             &soroban_sdk::Vec::new(&env),
             &deadline,
-            &None,
         );
     }
 

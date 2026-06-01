@@ -86,7 +86,6 @@ struct Ctx {
     client: NavinShipmentClient<'static>,
     #[allow(dead_code)]
     admin: Address,
-    token: Address,
     company: Address,
     carrier: Address,
 }
@@ -105,7 +104,6 @@ fn setup_ok() -> Ctx {
         env,
         client,
         admin,
-        token,
         company,
         carrier,
     }
@@ -125,7 +123,6 @@ fn setup_fail() -> Ctx {
         env,
         client,
         admin,
-        token,
         company,
         carrier,
     }
@@ -171,7 +168,6 @@ fn test_shipment_creation_without_escrow_succeeds() {
         &dummy_hash(&ctx.env, 1),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
     let s = ctx.client.get_shipment(&id);
     assert_eq!(s.status, ShipmentStatus::Created);
@@ -187,11 +183,9 @@ fn test_batch_creation_5_items_succeeds() {
         inputs.push_back(ShipmentInput {
             receiver: Address::generate(&ctx.env),
             carrier: ctx.carrier.clone(),
-            token_address: ctx.token.clone(),
             data_hash: dummy_hash(&ctx.env, seed),
             payment_milestones: Vec::new(&ctx.env),
             deadline,
-            depends_on: None,
         });
     }
     let ids = ctx.client.create_shipments_batch(&ctx.company, &inputs);
@@ -213,7 +207,6 @@ fn test_status_update_succeeds_with_working_token() {
         &dummy_hash(&ctx.env, 2),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
     test_utils::advance_past_rate_limit(&ctx.env);
     ctx.client.update_status(
@@ -250,7 +243,6 @@ fn test_release_escrow_fails_with_failing_token() {
         &dummy_hash(&ctx.env, 5),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
     inject_escrow(&ctx, id, 1000);
     advance_to_delivered(&ctx, id);
@@ -274,7 +266,6 @@ fn test_token_transfer_failure_returns_correct_error() {
         &dummy_hash(&ctx.env, 8),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
     inject_escrow(&ctx, id, 500);
     advance_to_delivered(&ctx, id);
@@ -318,7 +309,6 @@ fn test_circuit_breaker_opens_after_repeated_failures() {
         &dummy_hash(&ctx.env, 99),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
     inject_escrow(&ctx, id, 100);
     advance_to_delivered(&ctx, id);
@@ -345,7 +335,6 @@ fn test_force_cancel_with_escrow_and_failing_token_fails() {
         &dummy_hash(&ctx.env, 11),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
     inject_escrow(&ctx, id, 200);
 
@@ -369,7 +358,6 @@ fn test_cancel_without_escrow_succeeds_with_failing_token() {
         &dummy_hash(&ctx.env, 13),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
     // No escrow — cancel should skip the token transfer entirely.
     ctx.client
@@ -393,11 +381,9 @@ fn test_batch_creation_does_not_call_token_contract() {
         inputs.push_back(ShipmentInput {
             receiver: Address::generate(&ctx.env),
             carrier: ctx.carrier.clone(),
-            token_address: ctx.token.clone(),
             data_hash: dummy_hash(&ctx.env, seed),
             payment_milestones: Vec::new(&ctx.env),
             deadline,
-            depends_on: None,
         });
     }
     let ids = ctx.client.create_shipments_batch(&ctx.company, &inputs);

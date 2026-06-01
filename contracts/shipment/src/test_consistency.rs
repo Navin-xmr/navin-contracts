@@ -1,6 +1,7 @@
 extern crate std;
 
 use crate::{
+    config,
     consistency::{
         check_all_consistency, check_batch_consistency, check_shipment_invariants,
         ConsistencyViolation,
@@ -549,4 +550,49 @@ fn test_consistency_report_is_deterministic() {
             .iter()
             .any(|v| v == ConsistencyViolation::EscrowMismatch(id2)));
     });
+}
+
+// ── Config checksum drift detection tests ──────────────────────────────────
+
+/// Updating config with the same values must preserve the checksum.
+#[test]
+fn test_config_noop_update_preserves_checksum() {
+    let (env, client, admin, _) = setup();
+    let before = client.get_config_checksum();
+    let current = client.get_contract_config();
+    client.update_config(&admin, &current);
+    let after = client.get_config_checksum();
+    let _ = env;
+    assert_eq!(before, after, "no-op update must preserve checksum");
+}
+
+/// Repeated queries across the checksum and config read paths must not mutate state.
+#[test]
+fn test_config_checksum_stable_across_queries() {
+    let (_env, client, admin, _) = setup();
+    let c1 = client.get_config_checksum();
+    let cfg = client.get_contract_config();
+    let c2 = client.get_config_checksum();
+    let _ = client.get_contract_config();
+    let c3 = client.get_config_checksum();
+
+    assert_eq!(c1, c2);
+    assert_eq!(c2, c3);
+
+    // Even after a write (no-op), checksum stays identical
+    client.update_config(&admin, &cfg);
+    let c4 = client.get_config_checksum();
+    assert_eq!(c1, c4);
+}
+
+/// The config checksum is deterministic and reproducible via the raw compute function.
+#[test]
+fn test_config_checksum_raw_compute_matches_saved() {
+    let (env, client, _admin, _) = setup();
+    let saved = client.get_config_checksum();
+    let cfg = client.get_contract_config();
+    let recomputed = env.as_contract(&client.address, || {
+        config::compute_config_checksum(&cfg, &env)
+    });
+    assert_eq!(saved, recomputed, "saved checksum must match recomputed");
 }

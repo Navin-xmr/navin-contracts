@@ -293,6 +293,7 @@ fn test_lengths_13_to_17_all_rejected() {
         );
     }
 }
+<<<<<<< test/symbol-validation-boundaries
 
 // ── Additional edge case tests ────────────────────────────────────────────────
 
@@ -762,3 +763,5 @@ fn test_metadata_value_30_chars_rejected() {
         "30-char metadata value must be rejected"
     );
 }
+=======
+>>>>>>> main
