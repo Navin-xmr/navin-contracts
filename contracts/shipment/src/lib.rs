@@ -75,6 +75,13 @@ mod test_signature_argument_ordering;
 #[cfg(test)]
 mod test_suspension;
 #[cfg(test)]
+<<<<<<< test/symbol-validation-boundaries
+mod test_symbol_validation;
+#[cfg(test)]
+mod test_ttl_health;
+#[cfg(test)]
+=======
+>>>>>>> main
 mod test_utils;
 #[cfg(test)]
 mod test_verification;
