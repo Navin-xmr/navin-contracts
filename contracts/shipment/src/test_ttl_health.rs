@@ -10,7 +10,9 @@ extern crate std;
 
 use crate::{NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
-    contract, contractimpl, testutils::Address as _, Address, BytesN, Env,
+    contract, contractimpl,
+    testutils::{storage::Persistent as _, Address as _, Ledger as _},
+    Address, BytesN, Env,
 };
 
 #[contract]
@@ -332,7 +334,10 @@ fn test_ttl_not_extended_for_archived_terminal_shipment() {
         let key = crate::types::DataKey::Shipment(shipment_id);
         env.storage().persistent().has(&key)
     });
-    assert!(present_before, "Shipment must be in persistent storage after creation");
+    assert!(
+        present_before,
+        "Shipment must be in persistent storage after creation"
+    );
 
     // Transition to terminal state: Cancelled.
     let reason_hash = BytesN::from_array(&env, &[0x04u8; 32]);
@@ -350,5 +355,289 @@ fn test_ttl_not_extended_for_archived_terminal_shipment() {
         !present_after_archive,
         "Archived terminal shipment must not remain in persistent storage; \
          TTL extension must be a no-op for it"
+    );
+}
+
+// ── Regression tests for issue #378 ──────────────────────────────────────────
+// Mixed-state fixture: active + archived + missing shipments in one environment.
+// Verifies that TTL health diagnostics remain accurate, deterministic, and
+// panic-free across all StoragePresenceState classifications.
+
+/// Build a mixed-state fixture with:
+///   - 2 active (persistent) shipments
+///   - 1 archived (terminal → archive_shipment) shipment
+///   - 1 never-created (missing) ID (archived_id + 1000)
+///
+/// Returns (env, client, admin, company, carrier, active_id_1, active_id_2, archived_id, missing_id).
+#[allow(clippy::type_complexity)]
+fn setup_mixed_state_fixture() -> (
+    Env,
+    NavinShipmentClient<'static>,
+    Address,
+    Address,
+    Address,
+    u64,
+    u64,
+    u64,
+    u64,
+) {
+    let (env, client, admin, _token) = setup_shipment_env();
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Active shipment 1
+    let active_id_1 = create_test_shipment(&client, &env, &company, &carrier, 100);
+
+    // Active shipment 2
+    let active_id_2 = create_test_shipment(&client, &env, &company, &carrier, 101);
+
+    // Archived shipment: transition to terminal state then archive
+    let archived_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
+    let deadline = env.ledger().timestamp() + 86_400;
+    let archived_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &archived_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+        &None,
+    );
+    // InTransit → Delivered (terminal), then archive
+    client.update_status(
+        &carrier,
+        &archived_id,
+        &crate::ShipmentStatus::InTransit,
+        &archived_hash,
+    );
+    client.confirm_delivery(&receiver, &archived_id, &archived_hash);
+    client.archive_shipment(&admin, &archived_id);
+
+    // Missing ID: well beyond the current counter — never created
+    let missing_id = archived_id + 1_000;
+
+    (
+        env,
+        client,
+        admin,
+        company,
+        carrier,
+        active_id_1,
+        active_id_2,
+        archived_id,
+        missing_id,
+    )
+}
+
+/// Mixed-state: active shipments are counted, archived and missing are not.
+#[test]
+fn test_mixed_state_health_check_active_count() {
+    let (_env, client, admin, _co, _ca, _a1, _a2, _arch, _miss) = setup_mixed_state_fixture();
+
+    let health = client.check_contract_health(&admin);
+
+    // 3 shipments were created (2 active + 1 archived); missing_id was never created
+    assert_eq!(health.total_shipments, 3);
+    // Only the 2 active (non-terminal) shipments count toward active_shipments_counted
+    assert_eq!(health.active_shipments_counted, 2);
+}
+
+/// Mixed-state: escrow sum is zero when no escrow has been deposited.
+#[test]
+fn test_mixed_state_health_check_escrow_sum() {
+    let (_env, client, admin, _co, _ca, _a1, _a2, _arch, _miss) = setup_mixed_state_fixture();
+
+    let health = client.check_contract_health(&admin);
+    assert_eq!(health.sum_of_escrow_balances, 0);
+}
+
+/// Mixed-state: no storage inconsistencies in a clean fixture.
+#[test]
+fn test_mixed_state_health_check_no_inconsistencies() {
+    let (_env, client, admin, _co, _ca, _a1, _a2, _arch, _miss) = setup_mixed_state_fixture();
+
+    let health = client.check_contract_health(&admin);
+    assert_eq!(
+        health.storage_inconsistencies.len(),
+        0,
+        "clean mixed-state fixture must have zero storage inconsistencies"
+    );
+}
+
+/// Mixed-state: no anomalous shipments (none are InTransit past deadline).
+#[test]
+fn test_mixed_state_health_check_no_anomalies() {
+    let (_env, client, admin, _co, _ca, _a1, _a2, _arch, _miss) = setup_mixed_state_fixture();
+
+    let health = client.check_contract_health(&admin);
+    assert_eq!(
+        health.anomalous_shipment_ids.len(),
+        0,
+        "no shipment is InTransit past its deadline in the clean fixture"
+    );
+}
+
+/// Mixed-state: active shipments report ActivePersistent.
+#[test]
+fn test_mixed_state_diagnostics_active_shipments() {
+    use crate::types::StoragePresenceState;
+
+    let (_env, client, _admin, _co, _ca, active_id_1, active_id_2, _arch, _miss) =
+        setup_mixed_state_fixture();
+
+    for id in [active_id_1, active_id_2] {
+        let diag = client.get_restore_diagnostics(&id);
+        assert_eq!(
+            diag.state,
+            StoragePresenceState::ActivePersistent,
+            "shipment {id} must be ActivePersistent"
+        );
+        assert!(diag.persistent_shipment_present);
+        assert!(!diag.archived_shipment_present);
+    }
+}
+
+/// Mixed-state: archived shipment reports ArchivedExpected.
+#[test]
+fn test_mixed_state_diagnostics_archived_shipment() {
+    use crate::types::StoragePresenceState;
+
+    let (_env, client, _admin, _co, _ca, _a1, _a2, archived_id, _miss) =
+        setup_mixed_state_fixture();
+
+    let diag = client.get_restore_diagnostics(&archived_id);
+    assert_eq!(
+        diag.state,
+        StoragePresenceState::ArchivedExpected,
+        "archived shipment must report ArchivedExpected"
+    );
+    assert!(!diag.persistent_shipment_present);
+    assert!(diag.archived_shipment_present);
+    assert_eq!(diag.shipment_id, archived_id);
+}
+
+/// Mixed-state: never-created ID reports Missing without panic.
+#[test]
+fn test_mixed_state_diagnostics_missing_no_panic() {
+    use crate::types::StoragePresenceState;
+
+    let (_env, client, _admin, _co, _ca, _a1, _a2, _arch, missing_id) = setup_mixed_state_fixture();
+
+    // Must not panic — graceful Missing classification
+    let diag = client.get_restore_diagnostics(&missing_id);
+    assert_eq!(
+        diag.state,
+        StoragePresenceState::Missing,
+        "never-created ID must report Missing without panic"
+    );
+    assert!(!diag.persistent_shipment_present);
+    assert!(!diag.archived_shipment_present);
+    assert_eq!(diag.shipment_id, missing_id);
+}
+
+/// Mixed-state: all three StoragePresenceState variants appear in one fixture.
+#[test]
+fn test_mixed_state_all_three_classifications_present() {
+    use crate::types::StoragePresenceState;
+
+    let (_env, client, _admin, _co, _ca, active_id_1, _a2, archived_id, missing_id) =
+        setup_mixed_state_fixture();
+
+    let active_diag = client.get_restore_diagnostics(&active_id_1);
+    let archived_diag = client.get_restore_diagnostics(&archived_id);
+    let missing_diag = client.get_restore_diagnostics(&missing_id);
+
+    assert_eq!(active_diag.state, StoragePresenceState::ActivePersistent);
+    assert_eq!(archived_diag.state, StoragePresenceState::ArchivedExpected);
+    assert_eq!(missing_diag.state, StoragePresenceState::Missing);
+}
+
+/// Mixed-state: health check output is deterministic across two consecutive calls.
+#[test]
+fn test_mixed_state_health_check_deterministic() {
+    let (_env, client, admin, _co, _ca, _a1, _a2, _arch, _miss) = setup_mixed_state_fixture();
+
+    let h1 = client.check_contract_health(&admin);
+    let h2 = client.check_contract_health(&admin);
+
+    assert_eq!(h1.total_shipments, h2.total_shipments);
+    assert_eq!(h1.active_shipments_counted, h2.active_shipments_counted);
+    assert_eq!(h1.sum_of_escrow_balances, h2.sum_of_escrow_balances);
+    assert_eq!(
+        h1.storage_inconsistencies.len(),
+        h2.storage_inconsistencies.len()
+    );
+    assert_eq!(
+        h1.anomalous_shipment_ids.len(),
+        h2.anomalous_shipment_ids.len()
+    );
+}
+
+/// Mixed-state: restore diagnostics are deterministic across two consecutive calls.
+#[test]
+fn test_mixed_state_diagnostics_deterministic() {
+    let (_env, client, _admin, _co, _ca, active_id_1, _a2, archived_id, missing_id) =
+        setup_mixed_state_fixture();
+
+    for id in [active_id_1, archived_id, missing_id] {
+        let d1 = client.get_restore_diagnostics(&id);
+        let d2 = client.get_restore_diagnostics(&id);
+        assert_eq!(
+            d1, d2,
+            "diagnostics for shipment {id} must be deterministic"
+        );
+    }
+}
+
+/// Mixed-state: escrow deposited on an active shipment is tallied correctly.
+#[test]
+fn test_mixed_state_health_check_escrow_tally_with_deposit() {
+    let (env, client, admin, company, _ca, active_id_1, _a2, _arch, _miss) =
+        setup_mixed_state_fixture();
+
+    // Advance time to clear the rate-limit window before deposit
+    super::test_utils::advance_ledger_time(&env, 61);
+
+    client.deposit_escrow(&company, &active_id_1, &2_500);
+
+    let health = client.check_contract_health(&admin);
+    assert_eq!(
+        health.sum_of_escrow_balances, 2_500,
+        "escrow sum must reflect the deposited amount"
+    );
+    assert_eq!(
+        health.storage_inconsistencies.len(),
+        0,
+        "depositing escrow must not introduce storage inconsistencies"
+    );
+}
+
+/// Mixed-state: an InTransit shipment past its deadline is flagged as anomalous.
+#[test]
+fn test_mixed_state_health_check_anomaly_detection() {
+    let (env, client, admin, _co, carrier, active_id_1, _a2, _arch, _miss) =
+        setup_mixed_state_fixture();
+
+    // Advance past rate-limit window, then transition to InTransit
+    super::test_utils::advance_ledger_time(&env, 61);
+    let update_hash = BytesN::from_array(&env, &[0xBBu8; 32]);
+    client.update_status(
+        &carrier,
+        &active_id_1,
+        &crate::ShipmentStatus::InTransit,
+        &update_hash,
+    );
+
+    // Push time past the shipment deadline (created with deadline = ts + 86_400)
+    super::test_utils::advance_ledger_time(&env, 90_000);
+
+    let health = client.check_contract_health(&admin);
+    assert!(
+        health.anomalous_shipment_ids.contains(active_id_1),
+        "InTransit shipment past its deadline must be flagged as anomalous"
     );
 }

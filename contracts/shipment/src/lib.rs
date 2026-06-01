@@ -6003,6 +6003,47 @@ impl NavinShipment {
         Ok(diagnostics::run_system_health_check(&env))
     }
 
+    /// Return a TTL health summary for all tracked shipments.
+    ///
+    /// Scans up to all shipments (or a capped sample for large sets) and
+    /// reports how many are in persistent storage versus archived/missing,
+    /// along with the configured TTL parameters and current ledger state.
+    ///
+    /// This is a read-only query; no auth is required.
+    pub fn get_ttl_health_summary(env: Env) -> Result<TtlHealthSummary, NavinError> {
+        require_initialized(&env)?;
+
+        let config = config::get_config(&env);
+        let total = storage::get_shipment_count(&env);
+
+        // Sample all shipments (cap at 100 for budget safety on large sets)
+        let sample_limit: u64 = 100;
+        let sampled_count = total.min(sample_limit);
+
+        let mut persistent_count: u64 = 0;
+        for id in 1..=sampled_count {
+            if storage::has_persistent_shipment(&env, id) {
+                persistent_count += 1;
+            }
+        }
+        let missing_or_archived_count = sampled_count.saturating_sub(persistent_count);
+        let persistent_percentage = (persistent_count * 100)
+            .checked_div(sampled_count)
+            .unwrap_or(0) as u32;
+
+        Ok(TtlHealthSummary {
+            total_shipment_count: total,
+            sampled_count,
+            persistent_count,
+            missing_or_archived_count,
+            persistent_percentage,
+            ttl_threshold: config.shipment_ttl_threshold,
+            ttl_extension: config.shipment_ttl_extension,
+            current_ledger: env.ledger().sequence(),
+            query_timestamp: env.ledger().timestamp(),
+        })
+    }
+
     /// Manually reset the circuit breaker after resolving a token contract issue.
     ///
     /// Only callable by the admin. Use after confirming the token contract is healthy
