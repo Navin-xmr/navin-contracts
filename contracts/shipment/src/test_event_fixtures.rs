@@ -548,18 +548,7 @@ fn test_snapshot_multiple_milestone_recorded_payloads() {
         &None,
     );
 
-    // Transition to InTransit so record_milestone is allowed
-    client.update_status(
-        &carrier,
-        &id,
-        &crate::ShipmentStatus::InTransit,
-        &BytesN::from_array(&env, &[24u8; 32]),
-    );
-
-    // Advance past the 60-s rate-limit window (needed for the update_status above)
-    test_utils::advance_ledger_time(&env, 61);
-
-    // Record two milestones (different hashes, so no idempotency collision)
+    // Record two milestones
     client.record_milestone(
         &carrier,
         &id,

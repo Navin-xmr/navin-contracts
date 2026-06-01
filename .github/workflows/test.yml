@@ -3,156 +3,102 @@ name: Navin CI
 on:
   workflow_dispatch:
 
-env:
-  CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: 1
-
 jobs:
-  check-formatting:
-    name: Check Code Formatting
-    if: false
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
   lint:
-    name: Clippy Lints
+    name: Lint Code
     if: false
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
         with:
-          components: clippy
+          version: 10
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          node-version: 20
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Cache cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-      - name: Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Run ESLint
+        run: pnpm run lint
 
   test:
     name: Run Tests
+    needs: lint
     if: false
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          version: 10
 
-      - name: Cache cargo index
-        uses: actions/cache@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+          node-version: 20
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Run tests
-        run: cargo test --verbose
+        run: pnpm run test
 
   build:
-    name: Build WASM Contracts
+    name: Build Application
+    needs: test
     if: false
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
         with:
-          targets: wasm32-unknown-unknown
+          version: 10
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          node-version: 20
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Cache cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-      - name: Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-wasm-build-target-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build
+        run: pnpm run build
 
-      - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli --version 22.0.1
-
-      - name: Build contracts
-        run: stellar contract build
-
-      - name: Verify WASM output
-        run: |
-          echo "Built WASM files:"
-          ls -lh target/wasm32-unknown-unknown/release/*.wasm
-
-      - name: Check WASM size budget
-        run: ./scripts/check_wasm_size.sh
-
-      - name: Upload WASM artifacts
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wasm-contracts
-          path: target/wasm32-unknown-unknown/release/*.wasm
-          retention-days: 30
-
-  all-checks-passed:
-    name: All Checks Passed
-    if: false
-    needs: [check-formatting, lint, test, build]
-    runs-on: ubuntu-latest
-    steps:
-      - name: All checks passed
-        run: echo "✅ All CI checks passed successfully!"
+          name: build-output
+          path: frontend/dist
+          retention-days: 7

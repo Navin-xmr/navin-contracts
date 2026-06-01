@@ -99,9 +99,54 @@ These ranges are policy ranges for planning and review safety; they are not runt
 - `ActorQuota(Address)`
 - `CircuitBreakerState`
 
+## Storage Key Wrapper Helpers
+
+The `storage` module provides convenience wrapper functions to simplify key construction and reduce the chance of errors when working with common keys. These helpers wrap the `DataKey` enum variants and make repeated key assembly easier to read and maintain.
+
+### Available Helpers
+
+#### `shipment_key(shipment_id: u64) -> DataKey`
+
+Constructs a `DataKey::Shipment(shipment_id)` key for accessing shipment data.
+
+```rust
+// Instead of: env.storage().persistent().get(&DataKey::Shipment(123))
+let key = storage::shipment_key(123);
+env.storage().persistent().get(&key);
+```
+
+#### `escrow_key(shipment_id: u64) -> DataKey`
+
+Constructs a `DataKey::Escrow(shipment_id)` key for accessing escrow amounts.
+
+```rust
+// Instead of: env.storage().persistent().get(&DataKey::Escrow(123))
+let key = storage::escrow_key(123);
+env.storage().persistent().get(&key);
+```
+
+#### `confirmation_hash_key(shipment_id: u64) -> DataKey`
+
+Constructs a `DataKey::ConfirmationHash(shipment_id)` key for accessing confirmation hashes.
+
+```rust
+// Instead of: env.storage().persistent().get(&DataKey::ConfirmationHash(123))
+let key = storage::confirmation_hash_key(123);
+env.storage().persistent().get(&key);
+```
+
+### Benefits
+
+- **Consistency**: Single source of truth for key construction patterns
+- **Readability**: Clear intent when reading code
+- **Maintainability**: Changes to key structure only need to be made in one place
+- **Error Reduction**: Less chance of typos or incorrect key construction
+
 ## Upgrade Checklist for New Keys
 
 1. Add the new key variant in `DataKey` with docs.
 2. Update this registry (group + rationale).
 3. Add/adjust tests for serialization/storage stability where applicable.
 4. Update `scripts/release-check.sh` docs checks if new public APIs/errors are introduced.
+5. If adding a commonly used key, consider adding a wrapper helper function in `storage.rs`.
+

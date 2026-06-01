@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! # Storage Operations Fuzzing Harness
 //!
 //! Property-based fuzz tests for Soroban persistent/instance storage operations.
@@ -96,7 +97,6 @@ fn create_shipment_with_seed(
         &data_hash,
         &Vec::new(env),
         &deadline,
-        &None,
     )
 }
 
@@ -204,7 +204,6 @@ fn fuzz_storage_overwrite_updates_value() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     for _ in 0..iterations {
@@ -306,7 +305,6 @@ fn fuzz_storage_role_round_trip() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
-            &None,
         );
         assert!(
             result.is_ok(),
