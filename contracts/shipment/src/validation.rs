@@ -363,6 +363,7 @@ pub fn validate_shipment_invariants(shipment: &Shipment) -> Result<(), NavinErro
 // Tests
 #[cfg(test)]
 mod tests {
+    extern crate std;
     use super::*;
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::{testutils::Ledger, BytesN, Env, Symbol};
@@ -855,6 +856,87 @@ mod symbol_validation_tests {
             Err(NavinError::InvalidShipmentInput),
             "Oversized symbol must return InvalidShipmentInput"
         );
+    }
+
+    // ── Metadata value length boundary tests (issue #448) ────────────────────
+
+    #[test]
+    fn test_metadata_value_at_exact_max_length_passes() {
+        let env = Env::default();
+        let key = Symbol::new(&env, "weight");
+        let value = Symbol::new(&env, "ABCDEFGHIJKL"); // 12 chars — maximum
+        assert_eq!(
+            validate_metadata_symbols(&env, &key, &value),
+            Ok(()),
+            "12-char metadata value must be accepted"
+        );
+    }
+
+    #[test]
+    fn test_metadata_value_over_max_length_fails() {
+        let env = Env::default();
+        let key = Symbol::new(&env, "weight");
+        // 13 chars: one over the Stellar Symbol 12-char maximum
+        let long: std::string::String = "A".repeat(13);
+        let value = Symbol::new(&env, &long);
+        assert_eq!(
+            validate_metadata_symbols(&env, &key, &value),
+            Err(NavinError::InvalidShipmentInput),
+            "13-char metadata value must be rejected"
+        );
+    }
+
+    #[test]
+    fn test_metadata_key_at_exact_max_length_passes() {
+        let env = Env::default();
+        let key = Symbol::new(&env, "VERYLONGNAME"); // 12 chars
+        let value = Symbol::new(&env, "ok");
+        assert_eq!(
+            validate_metadata_symbols(&env, &key, &value),
+            Ok(()),
+            "12-char metadata key must be accepted"
+        );
+    }
+
+    #[test]
+    fn test_metadata_key_over_max_length_fails() {
+        let env = Env::default();
+        let long: std::string::String = "K".repeat(13);
+        let key = Symbol::new(&env, &long);
+        let value = Symbol::new(&env, "ok");
+        assert_eq!(
+            validate_metadata_symbols(&env, &key, &value),
+            Err(NavinError::InvalidShipmentInput),
+            "13-char metadata key must be rejected"
+        );
+    }
+
+    #[test]
+    fn test_metadata_boundary_sweep_all_valid_lengths() {
+        let env = Env::default();
+        let key = Symbol::new(&env, "k");
+        for len in 1usize..=12 {
+            let s: std::string::String = "A".repeat(len);
+            assert_eq!(
+                validate_metadata_symbols(&env, &key, &Symbol::new(&env, &s)),
+                Ok(()),
+                "metadata value of length {len} must be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn test_metadata_boundary_sweep_all_invalid_lengths() {
+        let env = Env::default();
+        let key = Symbol::new(&env, "k");
+        for len in 13usize..=16 {
+            let s: std::string::String = "A".repeat(len);
+            assert_eq!(
+                validate_metadata_symbols(&env, &key, &Symbol::new(&env, &s)),
+                Err(NavinError::InvalidShipmentInput),
+                "metadata value of length {len} must be rejected"
+            );
+        }
     }
 
     #[test]

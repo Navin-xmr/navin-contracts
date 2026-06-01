@@ -56,7 +56,6 @@ fn create_one(
         &dummy_hash(env, seed),
         &Vec::new(env),
         &deadline,
-        &None,
     )
 }
 
@@ -84,7 +83,7 @@ fn test_healthy_shipment_has_no_violations() {
 
 #[test]
 fn test_healthy_batch_has_no_violations() {
-    let (env, client, admin, token) = setup();
+    let (env, client, admin, _token) = setup();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     client.add_company(&admin, &company);
@@ -97,11 +96,9 @@ fn test_healthy_batch_has_no_violations() {
         inputs.push_back(ShipmentInput {
             receiver: Address::generate(&env),
             carrier: carrier.clone(),
-            token_address: token.clone(),
             data_hash: dummy_hash(&env, seed),
             payment_milestones: Vec::new(&env),
             deadline,
-            depends_on: None,
         });
     }
     let ids = client.create_shipments_batch(&company, &inputs);
@@ -583,6 +580,130 @@ fn test_config_checksum_stable_across_queries() {
     client.update_config(&admin, &cfg);
     let c4 = client.get_config_checksum();
     assert_eq!(c1, c4);
+}
+
+// ── Batch query vs. single-read consistency (issue #445) ────────────────────
+
+/// Each position in a batch result must agree with the corresponding
+/// single-record read for every field the consistency checker cares about.
+#[test]
+fn test_batch_single_read_equivalence() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let id1 = create_one(&env, &client, &company, &carrier, 0x10);
+    let id2 = create_one(&env, &client, &company, &carrier, 0x20);
+    let id3 = create_one(&env, &client, &company, &carrier, 0x30);
+
+    let mut ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+    ids.push_back(id1);
+    ids.push_back(id2);
+    ids.push_back(id3);
+
+    let batch = client.get_shipments_batch(&ids);
+
+    for (i, expected_id) in [id1, id2, id3].iter().enumerate() {
+        let single = client.get_shipment(expected_id);
+        let from_batch = batch.get(i as u32).unwrap().unwrap();
+        assert_eq!(
+            from_batch.id, single.id,
+            "batch[{i}] id must equal single-read id"
+        );
+        assert_eq!(
+            from_batch.status, single.status,
+            "batch[{i}] status must equal single-read status"
+        );
+        assert_eq!(
+            from_batch.escrow_amount, single.escrow_amount,
+            "batch[{i}] escrow_amount must equal single-read value"
+        );
+        assert_eq!(
+            from_batch.finalized, single.finalized,
+            "batch[{i}] finalized flag must equal single-read value"
+        );
+    }
+}
+
+/// Missing record entries must be None in the batch result, matching the
+/// error behaviour of single reads on non-existent IDs.
+#[test]
+fn test_missing_record_batch_returns_none_stable() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let existing_id = create_one(&env, &client, &company, &carrier, 0x40);
+    let missing_id: u64 = 88888;
+
+    let mut ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+    ids.push_back(existing_id);
+    ids.push_back(missing_id);
+
+    // First call
+    let first = client.get_shipments_batch(&ids);
+    // Second call — must agree
+    let second = client.get_shipments_batch(&ids);
+
+    assert!(first.get(0).unwrap().is_some(), "existing id must be Some");
+    assert!(
+        first.get(1).unwrap().is_none(),
+        "missing id must be None in batch"
+    );
+    // Stability: second call must match first
+    assert_eq!(
+        first.get(1).unwrap().is_none(),
+        second.get(1).unwrap().is_none(),
+        "missing-record None must be stable across repeated calls"
+    );
+    // Single read for missing id also fails
+    assert!(
+        client.try_get_shipment(&missing_id).is_err(),
+        "single get for missing id must return an error"
+    );
+}
+
+/// Repeated batch queries on the same IDs must return identical results,
+/// demonstrating that the batch output is deterministic and read-only.
+#[test]
+fn test_batch_query_output_deterministic() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let id1 = create_one(&env, &client, &company, &carrier, 0x50);
+    let id2 = create_one(&env, &client, &company, &carrier, 0x51);
+
+    let mut ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+    ids.push_back(id1);
+    ids.push_back(77777_u64); // missing
+    ids.push_back(id2);
+
+    let r1 = client.get_shipments_batch(&ids);
+    let r2 = client.get_shipments_batch(&ids);
+    let r3 = client.get_shipments_batch(&ids);
+
+    assert_eq!(r1.len(), r2.len());
+    assert_eq!(r2.len(), r3.len());
+    for i in 0..r1.len() {
+        match (r1.get(i).unwrap(), r2.get(i).unwrap(), r3.get(i).unwrap()) {
+            (Some(a), Some(b), Some(c)) => {
+                assert_eq!(a.id, b.id);
+                assert_eq!(b.id, c.id);
+            }
+            (None, None, None) => {}
+            _ => panic!("slot {i} produced inconsistent presence across three calls"),
+        }
+    }
 }
 
 /// The config checksum is deterministic and reproducible via the raw compute function.

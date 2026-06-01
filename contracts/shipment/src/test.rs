@@ -10833,3 +10833,105 @@ fn test_dispute_emits_escrow_frozen_event() {
         Some(crate::types::EscrowFreezeReason::DisputeRaised)
     );
 }
+
+// ── Finalization lock-out tests (issue #446) ──────────────────────────────────
+
+#[test]
+fn test_finalized_shipment_rejects_update_status() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xFAu8; 32]);
+    let deadline = super::test_utils::future_deadline(&env, 7200);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env), &deadline);
+    client.cancel_shipment(&company, &id, &data_hash);
+    assert!(client.get_shipment(&id).finalized);
+
+    let result = client.try_update_status(&carrier, &id, &ShipmentStatus::InTransit, &data_hash);
+    assert!(
+        matches!(result, Err(Ok(NavinError::ShipmentFinalized))),
+        "update_status must be rejected after finalization"
+    );
+}
+
+#[test]
+fn test_finalized_shipment_rejects_deposit_escrow() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xFBu8; 32]);
+    let deadline = super::test_utils::future_deadline(&env, 7200);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env), &deadline);
+    client.cancel_shipment(&company, &id, &data_hash);
+    assert!(client.get_shipment(&id).finalized);
+
+    let result = client.try_deposit_escrow(&company, &id, &1000_i128);
+    assert!(
+        matches!(result, Err(Ok(NavinError::ShipmentFinalized))),
+        "deposit_escrow must be rejected after finalization"
+    );
+}
+
+// ── Metadata symbol boundary tests (issue #448) ──────────────────────────────
+
+#[test]
+fn test_metadata_at_max_symbol_length_accepted() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0x01u8; 32]);
+    let deadline = super::test_utils::future_deadline(&env, 7200);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env), &deadline);
+
+    // 12-char key and value are exactly at the Stellar Symbol maximum — must be accepted
+    let key = Symbol::new(&env, "VERYLONGNAME"); // 12 chars
+    let val = Symbol::new(&env, "ABCDEFGHIJKL"); // 12 chars
+    client.set_shipment_metadata(&company, &id, &key, &val);
+
+    let shipment = client.get_shipment(&id);
+    assert!(
+        shipment.metadata.is_some(),
+        "12-char metadata key/value must be accepted"
+    );
+}
+
+#[test]
+fn test_metadata_over_max_symbol_length_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0x02u8; 32]);
+    let deadline = super::test_utils::future_deadline(&env, 7200);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let id = client.create_shipment(&company, &receiver, &carrier, &data_hash, &soroban_sdk::Vec::new(&env), &deadline);
+
+    // 13-char value exceeds the Stellar Symbol maximum — must be rejected
+    use std::string::ToString;
+    let long_val = "A".repeat(13);
+    let key = Symbol::new(&env, "weight");
+    let val = Symbol::new(&env, &long_val);
+    let result = client.try_set_shipment_metadata(&company, &id, &key, &val);
+    assert!(
+        result.is_err(),
+        "13-char metadata value must be rejected"
+    );
+}
