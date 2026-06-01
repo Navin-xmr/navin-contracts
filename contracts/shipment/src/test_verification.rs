@@ -278,3 +278,178 @@ fn test_created_event_payload_pinned() {
         "idempotency_key at index 7"
     );
 }
+
+// ── Regression: shipment confirmation proof verification (#392) ─────────────
+
+#[test]
+fn test_delivery_proof_verification_happy_path_with_storage_and_event() {
+    let (env, client, admin, token_contract) = crate::test::setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let sender = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let confirmation_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &sender);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &sender,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::types::ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[2u8; 32]),
+    );
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    assert!(
+        client.verify_delivery_proof(&shipment_id, &confirmation_hash),
+        "matching proof hash must verify"
+    );
+
+    let stored = env.as_contract(&client.address, || {
+        crate::storage::get_confirmation_hash(&env, shipment_id)
+    });
+    assert_eq!(stored, Some(confirmation_hash.clone()));
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(
+        shipment.status,
+        crate::types::ShipmentStatus::Delivered,
+        "confirmation must transition shipment to Delivered"
+    );
+}
+
+#[test]
+fn test_delivery_proof_verification_mismatched_hash_fails() {
+    let (env, client, admin, token_contract) = crate::test::setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let sender = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let confirmation_hash = BytesN::from_array(&env, &[0xBBu8; 32]);
+    let wrong_hash = BytesN::from_array(&env, &[0xCCu8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &sender);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &sender,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::types::ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[2u8; 32]),
+    );
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    assert!(
+        !client.verify_delivery_proof(&shipment_id, &wrong_hash),
+        "mismatched proof hash must fail verification"
+    );
+    assert!(
+        client.verify_delivery_proof(&shipment_id, &confirmation_hash),
+        "original stored hash must still verify"
+    );
+}
+
+#[test]
+fn test_delivery_proof_verification_before_confirmation_returns_false() {
+    let (env, client, admin, token_contract) = crate::test::setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let sender = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let candidate_hash = BytesN::from_array(&env, &[0xDDu8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &sender);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &sender,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::types::ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[2u8; 32]),
+    );
+
+    assert!(
+        !client.verify_delivery_proof(&shipment_id, &candidate_hash),
+        "proof verification must fail before confirmation hash is stored"
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_delivery_proof_verification_rejects_zero_hash() {
+    let (env, client, admin, token_contract) = crate::test::setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let sender = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &sender);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &sender,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::types::ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[2u8; 32]),
+    );
+    client.confirm_delivery(
+        &receiver,
+        &shipment_id,
+        &BytesN::from_array(&env, &[0xEEu8; 32]),
+    );
+
+    client.verify_delivery_proof(&shipment_id, &BytesN::from_array(&env, &[0u8; 32]));
+}
