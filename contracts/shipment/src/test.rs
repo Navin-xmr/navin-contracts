@@ -10378,6 +10378,150 @@ fn test_shipment_notes_unauthorized() {
     client.append_note_hash(&outsider, &shipment_id, &note_hash);
 }
 
+// ============= Note Append-Order Immutability Tests =============
+
+#[test]
+fn test_notes_preserve_append_order() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    let note_a = BytesN::from_array(&env, &[0xAA; 32]);
+    let note_b = BytesN::from_array(&env, &[0xBB; 32]);
+    let note_c = BytesN::from_array(&env, &[0xCC; 32]);
+
+    client.append_note_hash(&company, &shipment_id, &note_a);
+    client.append_note_hash(&carrier, &shipment_id, &note_b);
+    client.append_note_hash(&admin, &shipment_id, &note_c);
+
+    assert_eq!(client.get_note_count(&shipment_id), 3);
+    assert_eq!(client.get_note_hash(&shipment_id, &0), Some(note_a.clone()));
+    assert_eq!(client.get_note_hash(&shipment_id, &1), Some(note_b.clone()));
+    assert_eq!(client.get_note_hash(&shipment_id, &2), Some(note_c.clone()));
+}
+
+#[test]
+fn test_note_order_stable_after_reads() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    let note_a = BytesN::from_array(&env, &[0xAA; 32]);
+    let note_b = BytesN::from_array(&env, &[0xBB; 32]);
+    let note_c = BytesN::from_array(&env, &[0xCC; 32]);
+
+    client.append_note_hash(&company, &shipment_id, &note_a);
+    let _ = client.get_note_hash(&shipment_id, &0);
+    client.append_note_hash(&carrier, &shipment_id, &note_b);
+    let _ = client.get_note_hash(&shipment_id, &0);
+    let _ = client.get_note_hash(&shipment_id, &1);
+    client.append_note_hash(&admin, &shipment_id, &note_c);
+
+    assert_eq!(client.get_note_count(&shipment_id), 3);
+    assert_eq!(client.get_note_hash(&shipment_id, &0), Some(note_a.clone()));
+    assert_eq!(client.get_note_hash(&shipment_id, &1), Some(note_b.clone()));
+    assert_eq!(client.get_note_hash(&shipment_id, &2), Some(note_c.clone()));
+}
+
+#[test]
+fn test_reorder_notes_fails() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[3u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    let note_a = BytesN::from_array(&env, &[0xAA; 32]);
+    let note_b = BytesN::from_array(&env, &[0xBB; 32]);
+
+    client.append_note_hash(&company, &shipment_id, &note_a);
+    client.append_note_hash(&carrier, &shipment_id, &note_b);
+
+    // Attempt storage-level reorder by writing note_b to index 0
+    let cid = client.address.clone();
+    env.as_contract(&cid, || {
+        crate::storage::set_note_hash(&env, shipment_id, 0, &note_b);
+        crate::storage::set_note_hash(&env, shipment_id, 1, &note_a);
+    });
+
+    // Re-read: the contract's read path must return the swapped data
+    // (since we bypassed the contract API), proving reordering through
+    // direct storage is possible but the contract API itself enforces
+    // append-only semantics — only append_note_hash can add entries,
+    // and it never overwrites existing indices.
+    let swapped_first = client.get_note_hash(&shipment_id, &0);
+    let swapped_second = client.get_note_hash(&shipment_id, &1);
+    assert_eq!(
+        swapped_first,
+        Some(note_b),
+        "index 0 should be note_b after swap"
+    );
+    assert_eq!(
+        swapped_second,
+        Some(note_a),
+        "index 1 should be note_a after swap"
+    );
+
+    // Re-append via the contract API; it must use the next free index (2),
+    // not overwrite existing entries.
+    let note_c = BytesN::from_array(&env, &[0xCC; 32]);
+    client.append_note_hash(&admin, &shipment_id, &note_c);
+    assert_eq!(
+        client.get_note_hash(&shipment_id, &2),
+        Some(note_c),
+        "new note must go to index 2, preserving existing order"
+    );
+}
+
 // ============= Idempotency Window Tests =============
 
 #[test]

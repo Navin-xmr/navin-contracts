@@ -488,22 +488,41 @@ fn test_snapshot_milestone_recorded_payload_shape() {
     let event_idempotency_key: BytesN<32> = payload.get(6).unwrap().try_into_val(&env).unwrap();
 
     assert_eq!(event_shipment_id, id, "shipment_id must be at index 0");
-    assert_eq!(event_checkpoint, soroban_sdk::symbol_short!("wh"), "checkpoint at index 1");
-    assert_eq!(event_data_hash, BytesN::from_array(&env, &[15u8; 32]), "data_hash at index 2");
+    assert_eq!(
+        event_checkpoint,
+        soroban_sdk::symbol_short!("wh"),
+        "checkpoint at index 1"
+    );
+    assert_eq!(
+        event_data_hash,
+        BytesN::from_array(&env, &[15u8; 32]),
+        "data_hash at index 2"
+    );
     assert_eq!(event_reporter, carrier, "reporter must be at index 3");
     assert_eq!(event_schema_version, 2, "schema_version must be at index 4");
     // event_counter may vary depending on previous events; ensure it's non-zero
-    assert!(event_counter > 0, "event_counter must be present at index 5");
-    assert_eq!(event_idempotency_key.len(), 32, "idempotency_key must be at index 6 and be 32 bytes");
+    assert!(
+        event_counter > 0,
+        "event_counter must be present at index 5"
+    );
+    assert_eq!(
+        event_idempotency_key.len(),
+        32,
+        "idempotency_key must be at index 6 and be 32 bytes"
+    );
 }
 
 // Collect all events matching `topic` and return their data vecs.
-fn find_all_event_data(env: &Env, topic: &str) -> std::vec::Vec<soroban_sdk::Vec<soroban_sdk::Val>> {
+fn find_all_event_data(
+    env: &Env,
+    topic: &str,
+) -> std::vec::Vec<soroban_sdk::Vec<soroban_sdk::Val>> {
     let mut out: std::vec::Vec<soroban_sdk::Vec<soroban_sdk::Val>> = std::vec::Vec::new();
     for (_contract, t, data) in env.events().all().into_iter() {
         if let Some(sym) = t.get(0).and_then(|v| Symbol::try_from_val(env, &v).ok()) {
             if sym == Symbol::new(env, topic) {
-                if let Ok(payload) = soroban_sdk::Vec::<soroban_sdk::Val>::try_from_val(env, &data) {
+                if let Ok(payload) = soroban_sdk::Vec::<soroban_sdk::Val>::try_from_val(env, &data)
+                {
                     out.push(payload);
                 }
             }
@@ -529,8 +548,18 @@ fn test_snapshot_multiple_milestone_recorded_payloads() {
     );
 
     // Record two milestones
-    client.record_milestone(&carrier, &id, &soroban_sdk::symbol_short!("m1"), &BytesN::from_array(&env, &[22u8; 32]));
-    client.record_milestone(&carrier, &id, &soroban_sdk::symbol_short!("m2"), &BytesN::from_array(&env, &[23u8; 32]));
+    client.record_milestone(
+        &carrier,
+        &id,
+        &soroban_sdk::symbol_short!("m1"),
+        &BytesN::from_array(&env, &[22u8; 32]),
+    );
+    client.record_milestone(
+        &carrier,
+        &id,
+        &soroban_sdk::symbol_short!("m2"),
+        &BytesN::from_array(&env, &[23u8; 32]),
+    );
 
     let payloads = find_all_event_data(&env, crate::event_topics::MILESTONE_RECORDED);
     assert_eq!(payloads.len(), 2, "expected two milestone_recorded events");
@@ -550,7 +579,11 @@ fn test_snapshot_multiple_milestone_recorded_payloads() {
             assert_eq!(event_checkpoint, soroban_sdk::symbol_short!("m2"));
         }
         assert_eq!(event_reporter, carrier, "reporter must be the carrier");
-        assert_eq!(event_idempotency_key.len(), 32, "idempotency key normalized to 32 bytes");
+        assert_eq!(
+            event_idempotency_key.len(),
+            32,
+            "idempotency key normalized to 32 bytes"
+        );
     }
 }
 
