@@ -303,3 +303,173 @@ fn transfer_admin_auth_arg_order_is_stable() {
         ],
     );
 }
+
+// ── Issue #435: Multi-sig proposal ordering regression tests ──────────────────
+
+mod multisig_order_helpers {
+    use soroban_sdk::{contract, contractimpl, Address, Env};
+
+    #[contract]
+    pub struct MultiSigOrderToken;
+    #[contractimpl]
+    impl MultiSigOrderToken {
+        pub fn transfer(_e: Env, _f: Address, _t: Address, _a: i128) {}
+        pub fn decimals(_e: Env) -> u32 { 7 }
+    }
+}
+
+/// Helper: set up a 2-of-3 multisig environment (3 admins, threshold 2).
+fn setup_multisig_2of3() -> (Env, NavinShipmentClient<'static>, Address, Address, Address) {
+    let (env, admin) = test_utils::setup_env();
+    let token_id = env.register(multisig_order_helpers::MultiSigOrderToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    client.initialize(&admin, &token_id);
+
+    let admin2 = Address::generate(&env);
+    let admin3 = Address::generate(&env);
+    let mut admins = Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    (env, client, admin, admin2, admin3)
+}
+
+fn wasm_hash(env: &Env, seed: u8) -> BytesN<32> {
+    BytesN::from_array(env, &[seed; 32])
+}
+
+/// Proposal approvals are stored in insertion order — first approver must appear
+/// at index 0 regardless of address lexicographic ordering.
+#[test]
+fn proposal_approvals_are_recorded_in_insertion_order() {
+    let (env, client, admin, admin2, _admin3) = setup_multisig_2of3();
+
+    let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 1));
+    let salt = BytesN::from_array(&env, &[0xAAu8; 32]);
+    let proposal_id = client.propose_action(&admin, &action, &salt);
+
+    // admin2 approves (threshold 2 not yet met with just admin2, since
+    // propose_action counts admin as approver #1, admin2 is #2 → auto-executes).
+    // Check approval count after propose but before approve_action.
+    let proposal_before = client.get_proposal(&proposal_id);
+    assert_eq!(
+        proposal_before.approvals.len(),
+        0,
+        "No external approvals yet after proposal creation"
+    );
+
+    let _ = client.try_approve_action(&admin2, &proposal_id);
+
+    // After admin2 approves the proposal is executed; the approvals Vec
+    // must contain admin2 at index 0 (first and only explicit approver).
+    let proposal = client.get_proposal(&proposal_id);
+    assert!(
+        proposal.approvals.len() >= 1,
+        "At least one approval must be recorded"
+    );
+    assert_eq!(
+        proposal.approvals.get(0),
+        Some(admin2),
+        "First approver must be at index 0"
+    );
+}
+
+/// A second approver is appended after the first — insertion order is preserved.
+#[test]
+fn proposal_second_approver_appended_after_first() {
+    let (env, client, admin, admin2, admin3) = setup_multisig_2of3();
+
+    // Use threshold 3 so we can observe two approvals before auto-execution.
+    let mut admins = Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3.clone());
+    // Re-init with threshold 3 (all must approve).
+    // Note: init_multisig can only be called once per contract instance,
+    // so we create a fresh client here.
+    let token_id2 = env.register(multisig_order_helpers::MultiSigOrderToken {}, ());
+    let client2 = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    client2.initialize(&admin, &token_id2);
+    client2.init_multisig(&admin, &admins, &3);
+
+    let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 2));
+    let salt = BytesN::from_array(&env, &[0xBBu8; 32]);
+    let proposal_id = client2.propose_action(&admin, &action, &salt);
+
+    let _ = client2.try_approve_action(&admin2, &proposal_id);
+
+    let proposal_mid = client2.get_proposal(&proposal_id);
+    assert_eq!(
+        proposal_mid.approvals.len(),
+        1,
+        "Exactly one approval after admin2 approves"
+    );
+    assert_eq!(
+        proposal_mid.approvals.get(0),
+        Some(admin2),
+        "admin2 must be at index 0"
+    );
+
+    let _ = client2.try_approve_action(&admin3, &proposal_id);
+
+    let proposal_final = client2.get_proposal(&proposal_id);
+    assert_eq!(
+        proposal_final.approvals.len(),
+        2,
+        "Two approvals after admin3 approves"
+    );
+    assert_eq!(
+        proposal_final.approvals.get(1),
+        Some(admin3),
+        "admin3 must be appended at index 1 — insertion order preserved"
+    );
+}
+
+/// Duplicate approval by the same address must be rejected with AlreadyApproved.
+/// This verifies that re-ordering or replaying the same signer cannot inflate
+/// the approval count.
+#[test]
+fn duplicate_approval_is_rejected() {
+    let (env, client, admin, admin2, _admin3) = setup_multisig_2of3();
+
+    let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 3));
+    let salt = BytesN::from_array(&env, &[0xCCu8; 32]);
+    let proposal_id = client.propose_action(&admin, &action, &salt);
+
+    // First approval by admin2 — succeeds.
+    let first = client.try_approve_action(&admin2, &proposal_id);
+    assert!(first.is_ok(), "First approval must succeed");
+
+    // Second approval by admin2 on the same proposal — must be rejected.
+    let duplicate = client.try_approve_action(&admin2, &proposal_id);
+    assert!(
+        duplicate.is_err(),
+        "Duplicate approval from same address must be rejected"
+    );
+}
+
+/// Proposal digests for two proposals with different actions must be distinct —
+/// proves the digest helper provides domain separation across proposals.
+#[test]
+fn proposal_digests_are_distinct_for_different_actions() {
+    let (env, client, admin, _admin2, _admin3) = setup_multisig_2of3();
+
+    let action_a = crate::types::AdminAction::Upgrade(wasm_hash(&env, 10));
+    let action_b = crate::types::AdminAction::Upgrade(wasm_hash(&env, 11));
+
+    let salt_a = BytesN::from_array(&env, &[0x01u8; 32]);
+    let salt_b = BytesN::from_array(&env, &[0x02u8; 32]);
+
+    let id_a = client.propose_action(&admin, &action_a, &salt_a);
+    let id_b = client.propose_action(&admin, &action_b, &salt_b);
+
+    let digest_a = client.get_proposal_action_digest(&id_a);
+    let digest_b = client.get_proposal_action_digest(&id_b);
+
+    assert_ne!(
+        digest_a.digest, digest_b.digest,
+        "Distinct actions must produce distinct proposal digests"
+    );
+}

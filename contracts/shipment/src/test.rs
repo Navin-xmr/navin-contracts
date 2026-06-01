@@ -116,6 +116,28 @@ pub fn setup_shipment_env_with_failing_token(
     (env, client, admin, token_contract)
 }
 
+/// Creates a fully-initialized shipment environment ready for use.
+/// Calls `initialize` on the client so tests can call contract methods
+/// directly without an extra initialization step.
+pub fn setup_initialized_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
+    let (env, admin) = super::test_utils::setup_env();
+    let token_contract = env.register(MockToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    client.initialize(&admin, &token_contract);
+    (env, client, admin, token_contract)
+}
+
+/// Like `setup_initialized_shipment_env` but uses a token that always
+/// fails transfers — useful for testing rollback / failure paths.
+pub fn setup_initialized_shipment_env_with_failing_token(
+) -> (Env, NavinShipmentClient<'static>, Address, Address) {
+    let (env, admin) = super::test_utils::setup_env();
+    let token_contract = env.register(failing_token::FailingMockToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    client.initialize(&admin, &token_contract);
+    (env, client, admin, token_contract)
+}
+
 #[test]
 fn test_successful_initialization() {
     let (_env, client, admin, token_contract) = setup_shipment_env();

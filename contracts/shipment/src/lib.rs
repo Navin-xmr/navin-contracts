@@ -79,6 +79,10 @@ mod test_replay_protection;
 #[cfg(test)]
 mod test_require_auth_for_args;
 #[cfg(test)]
+mod test_settlement_machine;
+#[cfg(test)]
+mod test_settlement_transitions;
+#[cfg(test)]
 mod test_signature_argument_ordering;
 #[cfg(test)]
 mod test_snapshot_helpers;
