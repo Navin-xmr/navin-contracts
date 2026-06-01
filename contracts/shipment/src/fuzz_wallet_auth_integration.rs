@@ -1,4 +1,3 @@
-#![cfg(test)]
 //! # Wallet-Signed Auth Integration Tests
 //!
 //! End-to-end integration tests approximating wallet-signed invocation behavior

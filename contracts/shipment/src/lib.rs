@@ -1,8 +1,6 @@
 #![no_std]
 #![allow(clippy::too_many_arguments)]
 
-extern crate alloc;
-
 use soroban_sdk::{
     contract, contractimpl, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal, Map, Symbol,
     Vec,
@@ -88,6 +86,8 @@ mod test_snapshot_helpers;
 mod test_suspension;
 #[cfg(test)]
 mod test_symbol_validation;
+#[cfg(test)]
+mod test_ttl_health;
 #[cfg(test)]
 mod test_utils;
 #[cfg(test)]

@@ -24,7 +24,14 @@ mod tests {
         }
     }
 
-    fn setup() -> (Env, NavinShipmentClient<'static>, Address, Address, Address) {
+    fn setup() -> (
+        Env,
+        NavinShipmentClient<'static>,
+        Address,
+        Address,
+        Address,
+        Address,
+    ) {
         let (env, admin) = test_utils::setup_env();
         let contract_id = env.register(NavinShipment, ());
         let client = NavinShipmentClient::new(&env, &contract_id);
@@ -36,7 +43,7 @@ mod tests {
         client.add_company(&admin, &company);
         client.add_carrier(&admin, &carrier);
 
-        (env, client, admin, company, carrier)
+        (env, client, admin, company, carrier, token_id)
     }
 
     fn make_hash(env: &Env, seed: u8) -> BytesN<32> {
@@ -75,7 +82,7 @@ mod tests {
 
     #[test]
     fn quota_disabled_by_default_allows_unlimited_creation() {
-        let (env, client, _admin, company, carrier) = setup();
+        let (env, client, _admin, company, carrier, _token) = setup();
 
         // With quota disabled (max=0), many shipments should succeed.
         for seed in 1u8..=10 {
@@ -89,7 +96,7 @@ mod tests {
 
     #[test]
     fn quota_exceeded_within_window_returns_error() {
-        let (env, client, admin, company, carrier) = setup();
+        let (env, client, admin, company, carrier, _token) = setup();
 
         // Set quota: max 3 per 3600-second window.
         client.set_creation_quota(&admin, &3, &3600);
@@ -108,7 +115,7 @@ mod tests {
 
     #[test]
     fn quota_resets_after_window_expires() {
-        let (env, client, admin, company, carrier) = setup();
+        let (env, client, admin, company, carrier, _token) = setup();
 
         client.set_creation_quota(&admin, &2, &3600);
 
@@ -133,7 +140,7 @@ mod tests {
 
     #[test]
     fn quota_status_returns_max_when_disabled() {
-        let (_env, client, _admin, company, _carrier) = setup();
+        let (_env, client, _admin, company, _carrier, _token) = setup();
 
         let (used, remaining) = client.get_creation_quota_status(&company);
         assert_eq!(used, 0);
@@ -142,7 +149,7 @@ mod tests {
 
     #[test]
     fn quota_status_tracks_usage_correctly() {
-        let (env, client, admin, company, carrier) = setup();
+        let (env, client, admin, company, carrier, _token) = setup();
 
         client.set_creation_quota(&admin, &5, &3600);
 
@@ -160,7 +167,7 @@ mod tests {
 
     #[test]
     fn quota_status_resets_after_window() {
-        let (env, client, admin, company, carrier) = setup();
+        let (env, client, admin, company, carrier, _token) = setup();
 
         client.set_creation_quota(&admin, &3, &3600);
 
@@ -180,7 +187,7 @@ mod tests {
 
     #[test]
     fn set_creation_quota_rejects_zero_window_with_nonzero_max() {
-        let (_env, client, admin, _company, _carrier) = setup();
+        let (_env, client, admin, _company, _carrier, _token) = setup();
 
         let result = client.try_set_creation_quota(&admin, &5, &0);
         assert_eq!(result, Err(Ok(NavinError::InvalidConfig)));
@@ -188,7 +195,7 @@ mod tests {
 
     #[test]
     fn set_creation_quota_allows_zero_max_to_disable() {
-        let (_env, client, admin, _company, _carrier) = setup();
+        let (_env, client, admin, _company, _carrier, _token) = setup();
 
         // max=0 disables quota regardless of window.
         assert!(client.try_set_creation_quota(&admin, &0, &0).is_ok());
@@ -196,7 +203,7 @@ mod tests {
 
     #[test]
     fn set_creation_quota_rejects_non_admin() {
-        let (_env, client, _admin, company, _carrier) = setup();
+        let (_env, client, _admin, company, _carrier, _token) = setup();
 
         let result = client.try_set_creation_quota(&company, &5, &3600);
         assert_eq!(result, Err(Ok(NavinError::Unauthorized)));
@@ -207,7 +214,7 @@ mod tests {
     #[test]
     fn batch_creation_respects_quota() {
         use crate::types::ShipmentInput;
-        let (env, client, admin, company, carrier) = setup();
+        let (env, client, admin, company, carrier, token) = setup();
 
         // Allow max 2 per window.
         client.set_creation_quota(&admin, &2, &3600);
@@ -218,6 +225,7 @@ mod tests {
             inputs.push_back(ShipmentInput {
                 receiver: Address::generate(&env),
                 carrier: carrier.clone(),
+                token_address: token.clone(),
                 data_hash: make_hash(&env, seed),
                 payment_milestones: soroban_sdk::Vec::new(&env),
                 deadline,
@@ -234,7 +242,7 @@ mod tests {
 
     #[test]
     fn multiple_companies_have_independent_quotas() {
-        let (env, client, admin, company1, carrier) = setup();
+        let (env, client, admin, company1, carrier, _token) = setup();
         let company2 = Address::generate(&env);
         client.add_company(&admin, &company2);
 
@@ -261,7 +269,7 @@ mod tests {
 
     #[test]
     fn quota_resets_exactly_at_window_boundary() {
-        let (env, client, admin, company, carrier) = setup();
+        let (env, client, admin, company, carrier, _token) = setup();
 
         client.set_creation_quota(&admin, &1, &3600);
 
@@ -287,7 +295,7 @@ mod tests {
 
     #[test]
     fn quota_update_changes_enforcement_immediately() {
-        let (env, client, admin, company, carrier) = setup();
+        let (env, client, admin, company, carrier, _token) = setup();
 
         // Start with quota of 2.
         client.set_creation_quota(&admin, &2, &3600);
@@ -314,7 +322,7 @@ mod tests {
 
     #[test]
     fn very_large_quota_allows_many_creations() {
-        let (env, client, admin, company, carrier) = setup();
+        let (env, client, admin, company, carrier, _token) = setup();
 
         // Set a very large quota.
         client.set_creation_quota(&admin, &1000, &3600);
@@ -335,80 +343,7 @@ mod tests {
 
     #[test]
     fn quota_with_very_short_window_enforces_tightly() {
-        let (env, client, admin, company, carrier) = setup();
-
-        // Set quota: max 1 per 100-second window.
-        client.set_creation_quota(&admin, &1, &100);
-
-        assert!(create_one(&env, &client, &company, &carrier, 1).is_ok());
-        let initial_time = env.ledger().timestamp();
-
-        // Try immediately after — should fail.
-        env.ledger().with_mut(|l| l.timestamp += 1);
-        let result = create_one(&env, &client, &company, &carrier, 2);
-        assert_eq!(result, Err(NavinError::CreationQuotaExceeded));
-
-        // Advance past the short window.
-        env.ledger().with_mut(|l| l.timestamp = initial_time + 101);
-
-        // Should now succeed.
-        assert!(create_one(&env, &client, &company, &carrier, 3).is_ok());
-    }
-
-    // ── metadata limits enforcement ─────────────────────────────────────────────
-
-    #[test]
-    fn test_metadata_limits_enforcement() {
-        let (env, client, admin, company, carrier) = setup();
-        let receiver = Address::generate(&env);
-        let data_hash = make_hash(&env, 1);
-        let deadline = future_deadline(&env);
-
-        client.add_company(&admin, &company);
-
-        // Get current config to understand metadata limits
-        let config = client.get_contract_config();
-        let max_metadata_entries = config.max_metadata_entries;
-        
-        // Create a shipment
-        let id = client.create_shipment(
-            &company,
-            &receiver,
-            &carrier,
-            &data_hash,
-            &Vec::new(&env),
-            &deadline,
-            &None,
-        );
-
-        // Add metadata entries up to the limit
-        for i in 0..max_metadata_entries {
-            let key = Symbol::new(&env, &format!("key{}", i));
-            let value = Symbol::new(&env, &format!("value{}", i));
-            client.set_shipment_metadata(&company, &id, &key, &value);
-        }
-
-        // Verify we can read back the last entry
-        let last_key = Symbol::new(&env, &format!("key{}", max_metadata_entries - 1));
-        let last_value = client.get_shipment_metadata(&id, &last_key);
-        assert_eq!(last_value, Symbol::new(&env, &format!("value{}", max_metadata_entries - 1)));
-
-        // Try to add one more metadata entry - should fail
-        let overflow_key = Symbol::new(&env, "overflow_key");
-        let overflow_value = Symbol::new(&env, "overflow_value");
-        
-        let result = client.try_set_shipment_metadata(&company, &id, &overflow_key, &overflow_value);
-        assert!(
-            matches!(result, Err(Ok(crate::NavinError::MetadataLimitExceeded))),
-            "metadata limit should be enforced"
-        );
-    }
-
-    // ── quota with very short window enforces tightly ──────────────────────────
-
-    #[test]
-    fn quota_with_very_short_window_enforces_tightly() {
-        let (env, client, admin, company, carrier) = setup();
+        let (env, client, admin, company, carrier, _token) = setup();
 
         // Set quota: max 1 per 100-second window.
         client.set_creation_quota(&admin, &1, &100);

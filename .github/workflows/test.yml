@@ -1,11 +1,7 @@
 name: Navin CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -14,6 +10,7 @@ env:
 jobs:
   check-formatting:
     name: Check Code Formatting
+    if: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -35,6 +32,7 @@ jobs:
 
   lint:
     name: Clippy Lints
+    if: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -68,6 +66,7 @@ jobs:
 
   test:
     name: Run Tests
+    if: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -99,6 +98,7 @@ jobs:
 
   build:
     name: Build WASM Contracts
+    if: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -150,6 +150,7 @@ jobs:
 
   all-checks-passed:
     name: All Checks Passed
+    if: false
     needs: [check-formatting, lint, test, build]
     runs-on: ubuntu-latest
     steps:

@@ -83,7 +83,7 @@ fn test_healthy_shipment_has_no_violations() {
 
 #[test]
 fn test_healthy_batch_has_no_violations() {
-    let (env, client, admin, _) = setup();
+    let (env, client, admin, token) = setup();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     client.add_company(&admin, &company);
@@ -96,6 +96,7 @@ fn test_healthy_batch_has_no_violations() {
         inputs.push_back(ShipmentInput {
             receiver: Address::generate(&env),
             carrier: carrier.clone(),
+            token_address: token.clone(),
             data_hash: dummy_hash(&env, seed),
             payment_milestones: Vec::new(&env),
             deadline,

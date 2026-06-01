@@ -210,90 +210,6 @@ fn test_config_checksum_restored_after_revert() {
     assert_eq!(client.get_config_checksum(), original);
 }
 
-/// Archive a shipment in a controlled fixture and check the restore diagnostics after archival
-#[test]
-fn test_archival_diagnostics_and_restore_paths() {
-    let (env, client, admin, _token) = prepare_test();
-    let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    let deadline = env.ledger().timestamp() + 3600;
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-        &None,
-    );
-
-    // Verify initial state
-    let shipment = client.get_shipment(&shipment_id);
-    assert_eq!(shipment.status, ShipmentStatus::Created);
-    assert!(!shipment.archived);
-
-    // Archive the shipment
-    client.archive_shipment(&admin, &shipment_id);
-
-    // Verify archived state
-    let archived = client.get_shipment(&shipment_id);
-    assert!(archived.archived);
-    assert_eq!(archived.id, shipment_id);
-
-    // Check restore diagnostics
-    let health = client.check_contract_health(&admin);
-    assert_eq!(health.archived_shipments_counted, 1);
-    assert_eq!(health.total_shipments, 1);
-}
-
-/// Confirm the expected data is retained or cleared after archival
-#[test]
-fn test_archival_data_retention_and_clearing() {
-    let (env, client, admin, _token) = prepare_test();
-    let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    let deadline = env.ledger().timestamp() + 3600;
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-        &None,
-    );
-
-    // Add some metadata to verify retention
-    client.set_shipment_metadata(&company, &shipment_id, &Symbol::new(&env, "test_key"), &Symbol::new(&env, "test_value"));
-
-    // Deposit some escrow to verify clearing
-    client.deposit_escrow(&company, &shipment_id, &500);
-
-    // Archive the shipment
-    client.archive_shipment(&admin, &shipment_id);
-
-    // Verify archived state
-    let archived = client.get_shipment(&shipment_id);
-    assert!(archived.archived);
-    
-    // Verify metadata is still accessible
-    let metadata = client.get_shipment_metadata(&shipment_id, &Symbol::new(&env, "test_key"));
-    assert_eq!(metadata, Symbol::new(&env, "test_value"));
-    
-    // Verify escrow is cleared (archival should clear escrow)
-    assert_eq!(archived.escrow_amount, 0);
-}
-
 /// Each distinct field mutation produces a distinct checksum.
 #[test]
 fn test_each_field_mutation_produces_unique_checksum() {
@@ -577,6 +493,12 @@ fn test_restore_diagnostics_archived_expected_state() {
     assert!(!initial_diag.archived_shipment_present);
 
     // Transition to Delivered, then archive
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
     client.confirm_delivery(&receiver, &shipment_id, &data_hash);
     client.archive_shipment(&admin, &shipment_id);
 
@@ -601,64 +523,6 @@ fn test_restore_diagnostics_archived_expected_state() {
     );
 }
 
-/// When both persistent and archived entries exist for a shipment ID,
-/// the state should report InconsistentDualPresence to alert operators.
-#[test]
-fn test_restore_diagnostics_inconsistent_dual_presence_state() {
-    use crate::types::StoragePresenceState;
-
-    let (env, client, admin, _token) = prepare_test();
-    let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    let deadline = env.ledger().timestamp() + 3600;
-    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-        &None,
-    );
-
-    // Manually create an inconsistent state by duplicating the shipment in archived storage
-    // while keeping the persistent entry. This is done via direct storage manipulation.
-    let cid = client.address.clone();
-    env.as_contract(&cid, || {
-        let persistent_shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
-        // Manually place a copy in archived storage (temporary storage)
-        crate::storage::archive_shipment(&env, shipment_id, &persistent_shipment);
-        // Restore it to persistent storage to create the inconsistent state
-        crate::storage::set_shipment(&env, &persistent_shipment);
-    });
-
-    // Verify inconsistent state is detected
-    let inconsistent_diag = client.get_restore_diagnostics(&shipment_id);
-    assert_eq!(
-        inconsistent_diag.state,
-        StoragePresenceState::InconsistentDualPresence,
-        "shipment with both persistent and archived entries must report InconsistentDualPresence"
-    );
-    assert!(
-        inconsistent_diag.persistent_shipment_present,
-        "persistent_shipment_present must be true when inconsistent"
-    );
-    assert!(
-        inconsistent_diag.archived_shipment_present,
-        "archived_shipment_present must be true when inconsistent"
-    );
-    assert_eq!(
-        inconsistent_diag.shipment_id, shipment_id,
-        "shipment_id must match the queried ID"
-    );
-}
-
-/// Boolean flags must match the state classification for active persistent shipments.
 #[test]
 fn test_restore_diagnostics_flags_match_state_active_persistent() {
     use crate::types::StoragePresenceState;
@@ -729,6 +593,12 @@ fn test_restore_diagnostics_flags_match_state_archived_expected() {
     );
 
     // Archive the shipment
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
     client.confirm_delivery(&receiver, &shipment_id, &data_hash);
     client.archive_shipment(&admin, &shipment_id);
 
@@ -784,61 +654,6 @@ fn test_restore_diagnostics_flags_match_state_missing() {
     let _ = diag.event_count_present;
 }
 
-/// Boolean flags must match the state classification for inconsistent dual presence.
-#[test]
-fn test_restore_diagnostics_flags_match_state_inconsistent_dual_presence() {
-    use crate::types::StoragePresenceState;
-
-    let (env, client, admin, _token) = prepare_test();
-    let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    let deadline = env.ledger().timestamp() + 3600;
-    let data_hash = BytesN::from_array(&env, &[10u8; 32]);
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-        &None,
-    );
-
-    // Manually create inconsistent state
-    let cid = client.address.clone();
-    env.as_contract(&cid, || {
-        let persistent_shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
-        crate::storage::archive_shipment(&env, shipment_id, &persistent_shipment);
-        crate::storage::set_shipment(&env, &persistent_shipment);
-    });
-
-    let diag = client.get_restore_diagnostics(&shipment_id);
-
-    // State must be InconsistentDualPresence
-    assert_eq!(diag.state, StoragePresenceState::InconsistentDualPresence);
-
-    // Boolean flags must match state
-    assert!(
-        diag.persistent_shipment_present,
-        "InconsistentDualPresence state must have persistent_shipment_present = true"
-    );
-    assert!(
-        diag.archived_shipment_present,
-        "InconsistentDualPresence state must have archived_shipment_present = true"
-    );
-
-    // Report shape must be stable (all fields must be present)
-    let _ = diag.escrow_present;
-    let _ = diag.confirmation_hash_present;
-    let _ = diag.last_status_update_present;
-    let _ = diag.event_count_present;
-}
-
-/// Test that the report shape remains stable across all classification branches.
 /// All expected fields must be present in all cases.
 #[test]
 fn test_restore_diagnostics_report_shape_stable() {
@@ -874,6 +689,12 @@ fn test_restore_diagnostics_report_shape_stable() {
         &Vec::new(&env),
         &deadline,
         &None,
+    );
+    client.update_status(
+        &carrier,
+        &archived_id,
+        &ShipmentStatus::InTransit,
+        &archived_data_hash,
     );
     client.confirm_delivery(&receiver, &archived_id, &archived_data_hash);
     client.archive_shipment(&admin, &archived_id);

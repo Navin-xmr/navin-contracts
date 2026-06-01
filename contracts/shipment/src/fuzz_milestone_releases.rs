@@ -1,4 +1,3 @@
-#![cfg(test)]
 //! # Milestone Releases Fuzzing Harness
 //!
 //! Property-based fuzz tests for partial milestone-based escrow releases.

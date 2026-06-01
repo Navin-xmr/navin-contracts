@@ -1,4 +1,3 @@
-#![cfg(test)]
 //! # Role Assignment Fuzzing Harness
 //!
 //! Property-based fuzz tests for role assignment, revocation, and suspension.

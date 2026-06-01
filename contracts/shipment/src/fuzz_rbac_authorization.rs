@@ -1,4 +1,3 @@
-#![cfg(test)]
 //! # RBAC Authorization Fuzzing Harness
 //!
 //! Property-based fuzz tests for role-based access control authorization checks.

@@ -312,3 +312,54 @@ fn test_auto_dispute_increments_total_disputes() {
         "total_disputes must be incremented by exactly 1"
     );
 }
+
+/// Platform fee configuration must not interfere with auto-dispute on critical breach.
+#[test]
+fn test_platform_fee_config_does_not_block_auto_dispute() {
+    let (env, client, admin, token) = setup();
+    let (id, _company, _receiver, carrier) = create_test_shipment(&env, &client, &admin, &token);
+
+    enable_auto_dispute(&client, &admin);
+
+    let treasury = Address::generate(&env);
+    client.set_platform_fee(&admin, &25, &treasury);
+
+    let breach_hash = BytesN::from_array(&env, &[0xFEu8; 32]);
+    client.report_condition_breach(
+        &carrier,
+        &id,
+        &BreachType::TemperatureHigh,
+        &Severity::Critical,
+        &breach_hash,
+    );
+
+    let shipment = client.get_shipment(&id);
+    assert_eq!(
+        shipment.status,
+        ShipmentStatus::Disputed,
+        "critical breach must still auto-open dispute after fee config update"
+    );
+}
+
+/// Zero-fee configuration remains compatible with dispute workflows.
+#[test]
+fn test_zero_platform_fee_allows_auto_dispute() {
+    let (env, client, admin, token) = setup();
+    let (id, _company, _receiver, carrier) = create_test_shipment(&env, &client, &admin, &token);
+
+    enable_auto_dispute(&client, &admin);
+
+    let treasury = Address::generate(&env);
+    client.set_platform_fee(&admin, &0, &treasury);
+
+    let breach_hash = BytesN::from_array(&env, &[0xABu8; 32]);
+    client.report_condition_breach(
+        &carrier,
+        &id,
+        &BreachType::HumidityHigh,
+        &Severity::Critical,
+        &breach_hash,
+    );
+
+    assert_eq!(client.get_shipment(&id).status, ShipmentStatus::Disputed);
+}
