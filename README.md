@@ -174,6 +174,7 @@ Quick deployment:
 ### Frontend Integration
 
 - **[Freighter Integration Checklist](docs/freighter-integration-checklist.md)** - End-to-end checklist for frontend teams: preflight checks, signing, error handling, on-chain verification, and common failure modes
+- **[Client Examples](docs/client-examples.md)** - Copy-paste Rust contract call shapes for common shipment operations
 
 ### Operational Guides
 

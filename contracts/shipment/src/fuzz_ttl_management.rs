@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! # TTL Management Fuzzing Harness
 //!
 //! Property-based fuzz tests for Soroban TTL (Time-To-Live) storage management.
@@ -90,7 +91,6 @@ fn create_shipment(
         &data_hash,
         &Vec::new(env),
         &deadline,
-        &None,
     )
 }
 

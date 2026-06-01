@@ -24,7 +24,7 @@ use crate::{NavinShipment, NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::{
     contract, contractimpl,
     testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation, Ledger as _},
-    Address, BytesN, Env, IntoVal, Symbol, Vec,
+    Address, BytesN, Env, IntoVal, Symbol,
 };
 
 // ── Minimal token stub (no-op transfer) ──────────────────────────────────────
@@ -194,7 +194,6 @@ fn test_auth_tree_force_cancel_shipment() {
         &data_hash,
         &soroban_sdk::Vec::new(&env),
         &deadline,
-        &None,
     );
 
     client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
@@ -235,7 +234,6 @@ fn test_auth_tree_archive_shipment() {
         &data_hash,
         &soroban_sdk::Vec::new(&env),
         &deadline,
-        &None,
     );
     // Cancel so the shipment is finalized (required before archiving)
     client.cancel_shipment(&company, &shipment_id, &reason_hash);
@@ -283,7 +281,6 @@ fn test_auth_tree_create_shipment() {
         &data_hash,
         &milestones,
         &deadline,
-        &None,
     );
 
     assert_eq!(
@@ -301,7 +298,6 @@ fn test_auth_tree_create_shipment() {
                         data_hash.clone(),
                         milestones,
                         deadline,
-                        None::<Vec<u64>>,
                     )
                         .into_val(&env),
                 )),
@@ -332,7 +328,6 @@ fn test_auth_tree_cancel_shipment() {
         &data_hash,
         &soroban_sdk::Vec::new(&env),
         &deadline,
-        &None,
     );
 
     client.cancel_shipment(&company, &shipment_id, &reason_hash);
@@ -379,7 +374,6 @@ fn test_auth_tree_update_status() {
         &data_hash,
         &soroban_sdk::Vec::new(&env),
         &deadline,
-        &None,
     );
 
     client.update_status(
@@ -434,7 +428,6 @@ fn test_auth_tree_handoff_shipment() {
         &data_hash,
         &soroban_sdk::Vec::new(&env),
         &deadline,
-        &None,
     );
     // Move to InTransit so handoff is valid
     client.update_status(
@@ -494,7 +487,6 @@ fn test_auth_tree_confirm_delivery() {
         &data_hash,
         &soroban_sdk::Vec::new(&env),
         &deadline,
-        &None,
     );
     client.update_status(
         &carrier,
@@ -593,7 +585,6 @@ fn test_auth_create_shipment_fails_without_auth() {
         &data_hash,
         &soroban_sdk::Vec::new(&env),
         &deadline,
-        &None,
     );
     assert!(
         result.is_err(),

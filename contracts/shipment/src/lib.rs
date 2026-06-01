@@ -1,5 +1,4 @@
 #![no_std]
-#![allow(clippy::too_many_arguments)]
 
 use soroban_sdk::{
     contract, contractimpl, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal, Map, Symbol,
@@ -11,16 +10,14 @@ mod circuit_breaker;
 mod config;
 pub mod consistency;
 pub mod diagnostics;
-#[cfg(test)]
 mod e2e_test;
 pub mod error_map;
 mod errors;
 mod event_topics;
 mod events;
 mod rate_limit;
-pub(crate) mod recovery;
+mod recovery;
 mod storage;
-pub mod storage_footprint;
 mod stress_test;
 pub mod test;
 #[cfg(test)]
@@ -30,30 +27,27 @@ mod test_consistency;
 #[cfg(test)]
 mod test_cross_contract_integration;
 #[cfg(test)]
+mod test_mixed_token_shipments;
+#[cfg(test)]
+mod test_reentrancy_guard;
+#[cfg(test)]
+mod test_token_compatibility;
+
+#[cfg(test)]
 mod test_event_fixtures;
 #[cfg(test)]
 mod test_finalization;
 #[cfg(test)]
 mod test_hash_emit_vectors;
 #[cfg(test)]
-mod test_mixed_token_shipments;
-#[cfg(test)]
 mod test_performance;
 #[cfg(test)]
-mod test_reentrancy_guard;
-#[cfg(test)]
 mod test_rollback;
-#[cfg(test)]
-mod test_settlement;
-#[cfg(test)]
-mod test_token_compatibility;
 mod types;
 mod validation;
 
 #[cfg(test)]
 mod test_auth;
-#[cfg(test)]
-mod test_auth_matrix;
 #[cfg(test)]
 mod test_auto_dispute;
 #[cfg(test)]
@@ -75,21 +69,19 @@ mod test_precondition_guards;
 #[cfg(test)]
 mod test_proposal_digest;
 #[cfg(test)]
-mod test_replay_protection;
-#[cfg(test)]
 mod test_require_auth_for_args;
 #[cfg(test)]
 mod test_signature_argument_ordering;
 #[cfg(test)]
-mod test_snapshot_helpers;
-#[cfg(test)]
 mod test_suspension;
-#[cfg(test)]
-mod test_ttl_health;
 #[cfg(test)]
 mod test_utils;
 #[cfg(test)]
 mod test_verification;
+#[cfg(test)]
+mod test_zero_amount_escrow;
+#[cfg(test)]
+mod test_counter_overflow;
 
 // ── Fuzz / property-based test harnesses ─────────────────────────────────────
 #[cfg(test)]
@@ -133,6 +125,26 @@ fn extend_shipment_ttl(env: &Env, shipment_id: u64) {
 #[inline]
 fn extend_shipment_ttl_cached(env: &Env, shipment_id: u64, threshold: u32, extension: u32) {
     storage::extend_shipment_ttl(env, shipment_id, threshold, extension);
+}
+
+fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(), NavinError> {
+    if milestones.is_empty() {
+        return Ok(());
+    }
+
+    // Validate all milestone symbols for bounded usage
+    validation::validate_milestone_symbols(env, milestones)?;
+
+    let mut total_percentage = 0;
+    for milestone in milestones.iter() {
+        total_percentage += milestone.1;
+    }
+
+    if total_percentage != 100 {
+        return Err(NavinError::MilestoneSumInvalid);
+    }
+
+    Ok(())
 }
 
 fn persist_shipment(env: &Env, shipment: &Shipment) -> Result<(), NavinError> {
@@ -382,35 +394,16 @@ fn internal_release_escrow(
     };
 
     if actual_release > 0 {
-        let token_contract = shipment.token_address.clone();
+        // Get token contract address
+        let token_contract = storage::get_token_contract(env).ok_or(NavinError::NotInitialized)?;
         let contract_address = env.current_contract_address();
-
-        // Calculate penalty if delivery is late
-        let current_time = env.ledger().timestamp();
-        let (carrier_amount, penalty_amount, days_late) = if shipment.deadline > 0
-            && current_time > shipment.deadline
-        {
-            // Calculate days late (in seconds, then convert to days)
-            let seconds_late = current_time.saturating_sub(shipment.deadline);
-            let days_late_calc = seconds_late / 86400; // 86400 seconds per day
-
-            // Penalty: 5% per day late, capped at 25%
-            let penalty_percentage = core::cmp::min(days_late_calc * 5, 25);
-            let penalty = checked_mul_div_i128(actual_release, penalty_percentage as i128, 100)?;
-
-            let carrier_payout = checked_sub_i128(actual_release, penalty)?;
-            (carrier_payout, penalty, days_late_calc)
-        } else {
-            // No penalty for on-time delivery
-            (actual_release, 0, 0)
-        };
 
         // Create settlement record in Pending state
         let settlement_id = create_settlement(
             env,
             shipment.id,
             SettlementOperation::Release,
-            carrier_amount,
+            actual_release,
             &contract_address,
             &shipment.carrier,
         )?;
@@ -421,7 +414,7 @@ fn internal_release_escrow(
             &token_contract,
             &contract_address,
             &shipment.carrier,
-            carrier_amount,
+            actual_release,
         );
 
         match transfer_result {
@@ -429,32 +422,13 @@ fn internal_release_escrow(
                 // Mark settlement as completed
                 complete_settlement(env, settlement_id, shipment.id)?;
 
-                let is_full_release = actual_release == shipment.escrow_amount;
                 shipment.escrow_amount = checked_sub_i128(shipment.escrow_amount, actual_release)?;
                 shipment.updated_at = env.ledger().timestamp();
                 shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
                 persist_shipment(env, shipment)?;
                 storage::set_escrow(env, shipment.id, shipment.escrow_amount);
 
-                events::emit_escrow_released(
-                    env,
-                    shipment.id,
-                    &shipment.carrier,
-                    &token_contract,
-                    carrier_amount,
-                );
-
-                // Emit penalty event only for full releases (not for milestone releases)
-                // Note: on-time delivery event is emitted by confirm_delivery, not here
-                if is_full_release && penalty_amount > 0 {
-                    events::emit_late_delivery_penalty(
-                        env,
-                        &shipment.carrier,
-                        shipment.id,
-                        penalty_amount,
-                        days_late,
-                    );
-                }
+                events::emit_escrow_released(env, shipment.id, &shipment.carrier, actual_release);
             }
             Err(e) => {
                 // Mark settlement as failed
@@ -562,7 +536,6 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinErr
             }
         }
         Role::Unassigned => Err(NavinError::Unauthorized),
-        Role::Observer => Err(NavinError::Unauthorized),
     }
 }
 
@@ -599,25 +572,12 @@ fn require_admin(env: &Env, caller: &Address) -> Result<(), NavinError> {
 
 /// Require that a shipment exists and return it. Centralizes the repeated
 /// `storage::get_shipment(&env, id).ok_or(ShipmentNotFound)?` pattern.
-#[allow(dead_code)]
 fn require_shipment(env: &Env, shipment_id: u64) -> Result<Shipment, NavinError> {
     storage::get_shipment(env, shipment_id).ok_or(NavinError::ShipmentNotFound)
 }
 
-/// Preflight existence check: returns `Err(ShipmentNotFound)` early if the
-/// shipment does not exist, without loading the full record. Use this at the
-/// top of mutation handlers so callers receive a clear domain error before any
-/// deeper logic runs.
-fn require_shipment_exists(env: &Env, shipment_id: u64) -> Result<(), NavinError> {
-    if !storage::has_persistent_shipment(env, shipment_id) {
-        return Err(NavinError::ShipmentNotFound);
-    }
-    Ok(())
-}
-
 /// Require that `caller` is the assigned carrier for a shipment (or admin).
 /// Returns the shipment on success.
-#[allow(dead_code)]
 fn require_carrier_for_shipment(
     env: &Env,
     caller: &Address,
@@ -634,7 +594,6 @@ fn require_carrier_for_shipment(
 #[contract]
 pub struct NavinShipment;
 
-#[allow(clippy::too_many_arguments)]
 #[contractimpl]
 impl NavinShipment {
     /// Set metadata key-value pair for a shipment. Only Company (sender) or Admin can set.
@@ -1671,7 +1630,6 @@ impl NavinShipment {
             Role::Guardian => storage::revoke_role(&env, &target, &Role::Guardian),
             Role::Operator => storage::revoke_role(&env, &target, &Role::Operator),
             Role::Unassigned => {}
-            Role::Observer => {}
         }
 
         events::emit_role_revoked(&env, &admin, &target, &current_role);
@@ -1892,10 +1850,9 @@ impl NavinShipment {
     ///
     /// let shipment_id = client.create_shipment(
     ///     &sender, &receiver, &carrier, &data_hash, &milestones, &deadline,
-    /// , &None);
+    /// );
     /// assert_eq!(shipment_id, 1);
     /// ```
-    #[allow(clippy::too_many_arguments)]
     pub fn create_shipment(
         env: Env,
         sender: Address,
@@ -1904,50 +1861,13 @@ impl NavinShipment {
         data_hash: BytesN<32>,
         payment_milestones: Vec<(Symbol, u32)>,
         deadline: u64,
-        depends_on: Option<Vec<u64>>,
-    ) -> Result<u64, NavinError> {
-        require_initialized(&env)?;
-        let token_address = storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
-        Self::create_shipment_with_token(
-            env,
-            sender,
-            receiver,
-            carrier,
-            data_hash,
-            payment_milestones,
-            deadline,
-            token_address,
-            depends_on,
-        )
-    }
-
-    /// Create a shipment with an explicit token contract for escrow.
-    #[allow(clippy::too_many_arguments)]
-    pub fn create_shipment_with_token(
-        env: Env,
-        sender: Address,
-        receiver: Address,
-        carrier: Address,
-        data_hash: BytesN<32>,
-        payment_milestones: Vec<(Symbol, u32)>,
-        deadline: u64,
-        token_address: Address,
-        depends_on: Option<Vec<u64>>,
     ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
         sender.require_auth();
         require_role(&env, &sender, Role::Company)?;
-        let input = ShipmentInput {
-            receiver: receiver.clone(),
-            carrier: carrier.clone(),
-            token_address: token_address.clone(),
-            data_hash: data_hash.clone(),
-            payment_milestones: payment_milestones.clone(),
-            deadline,
-            depends_on: depends_on.clone(),
-        };
-        validation::validate_shipment_input(&env, &sender, &input)?;
+        validate_milestones(&env, &payment_milestones)?;
+        validate_hash(&data_hash)?;
 
         // Idempotency: reject duplicate (sender, data_hash) within the window.
         let mut payload = soroban_sdk::Bytes::new(&env);
@@ -1956,6 +1876,9 @@ impl NavinShipment {
         check_idempotency(&env, payload)?;
 
         let now = env.ledger().timestamp();
+        if deadline <= now {
+            return Err(NavinError::InvalidTimestamp);
+        }
 
         // Check company active shipment limit
         let current_active = storage::get_active_shipment_count(&env, &sender);
@@ -1971,14 +1894,11 @@ impl NavinShipment {
             .checked_add(1)
             .ok_or(NavinError::CounterOverflow)?;
 
-        validation::validate_dependencies(&env, shipment_id, &depends_on)?;
-
         let shipment = Shipment {
             id: shipment_id,
             sender: sender.clone(),
             receiver: receiver.clone(),
             carrier,
-            token_address: token_address.clone(),
             data_hash: data_hash.clone(),
             status: ShipmentStatus::Created,
             created_at: now,
@@ -1992,30 +1912,15 @@ impl NavinShipment {
             deadline,
             integration_nonce: 0,
             finalized: false,
-            depends_on: depends_on.clone(),
         };
 
         persist_shipment(&env, &shipment)?;
-        storage::set_shipment_token(&env, shipment_id, &token_address);
-        if let Some(dependencies) = depends_on {
-            storage::set_dependencies(&env, shipment_id, &dependencies);
-            for dep_id in dependencies.iter() {
-                storage::add_dependent(&env, dep_id, shipment_id);
-            }
-        }
         storage::set_shipment_counter(&env, shipment_id);
         storage::increment_status_count(&env, &ShipmentStatus::Created);
         storage::increment_active_shipment_count(&env, &sender);
         extend_shipment_ttl(&env, shipment_id);
 
-        events::emit_shipment_created(
-            &env,
-            shipment_id,
-            &sender,
-            &receiver,
-            &token_address,
-            &data_hash,
-        );
+        events::emit_shipment_created(&env, shipment_id, &sender, &receiver, &data_hash);
         events::emit_notification(
             &env,
             &receiver,
@@ -2113,20 +2018,25 @@ impl NavinShipment {
         }
 
         for shipment_input in shipments.iter() {
-            validation::validate_shipment_input(&env, &sender, &shipment_input)?;
+            if shipment_input.receiver == shipment_input.carrier {
+                return Err(NavinError::InvalidShipmentInput);
+            }
+            validate_milestones(&env, &shipment_input.payment_milestones)?;
+            validate_hash(&shipment_input.data_hash)?;
+
+            if shipment_input.deadline <= now {
+                return Err(NavinError::InvalidTimestamp);
+            }
 
             let shipment_id = storage::get_shipment_counter(&env)
                 .checked_add(1)
                 .ok_or(NavinError::CounterOverflow)?;
-
-            validation::validate_dependencies(&env, shipment_id, &shipment_input.depends_on)?;
 
             let shipment = Shipment {
                 id: shipment_id,
                 sender: sender.clone(),
                 receiver: shipment_input.receiver.clone(),
                 carrier: shipment_input.carrier.clone(),
-                token_address: shipment_input.token_address.clone(),
                 data_hash: shipment_input.data_hash.clone(),
                 status: ShipmentStatus::Created,
                 created_at: now,
@@ -2140,11 +2050,9 @@ impl NavinShipment {
                 deadline: shipment_input.deadline,
                 integration_nonce: 0,
                 finalized: false,
-                depends_on: shipment_input.depends_on.clone(),
             };
 
             persist_shipment(&env, &shipment)?;
-            storage::set_shipment_token(&env, shipment_id, &shipment_input.token_address);
             storage::set_shipment_counter(&env, shipment_id);
             storage::increment_status_count(&env, &ShipmentStatus::Created);
             storage::increment_active_shipment_count(&env, &sender);
@@ -2161,7 +2069,6 @@ impl NavinShipment {
                 shipment_id,
                 &sender,
                 &shipment_input.receiver,
-                &shipment_input.token_address,
                 &shipment_input.data_hash,
             );
             events::emit_notification(
@@ -2204,80 +2111,6 @@ impl NavinShipment {
     pub fn get_shipment(env: Env, shipment_id: u64) -> Result<Shipment, NavinError> {
         require_initialized(&env)?;
         storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)
-    }
-
-    /// Return the immutable token contract address assigned to a shipment.
-    pub fn get_shipment_token(env: Env, shipment_id: u64) -> Result<Address, NavinError> {
-        require_initialized(&env)?;
-        let shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
-        Ok(storage::get_shipment_token(&env, shipment_id).unwrap_or(shipment.token_address))
-    }
-
-    /// Retrieve the immutable creator identity for a shipment.
-    ///
-    /// Set a deadline for a shipment. Only the Company (sender) or admin can set the deadline.
-    /// The deadline can be set during or after shipment creation.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    /// * `caller` - Address calling the function (must be Company or admin).
-    /// * `shipment_id` - ID of the shipment.
-    /// * `deadline` - New deadline timestamp (UNIX timestamp in seconds).
-    ///
-    /// # Returns
-    /// * `Result<(), NavinError>` - Ok on successful deadline update.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
-    /// * `NavinError::Unauthorized` - If caller is not the sender or admin.
-    /// * `NavinError::InvalidTimestamp` - If deadline is not in the future.
-    /// * `NavinError::ShipmentAlreadyCompleted` - If shipment is in terminal state.
-    ///
-    /// # Examples
-    /// ```rust
-    /// // let deadline = env.ledger().timestamp() + 86_400; // 1 day from now
-    /// // contract.set_deadline(&env, &company, 1, deadline);
-    /// ```
-    pub fn set_deadline(
-        env: Env,
-        caller: Address,
-        shipment_id: u64,
-        deadline: u64,
-    ) -> Result<(), NavinError> {
-        require_initialized(&env)?;
-        caller.require_auth();
-
-        let admin = storage::get_admin(&env);
-        let mut shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
-
-        // Only sender (Company) or admin can set deadline
-        if caller != shipment.sender && caller != admin {
-            return Err(NavinError::Unauthorized);
-        }
-
-        // Cannot set deadline on completed shipments
-        if matches!(
-            shipment.status,
-            ShipmentStatus::Delivered | ShipmentStatus::Cancelled | ShipmentStatus::Disputed
-        ) {
-            return Err(NavinError::ShipmentAlreadyCompleted);
-        }
-
-        let now = env.ledger().timestamp();
-        if deadline <= now {
-            return Err(NavinError::InvalidTimestamp);
-        }
-
-        shipment.deadline = deadline;
-        shipment.updated_at = now;
-        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
-        persist_shipment(&env, &shipment)?;
-        extend_shipment_ttl(&env, shipment_id);
-
-        Ok(())
     }
 
     /// Retrieve the immutable creator identity for a shipment.
@@ -2448,7 +2281,7 @@ impl NavinShipment {
     /// # let deadline = env.ledger().timestamp() + 86_400;
     /// # let receiver = Address::generate(&env);
     /// # let carrier = Address::generate(&env);
-    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline, &None);
+    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline);
     /// // Deposit 5_000_000 stroops (0.5 tokens) into escrow for the shipment.
     /// // The company must have pre-approved the token transfer allowance.
     /// client.deposit_escrow(&admin, &shipment_id, &5_000_000_i128);
@@ -2480,7 +2313,9 @@ impl NavinShipment {
                 return Err(NavinError::EscrowLocked);
             }
 
-            let token_contract = shipment.token_address.clone();
+            // Get token contract address
+            let token_contract =
+                storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
 
             // Validate that the token uses 7 decimal places (Stellar standard).
             // This prevents silent amount mismatches for non-standard tokens.
@@ -2539,13 +2374,7 @@ impl NavinShipment {
                     storage::add_total_escrow_volume(&env, amount)?;
                     extend_shipment_ttl(&env, shipment_id);
 
-                    events::emit_escrow_deposited(
-                        &env,
-                        shipment_id,
-                        &from,
-                        &token_contract,
-                        net_amount,
-                    );
+                    events::emit_escrow_deposited(&env, shipment_id, &from, net_amount);
                 }
                 Err(e) => {
                     fail_settlement(&env, settlement_id, shipment_id, e as u32)?;
@@ -2599,7 +2428,7 @@ impl NavinShipment {
     /// # let milestones: Vec<(Symbol, u32)> = Vec::new(&env);
     /// # let deadline = env.ledger().timestamp() + 86_400;
     /// # let receiver = Address::generate(&env);
-    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline, &None);
+    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline);
     /// let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
     ///
     /// // Carrier moves shipment from Created -> InTransit.
@@ -2614,7 +2443,6 @@ impl NavinShipment {
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
-        require_shipment_exists(&env, shipment_id)?;
         caller.require_auth();
 
         // Validate hash before storage
@@ -2655,17 +2483,6 @@ impl NavinShipment {
 
         if !shipment.status.is_valid_transition(&new_status) {
             return Err(NavinError::InvalidStatus);
-        }
-
-        if matches!(
-            new_status,
-            ShipmentStatus::InTransit | ShipmentStatus::Delivered
-        ) {
-            let unmet = validation::collect_unmet_dependencies(&env, shipment_id)?;
-            if !unmet.is_empty() {
-                events::emit_shipment_blocked(&env, shipment_id, &caller, unmet);
-                return Err(NavinError::DependenciesNotMet);
-            }
         }
 
         let old_status = shipment.status.clone();
@@ -2734,24 +2551,6 @@ impl NavinShipment {
             return Err(NavinError::ShipmentNotFound);
         }
         Ok(storage::get_escrow_balance(&env, shipment_id))
-    }
-
-    /// Return the dependency list for a shipment.
-    pub fn get_dependencies(env: Env, shipment_id: u64) -> Result<Vec<u64>, NavinError> {
-        require_initialized(&env)?;
-        if storage::get_shipment(&env, shipment_id).is_none() {
-            return Err(NavinError::ShipmentNotFound);
-        }
-        Ok(storage::get_dependencies(&env, shipment_id).unwrap_or_else(|| Vec::new(&env)))
-    }
-
-    /// Return shipments that are blocked on a prerequisite shipment.
-    pub fn get_blocked_shipments(env: Env, shipment_id: u64) -> Result<Vec<u64>, NavinError> {
-        require_initialized(&env)?;
-        if storage::get_shipment(&env, shipment_id).is_none() {
-            return Err(NavinError::ShipmentNotFound);
-        }
-        Ok(storage::get_dependents(&env, shipment_id).unwrap_or_else(|| Vec::new(&env)))
     }
 
     /// Get the latest structured escrow freeze reason for a shipment, if present.
@@ -3175,7 +2974,7 @@ impl NavinShipment {
     /// # let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     /// # let milestones: Vec<(Symbol, u32)> = Vec::new(&env);
     /// # let deadline = env.ledger().timestamp() + 86_400;
-    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline, &None);
+    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline);
     /// # client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &BytesN::from_array(&env, &[2u8; 32]));
     /// let pod_hash = BytesN::from_array(&env, &[3u8; 32]); // SHA-256 of proof-of-delivery doc
     ///
@@ -3928,7 +3727,6 @@ impl NavinShipment {
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
-        require_shipment_exists(&env, shipment_id)?;
         caller.require_auth();
 
         // Validate hash before storage
@@ -3974,13 +3772,7 @@ impl NavinShipment {
 
         if escrow_amount > 0 {
             storage::remove_escrow_balance(&env, shipment_id);
-            events::emit_escrow_released(
-                &env,
-                shipment_id,
-                &shipment.sender,
-                &shipment.token_address,
-                escrow_amount,
-            );
+            events::emit_escrow_released(&env, shipment_id, &shipment.sender, escrow_amount);
         }
         finalize_if_settled(&env, &mut shipment);
         persist_shipment(&env, &shipment)?;
@@ -4064,7 +3856,8 @@ impl NavinShipment {
 
         // Deterministic escrow refund: always refund to company if escrow is held.
         if escrow_amount > 0 {
-            let token_contract = shipment.token_address.clone();
+            let token_contract =
+                storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
             let contract_address = env.current_contract_address();
             invoke_token_transfer(
                 &env,
@@ -4075,13 +3868,7 @@ impl NavinShipment {
             )?;
 
             shipment.escrow_amount = 0;
-            events::emit_escrow_refunded(
-                &env,
-                shipment_id,
-                &shipment.sender,
-                &token_contract,
-                escrow_amount,
-            );
+            events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
         }
 
         shipment.status = ShipmentStatus::Cancelled;
@@ -4233,7 +4020,7 @@ impl NavinShipment {
     /// # let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     /// # let milestones: Vec<(Symbol, u32)> = Vec::new(&env);
     /// # let deadline = env.ledger().timestamp() + 86_400;
-    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline, &None);
+    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline);
     /// # client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &BytesN::from_array(&env, &[2u8; 32]));
     /// # client.confirm_delivery(&receiver, &shipment_id, &BytesN::from_array(&env, &[3u8; 32]));
     /// // Manually release any remaining escrow to the carrier after delivery is confirmed.
@@ -4266,28 +4053,19 @@ impl NavinShipment {
             internal_release_escrow(&env, &mut shipment, escrow_amount)?;
             finalize_if_settled(&env, &mut shipment);
             persist_shipment(&env, &shipment)?;
-
-            // Create a proper hash for escrow release notification
-            // Use shipment_id and escrow_amount to create a meaningful hash
-            let mut fields = soroban_sdk::Vec::new(&env);
-            fields.push_back(Symbol::new(&env, "escrow_release").into_val(&env));
-            fields.push_back(shipment_id.into_val(&env));
-            fields.push_back(escrow_amount.into_val(&env));
-            let escrow_release_hash = validation::compute_offchain_payload_hash(&env, fields);
-
             events::emit_notification(
                 &env,
                 &shipment.sender,
                 NotificationType::EscrowReleased,
                 shipment_id,
-                &escrow_release_hash,
+                &BytesN::from_array(&env, &[0u8; 32]),
             );
             events::emit_notification(
                 &env,
                 &shipment.carrier,
                 NotificationType::EscrowReleased,
                 shipment_id,
-                &escrow_release_hash,
+                &BytesN::from_array(&env, &[0u8; 32]),
             );
 
             Ok(())
@@ -4333,7 +4111,7 @@ impl NavinShipment {
     /// # let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     /// # let milestones: Vec<(Symbol, u32)> = Vec::new(&env);
     /// # let deadline = env.ledger().timestamp() + 86_400;
-    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline, &None);
+    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline);
     /// // Refund escrow back to the company when the shipment is in Created or Cancelled state.
     /// client.refund_escrow(&admin, &shipment_id);
     /// ```
@@ -4368,38 +4146,19 @@ impl NavinShipment {
                 return Err(NavinError::InsufficientFunds);
             }
 
-            let token_contract = shipment.token_address.clone();
-
-            let contract_address = env.current_contract_address();
-
-            // Create settlement record in Pending state
-            let settlement_id = create_settlement(
-                &env,
-                shipment_id,
-                SettlementOperation::Refund,
-                escrow_amount,
-                &contract_address,
-                &shipment.sender,
-            )?;
+            // Get token contract address
+            let token_contract =
+                storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
 
             // Transfer tokens from this contract to company
-            let transfer_result = invoke_token_transfer(
+            let contract_address = env.current_contract_address();
+            invoke_token_transfer(
                 &env,
                 &token_contract,
                 &contract_address,
                 &shipment.sender,
                 escrow_amount,
-            );
-
-            match transfer_result {
-                Ok(()) => {
-                    complete_settlement(&env, settlement_id, shipment_id)?;
-                }
-                Err(e) => {
-                    fail_settlement(&env, settlement_id, shipment_id, e as u32)?;
-                    return Err(e);
-                }
-            }
+            )?;
 
             shipment.escrow_amount = 0;
             let old_status = shipment.status.clone();
@@ -4420,223 +4179,10 @@ impl NavinShipment {
             extend_shipment_ttl(&env, shipment_id);
             extend_shipment_ttl(&env, shipment_id);
 
-            events::emit_escrow_refunded(
-                &env,
-                shipment_id,
-                &shipment.sender,
-                &token_contract,
-                escrow_amount,
-            );
+            events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
 
             Ok(())
         })
-    }
-
-    /// Assign an observer role to an address for a specific shipment.
-    /// Observers can read shipment data but cannot modify any state.
-    /// Only admin can assign observers.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    /// * `admin` - Admin address (must be the contract admin).
-    /// * `observer` - Address to assign observer role to.
-    /// * `shipment_id` - ID of the shipment.
-    ///
-    /// # Returns
-    /// * `Result<(), NavinError>` - Ok on successful assignment.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::Unauthorized` - If caller is not admin.
-    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
-    pub fn assign_observer_role(
-        env: Env,
-        admin: Address,
-        observer: Address,
-        shipment_id: u64,
-    ) -> Result<(), NavinError> {
-        require_initialized(&env)?;
-        admin.require_auth();
-
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
-        }
-
-        if storage::get_shipment(&env, shipment_id).is_none() {
-            return Err(NavinError::ShipmentNotFound);
-        }
-
-        storage::set_shipment_observer(&env, shipment_id, &observer);
-        events::emit_observer_assigned(&env, shipment_id, &observer, &admin);
-
-        Ok(())
-    }
-
-    /// Revoke observer role from an address for a specific shipment.
-    /// Only admin can revoke observers.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    /// * `admin` - Admin address (must be the contract admin).
-    /// * `observer` - Address to revoke observer role from.
-    /// * `shipment_id` - ID of the shipment.
-    ///
-    /// # Returns
-    /// * `Result<(), NavinError>` - Ok on successful revocation.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::Unauthorized` - If caller is not admin.
-    pub fn revoke_observer_role(
-        env: Env,
-        admin: Address,
-        observer: Address,
-        shipment_id: u64,
-    ) -> Result<(), NavinError> {
-        require_initialized(&env)?;
-        admin.require_auth();
-
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
-        }
-
-        storage::remove_shipment_observer(&env, shipment_id, &observer);
-        events::emit_observer_revoked(&env, shipment_id, &observer, &admin);
-
-        Ok(())
-    }
-
-    /// Get the list of observers for a specific shipment.
-    /// This is a read-only query that returns the count of observers.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    /// * `shipment_id` - ID of the shipment.
-    ///
-    /// # Returns
-    /// * `Result<u32, NavinError>` - Number of observers for the shipment.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    pub fn get_observer_count(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
-        require_initialized(&env)?;
-        if storage::get_shipment(&env, shipment_id).is_none() {
-            return Err(NavinError::ShipmentNotFound);
-        }
-        Ok(storage::get_observer_count(&env, shipment_id))
-    }
-
-    /// Execute a partial refund of escrow funds.
-    /// Refunds a percentage of the escrow to the sender and pays the remainder to the carrier.
-    /// Only admin can execute partial refunds (e.g., after dispute resolution).
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    /// * `admin` - Admin address (must be the contract admin).
-    /// * `shipment_id` - ID of the shipment.
-    /// * `refund_percentage` - Percentage (1-100) of escrow to refund to sender.
-    ///
-    /// # Returns
-    /// * `Result<(), NavinError>` - Ok on successful partial refund.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::Unauthorized` - If caller is not admin.
-    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
-    /// * `NavinError::InvalidAmount` - If refund_percentage is not 1-100.
-    /// * `NavinError::InvalidStatus` - If shipment is already in a terminal state.
-    /// * `NavinError::InsufficientFunds` - If no escrow to refund.
-    pub fn partial_refund_escrow(
-        env: Env,
-        admin: Address,
-        shipment_id: u64,
-        refund_percentage: u32,
-    ) -> Result<(), NavinError> {
-        require_initialized(&env)?;
-        admin.require_auth();
-
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
-        }
-
-        if refund_percentage == 0 || refund_percentage > 100 {
-            return Err(NavinError::InvalidAmount);
-        }
-
-        let mut shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
-
-        require_not_finalized(&shipment)?;
-
-        if shipment.status == ShipmentStatus::Delivered
-            || shipment.status == ShipmentStatus::Cancelled
-            || shipment.status == ShipmentStatus::PartiallyRefunded
-        {
-            return Err(NavinError::InvalidStatus);
-        }
-
-        let escrow_balance = shipment.escrow_amount;
-        if escrow_balance == 0 {
-            return Err(NavinError::InsufficientFunds);
-        }
-
-        if storage::get_partial_refund_record(&env, shipment_id).is_some() {
-            return Err(NavinError::InvalidStatus);
-        }
-
-        let sender_refund = checked_mul_div_i128(escrow_balance, refund_percentage as i128, 100)?;
-        let carrier_compensation = escrow_balance - sender_refund;
-
-        let token_contract = shipment.token_address.clone();
-        let contract_address = env.current_contract_address();
-
-        invoke_token_transfer(
-            &env,
-            &token_contract,
-            &contract_address,
-            &shipment.sender,
-            sender_refund,
-        )?;
-
-        invoke_token_transfer(
-            &env,
-            &token_contract,
-            &contract_address,
-            &shipment.carrier,
-            carrier_compensation,
-        )?;
-
-        shipment.escrow_amount = 0;
-        let old_status = shipment.status.clone();
-        shipment.status = ShipmentStatus::PartiallyRefunded;
-        shipment.updated_at = env.ledger().timestamp();
-        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
-
-        finalize_if_settled(&env, &mut shipment);
-        persist_shipment(&env, &shipment)?;
-        storage::decrement_status_count(&env, &old_status);
-        storage::increment_status_count(&env, &ShipmentStatus::PartiallyRefunded);
-
-        let record = PartialRefundRecord {
-            shipment_id,
-            sender_refund,
-            carrier_compensation,
-            refund_percentage,
-            executed_at: env.ledger().timestamp(),
-        };
-        storage::set_partial_refund_record(&env, &record);
-
-        extend_shipment_ttl(&env, shipment_id);
-
-        events::emit_escrow_partially_refunded(
-            &env,
-            shipment_id,
-            sender_refund,
-            carrier_compensation,
-            refund_percentage,
-        );
-
-        Ok(())
     }
 
     /// Raise a dispute for a shipment.
@@ -4679,7 +4225,7 @@ impl NavinShipment {
     /// # let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     /// # let milestones: Vec<(Symbol, u32)> = Vec::new(&env);
     /// # let deadline = env.ledger().timestamp() + 86_400;
-    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline, &None);
+    /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline);
     /// # client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &BytesN::from_array(&env, &[2u8; 32]));
     /// let reason_hash = BytesN::from_array(&env, &[4u8; 32]); // SHA-256 of dispute reason doc
     ///
@@ -4827,7 +4373,6 @@ impl NavinShipment {
         if escrow_amount == 0 {
             return Err(NavinError::InsufficientFunds);
         }
-        let token_contract = shipment.token_address.clone();
 
         shipment.escrow_amount = 0;
         shipment.updated_at = env.ledger().timestamp();
@@ -4855,22 +4400,10 @@ impl NavinShipment {
 
         match resolution {
             DisputeResolution::ReleaseToCarrier => {
-                events::emit_escrow_released(
-                    &env,
-                    shipment_id,
-                    &recipient,
-                    &token_contract,
-                    escrow_amount,
-                );
+                events::emit_escrow_released(&env, shipment_id, &recipient, escrow_amount);
             }
             DisputeResolution::RefundToCompany => {
-                events::emit_escrow_refunded(
-                    &env,
-                    shipment_id,
-                    &recipient,
-                    &token_contract,
-                    escrow_amount,
-                );
+                events::emit_escrow_refunded(&env, shipment_id, &recipient, escrow_amount);
                 // Reputation: carrier lost this dispute
                 events::emit_carrier_dispute_loss(&env, &shipment.carrier, shipment_id);
             }
@@ -5280,7 +4813,6 @@ impl NavinShipment {
         env: Env,
         proposer: Address,
         action: crate::types::AdminAction,
-        salt: BytesN<32>,
     ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
         proposer.require_auth();
@@ -5289,12 +4821,6 @@ impl NavinShipment {
         if !storage::is_admin(&env, &proposer) {
             return Err(NavinError::NotAnAdmin);
         }
-
-        // Anti-replay: reject if this salt has been used before.
-        if storage::is_salt_used(&env, &salt) {
-            return Err(NavinError::ProposalSaltReused);
-        }
-        storage::mark_salt_used(&env, &salt);
 
         let proposal_id = storage::get_proposal_counter(&env)
             .checked_add(1)
@@ -5315,7 +4841,6 @@ impl NavinShipment {
             created_at: now,
             expires_at,
             executed: false,
-            salt: salt.clone(),
         };
 
         storage::set_proposal(&env, &proposal);
@@ -5488,15 +5013,18 @@ impl NavinShipment {
 
                 let escrow_amount = shipment.escrow_amount;
                 if escrow_amount > 0 {
-                    let token_contract = shipment.token_address.clone();
-                    let contract_address = env.current_contract_address();
-                    invoke_token_transfer(
-                        &env,
-                        &token_contract,
-                        &contract_address,
-                        &shipment.carrier,
-                        escrow_amount,
-                    )?;
+                    // Get token contract address
+                    if let Some(token_contract) = storage::get_token_contract(&env) {
+                        // Transfer tokens from this contract to carrier
+                        let contract_address = env.current_contract_address();
+                        invoke_token_transfer(
+                            &env,
+                            &token_contract,
+                            &contract_address,
+                            &shipment.carrier,
+                            escrow_amount,
+                        )?;
+                    }
 
                     shipment.escrow_amount = 0;
                     shipment.updated_at = env.ledger().timestamp();
@@ -5507,7 +5035,6 @@ impl NavinShipment {
                         &env,
                         shipment_id,
                         &shipment.carrier,
-                        &token_contract,
                         escrow_amount,
                     );
                 }
@@ -5518,15 +5045,18 @@ impl NavinShipment {
 
                 let escrow_amount = shipment.escrow_amount;
                 if escrow_amount > 0 {
-                    let token_contract = shipment.token_address.clone();
-                    let contract_address = env.current_contract_address();
-                    invoke_token_transfer(
-                        &env,
-                        &token_contract,
-                        &contract_address,
-                        &shipment.sender,
-                        escrow_amount,
-                    )?;
+                    // Get token contract address
+                    if let Some(token_contract) = storage::get_token_contract(&env) {
+                        // Transfer tokens from this contract to company
+                        let contract_address = env.current_contract_address();
+                        invoke_token_transfer(
+                            &env,
+                            &token_contract,
+                            &contract_address,
+                            &shipment.sender,
+                            escrow_amount,
+                        )?;
+                    }
 
                     shipment.escrow_amount = 0;
                     shipment.updated_at = env.ledger().timestamp();
@@ -5537,7 +5067,6 @@ impl NavinShipment {
                         &env,
                         shipment_id,
                         &shipment.sender,
-                        &token_contract,
                         escrow_amount,
                     );
                 }
@@ -5747,7 +5276,8 @@ impl NavinShipment {
         if escrow_amount > 0 {
             storage::remove_escrow_balance(&env, shipment_id);
 
-            let token_contract = shipment.token_address.clone();
+            let token_contract =
+                storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
             let contract_address = env.current_contract_address();
             invoke_token_transfer(
                 &env,
@@ -5756,13 +5286,7 @@ impl NavinShipment {
                 &shipment.sender,
                 escrow_amount,
             )?;
-            events::emit_escrow_refunded(
-                &env,
-                shipment_id,
-                &shipment.sender,
-                &token_contract,
-                escrow_amount,
-            );
+            events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
         }
 
         extend_shipment_ttl(&env, shipment_id);
@@ -5804,30 +5328,6 @@ impl NavinShipment {
         Ok(soroban_sdk::String::from_str(&env, unsafe {
             core::str::from_utf8_unchecked(&hex_chars)
         }))
-    }
-
-    /// Generate a storage footprint report for the contract.
-    ///
-    /// This function estimates storage usage by key family based on the number of
-    /// shipments and related data structures. Useful for identifying high-footprint
-    /// areas and guiding optimization work.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    ///
-    /// # Returns
-    /// * `Result<StorageFootprintReport, NavinError>` - Detailed breakdown of storage usage.
-    ///
-    /// # Examples
-    /// ```rust
-    /// // let report = contract.get_storage_footprint_report(&env);
-    /// // println!("Total storage: {} bytes", report.total_bytes);
-    /// ```
-    pub fn get_storage_footprint_report(
-        env: Env,
-    ) -> Result<storage_footprint::StorageFootprintReport, NavinError> {
-        require_initialized(&env)?;
-        Ok(storage_footprint::generate_report(&env))
     }
 
     /// Pause the contract, disabling all state-changing operations.
