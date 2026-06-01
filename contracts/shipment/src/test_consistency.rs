@@ -55,6 +55,7 @@ fn create_one(
         &dummy_hash(env, seed),
         &Vec::new(env),
         &deadline,
+        &None,
     )
 }
 
@@ -82,7 +83,7 @@ fn test_healthy_shipment_has_no_violations() {
 
 #[test]
 fn test_healthy_batch_has_no_violations() {
-    let (env, client, admin, _) = setup();
+    let (env, client, admin, token) = setup();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     client.add_company(&admin, &company);
@@ -95,9 +96,11 @@ fn test_healthy_batch_has_no_violations() {
         inputs.push_back(ShipmentInput {
             receiver: Address::generate(&env),
             carrier: carrier.clone(),
+            token_address: token.clone(),
             data_hash: dummy_hash(&env, seed),
             payment_milestones: Vec::new(&env),
             deadline,
+            depends_on: None,
         });
     }
     let ids = client.create_shipments_batch(&company, &inputs);
@@ -434,5 +437,116 @@ fn test_delivered_finalized_with_zero_escrow_is_healthy() {
             violations.is_empty(),
             "properly finalized delivered shipment should have no violations: {violations:?}"
         );
+    });
+}
+
+// ── New regression cases ─────────────────────────────────────────────────────
+
+/// Escrow stored in the shipment struct is non-zero but the shipment is in a
+/// terminal (Cancelled) state — the cross-field invariant must fire.
+#[test]
+fn test_detects_escrow_nonzero_on_terminal_shipment() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let id = create_one(&env, &client, &company, &carrier, 0xDE);
+
+    env.as_contract(&client.address, || {
+        // Put the shipment in Cancelled state but leave escrow_amount non-zero.
+        let mut shipment = crate::storage::get_shipment(&env, id).unwrap();
+        shipment.status = ShipmentStatus::Cancelled;
+        shipment.escrow_amount = 5_000;
+        shipment.finalized = true; // finalized=true with non-zero escrow → InvalidFinalization
+        crate::storage::set_shipment(&env, &shipment);
+        // Keep the escrow storage entry in sync so EscrowMismatch doesn't fire instead.
+        crate::storage::set_escrow(&env, id, 5_000);
+
+        let violations = check_shipment_invariants(&env, id);
+        assert!(
+            violations
+                .iter()
+                .any(|v| v == ConsistencyViolation::InvalidFinalization(id)),
+            "expected InvalidFinalization for terminal shipment with non-zero escrow, got: {violations:?}"
+        );
+    });
+}
+
+/// The escrow storage entry is absent (returns 0) while the shipment struct
+/// records a positive escrow_amount — a missing persistent entry must be
+/// detected as an EscrowMismatch.
+#[test]
+fn test_detects_missing_escrow_persistent_entry() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let id = create_one(&env, &client, &company, &carrier, 0xEF);
+
+    env.as_contract(&client.address, || {
+        // Give the shipment struct a non-zero escrow_amount …
+        let mut shipment = crate::storage::get_shipment(&env, id).unwrap();
+        shipment.escrow_amount = 1_000;
+        crate::storage::set_shipment(&env, &shipment);
+        // … but remove the dedicated escrow storage key so it is "missing".
+        crate::storage::remove_escrow(&env, id);
+
+        let violations = check_shipment_invariants(&env, id);
+        assert!(
+            violations
+                .iter()
+                .any(|v| v == ConsistencyViolation::EscrowMismatch(id)),
+            "expected EscrowMismatch when escrow persistent entry is absent, got: {violations:?}"
+        );
+    });
+}
+
+/// Calling check_all_consistency twice on the same state must return identical
+/// results — the report is deterministic and has no side-effects.
+#[test]
+fn test_consistency_report_is_deterministic() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let id1 = create_one(&env, &client, &company, &carrier, 0x01);
+    let id2 = create_one(&env, &client, &company, &carrier, 0x02);
+
+    // Corrupt one shipment so the report is non-empty.
+    env.as_contract(&client.address, || {
+        crate::storage::set_escrow(&env, id1, 42);
+    });
+
+    env.as_contract(&client.address, || {
+        let first = check_all_consistency(&env);
+        let second = check_all_consistency(&env);
+
+        assert_eq!(
+            first.len(),
+            second.len(),
+            "report length must be stable across repeated calls"
+        );
+        for (a, b) in first.iter().zip(second.iter()) {
+            assert_eq!(
+                a, b,
+                "report entries must be identical across repeated calls"
+            );
+        }
+        // Sanity: the corruption on id1 is present, id2 is clean.
+        assert!(first
+            .iter()
+            .any(|v| v == ConsistencyViolation::EscrowMismatch(id1)));
+        assert!(!first
+            .iter()
+            .any(|v| v == ConsistencyViolation::EscrowMismatch(id2)));
     });
 }
