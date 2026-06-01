@@ -28,6 +28,43 @@ mod tests {
         (env, client, admin, token_contract)
     }
 
+    /// Create a shipment and record a sensor hash at `InTransit`.
+    fn seed_shipment_with_sensor_hash(
+        env: &Env,
+        client: &NavinShipmentClient<'static>,
+        admin: &Address,
+        token_contract: &Address,
+        sensor_hash: &BytesN<32>,
+    ) -> (u64, Address, Address, Address) {
+        let company = Address::generate(env);
+        let carrier = Address::generate(env);
+        let receiver = Address::generate(env);
+
+        client.initialize(admin, token_contract);
+        client.add_company(admin, &company);
+        client.add_carrier(admin, &carrier);
+
+        let data_hash = BytesN::from_array(env, &[0x10u8; 32]);
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &data_hash,
+            &Vec::new(env),
+            &future_deadline(env, 86400),
+            &None,
+        );
+
+        client.update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::InTransit,
+            sensor_hash,
+        );
+
+        (shipment_id, company, receiver, carrier)
+    }
+
     #[test]
     fn test_status_hash_stored_on_update() {
         let (env, client, admin, token_contract) = setup_test_env();
@@ -385,5 +422,96 @@ mod tests {
         let stored = client.get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
         assert_eq!(stored, transit_hash);
         assert!(client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &stored));
+    }
+
+    // ── Regression: sensor-hash verification (#393) ───────────────────────────
+
+    #[test]
+    fn test_regression_known_sensor_hash_lookup_and_verification() {
+        use soroban_sdk::testutils::Events;
+
+        let (env, client, admin, token_contract) = setup_test_env();
+        let sensor_hash = BytesN::from_array(&env, &[0xA1u8; 32]);
+        let (shipment_id, _company, _receiver, _carrier) =
+            seed_shipment_with_sensor_hash(&env, &client, &admin, &token_contract, &sensor_hash);
+
+        let stored = client.get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
+        assert_eq!(stored, sensor_hash);
+
+        let events_before = env.events().all().len();
+        let shipment_before = client.get_shipment(&shipment_id);
+
+        assert!(
+            client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &sensor_hash),
+            "correct sensor hash must verify"
+        );
+
+        assert_eq!(
+            env.events().all().len(),
+            events_before,
+            "read-only verification must not emit events"
+        );
+        let shipment_after = client.get_shipment(&shipment_id);
+        assert_eq!(shipment_after.status, shipment_before.status);
+        assert_eq!(shipment_after.data_hash, shipment_before.data_hash);
+        assert_eq!(
+            client.get_status_hash(&shipment_id, &ShipmentStatus::InTransit),
+            sensor_hash
+        );
+    }
+
+    #[test]
+    fn test_regression_incorrect_sensor_hash_fails_without_state_mutation() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let sensor_hash = BytesN::from_array(&env, &[0xB2u8; 32]);
+        let wrong_hash = BytesN::from_array(&env, &[0xB3u8; 32]);
+        let (shipment_id, _company, _receiver, _carrier) =
+            seed_shipment_with_sensor_hash(&env, &client, &admin, &token_contract, &sensor_hash);
+
+        let shipment_before = client.get_shipment(&shipment_id);
+        let stored_before = client.get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
+
+        assert!(
+            !client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &wrong_hash),
+            "incorrect sensor hash must fail verification"
+        );
+
+        assert_eq!(
+            client.get_status_hash(&shipment_id, &ShipmentStatus::InTransit),
+            stored_before
+        );
+        let shipment_after = client.get_shipment(&shipment_id);
+        assert_eq!(shipment_after.status, shipment_before.status);
+        assert_eq!(shipment_after.updated_at, shipment_before.updated_at);
+    }
+
+    #[test]
+    fn test_regression_get_status_hash_nonexistent_shipment() {
+        let (_env, client, admin, token_contract) = setup_test_env();
+        client.initialize(&admin, &token_contract);
+
+        let result = client.try_get_status_hash(&9999, &ShipmentStatus::InTransit);
+        assert_eq!(result, Err(Ok(crate::NavinError::ShipmentNotFound)));
+    }
+
+    #[test]
+    fn test_regression_verify_data_hash_nonexistent_shipment() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        client.initialize(&admin, &token_contract);
+
+        let hash = BytesN::from_array(&env, &[0xC4u8; 32]);
+        let result = client.try_verify_data_hash(&9999, &ShipmentStatus::InTransit, &hash);
+        assert_eq!(result, Err(Ok(crate::NavinError::ShipmentNotFound)));
+    }
+
+    #[test]
+    fn test_regression_get_status_hash_missing_status_for_shipment() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let sensor_hash = BytesN::from_array(&env, &[0xD5u8; 32]);
+        let (shipment_id, _company, _receiver, _carrier) =
+            seed_shipment_with_sensor_hash(&env, &client, &admin, &token_contract, &sensor_hash);
+
+        let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::Delivered);
+        assert_eq!(result, Err(Ok(crate::NavinError::StatusHashNotFound)));
     }
 }

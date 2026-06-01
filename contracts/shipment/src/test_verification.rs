@@ -453,3 +453,125 @@ fn test_delivery_proof_verification_rejects_zero_hash() {
 
     client.verify_delivery_proof(&shipment_id, &BytesN::from_array(&env, &[0u8; 32]));
 }
+
+// ── Regression: sensor-hash verification (#393) ─────────────────────────────
+
+#[test]
+fn test_sensor_hash_verification_known_status_success() {
+    use soroban_sdk::testutils::Events;
+
+    let (env, client, admin, token_contract) = crate::test::setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let sender = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let sensor_hash = BytesN::from_array(&env, &[0x5Au8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &sender);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &sender,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::types::ShipmentStatus::InTransit,
+        &sensor_hash,
+    );
+
+    assert_eq!(
+        client.get_status_hash(&shipment_id, &crate::types::ShipmentStatus::InTransit),
+        sensor_hash
+    );
+
+    let events_before = env.events().all().len();
+    assert!(
+        client.verify_data_hash(
+            &shipment_id,
+            &crate::types::ShipmentStatus::InTransit,
+            &sensor_hash,
+        ),
+        "known sensor hash must verify successfully"
+    );
+    assert_eq!(
+        env.events().all().len(),
+        events_before,
+        "verification must not emit new events"
+    );
+}
+
+#[test]
+fn test_sensor_hash_verification_incorrect_hash_returns_false() {
+    let (env, client, admin, token_contract) = crate::test::setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let sender = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let sensor_hash = BytesN::from_array(&env, &[0x6Bu8; 32]);
+    let wrong_hash = BytesN::from_array(&env, &[0x6Cu8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &sender);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &sender,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::types::ShipmentStatus::InTransit,
+        &sensor_hash,
+    );
+
+    assert!(
+        !client.verify_data_hash(
+            &shipment_id,
+            &crate::types::ShipmentStatus::InTransit,
+            &wrong_hash,
+        ),
+        "incorrect sensor hash must fail cleanly"
+    );
+    assert_eq!(
+        client.get_status_hash(&shipment_id, &crate::types::ShipmentStatus::InTransit),
+        sensor_hash,
+        "stored sensor hash must remain unchanged after failed verification"
+    );
+}
+
+#[test]
+fn test_sensor_hash_nonexistent_shipment_errors() {
+    let (env, client, admin, token_contract) = crate::test::setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let hash = BytesN::from_array(&env, &[0x7Du8; 32]);
+
+    assert_eq!(
+        client.try_get_status_hash(&4040, &crate::types::ShipmentStatus::InTransit),
+        Err(Ok(crate::NavinError::ShipmentNotFound))
+    );
+    assert_eq!(
+        client.try_verify_data_hash(&4040, &crate::types::ShipmentStatus::InTransit, &hash),
+        Err(Ok(crate::NavinError::ShipmentNotFound))
+    );
+}
