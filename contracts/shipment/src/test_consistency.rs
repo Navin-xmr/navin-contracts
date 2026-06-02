@@ -827,7 +827,509 @@ fn test_cyclic_dependency_is_rejected() {
 /// Helper function to detect cycles in the dependency graph.
 /// Returns true if adding the given dependencies would create a cycle.
 fn detect_cycle(env: &Env, start_id: u64, new_deps: &soroban_sdk::Vec<u64>) -> bool {
-    use soroban_sdk::Vec;
+    let mut visited = soroban_sdk::Vec::new(env);
+    let mut rec_stack = soroban_sdk::Vec::new(env);
+
+    for dep_id in new_deps.iter() {
+        if is_cyclic_util(env, dep_id, start_id, &mut visited, &mut rec_stack) {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_cyclic_util(
+    env: &Env,
+    current: u64,
+    target: u64,
+    visited: &mut soroban_sdk::Vec<u64>,
+    rec_stack: &mut soroban_sdk::Vec<u64>,
+) -> bool {
+    if current == target {
+        return true;
+    }
+
+    if contains(visited, current) {
+        return false;
+    }
+
+    visited.push_back(current);
+    rec_stack.push_back(current);
+
+    if let Some(deps) = crate::storage::get_dependencies(env, current) {
+        for dep in deps.iter() {
+            if is_cyclic_util(env, dep, target, visited, rec_stack) {
+                return true;
+            }
+        }
+    }
+
+    remove_from_vec(rec_stack, current);
+    false
+}
+
+fn contains(vec: &soroban_sdk::Vec<u64>, item: u64) -> bool {
+    for v in vec.iter() {
+        if v == item {
+            return true;
+        }
+    }
+    false
+}
+
+fn remove_from_vec(vec: &mut soroban_sdk::Vec<u64>, item: u64) {
+    let mut new_vec = soroban_sdk::Vec::new(&vec.env());
+    for v in vec.iter() {
+        if v != item {
+            new_vec.push_back(v);
+        }
+    }
+    *vec = new_vec;
+}
+
+// ── [ISSUE #453] Carrier reverse-lookup consistency tests ───────────────────
+
+/// Test: Add forward whitelist entries and verify they can be read back.
+/// This ensures that forward whitelist records are stored and retrieved correctly.
+#[test]
+fn test_carrier_whitelist_forward_lookup_basic() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier1 = Address::generate(&env);
+    let carrier2 = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier1);
+    client.add_carrier(&admin, &carrier2);
+
+    // Add carriers to company whitelist
+    client.add_carrier_to_whitelist(&company, &carrier1);
+    client.add_carrier_to_whitelist(&company, &carrier2);
+
+    // Verify forward lookups work
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier1),
+        "carrier1 should be whitelisted for company"
+    );
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier2),
+        "carrier2 should be whitelisted for company"
+    );
+}
+
+/// Test: Multiple companies can whitelist the same carrier independently.
+/// This verifies that forward lookup views agree across multiple companies.
+#[test]
+fn test_carrier_whitelist_multiple_companies_independent() {
+    let (env, client, admin, _) = setup();
+    let company_a = Address::generate(&env);
+    let company_b = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company_a);
+    client.add_company(&admin, &company_b);
+    client.add_carrier(&admin, &carrier);
+
+    // Company A whitelists the carrier
+    client.add_carrier_to_whitelist(&company_a, &carrier);
+
+    // Verify forward lookups are company-specific
+    assert!(
+        client.is_carrier_whitelisted(&company_a, &carrier),
+        "carrier should be whitelisted for company_a"
+    );
+    assert!(
+        !client.is_carrier_whitelisted(&company_b, &carrier),
+        "carrier should NOT be whitelisted for company_b yet"
+    );
+
+    // Company B whitelists the same carrier
+    client.add_carrier_to_whitelist(&company_b, &carrier);
+
+    // Both lookups should now succeed
+    assert!(
+        client.is_carrier_whitelisted(&company_a, &carrier),
+        "carrier should still be whitelisted for company_a"
+    );
+    assert!(
+        client.is_carrier_whitelisted(&company_b, &carrier),
+        "carrier should now be whitelisted for company_b"
+    );
+}
+
+/// Test: Delete paths clear the whitelist entry and forward lookup returns false.
+/// This confirms deleted entries do not remain visible.
+#[test]
+fn test_carrier_whitelist_delete_clears_forward_lookup() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Add carrier to whitelist
+    client.add_carrier_to_whitelist(&company, &carrier);
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should be whitelisted initially"
+    );
+
+    // Remove carrier from whitelist
+    client.remove_carrier_from_whitelist(&company, &carrier);
+
+    // Verify forward lookup now returns false
+    assert!(
+        !client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should NOT be whitelisted after removal"
+    );
+}
+
+/// Test: Removing a carrier from one company's whitelist does not affect other companies.
+/// This ensures delete paths are scoped correctly and don't corrupt other entries.
+#[test]
+fn test_carrier_whitelist_delete_scoped_to_company() {
+    let (env, client, admin, _) = setup();
+    let company_a = Address::generate(&env);
+    let company_b = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company_a);
+    client.add_company(&admin, &company_b);
+    client.add_carrier(&admin, &carrier);
+
+    // Both companies whitelist the carrier
+    client.add_carrier_to_whitelist(&company_a, &carrier);
+    client.add_carrier_to_whitelist(&company_b, &carrier);
+
+    assert!(client.is_carrier_whitelisted(&company_a, &carrier));
+    assert!(client.is_carrier_whitelisted(&company_b, &carrier));
+
+    // Remove from company_a only
+    client.remove_carrier_from_whitelist(&company_a, &carrier);
+
+    // Verify company_a's lookup is false, but company_b is unaffected
+    assert!(
+        !client.is_carrier_whitelisted(&company_a, &carrier),
+        "carrier should be removed from company_a"
+    );
+    assert!(
+        client.is_carrier_whitelisted(&company_b, &carrier),
+        "carrier should still be whitelisted for company_b"
+    );
+}
+
+/// Test: Lookup behavior is deterministic across repeated calls.
+/// This verifies that forward lookups are stable and read-only.
+#[test]
+fn test_carrier_whitelist_lookup_deterministic() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    // Query multiple times
+    let result1 = client.is_carrier_whitelisted(&company, &carrier);
+    let result2 = client.is_carrier_whitelisted(&company, &carrier);
+    let result3 = client.is_carrier_whitelisted(&company, &carrier);
+
+    assert_eq!(result1, result2, "lookup must be stable across calls");
+    assert_eq!(result2, result3, "lookup must be stable across calls");
+    assert!(result1, "carrier should be whitelisted");
+}
+
+/// Test: Add, remove, and re-add the same carrier to verify state transitions are clean.
+/// This ensures no stale data remains after deletion.
+#[test]
+fn test_carrier_whitelist_add_remove_readd_cycle() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Add carrier
+    client.add_carrier_to_whitelist(&company, &carrier);
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should be whitelisted after add"
+    );
+
+    // Remove carrier
+    client.remove_carrier_from_whitelist(&company, &carrier);
+    assert!(
+        !client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should not be whitelisted after remove"
+    );
+
+    // Re-add carrier
+    client.add_carrier_to_whitelist(&company, &carrier);
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should be whitelisted after re-add"
+    );
+}
+
+/// Test: Verify storage keys are correctly scoped (company, carrier) and not reversed.
+/// This is a low-level consistency check to ensure the storage layout is correct.
+#[test]
+fn test_carrier_whitelist_storage_key_correctness() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    // Verify internal storage using the canonical key order
+    env.as_contract(&client.address, || {
+        let canonical_forward =
+            crate::storage::is_carrier_whitelisted(&env, &company, &carrier);
+        assert!(
+            canonical_forward,
+            "canonical forward lookup (company, carrier) must succeed"
+        );
+
+        // The reverse key (carrier, company) should NOT exist
+        let reversed = crate::storage::is_carrier_whitelisted(&env, &carrier, &company);
+        assert!(
+            !reversed,
+            "reversed lookup (carrier, company) should not exist"
+        );
+    });
+}
+
+/// Test: Bulk whitelist operations maintain consistency.
+/// This verifies that multiple adds/removes in succession maintain correct state.
+#[test]
+fn test_carrier_whitelist_bulk_operations_consistency() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carriers: soroban_sdk::Vec<Address> = {
+        let mut vec = soroban_sdk::Vec::new(&env);
+        for _ in 0..5 {
+            vec.push_back(Address::generate(&env));
+        }
+        vec
+    };
+
+    client.add_company(&admin, &company);
+    for carrier in carriers.iter() {
+        client.add_carrier(&admin, &carrier);
+    }
+
+    // Add all carriers to whitelist
+    for carrier in carriers.iter() {
+        client.add_carrier_to_whitelist(&company, &carrier);
+    }
+
+    // Verify all are whitelisted
+    for carrier in carriers.iter() {
+        assert!(
+            client.is_carrier_whitelisted(&company, &carrier),
+            "all carriers should be whitelisted after bulk add"
+        );
+    }
+
+    // Remove every other carrier
+    for (i, carrier) in carriers.iter().enumerate() {
+        if i % 2 == 0 {
+            client.remove_carrier_from_whitelist(&company, &carrier);
+        }
+    }
+
+    // Verify correct subset remains whitelisted
+    for (i, carrier) in carriers.iter().enumerate() {
+        let expected = i % 2 == 1;
+        let actual = client.is_carrier_whitelisted(&company, &carrier);
+        assert_eq!(
+            actual, expected,
+            "carrier at index {} should have whitelist status = {}",
+            i, expected
+        );
+    }
+}
+
+/// Test: Whitelist state is unaffected by carrier role suspension.
+/// This ensures whitelist and suspension states are independent.
+#[test]
+fn test_carrier_whitelist_independent_of_suspension() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    // Verify whitelist before suspension
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should be whitelisted before suspension"
+    );
+
+    // Suspend the carrier
+    client.suspend_carrier(&admin, &carrier);
+
+    // Whitelist state should be unchanged
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should still be whitelisted after suspension"
+    );
+
+    // Reactivate the carrier
+    client.reactivate_carrier(&admin, &carrier);
+
+    // Whitelist state should still be unchanged
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should still be whitelisted after reactivation"
+    );
+}
+
+/// Test: Non-existent (company, carrier) pair returns false consistently.
+/// This verifies that missing entries are handled correctly.
+#[test]
+fn test_carrier_whitelist_nonexistent_pair_returns_false() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Query without adding to whitelist
+    let result1 = client.is_carrier_whitelisted(&company, &carrier);
+    let result2 = client.is_carrier_whitelisted(&company, &carrier);
+
+    assert!(!result1, "non-existent pair should return false");
+    assert_eq!(result1, result2, "non-existent pair query must be deterministic");
+}
+
+/// Test: Whitelist state persists across multiple operations on other entities.
+/// This ensures whitelist data is not corrupted by unrelated operations.
+#[test]
+fn test_carrier_whitelist_state_persistence() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier1 = Address::generate(&env);
+    let carrier2 = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier1);
+    client.add_carrier(&admin, &carrier2);
+
+    // Whitelist carrier1
+    client.add_carrier_to_whitelist(&company, &carrier1);
+    assert!(client.is_carrier_whitelisted(&company, &carrier1));
+
+    // Perform unrelated operations (create shipment, whitelist another carrier)
+    let shipment_id = create_one(&env, &client, &company, &carrier1, 0xF1);
+    client.add_carrier_to_whitelist(&company, &carrier2);
+
+    // Verify carrier1's whitelist state persists
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier1),
+        "carrier1 whitelist state should persist after other operations"
+    );
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier2),
+        "carrier2 should also be whitelisted"
+    );
+    assert!(shipment_id > 0, "shipment should be created successfully");
+}
+
+/// Test: Whitelist queries with swapped parameters return different results.
+/// This verifies key order matters and parameters are not commutative.
+#[test]
+fn test_carrier_whitelist_parameter_order_matters() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Add (company, carrier) to whitelist
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    // Forward lookup should succeed
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "(company, carrier) should be whitelisted"
+    );
+
+    // Swapped parameters should fail (carrier as company, company as carrier)
+    assert!(
+        !client.is_carrier_whitelisted(&carrier, &company),
+        "(carrier, company) should NOT be whitelisted - parameters are not commutative"
+    );
+}
+
+/// Test: Repeated add operations are idempotent.
+/// This ensures adding the same carrier multiple times has no adverse effects.
+#[test]
+fn test_carrier_whitelist_add_idempotent() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Add carrier multiple times
+    client.add_carrier_to_whitelist(&company, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    // Should still be whitelisted (no error, state is correct)
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should be whitelisted after multiple adds"
+    );
+
+    // Remove once should clear it
+    client.remove_carrier_from_whitelist(&company, &carrier);
+    assert!(
+        !client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should not be whitelisted after single remove"
+    );
+}
+
+/// Test: Repeated remove operations are idempotent.
+/// This ensures removing a non-existent entry has no adverse effects.
+#[test]
+fn test_carrier_whitelist_remove_idempotent() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Remove without adding (no-op)
+    client.remove_carrier_from_whitelist(&company, &carrier);
+    assert!(!client.is_carrier_whitelisted(&company, &carrier));
+
+    // Add, then remove multiple times
+    client.add_carrier_to_whitelist(&company, &carrier);
+    assert!(client.is_carrier_whitelisted(&company, &carrier));
+
+    client.remove_carrier_from_whitelist(&company, &carrier);
+    client.remove_carrier_from_whitelist(&company, &carrier);
+    client.remove_carrier_from_whitelist(&company, &carrier);
+
+    // Should still be not whitelisted
+    assert!(
+        !client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should not be whitelisted after multiple removes"
+    );
+}n_sdk::Vec;
 
     let mut visited: Vec<u64> = Vec::new(env);
     let mut path: Vec<u64> = Vec::new(env);
