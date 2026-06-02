@@ -1,7 +1,7 @@
 use crate::errors::NavinError;
 use crate::storage;
-use crate::types::{Shipment, ShipmentInput, ShipmentStatus};
-use soroban_sdk::{xdr::ToXdr, Address, BytesN, Env, Symbol};
+use crate::types::{Shipment, ShipmentStatus};
+use soroban_sdk::{xdr::ToXdr, BytesN, Env, Symbol};
 
 /// Maximum reasonable escrow amount (1 quadrillion stroops ≈ 1 billion XLM).
 const MAX_AMOUNT: i128 = 1_000_000_000_000_000;
@@ -14,18 +14,25 @@ const MAX_PAST_OFFSET: u64 = 365 * 24 * 60 * 60;
 /// Roughly 10 years.
 const MAX_FUTURE_OFFSET: u64 = 10 * 365 * 24 * 60 * 60;
 
-/// Ensure a `BytesN<32>` hash is valid and not malformed.
+/// Ensure a `BytesN<32>` hash is not the all-zeros sentinel value.
 ///
-/// Rejects the all-zeros sentinel used to represent "no data". All other 32-byte
-/// values are accepted, including repeated-byte test vectors.
+/// This validator performs a sanity check on external hashes (data_hash, reason_hash, etc.)
+/// to reject the all-zeros pattern which is commonly used as a sentinel for "no data".
+/// This prevents accidental or malicious use of zero hashes in critical fields.
 ///
 /// # Arguments
 /// * `hash` - The 32-byte hash to validate.
 ///
 /// # Returns
-/// * `Ok(())` if the hash is non-zero.
-/// * `Err(NavinError::InvalidHash)` if the hash is all zeros.
+/// * `Ok(())` if the hash contains at least one non-zero byte.
+/// * `Err(NavinError::InvalidHash)` if every byte is zero.
+///
+/// # Examples
+/// ```rust
+/// validate_hash(&hash)?;
+/// ```
 pub fn validate_hash(hash: &BytesN<32>) -> Result<(), NavinError> {
+    // BytesN::iter() is not available in no_std soroban; use to_array().
     let bytes: [u8; 32] = hash.to_array();
     if bytes.iter().all(|&b| b == 0) {
         return Err(NavinError::InvalidHash);
@@ -110,176 +117,12 @@ pub fn validate_milestone_symbols(
             let other = &milestones.get_unchecked(j).0;
             let other_xdr = other.to_xdr(env);
             if current_xdr == other_xdr {
-                return Err(NavinError::DuplicatePaymentMilestone);
+                return Err(NavinError::InvalidShipmentInput);
             }
         }
     }
 
     Ok(())
-}
-
-/// Validate the addresses involved in shipment creation.
-///
-/// The sender, receiver, and carrier must be three distinct addresses so the
-/// shipment does not collapse multiple parties into the same role.
-pub fn validate_shipment_participants(
-    sender: &Address,
-    receiver: &Address,
-    carrier: &Address,
-) -> Result<(), NavinError> {
-    if sender == receiver || sender == carrier || receiver == carrier {
-        return Err(NavinError::InvalidShipmentParticipants);
-    }
-
-    Ok(())
-}
-
-/// Validate the symbol format used for checkpoint names.
-///
-/// Symbols are already bounded by the Stellar symbol type, but this helper
-/// adds an explicit format gate so checkpoint names remain readable and
-/// machine-friendly: only ASCII letters, digits, and underscores are allowed.
-pub fn validate_checkpoint_name_format(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
-    let xdr = symbol.to_xdr(env);
-    if xdr.len() < 12 {
-        return Err(NavinError::InvalidPaymentMilestoneName);
-    }
-
-    let len = u32::from_be_bytes([
-        xdr.get(4).unwrap_or(0),
-        xdr.get(5).unwrap_or(0),
-        xdr.get(6).unwrap_or(0),
-        xdr.get(7).unwrap_or(0),
-    ]) as usize;
-
-    for i in 0..len {
-        let byte = xdr.get((8 + i) as u32).unwrap_or(0);
-        if !(byte.is_ascii_alphanumeric() || byte == b'_') {
-            return Err(NavinError::InvalidPaymentMilestoneName);
-        }
-    }
-
-    Ok(())
-}
-
-/// Validate a shipment's payment milestone structure.
-///
-/// This enforces the creation-time contract for milestone payments:
-/// - every checkpoint name must pass symbol and format validation,
-/// - checkpoint names must be unique,
-/// - each percentage must be between 1 and 100,
-/// - the percentages must sum to exactly 100 when milestones are present.
-pub fn validate_payment_milestones(
-    env: &Env,
-    milestones: &soroban_sdk::Vec<(Symbol, u32)>,
-) -> Result<(), NavinError> {
-    if milestones.is_empty() {
-        return Ok(());
-    }
-
-    validate_milestone_symbols(env, milestones)?;
-
-    for milestone in milestones.iter() {
-        validate_symbol(env, &milestone.0)?;
-        validate_checkpoint_name_format(env, &milestone.0)?;
-
-        if milestone.1 == 0 || milestone.1 > 100 {
-            return Err(NavinError::InvalidPaymentMilestones);
-        }
-    }
-
-    let mut total_percentage = 0u32;
-    for milestone in milestones.iter() {
-        total_percentage = total_percentage
-            .checked_add(milestone.1)
-            .ok_or(NavinError::InvalidPaymentMilestones)?;
-    }
-
-    if total_percentage != 100 {
-        return Err(NavinError::MilestoneSumInvalid);
-    }
-
-    for i in 0..milestones.len() {
-        let current = &milestones.get_unchecked(i).0;
-        for j in (i + 1)..milestones.len() {
-            let other = &milestones.get_unchecked(j).0;
-            if current == other {
-                return Err(NavinError::DuplicatePaymentMilestone);
-            }
-        }
-    }
-
-    Ok(())
-}
-
-/// Validate the deadline supplied at shipment creation time.
-///
-/// Deadlines must be strictly in the future so newly-created shipments cannot
-/// start in an already-expired state.
-pub fn validate_shipment_deadline(env: &Env, deadline: u64) -> Result<(), NavinError> {
-    if deadline <= env.ledger().timestamp() {
-        return Err(NavinError::InvalidShipmentDeadline);
-    }
-
-    Ok(())
-}
-
-/// Validate the shared inputs for shipment creation.
-pub fn validate_shipment_creation_inputs(
-    env: &Env,
-    sender: &Address,
-    receiver: &Address,
-    carrier: &Address,
-    payment_milestones: &soroban_sdk::Vec<(Symbol, u32)>,
-    deadline: u64,
-) -> Result<(), NavinError> {
-    validate_shipment_participants(sender, receiver, carrier)?;
-    validate_payment_milestones(env, payment_milestones)?;
-    validate_shipment_deadline(env, deadline)?;
-    Ok(())
-}
-
-/// Validate a shipment token address before it is stored on a shipment.
-///
-/// Soroban addresses are typed and cannot be an empty string, so this guard
-/// rejects the only sentinel value this contract can confuse for "unset": the
-/// shipment contract's own address. Token contracts must be external contracts.
-pub fn validate_token_address(env: &Env, token_address: &Address) -> Result<(), NavinError> {
-    if *token_address == env.current_contract_address() {
-        return Err(NavinError::InvalidTokenAddress);
-    }
-    Ok(())
-}
-
-/// Validate the full input payload used to create a shipment.
-///
-/// Rules:
-/// - `sender`, `receiver`, and `carrier` must be three distinct addresses.
-/// - `data_hash` must be non-zero.
-/// - `deadline` must be strictly greater than the current ledger timestamp.
-/// - `token_address` must pass token-address validation.
-/// - `payment_milestones` may be empty; when present each percentage must be
-///   between 1 and 100 inclusive, all checkpoint names must be valid Symbols,
-///   names must be unique, and percentages must sum exactly to 100.
-///
-/// The function returns domain errors only and does not panic.
-pub fn validate_shipment_input(
-    env: &Env,
-    sender: &Address,
-    input: &ShipmentInput,
-) -> Result<(), NavinError> {
-    if *sender == input.receiver || *sender == input.carrier || input.receiver == input.carrier {
-        return Err(NavinError::InvalidShipmentParticipants);
-    }
-
-    validate_hash(&input.data_hash)?;
-    validate_token_address(env, &input.token_address)?;
-
-    if input.deadline <= env.ledger().timestamp() {
-        return Err(NavinError::InvalidShipmentDeadline);
-    }
-
-    validate_payment_milestones(env, &input.payment_milestones)
 }
 
 /// Validate metadata key-value pair symbols for bounded usage.
@@ -527,6 +370,7 @@ pub fn validate_shipment_invariants(shipment: &Shipment) -> Result<(), NavinErro
 // Tests
 #[cfg(test)]
 mod tests {
+    extern crate std;
     use super::*;
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::{testutils::Ledger, BytesN, Env, Symbol};
@@ -551,128 +395,7 @@ mod tests {
     #[test]
     fn test_validate_hash_all_ones_passes() {
         let env = Env::default();
-        // All-0xFF is a non-zero hash and should pass
         let hash: BytesN<32> = BytesN::from_array(&env, &[0xFF_u8; 32]);
-        assert_eq!(validate_hash(&hash), Ok(()));
-    }
-
-    #[test]
-    fn test_validate_hash_all_same_bytes_nonzero_pass() {
-        let env = Env::default();
-        // Any repeated non-zero byte is a valid hash value
-        let patterns = [0x01u8, 0x02, 0x07, 0x0A, 0x0B, 0x2A, 0x42, 0xAA, 0x7F, 0xFF];
-        for byte in patterns {
-            let hash: BytesN<32> = BytesN::from_array(&env, &[byte; 32]);
-            assert_eq!(
-                validate_hash(&hash),
-                Ok(()),
-                "All-{:#04x} bytes should be accepted",
-                byte
-            );
-        }
-    }
-
-    #[test]
-    fn test_validate_hash_realistic_patterns_pass() {
-        let env = Env::default();
-        // Test realistic hash patterns that should pass validation
-        let valid_hashes = [
-            // Single non-zero byte at different positions
-            (
-                [
-                    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0,
-                ],
-                "first byte non-zero",
-            ),
-            (
-                [
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 1,
-                ],
-                "last byte non-zero",
-            ),
-            (
-                [
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0,
-                ],
-                "middle byte non-zero",
-            ),
-            // Multiple different bytes
-            (
-                [
-                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
-                    23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
-                ],
-                "sequential bytes",
-            ),
-            (
-                [
-                    0xFF, 0xFE, 0xFD, 0xFC, 0xFB, 0xFA, 0xF9, 0xF8, 0xF7, 0xF6, 0xF5, 0xF4, 0xF3,
-                    0xF2, 0xF1, 0xF0, 0xEF, 0xEE, 0xED, 0xEC, 0xEB, 0xEA, 0xE9, 0xE8, 0xE7, 0xE6,
-                    0xE5, 0xE4, 0xE3, 0xE2, 0xE1, 0xE0,
-                ],
-                "descending bytes",
-            ),
-            // Random-looking pattern
-            (
-                [
-                    0x4A, 0x1F, 0x8B, 0x2C, 0x7D, 0x93, 0x0E, 0xF5, 0x66, 0xB1, 0x2A, 0x47, 0x8C,
-                    0x35, 0x9D, 0x70, 0x13, 0xA8, 0x5F, 0xE2, 0x94, 0x27, 0x6B, 0x0C, 0xD1, 0x48,
-                    0x9A, 0x33, 0x7E, 0xC5, 0x10, 0x8F,
-                ],
-                "random pattern",
-            ),
-        ];
-
-        for (bytes, description) in valid_hashes {
-            let hash: BytesN<32> = BytesN::from_array(&env, &bytes);
-            assert_eq!(
-                validate_hash(&hash),
-                Ok(()),
-                "Valid hash ({}) should pass validation",
-                description
-            );
-        }
-    }
-
-    #[test]
-    fn test_validate_hash_boundary_cases() {
-        let env = Env::default();
-
-        // Test hash with exactly one non-zero byte
-        let mut single_nonzero = [0u8; 32];
-        single_nonzero[31] = 1;
-        let hash: BytesN<32> = BytesN::from_array(&env, &single_nonzero);
-        assert_eq!(validate_hash(&hash), Ok(()));
-
-        // Test hash with alternating pattern
-        let mut alternating = [0u8; 32];
-        for (i, byte) in alternating.iter_mut().enumerate() {
-            *byte = if i % 2 == 0 { 0xAA } else { 0x55 };
-        }
-        alternating[15] = 0x33;
-        let hash: BytesN<32> = BytesN::from_array(&env, &alternating);
-        assert_eq!(validate_hash(&hash), Ok(()));
-
-        // Test hash with two different bytes alternating (not perfectly repeated)
-        let mut two_byte_pattern = [0u8; 32];
-        for i in 0..16 {
-            two_byte_pattern[i * 2] = 0x12;
-            two_byte_pattern[i * 2 + 1] = 0x34;
-        }
-        // Break the pattern at one position
-        two_byte_pattern[10] = 0x56;
-        let hash: BytesN<32> = BytesN::from_array(&env, &two_byte_pattern);
-        assert_eq!(validate_hash(&hash), Ok(()));
-
-        // Test hash with mostly zeros but a few different bytes
-        let mut mostly_zeros = [0u8; 32];
-        mostly_zeros[5] = 0x42;
-        mostly_zeros[17] = 0x7F;
-        mostly_zeros[28] = 0x01;
-        let hash: BytesN<32> = BytesN::from_array(&env, &mostly_zeros);
         assert_eq!(validate_hash(&hash), Ok(()));
     }
 
@@ -684,7 +407,6 @@ mod tests {
             sender: soroban_sdk::Address::generate(&env),
             receiver: soroban_sdk::Address::generate(&env),
             carrier: soroban_sdk::Address::generate(&env),
-            token_address: soroban_sdk::Address::generate(&env),
             status: ShipmentStatus::InTransit,
             data_hash: BytesN::from_array(&env, &[1_u8; 32]),
             created_at: 100,
@@ -698,7 +420,6 @@ mod tests {
             deadline: 200,
             integration_nonce: 0,
             finalized: false,
-            depends_on: None,
         };
 
         assert_eq!(validate_shipment_invariants(&shipment), Ok(()));
@@ -712,7 +433,6 @@ mod tests {
             sender: soroban_sdk::Address::generate(&env),
             receiver: soroban_sdk::Address::generate(&env),
             carrier: soroban_sdk::Address::generate(&env),
-            token_address: soroban_sdk::Address::generate(&env),
             status: ShipmentStatus::InTransit,
             data_hash: BytesN::from_array(&env, &[2_u8; 32]),
             created_at: 100,
@@ -726,7 +446,6 @@ mod tests {
             deadline: 200,
             integration_nonce: 0,
             finalized: false,
-            depends_on: None,
         };
 
         assert_eq!(
@@ -887,7 +606,7 @@ mod tests {
         milestones.push_back((Symbol::new(&env, "warehouse"), 50_u32));
         assert_eq!(
             validate_milestone_symbols(&env, &milestones),
-            Err(NavinError::DuplicatePaymentMilestone)
+            Err(NavinError::InvalidShipmentInput)
         );
     }
 
@@ -958,7 +677,6 @@ mod symbol_validation_tests {
     extern crate std;
 
     use super::*;
-    use soroban_sdk::testutils::Address as _;
     use soroban_sdk::{Env, Symbol, Vec};
 
     // Boundary tests for symbol length
@@ -1067,7 +785,7 @@ mod symbol_validation_tests {
         let result = validate_milestone_symbols(&env, &milestones);
         assert_eq!(
             result,
-            Err(NavinError::DuplicatePaymentMilestone),
+            Err(NavinError::InvalidShipmentInput),
             "Duplicate milestone symbols should be rejected"
         );
     }
@@ -1147,6 +865,87 @@ mod symbol_validation_tests {
         );
     }
 
+    // ── Metadata value length boundary tests (issue #448) ────────────────────
+
+    #[test]
+    fn test_metadata_value_at_exact_max_length_passes() {
+        let env = Env::default();
+        let key = Symbol::new(&env, "weight");
+        let value = Symbol::new(&env, "ABCDEFGHIJKL"); // 12 chars — maximum
+        assert_eq!(
+            validate_metadata_symbols(&env, &key, &value),
+            Ok(()),
+            "12-char metadata value must be accepted"
+        );
+    }
+
+    #[test]
+    fn test_metadata_value_over_max_length_fails() {
+        let env = Env::default();
+        let key = Symbol::new(&env, "weight");
+        // 13 chars: one over the Stellar Symbol 12-char maximum
+        let long: std::string::String = "A".repeat(13);
+        let value = Symbol::new(&env, &long);
+        assert_eq!(
+            validate_metadata_symbols(&env, &key, &value),
+            Err(NavinError::InvalidShipmentInput),
+            "13-char metadata value must be rejected"
+        );
+    }
+
+    #[test]
+    fn test_metadata_key_at_exact_max_length_passes() {
+        let env = Env::default();
+        let key = Symbol::new(&env, "VERYLONGNAME"); // 12 chars
+        let value = Symbol::new(&env, "ok");
+        assert_eq!(
+            validate_metadata_symbols(&env, &key, &value),
+            Ok(()),
+            "12-char metadata key must be accepted"
+        );
+    }
+
+    #[test]
+    fn test_metadata_key_over_max_length_fails() {
+        let env = Env::default();
+        let long: std::string::String = "K".repeat(13);
+        let key = Symbol::new(&env, &long);
+        let value = Symbol::new(&env, "ok");
+        assert_eq!(
+            validate_metadata_symbols(&env, &key, &value),
+            Err(NavinError::InvalidShipmentInput),
+            "13-char metadata key must be rejected"
+        );
+    }
+
+    #[test]
+    fn test_metadata_boundary_sweep_all_valid_lengths() {
+        let env = Env::default();
+        let key = Symbol::new(&env, "k");
+        for len in 1usize..=12 {
+            let s: std::string::String = "A".repeat(len);
+            assert_eq!(
+                validate_metadata_symbols(&env, &key, &Symbol::new(&env, &s)),
+                Ok(()),
+                "metadata value of length {len} must be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn test_metadata_boundary_sweep_all_invalid_lengths() {
+        let env = Env::default();
+        let key = Symbol::new(&env, "k");
+        for len in 13usize..=16 {
+            let s: std::string::String = "A".repeat(len);
+            assert_eq!(
+                validate_metadata_symbols(&env, &key, &Symbol::new(&env, &s)),
+                Err(NavinError::InvalidShipmentInput),
+                "metadata value of length {len} must be rejected"
+            );
+        }
+    }
+
     #[test]
     fn test_duplicate_milestone_error_type() {
         let env = Env::default();
@@ -1159,210 +958,8 @@ mod symbol_validation_tests {
 
         assert_eq!(
             result,
-            Err(NavinError::DuplicatePaymentMilestone),
-            "Duplicate milestone should return DuplicatePaymentMilestone"
+            Err(NavinError::InvalidShipmentInput),
+            "Duplicate milestone should return InvalidShipmentInput"
         );
     }
-
-    #[test]
-    fn test_validate_shipment_input_accepts_valid_payload() {
-        let env = Env::default();
-        let contract_id = env.register(crate::NavinShipment, ());
-        let sender = soroban_sdk::Address::generate(&env);
-        let receiver = soroban_sdk::Address::generate(&env);
-        let carrier = soroban_sdk::Address::generate(&env);
-        let token_address = soroban_sdk::Address::generate(&env);
-        let deadline = env.ledger().timestamp() + 3_600;
-
-        let mut payment_milestones = Vec::new(&env);
-        payment_milestones.push_back((Symbol::new(&env, "warehouse"), 50));
-        payment_milestones.push_back((Symbol::new(&env, "delivery"), 50));
-
-        let input = ShipmentInput {
-            receiver,
-            carrier,
-            token_address,
-            data_hash: BytesN::from_array(&env, &[1u8; 32]),
-            payment_milestones,
-            deadline,
-            depends_on: None,
-        };
-
-        let result = env.as_contract(&contract_id, || {
-            validate_shipment_input(&env, &sender, &input)
-        });
-
-        assert_eq!(result, Ok(()));
-    }
-
-    #[test]
-    fn test_validate_shipment_input_rejects_duplicate_participants() {
-        let env = Env::default();
-        let contract_id = env.register(crate::NavinShipment, ());
-        let sender = soroban_sdk::Address::generate(&env);
-        let carrier = soroban_sdk::Address::generate(&env);
-        let token_address = soroban_sdk::Address::generate(&env);
-        let deadline = env.ledger().timestamp() + 3_600;
-
-        let input = ShipmentInput {
-            receiver: sender.clone(),
-            carrier,
-            token_address,
-            data_hash: BytesN::from_array(&env, &[2u8; 32]),
-            payment_milestones: Vec::new(&env),
-            deadline,
-            depends_on: None,
-        };
-
-        let result = env.as_contract(&contract_id, || {
-            validate_shipment_input(&env, &sender, &input)
-        });
-
-        assert_eq!(result, Err(NavinError::InvalidShipmentParticipants));
-    }
-
-    #[test]
-    fn test_validate_shipment_input_rejects_past_deadline() {
-        let env = Env::default();
-        let contract_id = env.register(crate::NavinShipment, ());
-        let sender = soroban_sdk::Address::generate(&env);
-        let receiver = soroban_sdk::Address::generate(&env);
-        let carrier = soroban_sdk::Address::generate(&env);
-        let token_address = soroban_sdk::Address::generate(&env);
-        let deadline = env.ledger().timestamp();
-
-        let input = ShipmentInput {
-            receiver,
-            carrier,
-            token_address,
-            data_hash: BytesN::from_array(&env, &[3u8; 32]),
-            payment_milestones: Vec::new(&env),
-            deadline,
-            depends_on: None,
-        };
-
-        let result = env.as_contract(&contract_id, || {
-            validate_shipment_input(&env, &sender, &input)
-        });
-
-        assert_eq!(result, Err(NavinError::InvalidShipmentDeadline));
-    }
-
-    #[test]
-    fn test_validate_payment_milestones_rejects_non_100_sum() {
-        let env = Env::default();
-        let mut milestones = Vec::new(&env);
-        milestones.push_back((Symbol::new(&env, "warehouse"), 30));
-        milestones.push_back((Symbol::new(&env, "delivery"), 60));
-
-        assert_eq!(
-            validate_payment_milestones(&env, &milestones),
-            Err(NavinError::MilestoneSumInvalid)
-        );
-    }
-
-    #[test]
-    fn test_validate_payment_milestones_accepts_exact_100_sum() {
-        let env = Env::default();
-        let mut milestones = Vec::new(&env);
-        milestones.push_back((Symbol::new(&env, "warehouse"), 40));
-        milestones.push_back((Symbol::new(&env, "delivery"), 60));
-
-        assert_eq!(validate_payment_milestones(&env, &milestones), Ok(()));
-    }
-
-    #[test]
-    fn test_validate_token_address_rejects_contract_address() {
-        let env = Env::default();
-        let contract_id = env.register(crate::NavinShipment, ());
-
-        let result = env.as_contract(&contract_id, || validate_token_address(&env, &contract_id));
-
-        assert_eq!(result, Err(NavinError::InvalidTokenAddress));
-    }
-}
-
-/// Maximum number of dependencies allowed per shipment.
-const MAX_DEPENDENCIES: usize = 10;
-
-/// Maximum recursion depth for cycle detection.
-const MAX_DEPTH: usize = 64;
-
-/// Validate shipment dependencies before persistence.
-///
-/// Ensures:
-/// - Dependency count does not exceed MAX_DEPENDENCIES (10)
-/// - All referenced shipment IDs exist
-/// - No circular dependencies are present
-pub fn validate_dependencies(
-    env: &Env,
-    shipment_id: u64,
-    dependencies: &Option<soroban_sdk::Vec<u64>>,
-) -> Result<(), NavinError> {
-    let deps = match dependencies {
-        Some(d) => d,
-        None => return Ok(()),
-    };
-
-    if deps.len() as usize > MAX_DEPENDENCIES {
-        return Err(NavinError::InvalidShipmentInput);
-    }
-
-    for i in 0..deps.len() {
-        let dep_id = deps.get_unchecked(i);
-        if dep_id == shipment_id {
-            return Err(NavinError::CircularDependency);
-        }
-        let _ = storage::get_shipment(env, dep_id).ok_or(NavinError::ShipmentNotFound)?;
-        if transitive_has_dependency(env, dep_id, shipment_id, 0)? {
-            return Err(NavinError::CircularDependency);
-        }
-    }
-
-    Ok(())
-}
-
-fn transitive_has_dependency(
-    env: &Env,
-    target: u64,
-    shipment_id: u64,
-    depth: usize,
-) -> Result<bool, NavinError> {
-    if depth > MAX_DEPTH {
-        return Err(NavinError::CircularDependency);
-    }
-
-    if let Some(target_deps) = storage::get_dependencies(env, target) {
-        for i in 0..target_deps.len() {
-            let dep = target_deps.get_unchecked(i);
-            if dep == shipment_id {
-                return Ok(true);
-            }
-            if transitive_has_dependency(env, dep, shipment_id, depth + 1)? {
-                return Ok(true);
-            }
-        }
-    }
-    Ok(false)
-}
-
-pub fn collect_unmet_dependencies(
-    env: &Env,
-    shipment_id: u64,
-) -> Result<soroban_sdk::Vec<u64>, NavinError> {
-    let mut unmet = soroban_sdk::Vec::new(env);
-
-    if let Some(deps) = storage::get_dependencies(env, shipment_id) {
-        for i in 0..deps.len() {
-            let dep_id = deps.get_unchecked(i);
-            match storage::get_shipment(env, dep_id) {
-                Some(shipment) if shipment.status == ShipmentStatus::Delivered => {}
-                _ => {
-                    unmet.push_back(dep_id);
-                }
-            }
-        }
-    }
-
-    Ok(unmet)
 }

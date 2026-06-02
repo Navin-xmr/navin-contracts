@@ -1,4 +1,8 @@
 {
+  "generators": {
+    "address": 7,
+    "nonce": 0
+  },
   "auth": [
     [],
     [],
@@ -9,6 +13,8 @@
         {
           "function": {
             "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+              "function_name": "add_company",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
@@ -16,9 +22,7 @@
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 }
-              ],
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-              "function_name": "add_company"
+              ]
             }
           },
           "sub_invocations": []
@@ -31,6 +35,8 @@
         {
           "function": {
             "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+              "function_name": "add_carrier",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
@@ -38,9 +44,7 @@
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
                 }
-              ],
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-              "function_name": "add_carrier"
+              ]
             }
           },
           "sub_invocations": []
@@ -53,6 +57,8 @@
         {
           "function": {
             "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+              "function_name": "add_carrier",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
@@ -60,9 +66,7 @@
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
                 }
-              ],
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-              "function_name": "add_carrier"
+              ]
             }
           },
           "sub_invocations": []
@@ -75,6 +79,8 @@
         {
           "function": {
             "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+              "function_name": "create_shipment",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
@@ -94,9 +100,7 @@
                 {
                   "u64": 3600
                 }
-              ],
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-              "function_name": "create_shipment"
+              ]
             }
           },
           "sub_invocations": []
@@ -109,6 +113,8 @@
         {
           "function": {
             "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+              "function_name": "update_status",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
@@ -126,9 +132,7 @@
                 {
                   "bytes": "1616161616161616161616161616161616161616161616161616161616161616"
                 }
-              ],
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-              "function_name": "update_status"
+              ]
             }
           },
           "sub_invocations": []
@@ -141,6 +145,8 @@
         {
           "function": {
             "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+              "function_name": "handoff_shipment",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
@@ -154,9 +160,7 @@
                 {
                   "bytes": "1717171717171717171717171717171717171717171717171717171717171717"
                 }
-              ],
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-              "function_name": "handoff_shipment"
+              ]
             }
           },
           "sub_invocations": []
@@ -164,149 +168,45 @@
       ]
     ]
   ],
-  "events": [
-    {
-      "event": {
-        "body": {
-          "v0": {
-            "data": {
-              "vec": [
-                {
-                  "u64": 1
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
-                },
-                {
-                  "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
-                }
-              ]
-            },
-            "topics": [
-              {
-                "symbol": "carrier_handoff"
-              }
-            ]
-          }
-        },
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000000",
-        "ext": "v0",
-        "type_": "contract"
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "body": {
-          "v0": {
-            "data": {
-              "vec": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
-                },
-                {
-                  "u64": 1
-                }
-              ]
-            },
-            "topics": [
-              {
-                "symbol": "carrier_handoff_completed"
-              }
-            ]
-          }
-        },
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000000",
-        "ext": "v0",
-        "type_": "contract"
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "body": {
-          "v0": {
-            "data": {
-              "vec": [
-                {
-                  "u64": 1
-                },
-                {
-                  "symbol": "handoff"
-                },
-                {
-                  "bytes": "1717171717171717171717171717171717171717171717171717171717171717"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "u32": 3
-                },
-                {
-                  "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
-                }
-              ]
-            },
-            "topics": [
-              {
-                "symbol": "milestone_recorded"
-              }
-            ]
-          }
-        },
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000000",
-        "ext": "v0",
-        "type_": "contract"
-      },
-      "failed_call": false
-    }
-  ],
-  "generators": {
-    "address": 0,
-    "nonce": 0
-  },
   "ledger": {
+    "protocol_version": 22,
+    "sequence_number": 0,
+    "timestamp": 0,
+    "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
     "base_reserve": 0,
+    "min_persistent_entry_ttl": 4096,
+    "min_temp_entry_ttl": 16,
+    "max_entry_ttl": 6312000,
     "ledger_entries": [
       [
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-            "durability": "temporary",
             "key": {
               "ledger_key_nonce": {
-                "nonce": 0
+                "nonce": 801925984706572462
               }
-            }
+            },
+            "durability": "temporary"
           }
         },
         [
           {
+            "last_modified_ledger_seq": 0,
             "data": {
               "contract_data": {
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-                "durability": "temporary",
                 "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
                 "key": {
                   "ledger_key_nonce": {
-                    "nonce": 0
+                    "nonce": 801925984706572462
                   }
                 },
+                "durability": "temporary",
                 "val": "void"
               }
             },
-            "ext": "v0",
-            "last_modified_ledger_seq": 0
+            "ext": "v0"
           },
           6311999
         ]
@@ -315,31 +215,31 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-            "durability": "temporary",
             "key": {
               "ledger_key_nonce": {
-                "nonce": 0
+                "nonce": 1033654523790656264
               }
-            }
+            },
+            "durability": "temporary"
           }
         },
         [
           {
+            "last_modified_ledger_seq": 0,
             "data": {
               "contract_data": {
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-                "durability": "temporary",
                 "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
                 "key": {
                   "ledger_key_nonce": {
-                    "nonce": 0
+                    "nonce": 1033654523790656264
                   }
                 },
+                "durability": "temporary",
                 "val": "void"
               }
             },
-            "ext": "v0",
-            "last_modified_ledger_seq": 0
+            "ext": "v0"
           },
           6311999
         ]
@@ -348,31 +248,31 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-            "durability": "temporary",
             "key": {
               "ledger_key_nonce": {
-                "nonce": 0
+                "nonce": 5541220902715666415
               }
-            }
+            },
+            "durability": "temporary"
           }
         },
         [
           {
+            "last_modified_ledger_seq": 0,
             "data": {
               "contract_data": {
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-                "durability": "temporary",
                 "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
                 "key": {
                   "ledger_key_nonce": {
-                    "nonce": 0
+                    "nonce": 5541220902715666415
                   }
                 },
+                "durability": "temporary",
                 "val": "void"
               }
             },
-            "ext": "v0",
-            "last_modified_ledger_seq": 0
+            "ext": "v0"
           },
           6311999
         ]
@@ -381,18 +281,19 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-            "durability": "persistent",
-            "key": "ledger_key_contract_instance"
+            "key": "ledger_key_contract_instance",
+            "durability": "persistent"
           }
         },
         [
           {
+            "last_modified_ledger_seq": 0,
             "data": {
               "contract_data": {
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-                "durability": "persistent",
                 "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
                 "key": "ledger_key_contract_instance",
+                "durability": "persistent",
                 "val": {
                   "contract_instance": {
                     "executable": {
@@ -403,8 +304,7 @@
                 }
               }
             },
-            "ext": "v0",
-            "last_modified_ledger_seq": 0
+            "ext": "v0"
           },
           4095
         ]
@@ -413,7 +313,6 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-            "durability": "persistent",
             "key": {
               "vec": [
                 {
@@ -423,16 +322,17 @@
                   "u64": 1
                 }
               ]
-            }
+            },
+            "durability": "persistent"
           }
         },
         [
           {
+            "last_modified_ledger_seq": 0,
             "data": {
               "contract_data": {
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-                "durability": "persistent",
                 "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
                 "key": {
                   "vec": [
                     {
@@ -443,13 +343,13 @@
                     }
                   ]
                 },
+                "durability": "persistent",
                 "val": {
                   "u32": 3
                 }
               }
             },
-            "ext": "v0",
-            "last_modified_ledger_seq": 0
+            "ext": "v0"
           },
           4095
         ]
@@ -458,7 +358,6 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-            "durability": "temporary",
             "key": {
               "vec": [
                 {
@@ -468,16 +367,17 @@
                   "bytes": "39961bc1246d5151b9cc1ac5ef1c011215dc61740f7581310ff776bdb5e7bcf5"
                 }
               ]
-            }
+            },
+            "durability": "temporary"
           }
         },
         [
           {
+            "last_modified_ledger_seq": 0,
             "data": {
               "contract_data": {
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-                "durability": "temporary",
                 "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
                 "key": {
                   "vec": [
                     {
@@ -488,13 +388,13 @@
                     }
                   ]
                 },
+                "durability": "temporary",
                 "val": {
                   "bool": true
                 }
               }
             },
-            "ext": "v0",
-            "last_modified_ledger_seq": 0
+            "ext": "v0"
           },
           15
         ]
@@ -503,7 +403,6 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-            "durability": "temporary",
             "key": {
               "vec": [
                 {
@@ -513,16 +412,17 @@
                   "bytes": "d6162aa3beaa47047deeb4ba8dc1dc8c5e8fd771c47aa131723907bd2427d695"
                 }
               ]
-            }
+            },
+            "durability": "temporary"
           }
         },
         [
           {
+            "last_modified_ledger_seq": 0,
             "data": {
               "contract_data": {
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-                "durability": "temporary",
                 "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
                 "key": {
                   "vec": [
                     {
@@ -533,13 +433,13 @@
                     }
                   ]
                 },
+                "durability": "temporary",
                 "val": {
                   "bool": true
                 }
               }
             },
-            "ext": "v0",
-            "last_modified_ledger_seq": 0
+            "ext": "v0"
           },
           15
         ]
@@ -548,7 +448,6 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-            "durability": "persistent",
             "key": {
               "vec": [
                 {
@@ -558,16 +457,17 @@
                   "u64": 1
                 }
               ]
-            }
+            },
+            "durability": "persistent"
           }
         },
         [
           {
+            "last_modified_ledger_seq": 0,
             "data": {
               "contract_data": {
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-                "durability": "persistent",
                 "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
                 "key": {
                   "vec": [
                     {
@@ -578,13 +478,13 @@
                     }
                   ]
                 },
+                "durability": "persistent",
                 "val": {
                   "u64": 0
                 }
               }
             },
-            "ext": "v0",
-            "last_modified_ledger_seq": 0
+            "ext": "v0"
           },
           4095
         ]
@@ -593,7 +493,6 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-            "durability": "persistent",
             "key": {
               "vec": [
                 {
@@ -603,16 +502,17 @@
                   "u64": 1
                 }
               ]
-            }
+            },
+            "durability": "persistent"
           }
         },
         [
           {
+            "last_modified_ledger_seq": 0,
             "data": {
               "contract_data": {
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-                "durability": "persistent",
                 "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
                 "key": {
                   "vec": [
                     {
@@ -623,6 +523,7 @@
                     }
                   ]
                 },
+                "durability": "persistent",
                 "val": {
                   "map": [
                     {
@@ -765,8 +666,7 @@
                 }
               }
             },
-            "ext": "v0",
-            "last_modified_ledger_seq": 0
+            "ext": "v0"
           },
           518400
         ]
@@ -775,7 +675,6 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-            "durability": "persistent",
             "key": {
               "vec": [
                 {
@@ -792,16 +691,17 @@
                   ]
                 }
               ]
-            }
+            },
+            "durability": "persistent"
           }
         },
         [
           {
+            "last_modified_ledger_seq": 0,
             "data": {
               "contract_data": {
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-                "durability": "persistent",
                 "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
                 "key": {
                   "vec": [
                     {
@@ -819,13 +719,13 @@
                     }
                   ]
                 },
+                "durability": "persistent",
                 "val": {
                   "bytes": "1616161616161616161616161616161616161616161616161616161616161616"
                 }
               }
             },
-            "ext": "v0",
-            "last_modified_ledger_seq": 0
+            "ext": "v0"
           },
           4095
         ]
@@ -834,18 +734,19 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-            "durability": "persistent",
-            "key": "ledger_key_contract_instance"
+            "key": "ledger_key_contract_instance",
+            "durability": "persistent"
           }
         },
         [
           {
+            "last_modified_ledger_seq": 0,
             "data": {
               "contract_data": {
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-                "durability": "persistent",
                 "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
                 "key": "ledger_key_contract_instance",
+                "durability": "persistent",
                 "val": {
                   "contract_instance": {
                     "executable": {
@@ -1255,8 +1156,7 @@
                 }
               }
             },
-            "ext": "v0",
-            "last_modified_ledger_seq": 0
+            "ext": "v0"
           },
           4095
         ]
@@ -1265,31 +1165,31 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
-            "durability": "temporary",
             "key": {
               "ledger_key_nonce": {
-                "nonce": 0
+                "nonce": 4837995959683129791
               }
-            }
+            },
+            "durability": "temporary"
           }
         },
         [
           {
+            "last_modified_ledger_seq": 0,
             "data": {
               "contract_data": {
+                "ext": "v0",
                 "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
-                "durability": "temporary",
-                "ext": "v0",
                 "key": {
                   "ledger_key_nonce": {
-                    "nonce": 0
+                    "nonce": 4837995959683129791
                   }
                 },
+                "durability": "temporary",
                 "val": "void"
               }
             },
-            "ext": "v0",
-            "last_modified_ledger_seq": 0
+            "ext": "v0"
           },
           6311999
         ]
@@ -1298,31 +1198,31 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
-            "durability": "temporary",
             "key": {
               "ledger_key_nonce": {
-                "nonce": 0
+                "nonce": 2032731177588607455
               }
-            }
+            },
+            "durability": "temporary"
           }
         },
         [
           {
+            "last_modified_ledger_seq": 0,
             "data": {
               "contract_data": {
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
-                "durability": "temporary",
                 "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
                 "key": {
                   "ledger_key_nonce": {
-                    "nonce": 0
+                    "nonce": 2032731177588607455
                   }
                 },
+                "durability": "temporary",
                 "val": "void"
               }
             },
-            "ext": "v0",
-            "last_modified_ledger_seq": 0
+            "ext": "v0"
           },
           6311999
         ]
@@ -1331,31 +1231,31 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
-            "durability": "temporary",
             "key": {
               "ledger_key_nonce": {
-                "nonce": 0
+                "nonce": 4270020994084947596
               }
-            }
+            },
+            "durability": "temporary"
           }
         },
         [
           {
+            "last_modified_ledger_seq": 0,
             "data": {
               "contract_data": {
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
-                "durability": "temporary",
                 "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
                 "key": {
                   "ledger_key_nonce": {
-                    "nonce": 0
+                    "nonce": 4270020994084947596
                   }
                 },
+                "durability": "temporary",
                 "val": "void"
               }
             },
-            "ext": "v0",
-            "last_modified_ledger_seq": 0
+            "ext": "v0"
           },
           6311999
         ]
@@ -1368,26 +1268,126 @@
         },
         [
           {
+            "last_modified_ledger_seq": 0,
             "data": {
               "contract_code": {
-                "code": "",
                 "ext": "v0",
-                "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "code": ""
               }
             },
-            "ext": "v0",
-            "last_modified_ledger_seq": 0
+            "ext": "v0"
           },
           4095
         ]
       ]
-    ],
-    "max_entry_ttl": 6312000,
-    "min_persistent_entry_ttl": 4096,
-    "min_temp_entry_ttl": 16,
-    "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
-    "protocol_version": 22,
-    "sequence_number": 1,
-    "timestamp": 86400
-  }
+    ]
+  },
+  "events": [
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000003",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "carrier_handoff"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "u64": 1
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                },
+                {
+                  "bytes": "1717171717171717171717171717171717171717171717171717171717171717"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000003",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "carrier_handoff_completed"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                },
+                {
+                  "u64": 1
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000003",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "milestone_recorded"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "u64": 1
+                },
+                {
+                  "symbol": "handoff"
+                },
+                {
+                  "bytes": "1717171717171717171717171717171717171717171717171717171717171717"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                },
+                {
+                  "u32": 2
+                },
+                {
+                  "u32": 3
+                },
+                {
+                  "bytes": "0b2f9a835ca492ca04c14c5ac5f576bebde73b2f3e9ca4d28a180d01aada82dc"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    }
+  ]
 }

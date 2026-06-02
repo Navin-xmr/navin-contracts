@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! # Escrow Lifecycle Fuzzing Harness
 //!
 //! Property-based fuzz tests for the complete escrow lifecycle:
@@ -93,7 +94,6 @@ fn create_shipment(
         &data_hash,
         &Vec::new(env),
         &deadline,
-        &None,
     )
 }
 
@@ -280,7 +280,6 @@ fn fuzz_escrow_release_never_exceeds_balance() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
-            &None,
         );
 
         let amount = ((seed % 999_999) + 1) as i128;
@@ -345,7 +344,6 @@ fn fuzz_escrow_double_release_fails() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
-            &None,
         );
 
         let amount = ((seed % 999_999) + 1) as i128;
@@ -436,7 +434,6 @@ fn fuzz_escrow_invariant_amount_lte_total() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
-            &None,
         );
 
         let amount = ((seed % 999_999) + 1) as i128;

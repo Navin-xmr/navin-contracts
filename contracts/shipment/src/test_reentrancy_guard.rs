@@ -29,7 +29,6 @@ fn setup_single_shipment() -> (
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     (env, client, admin, company, receiver, carrier, shipment_id)

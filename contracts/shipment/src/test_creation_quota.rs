@@ -24,14 +24,7 @@ mod tests {
         }
     }
 
-    fn setup() -> (
-        Env,
-        NavinShipmentClient<'static>,
-        Address,
-        Address,
-        Address,
-        Address,
-    ) {
+    fn setup() -> (Env, NavinShipmentClient<'static>, Address, Address, Address) {
         let (env, admin) = test_utils::setup_env();
         let contract_id = env.register(NavinShipment, ());
         let client = NavinShipmentClient::new(&env, &contract_id);
@@ -43,7 +36,7 @@ mod tests {
         client.add_company(&admin, &company);
         client.add_carrier(&admin, &carrier);
 
-        (env, client, admin, company, carrier, token_id)
+        (env, client, admin, company, carrier)
     }
 
     fn make_hash(env: &Env, seed: u8) -> BytesN<32> {
@@ -70,7 +63,6 @@ mod tests {
             &hash,
             &Vec::new(env),
             &deadline,
-            &None,
         ) {
             Ok(Ok(id)) => Ok(id),
             Err(Ok(e)) => Err(e),
@@ -82,7 +74,7 @@ mod tests {
 
     #[test]
     fn quota_disabled_by_default_allows_unlimited_creation() {
-        let (env, client, _admin, company, carrier, _token) = setup();
+        let (env, client, _admin, company, carrier) = setup();
 
         // With quota disabled (max=0), many shipments should succeed.
         for seed in 1u8..=10 {
@@ -96,7 +88,7 @@ mod tests {
 
     #[test]
     fn quota_exceeded_within_window_returns_error() {
-        let (env, client, admin, company, carrier, _token) = setup();
+        let (env, client, admin, company, carrier) = setup();
 
         // Set quota: max 3 per 3600-second window.
         client.set_creation_quota(&admin, &3, &3600);
@@ -115,7 +107,7 @@ mod tests {
 
     #[test]
     fn quota_resets_after_window_expires() {
-        let (env, client, admin, company, carrier, _token) = setup();
+        let (env, client, admin, company, carrier) = setup();
 
         client.set_creation_quota(&admin, &2, &3600);
 
@@ -140,7 +132,7 @@ mod tests {
 
     #[test]
     fn quota_status_returns_max_when_disabled() {
-        let (_env, client, _admin, company, _carrier, _token) = setup();
+        let (_env, client, _admin, company, _carrier) = setup();
 
         let (used, remaining) = client.get_creation_quota_status(&company);
         assert_eq!(used, 0);
@@ -149,7 +141,7 @@ mod tests {
 
     #[test]
     fn quota_status_tracks_usage_correctly() {
-        let (env, client, admin, company, carrier, _token) = setup();
+        let (env, client, admin, company, carrier) = setup();
 
         client.set_creation_quota(&admin, &5, &3600);
 
@@ -167,7 +159,7 @@ mod tests {
 
     #[test]
     fn quota_status_resets_after_window() {
-        let (env, client, admin, company, carrier, _token) = setup();
+        let (env, client, admin, company, carrier) = setup();
 
         client.set_creation_quota(&admin, &3, &3600);
 
@@ -187,7 +179,7 @@ mod tests {
 
     #[test]
     fn set_creation_quota_rejects_zero_window_with_nonzero_max() {
-        let (_env, client, admin, _company, _carrier, _token) = setup();
+        let (_env, client, admin, _company, _carrier) = setup();
 
         let result = client.try_set_creation_quota(&admin, &5, &0);
         assert_eq!(result, Err(Ok(NavinError::InvalidConfig)));
@@ -195,7 +187,7 @@ mod tests {
 
     #[test]
     fn set_creation_quota_allows_zero_max_to_disable() {
-        let (_env, client, admin, _company, _carrier, _token) = setup();
+        let (_env, client, admin, _company, _carrier) = setup();
 
         // max=0 disables quota regardless of window.
         assert!(client.try_set_creation_quota(&admin, &0, &0).is_ok());
@@ -203,7 +195,7 @@ mod tests {
 
     #[test]
     fn set_creation_quota_rejects_non_admin() {
-        let (_env, client, _admin, company, _carrier, _token) = setup();
+        let (env, client, _admin, company, _carrier) = setup();
 
         let result = client.try_set_creation_quota(&company, &5, &3600);
         assert_eq!(result, Err(Ok(NavinError::Unauthorized)));
@@ -214,7 +206,7 @@ mod tests {
     #[test]
     fn batch_creation_respects_quota() {
         use crate::types::ShipmentInput;
-        let (env, client, admin, company, carrier, token) = setup();
+        let (env, client, admin, company, carrier) = setup();
 
         // Allow max 2 per window.
         client.set_creation_quota(&admin, &2, &3600);
@@ -225,11 +217,9 @@ mod tests {
             inputs.push_back(ShipmentInput {
                 receiver: Address::generate(&env),
                 carrier: carrier.clone(),
-                token_address: token.clone(),
                 data_hash: make_hash(&env, seed),
                 payment_milestones: soroban_sdk::Vec::new(&env),
                 deadline,
-                depends_on: None,
             });
         }
 

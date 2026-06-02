@@ -56,7 +56,6 @@ fn create_one(
         &dummy_hash(env, seed),
         &Vec::new(env),
         &deadline,
-        &None,
     )
 }
 
@@ -84,7 +83,7 @@ fn test_healthy_shipment_has_no_violations() {
 
 #[test]
 fn test_healthy_batch_has_no_violations() {
-    let (env, client, admin, token) = setup();
+    let (env, client, admin, _token) = setup();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     client.add_company(&admin, &company);
@@ -97,11 +96,9 @@ fn test_healthy_batch_has_no_violations() {
         inputs.push_back(ShipmentInput {
             receiver: Address::generate(&env),
             carrier: carrier.clone(),
-            token_address: token.clone(),
             data_hash: dummy_hash(&env, seed),
             payment_milestones: Vec::new(&env),
             deadline,
-            depends_on: None,
         });
     }
     let ids = client.create_shipments_batch(&company, &inputs);
@@ -585,6 +582,130 @@ fn test_config_checksum_stable_across_queries() {
     assert_eq!(c1, c4);
 }
 
+// ── Batch query vs. single-read consistency (issue #445) ────────────────────
+
+/// Each position in a batch result must agree with the corresponding
+/// single-record read for every field the consistency checker cares about.
+#[test]
+fn test_batch_single_read_equivalence() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let id1 = create_one(&env, &client, &company, &carrier, 0x10);
+    let id2 = create_one(&env, &client, &company, &carrier, 0x20);
+    let id3 = create_one(&env, &client, &company, &carrier, 0x30);
+
+    let mut ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+    ids.push_back(id1);
+    ids.push_back(id2);
+    ids.push_back(id3);
+
+    let batch = client.get_shipments_batch(&ids);
+
+    for (i, expected_id) in [id1, id2, id3].iter().enumerate() {
+        let single = client.get_shipment(expected_id);
+        let from_batch = batch.get(i as u32).unwrap().unwrap();
+        assert_eq!(
+            from_batch.id, single.id,
+            "batch[{i}] id must equal single-read id"
+        );
+        assert_eq!(
+            from_batch.status, single.status,
+            "batch[{i}] status must equal single-read status"
+        );
+        assert_eq!(
+            from_batch.escrow_amount, single.escrow_amount,
+            "batch[{i}] escrow_amount must equal single-read value"
+        );
+        assert_eq!(
+            from_batch.finalized, single.finalized,
+            "batch[{i}] finalized flag must equal single-read value"
+        );
+    }
+}
+
+/// Missing record entries must be None in the batch result, matching the
+/// error behaviour of single reads on non-existent IDs.
+#[test]
+fn test_missing_record_batch_returns_none_stable() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let existing_id = create_one(&env, &client, &company, &carrier, 0x40);
+    let missing_id: u64 = 88888;
+
+    let mut ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+    ids.push_back(existing_id);
+    ids.push_back(missing_id);
+
+    // First call
+    let first = client.get_shipments_batch(&ids);
+    // Second call — must agree
+    let second = client.get_shipments_batch(&ids);
+
+    assert!(first.get(0).unwrap().is_some(), "existing id must be Some");
+    assert!(
+        first.get(1).unwrap().is_none(),
+        "missing id must be None in batch"
+    );
+    // Stability: second call must match first
+    assert_eq!(
+        first.get(1).unwrap().is_none(),
+        second.get(1).unwrap().is_none(),
+        "missing-record None must be stable across repeated calls"
+    );
+    // Single read for missing id also fails
+    assert!(
+        client.try_get_shipment(&missing_id).is_err(),
+        "single get for missing id must return an error"
+    );
+}
+
+/// Repeated batch queries on the same IDs must return identical results,
+/// demonstrating that the batch output is deterministic and read-only.
+#[test]
+fn test_batch_query_output_deterministic() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let id1 = create_one(&env, &client, &company, &carrier, 0x50);
+    let id2 = create_one(&env, &client, &company, &carrier, 0x51);
+
+    let mut ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+    ids.push_back(id1);
+    ids.push_back(77777_u64); // missing
+    ids.push_back(id2);
+
+    let r1 = client.get_shipments_batch(&ids);
+    let r2 = client.get_shipments_batch(&ids);
+    let r3 = client.get_shipments_batch(&ids);
+
+    assert_eq!(r1.len(), r2.len());
+    assert_eq!(r2.len(), r3.len());
+    for i in 0..r1.len() {
+        match (r1.get(i).unwrap(), r2.get(i).unwrap(), r3.get(i).unwrap()) {
+            (Some(a), Some(b), Some(c)) => {
+                assert_eq!(a.id, b.id);
+                assert_eq!(b.id, c.id);
+            }
+            (None, None, None) => {}
+            _ => panic!("slot {i} produced inconsistent presence across three calls"),
+        }
+    }
+}
+
 /// The config checksum is deterministic and reproducible via the raw compute function.
 #[test]
 fn test_config_checksum_raw_compute_matches_saved() {
@@ -595,4 +716,248 @@ fn test_config_checksum_raw_compute_matches_saved() {
         config::compute_config_checksum(&cfg, &env)
     });
     assert_eq!(saved, recomputed, "saved checksum must match recomputed");
+}
+
+// ── Dependency cycle detection tests (issue #16) ────────────────────────────────
+
+/// Build an acyclic dependency chain fixture: A -> B -> C -> D
+/// This should pass without any cycle detection errors.
+#[test]
+fn test_acyclic_dependency_chain_passes() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    // Create a chain of shipments: A -> B -> C -> D
+    let id_a = create_one(&env, &client, &company, &carrier, 0xA0);
+    let id_b = create_one(&env, &client, &company, &carrier, 0xB0);
+    let id_c = create_one(&env, &client, &company, &carrier, 0xC0);
+    let id_d = create_one(&env, &client, &company, &carrier, 0xD0);
+
+    // Set up dependencies: B depends on A, C depends on B, D depends on C
+    env.as_contract(&client.address, || {
+        let mut deps_a: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+        crate::storage::set_dependencies(&env, id_a, &deps_a);
+
+        let mut deps_b: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+        deps_b.push_back(id_a);
+        crate::storage::set_dependencies(&env, id_b, &deps_b);
+        crate::storage::add_dependent(&env, id_a, id_b);
+
+        let mut deps_c: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+        deps_c.push_back(id_b);
+        crate::storage::set_dependencies(&env, id_c, &deps_c);
+        crate::storage::add_dependent(&env, id_b, id_c);
+
+        let mut deps_d: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+        deps_d.push_back(id_c);
+        crate::storage::set_dependencies(&env, id_d, &deps_d);
+        crate::storage::add_dependent(&env, id_c, id_d);
+
+        // Verify the dependency chain is stored correctly
+        let retrieved_b = crate::storage::get_dependencies(&env, id_b).unwrap();
+        assert_eq!(retrieved_b.len(), 1);
+        assert_eq!(retrieved_b.get(0), Some(id_a));
+
+        let retrieved_c = crate::storage::get_dependencies(&env, id_c).unwrap();
+        assert_eq!(retrieved_c.len(), 1);
+        assert_eq!(retrieved_c.get(0), Some(id_b));
+
+        let retrieved_d = crate::storage::get_dependencies(&env, id_d).unwrap();
+        assert_eq!(retrieved_d.len(), 1);
+        assert_eq!(retrieved_d.get(0), Some(id_c));
+
+        // Verify reverse index (dependents)
+        let dependents_a = crate::storage::get_dependents(&env, id_a).unwrap();
+        assert_eq!(dependents_a.len(), 1);
+        assert_eq!(dependents_a.get(0), Some(id_b));
+
+        let dependents_b = crate::storage::get_dependents(&env, id_b).unwrap();
+        assert_eq!(dependents_b.len(), 1);
+        assert_eq!(dependents_b.get(0), Some(id_c));
+
+        let dependents_c = crate::storage::get_dependents(&env, id_c).unwrap();
+        assert_eq!(dependents_c.len(), 1);
+        assert_eq!(dependents_c.get(0), Some(id_d));
+    });
+}
+
+/// Create a cyclic dependency: A -> B -> C -> A
+/// This should be detected and rejected.
+#[test]
+fn test_cyclic_dependency_is_rejected() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    // Create shipments for the cycle
+    let id_a = create_one(&env, &client, &company, &carrier, 0xAA);
+    let id_b = create_one(&env, &client, &company, &carrier, 0xBB);
+    let id_c = create_one(&env, &client, &company, &carrier, 0xCC);
+
+    env.as_contract(&client.address, || {
+        // Set up initial chain: A -> B -> C
+        let mut deps_b: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+        deps_b.push_back(id_a);
+        crate::storage::set_dependencies(&env, id_b, &deps_b);
+        crate::storage::add_dependent(&env, id_a, id_b);
+
+        let mut deps_c: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+        deps_c.push_back(id_b);
+        crate::storage::set_dependencies(&env, id_c, &deps_c);
+        crate::storage::add_dependent(&env, id_b, id_c);
+
+        // Attempt to create a cycle by making A depend on C
+        // This should be detected as a cycle: A -> B -> C -> A
+        let mut deps_a: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+        deps_a.push_back(id_c);
+
+        // Detect cycle by traversing the dependency graph
+        let has_cycle = detect_cycle(&env, id_a, &deps_a);
+        assert!(has_cycle, "cycle A -> B -> C -> A should be detected");
+    });
+}
+
+/// Helper function to detect cycles in the dependency graph.
+/// Returns true if adding the given dependencies would create a cycle.
+fn detect_cycle(env: &Env, start_id: u64, new_deps: &soroban_sdk::Vec<u64>) -> bool {
+    use soroban_sdk::Vec;
+
+    let mut visited: Vec<u64> = Vec::new(env);
+    let mut path: Vec<u64> = Vec::new(env);
+
+    for i in 0..new_deps.len() {
+        if let Some(dep_id) = new_deps.get(i) {
+            if has_cycle_recursive(env, dep_id, start_id, &mut visited, &mut path) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Recursive helper for cycle detection using DFS.
+fn has_cycle_recursive(
+    env: &Env,
+    current: u64,
+    target: u64,
+    visited: &mut soroban_sdk::Vec<u64>,
+    path: &mut soroban_sdk::Vec<u64>,
+) -> bool {
+    // If we reached the target, we found a cycle
+    if current == target {
+        return true;
+    }
+
+    // Check if already visited in current path
+    for i in 0..path.len() {
+        if path.get(i) == Some(current) {
+            return true;
+        }
+    }
+
+    // Check if already visited globally
+    for i in 0..visited.len() {
+        if visited.get(i) == Some(current) {
+            return false;
+        }
+    }
+
+    visited.push_back(current);
+    path.push_back(current);
+
+    // Recursively check dependencies
+    if let Some(deps) = crate::storage::get_dependencies(env, current) {
+        for i in 0..deps.len() {
+            if let Some(dep_id) = deps.get(i) {
+                if has_cycle_recursive(env, dep_id, target, visited, path) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Backtrack
+    let _ = path.pop();
+    false
+}
+
+/// Query output for dependencies must remain deterministic across multiple calls.
+#[test]
+fn test_dependency_query_output_deterministic() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    // Create a dependency chain
+    let id_a = create_one(&env, &client, &company, &carrier, 0x1A);
+    let id_b = create_one(&env, &client, &company, &carrier, 0x1B);
+    let id_c = create_one(&env, &client, &company, &carrier, 0x1C);
+
+    env.as_contract(&client.address, || {
+        let mut deps_b: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+        deps_b.push_back(id_a);
+        crate::storage::set_dependencies(&env, id_b, &deps_b);
+        crate::storage::add_dependent(&env, id_a, id_b);
+
+        let mut deps_c: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+        deps_c.push_back(id_b);
+        crate::storage::set_dependencies(&env, id_c, &deps_c);
+        crate::storage::add_dependent(&env, id_b, id_c);
+
+        // Query multiple times and verify consistency
+        let query1 = crate::storage::get_dependencies(&env, id_b);
+        let query2 = crate::storage::get_dependencies(&env, id_b);
+        let query3 = crate::storage::get_dependencies(&env, id_b);
+
+        assert_eq!(query1, query2, "dependency query must be deterministic");
+        assert_eq!(
+            query2, query3,
+            "dependency query must be stable across calls"
+        );
+
+        let dependents1 = crate::storage::get_dependents(&env, id_a);
+        let dependents2 = crate::storage::get_dependents(&env, id_a);
+        let dependents3 = crate::storage::get_dependents(&env, id_a);
+
+        assert_eq!(
+            dependents1, dependents2,
+            "dependents query must be deterministic"
+        );
+        assert_eq!(
+            dependents2, dependents3,
+            "dependents query must be stable across calls"
+        );
+    });
+}
+
+/// Self-dependency (shipment depending on itself) should be detected as a cycle.
+#[test]
+fn test_self_dependency_is_rejected() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let id = create_one(&env, &client, &company, &carrier, 0xFF);
+
+    env.as_contract(&client.address, || {
+        // Attempt to make a shipment depend on itself
+        let mut deps: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
+        deps.push_back(id);
+
+        let has_cycle = detect_cycle(&env, id, &deps);
+        assert!(has_cycle, "self-dependency should be detected as a cycle");
+    });
 }

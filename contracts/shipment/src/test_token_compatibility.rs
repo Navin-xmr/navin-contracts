@@ -137,7 +137,6 @@ fn run_escrow_flow_test(variant: TokenVariant) {
         &dummy_hash(&ctx.env),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
 
     ctx.shipment_client
@@ -189,7 +188,6 @@ fn run_refund_flow_test(variant: TokenVariant) {
         &dummy_hash(&ctx.env),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
 
     ctx.shipment_client
@@ -233,7 +231,6 @@ fn run_milestone_payment_flow_test(variant: TokenVariant) {
         &dummy_hash(&ctx.env),
         &milestones,
         &deadline,
-        &None,
     );
 
     ctx.shipment_client
@@ -293,7 +290,6 @@ fn run_insufficient_funds_test(variant: TokenVariant) {
         &dummy_hash(&ctx.env),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
 
     let result = ctx

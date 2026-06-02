@@ -139,7 +139,6 @@ fn token_transfer_boundary_uses_from_to_amount_order() {
         &hash32(&ctx.env, 1),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
 
     ctx.client.deposit_escrow(&ctx.company, &shipment_id, &500);
@@ -176,7 +175,6 @@ fn token_refund_boundary_uses_from_to_amount_order() {
         &hash32(&ctx.env, 7),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
 
     ctx.client.deposit_escrow(&ctx.company, &shipment_id, &240);
@@ -209,7 +207,6 @@ fn create_shipment_and_status_update_auth_args_are_stable() {
         &data_hash,
         &milestones,
         &deadline,
-        &None,
     );
 
     assert_auth_args(
@@ -225,7 +222,6 @@ fn create_shipment_and_status_update_auth_args_are_stable() {
             data_hash.clone().into_val(&ctx.env),
             milestones.clone().into_val(&ctx.env),
             deadline.into_val(&ctx.env),
-            None::<Vec<u64>>.into_val(&ctx.env),
         ],
     );
 
@@ -264,7 +260,6 @@ fn cancel_shipment_auth_arg_order_is_stable() {
         &hash32(&ctx.env, 20),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
 
     ctx.client
