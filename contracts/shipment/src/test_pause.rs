@@ -232,4 +232,51 @@ mod tests {
         client.unpause(&guardian);
         assert!(!client.is_paused());
     }
+
+    // ── Finalization lock-out survives pause/unpause cycle (issue #446) ─────
+
+    /// A finalized shipment must stay locked even after the contract is
+    /// paused and then unpaused — the finalization flag is not cleared by
+    /// the pause mechanism.
+    #[test]
+    fn test_finalized_shipment_stays_locked_after_unpause() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let receiver = Address::generate(&env);
+        let carrier = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+
+        let hash = BytesN::from_array(&env, &[0x99u8; 32]);
+        let deadline = future_deadline(&env, 86400);
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &Vec::new(&env), &deadline);
+
+        // Finalize the shipment via cancellation.
+        client.cancel_shipment(&company, &shipment_id, &hash);
+        assert!(
+            client.get_shipment(&shipment_id).finalized,
+            "shipment must be finalized after cancel"
+        );
+
+        // Pause then unpause the contract.
+        client.pause(&admin);
+        client.unpause(&admin);
+        assert!(!client.is_paused(), "contract must be unpaused");
+
+        // The finalized shipment must still reject mutating calls.
+        let update_result =
+            client.try_update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash);
+        assert!(
+            matches!(update_result, Err(Ok(crate::NavinError::ShipmentFinalized))),
+            "update_status must still be rejected after pause/unpause cycle"
+        );
+
+        let deposit_result = client.try_deposit_escrow(&company, &shipment_id, &1_000_i128);
+        assert!(
+            matches!(deposit_result, Err(Ok(crate::NavinError::ShipmentFinalized))),
+            "deposit_escrow must still be rejected after pause/unpause cycle"
+        );
+    }
 }

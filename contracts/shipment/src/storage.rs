@@ -2219,4 +2219,20 @@ mod tests {
     }
 }
 
+/// Fetch multiple shipments by ID in one pass, preserving input order.
+///
+/// Each element in the returned vector corresponds to the shipment ID at the
+/// same index in `ids`. If a shipment does not exist, `None` is placed at
+/// that position, mirroring the behaviour of a single `get_shipment` call.
+pub fn get_shipments_batch_raw(
+    env: &Env,
+    ids: &soroban_sdk::Vec<u64>,
+) -> soroban_sdk::Vec<Option<Shipment>> {
+    let mut results = soroban_sdk::Vec::new(env);
+    for id in ids.iter() {
+        results.push_back(get_shipment(env, id));
+    }
+    results
+}
+
 // ============= Settlement State Storage Functions =============

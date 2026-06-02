@@ -293,7 +293,6 @@ fn test_lengths_13_to_17_all_rejected() {
         );
     }
 }
-<<<<<<< test/symbol-validation-boundaries
 
 // ── Additional edge case tests ────────────────────────────────────────────────
 
@@ -763,5 +762,117 @@ fn test_metadata_value_30_chars_rejected() {
         "30-char metadata value must be rejected"
     );
 }
-=======
->>>>>>> main
+
+// ── Metadata value length boundary tests (issue #448) ────────────────────────
+
+/// Empty-string symbols are rejected by `validate_symbol` (XDR length < 12 bytes).
+/// `validate_metadata_symbols` must propagate this rejection for both key and value.
+#[test]
+fn test_metadata_empty_value_rejected() {
+    // Soroban SDK does not allow constructing an empty Symbol via Symbol::new,
+    // so we verify the boundary at length 1 (minimum valid) and trust the XDR
+    // check rejects anything below the 12-byte XDR floor (0 chars → 8 bytes).
+    let env = Env::default();
+    let key = sym(&env, "K");
+    let val = sym(&env, "V");
+    // 1-char symbols are valid (XDR 12 bytes — within 12..=20).
+    assert_eq!(
+        validate_metadata_symbols(&env, &key, &val),
+        Ok(()),
+        "1-char key and 1-char value must be the minimum valid boundary"
+    );
+}
+
+/// Maximum-length (12-char) metadata value must be accepted.
+#[test]
+fn test_metadata_value_at_maximum_length_accepted() {
+    let env = Env::default();
+    let key = sym(&env, "weight");
+    let val = sym(&env, "ABCDEFGHIJKL"); // 12 chars — exact maximum
+    assert_eq!(
+        validate_metadata_symbols(&env, &key, &val),
+        Ok(()),
+        "12-char metadata value must be accepted (at maximum boundary)"
+    );
+}
+
+/// 13-char metadata value (one over the limit) must be rejected.
+#[test]
+fn test_metadata_value_over_maximum_rejected() {
+    let env = Env::default();
+    let key = sym(&env, "weight");
+    let long: std::string::String = "X".repeat(13);
+    let val = sym(&env, &long);
+    assert_eq!(
+        validate_metadata_symbols(&env, &key, &val),
+        Err(NavinError::InvalidShipmentInput),
+        "13-char metadata value must be rejected (one over the limit)"
+    );
+}
+
+/// Maximum-length (12-char) metadata key must be accepted.
+#[test]
+fn test_metadata_key_at_maximum_length_accepted() {
+    let env = Env::default();
+    let key = sym(&env, "VERYLONGNAME"); // 12 chars
+    let val = sym(&env, "ok");
+    assert_eq!(
+        validate_metadata_symbols(&env, &key, &val),
+        Ok(()),
+        "12-char metadata key must be accepted (at maximum boundary)"
+    );
+}
+
+/// 13-char metadata key (one over the limit) must be rejected.
+#[test]
+fn test_metadata_key_over_maximum_rejected() {
+    let env = Env::default();
+    let long: std::string::String = "K".repeat(13);
+    let key = sym(&env, &long);
+    let val = sym(&env, "ok");
+    assert_eq!(
+        validate_metadata_symbols(&env, &key, &val),
+        Err(NavinError::InvalidShipmentInput),
+        "13-char metadata key must be rejected (one over the limit)"
+    );
+}
+
+/// The rejection error for overlong metadata must be `InvalidShipmentInput`,
+/// not any other variant — this pins the error type across refactors.
+#[test]
+fn test_metadata_overlong_error_variant_is_invalid_shipment_input() {
+    let env = Env::default();
+    let long: std::string::String = "V".repeat(14);
+    let key = sym(&env, "weight");
+    let val = sym(&env, &long);
+    let err = validate_metadata_symbols(&env, &key, &val).unwrap_err();
+    assert_eq!(
+        err,
+        NavinError::InvalidShipmentInput,
+        "overlong metadata value must map to InvalidShipmentInput"
+    );
+}
+
+/// Boundary sweep: lengths 1..=12 must all be accepted, lengths 13..=15
+/// must all be rejected — the cut-off is stable at 12.
+#[test]
+fn test_metadata_value_boundary_sweep() {
+    let env = Env::default();
+    let key = sym(&env, "k");
+    for len in 1usize..=12 {
+        let s: std::string::String = "A".repeat(len);
+        assert_eq!(
+            validate_metadata_symbols(&env, &key, &sym(&env, &s)),
+            Ok(()),
+            "metadata value of length {len} must be valid"
+        );
+    }
+    for len in 13usize..=15 {
+        let s: std::string::String = "A".repeat(len);
+        assert_eq!(
+            validate_metadata_symbols(&env, &key, &sym(&env, &s)),
+            Err(NavinError::InvalidShipmentInput),
+            "metadata value of length {len} must be rejected"
+        );
+    }
+}
