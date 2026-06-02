@@ -139,4 +139,6 @@ pub enum NavinError {
     InvalidTokenAddress = 61,
     /// Payment milestone checkpoint name has an invalid format.
     InvalidPaymentMilestoneName = 62,
+    /// Metadata key and value symbols are identical, which is considered a collision.
+    MetadataSymbolCollision = 63,
 }

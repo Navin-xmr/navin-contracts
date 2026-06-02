@@ -416,6 +416,12 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "Payment milestone checkpoint name has an invalid format.",
         ),
+        NavinError::MetadataSymbolCollision => (
+            63,
+            InvalidInput,
+            NoRetry,
+            "Metadata key and value symbols are identical; use distinct symbols.",
+        ),
     };
 
     ContractErrorInfo {

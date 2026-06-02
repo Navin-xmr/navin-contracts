@@ -195,7 +195,7 @@ fn test_milestone_duplicate_12_char_symbols_rejected() {
     milestones.push_back((sym(&env, "VERYLONGNAME"), 50));
     assert_eq!(
         validate_milestone_symbols(&env, &milestones),
-        Err(NavinError::InvalidShipmentInput),
+        Err(NavinError::DuplicatePaymentMilestone),
         "Duplicate 12-char milestone symbols must be rejected"
     );
 }
@@ -593,4 +593,114 @@ fn test_validate_symbol_overlong_is_idempotent() {
     let first = validate_symbol(&env, &s);
     let second = validate_symbol(&env, &s);
     assert_eq!(first, second, "validate_symbol (overlong) must be idempotent");
+}
+
+// ── Metadata symbol collision tests ──────────────────────────────────────────
+//
+// validate_metadata_symbols must reject key==value pairs to prevent
+// self-referential metadata entries that are always a caller mistake.
+
+#[test]
+fn test_metadata_symbol_collision_single_char_rejected() {
+    // The simplest possible collision: same 1-char symbol for key and value.
+    let env = Env::default();
+    let s = sym(&env, "w");
+    assert_eq!(
+        validate_metadata_symbols(&env, &s, &s),
+        Err(NavinError::MetadataSymbolCollision),
+        "Identical single-char key and value must be rejected as a collision"
+    );
+}
+
+#[test]
+fn test_metadata_symbol_collision_multi_char_rejected() {
+    // Multi-character identical symbols should also collide.
+    let env = Env::default();
+    let s = sym(&env, "weight");
+    assert_eq!(
+        validate_metadata_symbols(&env, &s, &s),
+        Err(NavinError::MetadataSymbolCollision),
+        "Identical multi-char key and value must be rejected as a collision"
+    );
+}
+
+#[test]
+fn test_metadata_symbol_collision_max_length_rejected() {
+    // 12-char symbols (Stellar max) that are identical must collide.
+    let env = Env::default();
+    let s = sym(&env, "ABCDEFGHIJKL");
+    assert_eq!(
+        validate_metadata_symbols(&env, &s, &s),
+        Err(NavinError::MetadataSymbolCollision),
+        "Identical max-length key and value must be rejected as a collision"
+    );
+}
+
+#[test]
+fn test_metadata_symbol_no_collision_distinct_symbols_pass() {
+    // Different key and value must not collide.
+    let env = Env::default();
+    let key = sym(&env, "weight");
+    let val = sym(&env, "kg100");
+    assert_eq!(
+        validate_metadata_symbols(&env, &key, &val),
+        Ok(()),
+        "Distinct key and value must pass validation"
+    );
+}
+
+#[test]
+fn test_metadata_symbol_no_collision_similar_names_pass() {
+    // Symbols that look similar but differ by one character must not collide.
+    let env = Env::default();
+    let key = sym(&env, "status1");
+    let val = sym(&env, "status2");
+    assert_eq!(
+        validate_metadata_symbols(&env, &key, &val),
+        Ok(()),
+        "Similar-but-distinct key and value must pass validation"
+    );
+}
+
+#[test]
+fn test_metadata_symbol_collision_via_set_shipment_metadata() {
+    // End-to-end: calling set_shipment_metadata with key==value must return
+    // MetadataSymbolCollision at the contract level.
+    use crate::{test_utils, NavinShipment, NavinShipmentClient};
+    use soroban_sdk::{testutils::Address as _, Address, Vec as SorobanVec};
+
+    let (env, admin) = test_utils::setup_env();
+    let contract_id = env.register(NavinShipment, ());
+    let client = NavinShipmentClient::new(&env, &contract_id);
+
+    let token = env.register_stellar_asset_contract_v2(admin.clone());
+    client.initialize(&admin, &token.address());
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &soroban_sdk::BytesN::from_array(&env, &[3u8; 32]),
+        &SorobanVec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    // Use the same symbol for both key and value — must be rejected.
+    let colliding = soroban_sdk::Symbol::new(&env, "status");
+    let result = client.try_set_shipment_metadata(&company, &shipment_id, &colliding, &colliding);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::MetadataSymbolCollision)),
+        "set_shipment_metadata with key==value must return MetadataSymbolCollision"
+    );
 }

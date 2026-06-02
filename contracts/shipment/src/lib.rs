@@ -85,6 +85,10 @@ mod test_snapshot_helpers;
 #[cfg(test)]
 mod test_suspension;
 #[cfg(test)]
+mod test_symbol_validation;
+#[cfg(test)]
+mod test_escrow_arithmetic;
+#[cfg(test)]
 mod test_ttl_health;
 #[cfg(test)]
 mod test_utils;
