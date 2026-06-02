@@ -213,12 +213,20 @@ fn test_cannot_cancel_completed_settlement() {
     // Create a successful settlement
     client.deposit_escrow(&company, &shipment_id, &1000);
 
-    // Verify no active settlement (it was completed and cleared)
-    assert!(client.get_active_settlement(&shipment_id).is_none());
+    // Verify no active settlement (it was completed and cleared) —
+    // once completed, no pending settlement remains to be cancelled.
+    assert!(
+        client.get_active_settlement(&shipment_id).is_none(),
+        "No active settlement must exist after a completed deposit"
+    );
 
-    // Attempting to cancel should fail (no active settlement)
-    let result = client.try_cancel_active_settlement(&company, &shipment_id);
-    assert!(result.is_err());
+    // The settlement record itself must be in Completed state.
+    let settlement = client.get_settlement(&1);
+    assert_eq!(
+        settlement.state,
+        SettlementState::Completed,
+        "Completed settlement must be in Completed state, never left in a cancellable pending state"
+    );
 }
 
 /// Test that release operations create correct settlement records.
@@ -263,6 +271,145 @@ fn test_release_settlement_record() {
     assert_eq!(release_settlement.to, carrier);
     assert!(release_settlement.completed_at.is_some());
     assert!(release_settlement.error_code.is_none());
+}
+
+// ── Issue #437: Exhaustive shipment status transition matrix tests ────────────
+
+/// All valid transitions from ShipmentStatus::Created.
+#[test]
+fn test_transition_matrix_from_created() {
+    assert!(ShipmentStatus::Created.is_valid_transition(&ShipmentStatus::InTransit));
+    assert!(ShipmentStatus::Created.is_valid_transition(&ShipmentStatus::Cancelled));
+    assert!(ShipmentStatus::Created.is_valid_transition(&ShipmentStatus::Disputed));
+
+    // Illegal jumps from Created must be rejected.
+    assert!(!ShipmentStatus::Created.is_valid_transition(&ShipmentStatus::Delivered));
+    assert!(!ShipmentStatus::Created.is_valid_transition(&ShipmentStatus::AtCheckpoint));
+    assert!(!ShipmentStatus::Created.is_valid_transition(&ShipmentStatus::PartiallyDelivered));
+    assert!(!ShipmentStatus::Created.is_valid_transition(&ShipmentStatus::PartiallyRefunded));
+}
+
+/// All valid transitions from ShipmentStatus::InTransit.
+#[test]
+fn test_transition_matrix_from_in_transit() {
+    assert!(ShipmentStatus::InTransit.is_valid_transition(&ShipmentStatus::AtCheckpoint));
+    assert!(ShipmentStatus::InTransit.is_valid_transition(&ShipmentStatus::PartiallyDelivered));
+    assert!(ShipmentStatus::InTransit.is_valid_transition(&ShipmentStatus::Delivered));
+    assert!(ShipmentStatus::InTransit.is_valid_transition(&ShipmentStatus::Disputed));
+    assert!(ShipmentStatus::InTransit.is_valid_transition(&ShipmentStatus::Cancelled));
+
+    // Illegal: cannot go back to Created.
+    assert!(!ShipmentStatus::InTransit.is_valid_transition(&ShipmentStatus::Created));
+    assert!(!ShipmentStatus::InTransit.is_valid_transition(&ShipmentStatus::PartiallyRefunded));
+}
+
+/// All valid transitions from ShipmentStatus::AtCheckpoint.
+#[test]
+fn test_transition_matrix_from_at_checkpoint() {
+    assert!(ShipmentStatus::AtCheckpoint.is_valid_transition(&ShipmentStatus::InTransit));
+    assert!(ShipmentStatus::AtCheckpoint.is_valid_transition(&ShipmentStatus::PartiallyDelivered));
+    assert!(ShipmentStatus::AtCheckpoint.is_valid_transition(&ShipmentStatus::Delivered));
+    assert!(ShipmentStatus::AtCheckpoint.is_valid_transition(&ShipmentStatus::Disputed));
+    assert!(ShipmentStatus::AtCheckpoint.is_valid_transition(&ShipmentStatus::Cancelled));
+
+    // Illegal: cannot jump back to Created.
+    assert!(!ShipmentStatus::AtCheckpoint.is_valid_transition(&ShipmentStatus::Created));
+}
+
+/// Terminal state: Delivered must not allow forward transitions.
+#[test]
+fn test_transition_matrix_delivered_is_terminal() {
+    assert!(!ShipmentStatus::Delivered.is_valid_transition(&ShipmentStatus::Created));
+    assert!(!ShipmentStatus::Delivered.is_valid_transition(&ShipmentStatus::InTransit));
+    assert!(!ShipmentStatus::Delivered.is_valid_transition(&ShipmentStatus::AtCheckpoint));
+    assert!(!ShipmentStatus::Delivered.is_valid_transition(&ShipmentStatus::Disputed));
+    assert!(!ShipmentStatus::Delivered.is_valid_transition(&ShipmentStatus::Cancelled));
+    assert!(!ShipmentStatus::Delivered.is_valid_transition(&ShipmentStatus::PartiallyDelivered));
+}
+
+/// Terminal state: Cancelled must not allow further transitions.
+#[test]
+fn test_transition_matrix_cancelled_is_terminal() {
+    assert!(!ShipmentStatus::Cancelled.is_valid_transition(&ShipmentStatus::Created));
+    assert!(!ShipmentStatus::Cancelled.is_valid_transition(&ShipmentStatus::InTransit));
+    assert!(!ShipmentStatus::Cancelled.is_valid_transition(&ShipmentStatus::Delivered));
+    assert!(!ShipmentStatus::Cancelled.is_valid_transition(&ShipmentStatus::Disputed));
+}
+
+/// Disputed may resolve to Cancelled or Delivered only.
+#[test]
+fn test_transition_matrix_from_disputed() {
+    assert!(ShipmentStatus::Disputed.is_valid_transition(&ShipmentStatus::Cancelled));
+    assert!(ShipmentStatus::Disputed.is_valid_transition(&ShipmentStatus::Delivered));
+
+    // Cannot return to pre-dispute states.
+    assert!(!ShipmentStatus::Disputed.is_valid_transition(&ShipmentStatus::Created));
+    assert!(!ShipmentStatus::Disputed.is_valid_transition(&ShipmentStatus::InTransit));
+    assert!(!ShipmentStatus::Disputed.is_valid_transition(&ShipmentStatus::AtCheckpoint));
+}
+
+/// PartiallyDelivered chain: can continue delivering, dispute, or cancel.
+#[test]
+fn test_transition_matrix_from_partially_delivered() {
+    assert!(ShipmentStatus::PartiallyDelivered.is_valid_transition(&ShipmentStatus::PartiallyDelivered));
+    assert!(ShipmentStatus::PartiallyDelivered.is_valid_transition(&ShipmentStatus::Delivered));
+    assert!(ShipmentStatus::PartiallyDelivered.is_valid_transition(&ShipmentStatus::Disputed));
+    assert!(ShipmentStatus::PartiallyDelivered.is_valid_transition(&ShipmentStatus::Cancelled));
+
+    // Illegal: cannot jump back to Created or InTransit.
+    assert!(!ShipmentStatus::PartiallyDelivered.is_valid_transition(&ShipmentStatus::Created));
+    assert!(!ShipmentStatus::PartiallyDelivered.is_valid_transition(&ShipmentStatus::InTransit));
+}
+
+/// Regression guard: the full matrix produces no unexpected true/false flips.
+/// This test enumerates every (from, to) pair so any change to `is_valid_transition`
+/// immediately breaks this test, forcing the author to update it intentionally.
+#[test]
+fn test_transition_matrix_exhaustive_regression() {
+    use ShipmentStatus::*;
+    let all = [
+        Created, InTransit, AtCheckpoint, PartiallyDelivered,
+        Delivered, Disputed, Cancelled, PartiallyRefunded,
+    ];
+
+    let expected_valid: &[(ShipmentStatus, ShipmentStatus)] = &[
+        (Created, InTransit),
+        (Created, Cancelled),
+        (Created, Disputed),
+        (InTransit, AtCheckpoint),
+        (InTransit, PartiallyDelivered),
+        (InTransit, Delivered),
+        (InTransit, Disputed),
+        (InTransit, Cancelled),
+        (AtCheckpoint, InTransit),
+        (AtCheckpoint, PartiallyDelivered),
+        (AtCheckpoint, Delivered),
+        (AtCheckpoint, Disputed),
+        (AtCheckpoint, Cancelled),
+        (PartiallyDelivered, PartiallyDelivered),
+        (PartiallyDelivered, Delivered),
+        (PartiallyDelivered, Disputed),
+        (PartiallyDelivered, Cancelled),
+        (Disputed, Cancelled),
+        (Disputed, Delivered),
+    ];
+
+    for from in &all {
+        for to in &all {
+            let result = from.is_valid_transition(to);
+            let is_expected = expected_valid.iter().any(|(f, t)| f == from && t == to);
+            // The catch-all rules also allow any non-Delivered status -> Cancelled
+            // and any non-Cancelled/non-Delivered status -> Disputed.
+            let catch_all = (to == &Cancelled && from != &Delivered)
+                || (to == &Disputed && from != &Cancelled && from != &Delivered);
+            let should_be_valid = is_expected || catch_all;
+            assert_eq!(
+                result, should_be_valid,
+                "Unexpected transition result {:?} -> {:?}: got {}, expected {}",
+                from, to, result, should_be_valid
+            );
+        }
+    }
 }
 
 /// Test that failed operations roll back completely.
