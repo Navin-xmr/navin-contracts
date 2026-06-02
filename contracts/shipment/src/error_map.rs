@@ -380,6 +380,48 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "Proposal salt was already used in a prior proposal; replay attack prevented.",
         ),
+        NavinError::InvalidShipmentParticipants => (
+            57,
+            InvalidInput,
+            NoRetry,
+            "Shipment sender, receiver, and carrier must be three distinct addresses.",
+        ),
+        NavinError::InvalidShipmentDeadline => (
+            58,
+            InvalidInput,
+            NoRetry,
+            "Shipment deadline must be strictly in the future.",
+        ),
+        NavinError::InvalidPaymentMilestones => (
+            59,
+            InvalidInput,
+            NoRetry,
+            "Payment milestone structure is invalid; each percentage must be 1-100.",
+        ),
+        NavinError::DuplicatePaymentMilestone => (
+            60,
+            InvalidInput,
+            NoRetry,
+            "Payment milestone checkpoint names must be unique.",
+        ),
+        NavinError::InvalidTokenAddress => (
+            61,
+            InvalidInput,
+            NoRetry,
+            "Shipment token address is invalid for this shipment.",
+        ),
+        NavinError::InvalidPaymentMilestoneName => (
+            62,
+            InvalidInput,
+            NoRetry,
+            "Payment milestone checkpoint name has an invalid format.",
+        ),
+        NavinError::MetadataSymbolCollision => (
+            63,
+            InvalidInput,
+            NoRetry,
+            "Metadata key and value symbols are identical; use distinct symbols.",
+        ),
     };
 
     ContractErrorInfo {
@@ -388,5 +430,100 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
         category,
         retry,
         message,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::errors::NavinError;
+
+    // ── Token transfer failure recovery — error mapping (issue #447) ─────────
+
+    #[test]
+    fn test_token_transfer_failed_info() {
+        let info = error_info(NavinError::TokenTransferFailed);
+        assert_eq!(info.error, NavinError::TokenTransferFailed);
+        assert_eq!(info.code, 39);
+        assert_eq!(info.category, ErrorCategory::Transient);
+        assert_eq!(info.retry, RetryGuidance::RetryAfterDelay);
+        assert!(
+            !info.message.is_empty(),
+            "TokenTransferFailed must have a non-empty message"
+        );
+    }
+
+    #[test]
+    fn test_circuit_breaker_open_info() {
+        let info = error_info(NavinError::CircuitBreakerOpen);
+        assert_eq!(info.error, NavinError::CircuitBreakerOpen);
+        assert_eq!(info.code, 46);
+        assert_eq!(info.category, ErrorCategory::Transient);
+        assert_eq!(info.retry, RetryGuidance::RetryAfterDelay);
+    }
+
+    /// error_info must be deterministic — calling it twice on the same variant
+    /// must return identical results.
+    #[test]
+    fn test_error_info_is_deterministic() {
+        let a = error_info(NavinError::TokenTransferFailed);
+        let b = error_info(NavinError::TokenTransferFailed);
+        assert_eq!(a.code, b.code);
+        assert_eq!(a.category, b.category);
+        assert_eq!(a.retry, b.retry);
+        assert_eq!(a.message, b.message);
+
+        let c = error_info(NavinError::CircuitBreakerOpen);
+        let d = error_info(NavinError::CircuitBreakerOpen);
+        assert_eq!(c.code, d.code);
+        assert_eq!(c.category, d.category);
+        assert_eq!(c.retry, d.retry);
+    }
+
+    /// Token-related transient errors must use RetryAfterDelay, not NoRetry,
+    /// so callers know they can retry after a backoff.
+    #[test]
+    fn test_token_and_circuit_breaker_errors_use_retry_after_delay() {
+        let transient_errors = [
+            NavinError::TokenTransferFailed,
+            NavinError::TokenMintFailed,
+            NavinError::CircuitBreakerOpen,
+        ];
+        for err in &transient_errors {
+            let info = error_info(*err);
+            assert_eq!(
+                info.retry,
+                RetryGuidance::RetryAfterDelay,
+                "{:?} must have RetryAfterDelay guidance",
+                err
+            );
+            assert_eq!(
+                info.category,
+                ErrorCategory::Transient,
+                "{:?} must be categorised as Transient",
+                err
+            );
+        }
+    }
+
+    /// Every error code in error_info must match its NavinError discriminant.
+    #[test]
+    fn test_error_codes_match_discriminants() {
+        let cases: &[(NavinError, u32)] = &[
+            (NavinError::TokenTransferFailed, 39),
+            (NavinError::TokenMintFailed, 40),
+            (NavinError::CircuitBreakerOpen, 46),
+            (NavinError::ShipmentFinalized, 38),
+            (NavinError::ShipmentNotFound, 4),
+            (NavinError::Unauthorized, 3),
+        ];
+        for (err, expected_code) in cases {
+            let info = error_info(*err);
+            assert_eq!(
+                info.code, *expected_code,
+                "{:?} must map to code {}",
+                err, expected_code
+            );
+        }
     }
 }

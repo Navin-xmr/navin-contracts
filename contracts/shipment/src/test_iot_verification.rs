@@ -44,15 +44,8 @@ mod tests {
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
 
-        let shipment_id = client.create_shipment(
-            &company,
-            &receiver,
-            &carrier,
-            &hash,
-            &milestones,
-            &deadline,
-            &None,
-        );
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
 
         // Update status to InTransit
         let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
@@ -84,15 +77,8 @@ mod tests {
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
 
-        let shipment_id = client.create_shipment(
-            &company,
-            &receiver,
-            &carrier,
-            &hash,
-            &milestones,
-            &deadline,
-            &None,
-        );
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
 
         // Update status to InTransit
         let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
@@ -125,15 +111,8 @@ mod tests {
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
 
-        let shipment_id = client.create_shipment(
-            &company,
-            &receiver,
-            &carrier,
-            &hash,
-            &milestones,
-            &deadline,
-            &None,
-        );
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
 
         // Update status to InTransit
         let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
@@ -167,15 +146,8 @@ mod tests {
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
 
-        let shipment_id = client.create_shipment(
-            &company,
-            &receiver,
-            &carrier,
-            &hash,
-            &milestones,
-            &deadline,
-            &None,
-        );
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
 
         // Update to InTransit
         let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
@@ -221,15 +193,8 @@ mod tests {
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
 
-        let shipment_id = client.create_shipment(
-            &company,
-            &receiver,
-            &carrier,
-            &hash,
-            &milestones,
-            &deadline,
-            &None,
-        );
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
 
         // Try to get hash for status that was never set
         client.get_status_hash(&shipment_id, &ShipmentStatus::Delivered);
@@ -262,15 +227,8 @@ mod tests {
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
 
-        let shipment_id = client.create_shipment(
-            &company,
-            &receiver,
-            &carrier,
-            &hash,
-            &milestones,
-            &deadline,
-            &None,
-        );
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
 
         // Update status
         let transit_hash = BytesN::from_array(&env, &[2u8; 32]);

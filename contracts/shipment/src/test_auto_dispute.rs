@@ -68,7 +68,6 @@ fn create_test_shipment(
         &data_hash,
         &soroban_sdk::Vec::new(env),
         &deadline,
-        &None,
     );
 
     (id, company, receiver, carrier)

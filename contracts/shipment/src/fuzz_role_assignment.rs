@@ -222,7 +222,6 @@ fn fuzz_role_suspended_company_blocked() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
-            &None,
         );
         assert!(
             result.is_err(),
@@ -266,7 +265,6 @@ fn fuzz_role_reactivated_carrier_regains_access() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
-            &None,
         );
         assert!(
             result.is_ok(),
@@ -332,7 +330,6 @@ fn fuzz_role_random_address_combinations() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
-            &None,
         );
         assert!(
             result.is_err(),
@@ -350,7 +347,6 @@ fn fuzz_role_random_address_combinations() {
                 &data_hash2,
                 &Vec::new(&env),
                 &deadline2,
-                &None,
             );
             assert!(
                 result2.is_ok(),

@@ -113,7 +113,6 @@ fn wallet_auth_happy_path_full_lifecycle() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     let s = client.get_shipment(&id);
     assert_eq!(s.status, crate::ShipmentStatus::Created);
@@ -186,7 +185,6 @@ fn wallet_auth_cancel_refund_path() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     // Company deposits escrow
@@ -231,7 +229,6 @@ fn wallet_auth_dispute_resolution_to_carrier() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     client.deposit_escrow(&company, &id, &750_000i128);
@@ -294,7 +291,6 @@ fn wallet_auth_dispute_resolution_refund_to_company() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     client.deposit_escrow(&company, &id, &300_000i128);
@@ -355,7 +351,6 @@ fn wallet_auth_pause_blocks_operations() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     assert!(result.is_err(), "create_shipment must fail while paused");
 
@@ -374,7 +369,6 @@ fn wallet_auth_pause_blocks_operations() {
         &data_hash2,
         &Vec::new(&env),
         &deadline2,
-        &None,
     );
     assert!(
         result2.is_ok(),
@@ -409,7 +403,6 @@ fn wallet_auth_deadline_expiry_auto_cancel() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     client.deposit_escrow(&company, &id, &100_000i128);
@@ -455,7 +448,6 @@ fn wallet_auth_unauthorized_wallet_rejected() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     client.deposit_escrow(&company, &id, &200_000i128);

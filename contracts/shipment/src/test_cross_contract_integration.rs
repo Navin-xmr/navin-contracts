@@ -173,7 +173,6 @@ fn test_shipment_creation_without_escrow_succeeds() {
         &dummy_hash(&ctx.env, 1),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
     let s = ctx.client.get_shipment(&id);
     assert_eq!(s.status, ShipmentStatus::Created);
@@ -192,7 +191,6 @@ fn test_batch_creation_5_items_succeeds() {
             data_hash: dummy_hash(&ctx.env, seed),
             payment_milestones: Vec::new(&ctx.env),
             deadline,
-            depends_on: None,
         });
     }
     let ids = ctx.client.create_shipments_batch(&ctx.company, &inputs);
@@ -214,7 +212,6 @@ fn test_status_update_succeeds_with_working_token() {
         &dummy_hash(&ctx.env, 2),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
     test_utils::advance_past_rate_limit(&ctx.env);
     ctx.client.update_status(
@@ -343,7 +340,6 @@ fn test_release_escrow_fails_with_failing_token() {
         &dummy_hash(&ctx.env, 5),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
     inject_escrow(&ctx, id, 1000);
     advance_to_delivered(&ctx, id);
@@ -367,7 +363,6 @@ fn test_token_transfer_failure_returns_correct_error() {
         &dummy_hash(&ctx.env, 8),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
     inject_escrow(&ctx, id, 500);
     advance_to_delivered(&ctx, id);
@@ -507,7 +502,6 @@ fn test_circuit_breaker_opens_after_repeated_failures() {
         &dummy_hash(&ctx.env, 99),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
     inject_escrow(&ctx, id, 100);
     advance_to_delivered(&ctx, id);
@@ -534,7 +528,6 @@ fn test_force_cancel_with_escrow_and_failing_token_fails() {
         &dummy_hash(&ctx.env, 11),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
     inject_escrow(&ctx, id, 200);
 
@@ -558,7 +551,6 @@ fn test_cancel_without_escrow_succeeds_with_failing_token() {
         &dummy_hash(&ctx.env, 13),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
     // No escrow — cancel should skip the token transfer entirely.
     ctx.client
@@ -566,6 +558,137 @@ fn test_cancel_without_escrow_succeeds_with_failing_token() {
     assert_eq!(
         ctx.client.get_shipment(&id).status,
         ShipmentStatus::Cancelled
+    );
+}
+
+// ── Token transfer failure recovery (issue #447) ─────────────────────────────
+
+/// After `release_escrow` fails due to a broken token, the shipment's
+/// escrow balance must remain unchanged — no state is corrupted.
+#[test]
+fn test_escrow_balance_unchanged_after_failed_release() {
+    let ctx = setup_fail();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x60),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+    inject_escrow(&ctx, id, 2000);
+    advance_to_delivered(&ctx, id);
+
+    let escrow_before = ctx.client.get_escrow_balance(&id);
+
+    let _ = ctx.client.try_release_escrow(&receiver, &id);
+
+    let escrow_after = ctx.client.get_escrow_balance(&id);
+    assert_eq!(
+        escrow_before, escrow_after,
+        "escrow balance must be unchanged after a failed release"
+    );
+}
+
+/// After `release_escrow` fails, the shipment status must remain as it was
+/// before the call — the contract must not partially advance state.
+#[test]
+fn test_shipment_status_unchanged_after_failed_release() {
+    let ctx = setup_fail();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x61),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+    inject_escrow(&ctx, id, 1500);
+    advance_to_delivered(&ctx, id);
+
+    let status_before = ctx.client.get_shipment(&id).status;
+
+    let _ = ctx.client.try_release_escrow(&receiver, &id);
+
+    let status_after = ctx.client.get_shipment(&id).status;
+    assert_eq!(
+        status_before, status_after,
+        "shipment status must be unchanged after a failed token transfer"
+    );
+}
+
+/// Multiple consecutive token transfer failures must not accumulate corrupt
+/// state — each failure leaves storage in the same clean condition.
+#[test]
+fn test_multiple_release_failures_leave_state_consistent() {
+    let ctx = setup_fail();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x62),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+    inject_escrow(&ctx, id, 500);
+    advance_to_delivered(&ctx, id);
+
+    let initial_escrow = ctx.client.get_escrow_balance(&id);
+    let initial_status = ctx.client.get_shipment(&id).status;
+
+    // Attempt release three times — each must fail and leave state unchanged.
+    for attempt in 1..=3u32 {
+        let result = ctx.client.try_release_escrow(&receiver, &id);
+        assert!(
+            result.is_err(),
+            "attempt {attempt}: release_escrow must fail with a failing token"
+        );
+        assert_eq!(
+            ctx.client.get_escrow_balance(&id),
+            initial_escrow,
+            "attempt {attempt}: escrow must be unchanged after failure"
+        );
+        assert_eq!(
+            ctx.client.get_shipment(&id).status,
+            initial_status,
+            "attempt {attempt}: status must be unchanged after failure"
+        );
+    }
+}
+
+/// A token transfer failure must produce `TokenTransferFailed` (error #39),
+/// confirming the error is mapped through the contract error layer correctly.
+#[test]
+fn test_token_failure_maps_to_transfer_failed_error_code() {
+    let ctx = setup_fail();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x63),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+    inject_escrow(&ctx, id, 750);
+    advance_to_delivered(&ctx, id);
+
+    let err = ctx
+        .client
+        .try_release_escrow(&receiver, &id)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(
+        err,
+        NavinError::TokenTransferFailed,
+        "token transfer failure must surface as TokenTransferFailed"
     );
 }
 
@@ -585,7 +708,6 @@ fn test_batch_creation_does_not_call_token_contract() {
             data_hash: dummy_hash(&ctx.env, seed),
             payment_milestones: Vec::new(&ctx.env),
             deadline,
-            depends_on: None,
         });
     }
     let ids = ctx.client.create_shipments_batch(&ctx.company, &inputs);

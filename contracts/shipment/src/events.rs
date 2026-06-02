@@ -410,98 +410,6 @@ pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i
     crate::storage::increment_event_count(env, shipment_id);
 }
 
-/// Emits an `observer_assigned` event when an observer role is assigned to an address.
-pub fn emit_observer_assigned(
-    env: &Env,
-    shipment_id: u64,
-    observer: &Address,
-    assigned_by: &Address,
-) {
-    let event_counter = next_event_counter(env, shipment_id);
-    let idempotency_key = generate_idempotency_key(
-        env,
-        crate::event_topics::HASH_DOMAIN_RBAC,
-        shipment_id,
-        crate::event_topics::OBSERVER_ASSIGNED,
-        event_counter,
-    );
-    env.events().publish(
-        (Symbol::new(env, crate::event_topics::OBSERVER_ASSIGNED),),
-        (
-            shipment_id,
-            observer.clone(),
-            assigned_by.clone(),
-            EVENT_SCHEMA_VERSION,
-            event_counter,
-            idempotency_key,
-        ),
-    );
-    crate::storage::increment_event_count(env, shipment_id);
-}
-
-/// Emits an `observer_revoked` event when an observer role is revoked from an address.
-pub fn emit_observer_revoked(
-    env: &Env,
-    shipment_id: u64,
-    observer: &Address,
-    revoked_by: &Address,
-) {
-    let event_counter = next_event_counter(env, shipment_id);
-    let idempotency_key = generate_idempotency_key(
-        env,
-        crate::event_topics::HASH_DOMAIN_RBAC,
-        shipment_id,
-        crate::event_topics::OBSERVER_REVOKED,
-        event_counter,
-    );
-    env.events().publish(
-        (Symbol::new(env, crate::event_topics::OBSERVER_REVOKED),),
-        (
-            shipment_id,
-            observer.clone(),
-            revoked_by.clone(),
-            EVENT_SCHEMA_VERSION,
-            event_counter,
-            idempotency_key,
-        ),
-    );
-    crate::storage::increment_event_count(env, shipment_id);
-}
-
-/// Emits an `escrow_partially_refunded` event when a partial refund is executed.
-pub fn emit_escrow_partially_refunded(
-    env: &Env,
-    shipment_id: u64,
-    sender_refund: i128,
-    carrier_compensation: i128,
-    refund_percentage: u32,
-) {
-    let event_counter = next_event_counter(env, shipment_id);
-    let idempotency_key = generate_idempotency_key(
-        env,
-        crate::event_topics::HASH_DOMAIN_ESCROW,
-        shipment_id,
-        crate::event_topics::ESCROW_PARTIALLY_REFUNDED,
-        event_counter,
-    );
-    env.events().publish(
-        (Symbol::new(
-            env,
-            crate::event_topics::ESCROW_PARTIALLY_REFUNDED,
-        ),),
-        (
-            shipment_id,
-            sender_refund,
-            carrier_compensation,
-            refund_percentage,
-            EVENT_SCHEMA_VERSION,
-            event_counter,
-            idempotency_key,
-        ),
-    );
-    crate::storage::increment_event_count(env, shipment_id);
-}
-
 /// Emits a `milestone_payment_released` event when a partial escrow release occurs.
 pub fn emit_milestone_payment_released(
     env: &Env,
@@ -1036,20 +944,6 @@ pub fn emit_carrier_on_time_delivery(env: &Env, carrier: &Address, shipment_id: 
     );
 }
 
-/// Emits a `late_delivery_penalty` event when a penalty is applied for late delivery.
-pub fn emit_late_delivery_penalty(
-    env: &Env,
-    carrier: &Address,
-    shipment_id: u64,
-    penalty_amount: i128,
-    days_late: u64,
-) {
-    env.events().publish(
-        (Symbol::new(env, crate::event_topics::LATE_DELIVERY_PENALTY),),
-        (carrier.clone(), shipment_id, penalty_amount, days_late),
-    );
-}
-
 /// Emits a `carrier_handoff_completed` event when a shipment is transferred between carriers.
 pub fn emit_carrier_handoff_completed(
     env: &Env,
@@ -1539,28 +1433,6 @@ pub fn emit_escrow_frozen(
             caller.clone(),
             env.ledger().timestamp(),
         ),
-    );
-}
-
-/// Emits a `shipment_blocked` event when a shipment cannot transition to InTransit or Delivered
-/// due to unmet dependencies.
-///
-/// # Event Data
-///
-/// | Field                   | Type        | Description                                |
-/// |-------------------------|-------------|--------------------------------------------|
-/// | shipment_id             | `u64`       | Shipment that cannot proceed                |
-/// | caller                  | `Address`   | Address that attempted the transition      |
-/// | unmet_dependencies      | `Vec<u64>`  | Prerequisite shipment IDs not yet complete |
-pub fn emit_shipment_blocked(
-    env: &Env,
-    shipment_id: u64,
-    caller: &Address,
-    unmet_dependencies: soroban_sdk::Vec<u64>,
-) {
-    env.events().publish(
-        (crate::event_topics::SHIPMENT_BLOCKED,),
-        (shipment_id, caller.clone(), unmet_dependencies),
     );
 }
 

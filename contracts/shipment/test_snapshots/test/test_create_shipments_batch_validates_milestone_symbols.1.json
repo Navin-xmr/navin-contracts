@@ -93,12 +93,6 @@
                         },
                         {
                           "key": {
-                            "symbol": "depends_on"
-                          },
-                          "val": "void"
-                        },
-                        {
-                          "key": {
                             "symbol": "payment_milestones"
                           },
                           "val": {
@@ -161,12 +155,6 @@
                           "val": {
                             "u64": 172800
                           }
-                        },
-                        {
-                          "key": {
-                            "symbol": "depends_on"
-                          },
-                          "val": "void"
                         },
                         {
                           "key": {
@@ -476,12 +464,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "depends_on"
-                      },
-                      "val": "void"
-                    },
-                    {
-                      "key": {
                         "symbol": "escrow_amount"
                       },
                       "val": {
@@ -690,12 +672,6 @@
                       "val": {
                         "u64": 172800
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "depends_on"
-                      },
-                      "val": "void"
                     },
                     {
                       "key": {

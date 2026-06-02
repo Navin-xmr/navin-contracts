@@ -128,7 +128,6 @@ fn bench_create_shipment() {
         &data_hash,
         &SorobanVec::new(&env),
         &deadline,
-        &None,
     );
     let (cpu, mem) = read_budget(&env);
 
@@ -166,7 +165,6 @@ fn bench_create_shipments_batch() {
             data_hash: BytesN::from_array(&env, &[i + 1; 32]),
             payment_milestones: SorobanVec::new(&env),
             deadline,
-            depends_on: None,
         });
     }
 
@@ -210,7 +208,6 @@ fn bench_update_status() {
         &data_hash,
         &SorobanVec::new(&env),
         &deadline,
-        &None,
     );
 
     env.cost_estimate().budget().reset_default();
@@ -254,7 +251,6 @@ fn bench_deposit_escrow() {
         &data_hash,
         &SorobanVec::new(&env),
         &deadline,
-        &None,
     );
 
     env.cost_estimate().budget().reset_default();
@@ -296,7 +292,6 @@ fn bench_release_escrow() {
         &data_hash,
         &SorobanVec::new(&env),
         &deadline,
-        &None,
     );
     client.deposit_escrow(&company, &shipment_id, &1_000_000i128);
     // Manually promote to Delivered so escrow remains intact for release
@@ -345,7 +340,6 @@ fn bench_refund_escrow() {
         &data_hash,
         &SorobanVec::new(&env),
         &deadline,
-        &None,
     );
     // Deposit escrow; refund_escrow works from Created state and cancels internally
     client.deposit_escrow(&company, &shipment_id, &500_000i128);
@@ -387,7 +381,6 @@ fn bench_raise_dispute() {
         &data_hash,
         &SorobanVec::new(&env),
         &deadline,
-        &None,
     );
     client.update_status(
         &carrier,
@@ -433,7 +426,6 @@ fn bench_resolve_dispute() {
         &data_hash,
         &SorobanVec::new(&env),
         &deadline,
-        &None,
     );
     client.deposit_escrow(&company, &shipment_id, &500_000i128);
     client.update_status(
@@ -489,7 +481,6 @@ fn bench_record_milestone() {
         &data_hash,
         &SorobanVec::new(&env),
         &deadline,
-        &None,
     );
     // Use as_contract to set InTransit without rate-limit concerns
     env.as_contract(&client.address, || {
@@ -542,7 +533,6 @@ fn bench_confirm_delivery() {
         &data_hash,
         &SorobanVec::new(&env),
         &deadline,
-        &None,
     );
     // confirm_delivery itself performs the → Delivered transition from InTransit
     client.update_status(
@@ -595,7 +585,6 @@ fn bench_cancel_shipment() {
         &data_hash,
         &SorobanVec::new(&env),
         &deadline,
-        &None,
     );
 
     env.cost_estimate().budget().reset_default();
@@ -644,7 +633,6 @@ fn bench_handoff_shipment() {
         &data_hash,
         &SorobanVec::new(&env),
         &deadline,
-        &None,
     );
     client.update_status(
         &carrier_a,
@@ -711,7 +699,6 @@ fn bench_full_lifecycle_summary() {
         &BytesN::from_array(&env, &[1u8; 32]),
         &SorobanVec::new(&env),
         &deadline,
-        &None,
     );
     let (cpu, mem) = read_budget(&env);
     print_budget("summary::create_shipment", cpu, mem);
@@ -753,7 +740,6 @@ fn bench_full_lifecycle_summary() {
         &BytesN::from_array(&env, &[10u8; 32]),
         &SorobanVec::new(&env),
         &deadline,
-        &None,
     );
     client.deposit_escrow(&company, &id2, &500_000i128);
     env.as_contract(&client.address, || {

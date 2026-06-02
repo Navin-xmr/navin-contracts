@@ -78,8 +78,7 @@
                 },
                 {
                   "u64": 90000
-                },
-                "void"
+                }
               ]
             }
           },
@@ -113,8 +112,7 @@
                 },
                 {
                   "u64": 90000
-                },
-                "void"
+                }
               ]
             }
           },
@@ -483,12 +481,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "depends_on"
-                      },
-                      "val": "void"
-                    },
-                    {
-                      "key": {
                         "symbol": "escrow_amount"
                       },
                       "val": {
@@ -676,12 +668,6 @@
                       "val": {
                         "u64": 90000
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "depends_on"
-                      },
-                      "val": "void"
                     },
                     {
                       "key": {
