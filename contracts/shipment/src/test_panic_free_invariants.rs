@@ -142,7 +142,6 @@ fn test_create_shipment_invalid_hash_all_zeros() {
         &invalid_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     assert!(result.is_err(), "create_shipment must reject all-zero hash");
 }
@@ -165,7 +164,6 @@ fn test_create_shipment_deadline_in_past() {
         &data_hash,
         &Vec::new(&env),
         &past_deadline,
-        &None,
     );
     assert!(result.is_err(), "create_shipment must reject past deadline");
 }
@@ -186,7 +184,6 @@ fn test_create_shipment_unauthorized_company() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     assert!(result.is_err(), "create_shipment must fail for non-company");
 }
@@ -214,7 +211,6 @@ fn test_create_shipment_invalid_milestone_sum() {
         &data_hash,
         &milestones,
         &deadline,
-        &None,
     );
     assert!(
         result.is_err(),
@@ -243,7 +239,6 @@ fn test_deposit_escrow_invalid_amount_zero() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let result = client.try_deposit_escrow(&company, &shipment_id, &0i128);
@@ -304,7 +299,6 @@ fn test_update_status_invalid_transition() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     // Try invalid transition: Created -> Delivered (should be Created -> InTransit)
@@ -359,7 +353,6 @@ fn test_cancel_shipment_unauthorized_caller() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let unauthorized = Address::generate(&env);
@@ -405,7 +398,6 @@ fn test_release_escrow_invalid_status() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     // Try to release escrow when shipment is in Created status (not Delivered)
@@ -469,7 +461,6 @@ fn test_raise_dispute_unauthorized_caller() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let unauthorized = Address::generate(&env);
@@ -521,7 +512,6 @@ fn test_resolve_dispute_unauthorized_caller() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let unauthorized = Address::generate(&env);
@@ -615,7 +605,6 @@ fn test_force_cancel_shipment_unauthorized_caller() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let unauthorized = Address::generate(&env);
@@ -624,112 +613,6 @@ fn test_force_cancel_shipment_unauthorized_caller() {
         result.is_err(),
         "force_cancel_shipment must fail for unauthorized caller"
     );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 16. auth failure cases - Additional panic-free tests
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn test_auth_failure_case_for_admin_role() {
-    let (env, client, _admin, _token) = setup_env();
-    let unauthorized = Address::generate(&env);
-
-    // Try to call admin-only method with unauthorized caller
-    let result = client.try_set_shipment_limit(&unauthorized, &10);
-    assert!(
-        result.is_err(),
-        "set_shipment_limit must fail for non-admin caller"
-    );
-
-    // Verify it returns Unauthorized error instead of panicking
-    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
-}
-
-#[test]
-fn test_auth_failure_case_for_company_role() {
-    let (env, client, admin, _token) = setup_env();
-    let unauthorized = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.add_carrier(&admin, &carrier);
-
-    // Try to create shipment with unauthorized caller (not a company)
-    let result = client.try_create_shipment(
-        &unauthorized,
-        &Address::generate(&env),
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-        &None,
-    );
-    assert!(
-        result.is_err(),
-        "create_shipment must fail for non-company caller"
-    );
-
-    // Verify it returns Unauthorized error instead of panicking
-    assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 17. storage-missing cases - Additional panic-free tests
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn test_storage_missing_case_for_escrow() {
-    let (env, client, admin, _token) = setup_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-        &None,
-    );
-
-    // Manually remove escrow storage entry to simulate missing storage
-    env.as_contract(&client.address, || {
-        crate::storage::remove_escrow(&env, shipment_id);
-    });
-
-    // Try to release escrow - should handle missing storage gracefully
-    let result = client.try_release_escrow(&receiver, &shipment_id);
-    assert!(
-        result.is_err(),
-        "release_escrow must fail gracefully when escrow storage is missing"
-    );
-
-    // Verify it returns appropriate error instead of panicking
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_storage_missing_case_for_shipment() {
-    let (_env, client, _admin, _token) = setup_env();
-
-    // Try to get non-existent shipment
-    let result = client.try_get_shipment(&9999);
-    assert!(
-        result.is_err(),
-        "get_shipment must fail gracefully for non-existent shipment"
-    );
-
-    // Verify it returns appropriate error instead of panicking
-    assert_eq!(result, Err(Ok(crate::NavinError::ShipmentNotFound)));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

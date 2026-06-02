@@ -28,7 +28,6 @@ impl PerfMockToken {
 struct PerfCtx {
     env: Env,
     client: NavinShipmentClient<'static>,
-    token: Address,
     company: Address,
     carrier: Address,
 }
@@ -46,7 +45,6 @@ fn setup_perf() -> PerfCtx {
     PerfCtx {
         env,
         client,
-        token,
         company,
         carrier,
     }
@@ -77,7 +75,6 @@ fn test_single_shipment_creation_within_budget() {
         &dummy_hash(&ctx.env, 1),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
     let cpu = ctx.env.cost_estimate().budget().cpu_instruction_cost();
     ctx.env.cost_estimate().budget().reset_default();
@@ -97,11 +94,9 @@ fn test_batch_creation_10_within_budget() {
         inputs.push_back(ShipmentInput {
             receiver: Address::generate(&ctx.env),
             carrier: ctx.carrier.clone(),
-            token_address: ctx.token.clone(),
             data_hash: dummy_hash(&ctx.env, seed),
             payment_milestones: Vec::new(&ctx.env),
             deadline,
-            depends_on: None,
         });
     }
 
@@ -130,7 +125,6 @@ fn test_batch_cheaper_per_item_than_individual_calls() {
             &dummy_hash(&ctx_single.env, seed),
             &Vec::new(&ctx_single.env),
             &deadline_s,
-            &None,
         );
     }
     let individual_cpu = ctx_single
@@ -148,11 +142,9 @@ fn test_batch_cheaper_per_item_than_individual_calls() {
         inputs.push_back(ShipmentInput {
             receiver: Address::generate(&ctx_batch.env),
             carrier: ctx_batch.carrier.clone(),
-            token_address: ctx_batch.token.clone(),
             data_hash: dummy_hash(&ctx_batch.env, seed),
             payment_milestones: Vec::new(&ctx_batch.env),
             deadline: deadline_b,
-            depends_on: None,
         });
     }
     ctx_batch.env.cost_estimate().budget().reset_unlimited();
@@ -191,7 +183,6 @@ fn test_batch_milestone_recording_within_budget() {
         &dummy_hash(&ctx.env, 1),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
     test_utils::advance_past_rate_limit(&ctx.env);
     ctx.client.update_status(
@@ -237,7 +228,6 @@ fn test_status_update_within_budget() {
         &dummy_hash(&ctx.env, 1),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
     test_utils::advance_past_rate_limit(&ctx.env);
 
@@ -273,7 +263,6 @@ fn test_get_shipment_within_budget() {
         &dummy_hash(&ctx.env, 1),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
 
     ctx.env.cost_estimate().budget().reset_unlimited();

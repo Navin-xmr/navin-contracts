@@ -27,7 +27,6 @@ fn test_settlement_concurrency_control() {
         &dummy_hash(&env),
         &soroban_sdk::Vec::new(&env),
         &(env.ledger().timestamp() + 86400),
-        &None,
     );
 
     // First deposit succeeds
@@ -59,7 +58,6 @@ fn test_settlement_query() {
         &dummy_hash(&env),
         &soroban_sdk::Vec::new(&env),
         &(env.ledger().timestamp() + 86400),
-        &None,
     );
 
     // Create a settlement
