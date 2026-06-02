@@ -362,4 +362,66 @@ mod tests {
         // Should now succeed.
         assert!(create_one(&env, &client, &company, &carrier, 3).is_ok());
     }
+
+    // ── active shipment limit boundary conditions ─────────────────────────────
+
+    #[test]
+    fn test_company_active_shipment_limit_exact_boundary() {
+        let (env, client, admin, company, carrier, _token) = setup();
+
+        // Limit is 3 active shipments
+        client.set_shipment_limit(&admin, &3);
+
+        // Create exactly 3 active shipments
+        for seed in 1u8..=3 {
+            assert!(create_one(&env, &client, &company, &carrier, seed).is_ok());
+            env.ledger().with_mut(|l| l.timestamp += 400); // Avoid idempotency/quota window collisions
+        }
+
+        assert_eq!(client.get_effective_shipment_limit(&company), 3);
+    }
+
+    #[test]
+    fn test_company_active_shipment_limit_exceeded_rejected() {
+        let (env, client, admin, company, carrier, _token) = setup();
+
+        // Limit is 3 active shipments
+        client.set_shipment_limit(&admin, &3);
+
+        // Create exactly 3 active shipments
+        for seed in 1u8..=3 {
+            assert!(create_one(&env, &client, &company, &carrier, seed).is_ok());
+            env.ledger().with_mut(|l| l.timestamp += 400);
+        }
+
+        // The 4th active shipment must be rejected with ShipmentLimitReached
+        let result = create_one(&env, &client, &company, &carrier, 4);
+        assert_eq!(result, Err(NavinError::ShipmentLimitReached));
+    }
+
+    #[test]
+    fn test_company_active_shipment_limit_lifted_by_config_change() {
+        let (env, client, admin, company, carrier, _token) = setup();
+
+        // Limit is 2 active shipments
+        client.set_shipment_limit(&admin, &2);
+
+        // Create exactly 2 active shipments
+        assert!(create_one(&env, &client, &company, &carrier, 1).is_ok());
+        env.ledger().with_mut(|l| l.timestamp += 400);
+        assert!(create_one(&env, &client, &company, &carrier, 2).is_ok());
+        env.ledger().with_mut(|l| l.timestamp += 400);
+
+        // 3rd is rejected
+        let result = create_one(&env, &client, &company, &carrier, 3);
+        assert_eq!(result, Err(NavinError::ShipmentLimitReached));
+
+        // Lift limit to 5
+        client.set_shipment_limit(&admin, &5);
+        assert_eq!(client.get_effective_shipment_limit(&company), 5);
+
+        // 3rd now succeeds!
+        assert!(create_one(&env, &client, &company, &carrier, 3).is_ok());
+    }
 }
+
