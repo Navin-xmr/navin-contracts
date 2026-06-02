@@ -170,20 +170,17 @@ fn test_batch_results_match_individual_reads() {
         let single_result = client.get_shipment(expected_id);
         let batch_shipment = batch_result.unwrap();
         assert_eq!(
-            batch_shipment.id,
-            single_result.id,
+            batch_shipment.id, single_result.id,
             "batch[{}] id must match single read",
             i
         );
         assert_eq!(
-            batch_shipment.status,
-            single_result.status,
+            batch_shipment.status, single_result.status,
             "batch[{}] status must match single read",
             i
         );
         assert_eq!(
-            batch_shipment.sender,
-            single_result.sender,
+            batch_shipment.sender, single_result.sender,
             "batch[{}] sender must match single read",
             i
         );
@@ -260,11 +257,7 @@ fn test_batch_query_is_deterministic_across_calls() {
         match (a, b) {
             (Some(sa), Some(sb)) => {
                 assert_eq!(sa.id, sb.id, "slot {} id must be identical", i);
-                assert_eq!(
-                    sa.status, sb.status,
-                    "slot {} status must be identical",
-                    i
-                );
+                assert_eq!(sa.status, sb.status, "slot {} status must be identical", i);
             }
             (None, None) => {} // both missing — stable
             _ => panic!("slot {} presence changed between calls", i),
