@@ -362,6 +362,66 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             RetryAfterStateChange,
             "Company has exceeded the shipment creation quota for the current time window.",
         ),
+        NavinError::DependenciesNotMet => (
+            54,
+            InvalidState,
+            RetryAfterStateChange,
+            "Shipment cannot transition to InTransit or Delivered because its prerequisite shipments are not yet completed.",
+        ),
+        NavinError::CircularDependency => (
+            55,
+            InvalidInput,
+            NoRetry,
+            "A circular dependency was detected in the shipment prerequisites.",
+        ),
+        NavinError::ProposalSaltReused => (
+            56,
+            InvalidInput,
+            NoRetry,
+            "Proposal salt was already used in a prior proposal; replay attack prevented.",
+        ),
+        NavinError::InvalidShipmentParticipants => (
+            57,
+            InvalidInput,
+            NoRetry,
+            "Shipment sender, receiver, and carrier must be three distinct addresses.",
+        ),
+        NavinError::InvalidShipmentDeadline => (
+            58,
+            InvalidInput,
+            NoRetry,
+            "Shipment deadline must be strictly in the future.",
+        ),
+        NavinError::InvalidPaymentMilestones => (
+            59,
+            InvalidInput,
+            NoRetry,
+            "Payment milestone structure is invalid; each percentage must be 1-100.",
+        ),
+        NavinError::DuplicatePaymentMilestone => (
+            60,
+            InvalidInput,
+            NoRetry,
+            "Payment milestone checkpoint names must be unique.",
+        ),
+        NavinError::InvalidTokenAddress => (
+            61,
+            InvalidInput,
+            NoRetry,
+            "Shipment token address is invalid for this shipment.",
+        ),
+        NavinError::InvalidPaymentMilestoneName => (
+            62,
+            InvalidInput,
+            NoRetry,
+            "Payment milestone checkpoint name has an invalid format.",
+        ),
+        NavinError::MetadataSymbolCollision => (
+            63,
+            InvalidInput,
+            NoRetry,
+            "Metadata key and value symbols are identical; use distinct symbols.",
+        ),
     };
 
     ContractErrorInfo {

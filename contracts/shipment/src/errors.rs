@@ -121,4 +121,24 @@ pub enum NavinError {
     InvalidTokenDecimals = 52,
     /// Company has exceeded the shipment creation quota for the current time window.
     CreationQuotaExceeded = 53,
+    /// Shipment cannot transition to a delivery state because its prerequisite shipments are not yet completed.
+    DependenciesNotMet = 54,
+    /// A circular dependency was detected in the shipment prerequisites.
+    CircularDependency = 55,
+    /// Proposal salt was already used in a prior proposal; replay attack prevented.
+    ProposalSaltReused = 56,
+    /// Shipment sender, receiver, and carrier addresses must be distinct.
+    InvalidShipmentParticipants = 57,
+    /// Shipment deadline must be strictly in the future.
+    InvalidShipmentDeadline = 58,
+    /// Payment milestone list is malformed or contains invalid percentages.
+    InvalidPaymentMilestones = 59,
+    /// Payment milestone checkpoint names must be unique.
+    DuplicatePaymentMilestone = 60,
+    /// Shipment token address is invalid.
+    InvalidTokenAddress = 61,
+    /// Payment milestone checkpoint name has an invalid format.
+    InvalidPaymentMilestoneName = 62,
+    /// Metadata key and value symbols are identical, which is considered a collision.
+    MetadataSymbolCollision = 63,
 }

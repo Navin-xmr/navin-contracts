@@ -322,3 +322,138 @@ fn run_insufficient_funds_test(variant: TokenVariant) {
 // 5. Atomic Releases: Milestone payments and final releases are atomic. If a
 //    token transfer fails, the entire transaction (including status updates)
 //    is rolled back by Soroban.
+
+// ── Token Decimals Validation Tests ─────────────────────────────────────────
+//
+// The contract validates that the payment token uses exactly 7 decimal places
+// (Stellar standard). This prevents silent amount mismatches for non-standard tokens.
+
+mod mock_six_decimals {
+    use soroban_sdk::{contract, contractimpl, Address, Env};
+
+    #[contract]
+    pub struct SixDecimalsToken;
+
+    #[contractimpl]
+    impl SixDecimalsToken {
+        pub fn decimals(_env: Env) -> u32 {
+            6 // Non-standard — should be rejected by the shipment contract
+        }
+        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+    }
+}
+
+mod mock_eight_decimals {
+    use soroban_sdk::{contract, contractimpl, Address, Env};
+
+    #[contract]
+    pub struct EightDecimalsToken;
+
+    #[contractimpl]
+    impl EightDecimalsToken {
+        pub fn decimals(_env: Env) -> u32 {
+            8 // Non-standard — should be rejected by the shipment contract
+        }
+        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+    }
+}
+
+#[test]
+fn test_token_with_7_decimals_deposit_succeeds() {
+    // A valid 7-decimals token should allow deposit_escrow to proceed.
+    let ctx = setup_test(TokenVariant::StellarAsset);
+    let amount = 500i128;
+    mint_tokens(&ctx, &ctx.company, amount);
+
+    let deadline = ctx.env.ledger().timestamp() + 3600;
+    let shipment_id = ctx.shipment_client.create_shipment(
+        &ctx.company,
+        &ctx.receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env),
+        &Vec::new(&ctx.env),
+        &deadline,
+        &None,
+    );
+
+    // Should succeed — SAC tokens have 7 decimals
+    let result = ctx
+        .shipment_client
+        .try_deposit_escrow(&ctx.company, &shipment_id, &amount);
+    assert!(
+        result.is_ok(),
+        "deposit_escrow must succeed with a 7-decimals token, got: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_token_with_6_decimals_deposit_fails_with_invalid_token_decimals() {
+    // A token with 6 decimals must be rejected at deposit_escrow time.
+    let (env, admin) = test_utils::setup_env();
+    let token = env.register(mock_six_decimals::SixDecimalsToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    client.initialize(&admin, &token);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &dummy_hash(&env),
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    let result = client.try_deposit_escrow(&company, &shipment_id, &500i128);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::InvalidTokenDecimals)),
+        "Token with 6 decimals must be rejected with InvalidTokenDecimals"
+    );
+}
+
+#[test]
+fn test_token_with_8_decimals_deposit_fails_with_invalid_token_decimals() {
+    // A token with 8 decimals must also be rejected at deposit_escrow time.
+    let (env, admin) = test_utils::setup_env();
+    let token = env.register(mock_eight_decimals::EightDecimalsToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    client.initialize(&admin, &token);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &Vec::new(&env),
+        &deadline,
+        &None,
+    );
+
+    let result = client.try_deposit_escrow(&company, &shipment_id, &500i128);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::InvalidTokenDecimals)),
+        "Token with 8 decimals must be rejected with InvalidTokenDecimals"
+    );
+}
+

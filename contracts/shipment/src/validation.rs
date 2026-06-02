@@ -150,6 +150,13 @@ pub fn validate_metadata_symbols(
 ) -> Result<(), NavinError> {
     validate_symbol(env, key)?;
     validate_symbol(env, value)?;
+    // Reject key == value: a self-referential entry is always a caller mistake
+    // and prevents silent data loss when both symbols happen to share the same
+    // XDR representation (e.g., Symbol::new(&env, "weight") used as both key
+    // and value).
+    if key.to_xdr(env) == value.to_xdr(env) {
+        return Err(NavinError::MetadataSymbolCollision);
+    }
     Ok(())
 }
 
