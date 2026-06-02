@@ -3,7 +3,6 @@
 /// This module ensures that zero-amount and negative-amount escrow operations
 /// are rejected consistently across all escrow call paths, preventing silent
 /// acceptance of invalid amounts and maintaining bounded, predictable behavior.
-
 use crate::{NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Symbol, Vec};
 
@@ -19,7 +18,14 @@ impl MockToken {
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
 }
 
-fn setup_escrow_env() -> (Env, NavinShipmentClient<'static>, Address, Address, Address, Address) {
+fn setup_escrow_env() -> (
+    Env,
+    NavinShipmentClient<'static>,
+    Address,
+    Address,
+    Address,
+    Address,
+) {
     let (env, admin) = crate::test_utils::setup_env();
     let token_contract = env.register(MockToken {}, ());
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
@@ -80,7 +86,10 @@ fn test_deposit_escrow_negative_amount_rejected() {
 
     // Attempt to deposit negative amount - should fail
     let result = client.try_deposit_escrow(&company, &shipment_id, &-100);
-    assert!(result.is_err(), "Negative-amount deposit should be rejected");
+    assert!(
+        result.is_err(),
+        "Negative-amount deposit should be rejected"
+    );
 }
 
 /// Test that positive amounts are accepted in deposit_escrow.
@@ -102,10 +111,7 @@ fn test_deposit_escrow_positive_amount_accepted() {
     // Deposit a positive amount - should succeed
     let amount = 1000i128;
     let result = client.try_deposit_escrow(&company, &shipment_id, &amount);
-    assert!(
-        result.is_ok(),
-        "Positive-amount deposit should be accepted"
-    );
+    assert!(result.is_ok(), "Positive-amount deposit should be accepted");
 
     // Verify escrow was stored
     let shipment = client.get_shipment(&shipment_id);
@@ -132,7 +138,10 @@ fn test_deposit_escrow_zero_rejection_consistency() {
     // Multiple attempts with zero - all should fail consistently
     for _ in 0..3 {
         let result = client.try_deposit_escrow(&company, &shipment_id, &0);
-        assert!(result.is_err(), "Zero-amount rejection must stay consistent");
+        assert!(
+            result.is_err(),
+            "Zero-amount rejection must stay consistent"
+        );
     }
 }
 

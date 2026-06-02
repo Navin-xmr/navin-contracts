@@ -495,8 +495,7 @@ fn test_event_topic_too_long_rejected() {
 #[test]
 fn test_milestone_five_unique_12_char_symbols_valid() {
     let env = Env::default();
-    let mut milestones: soroban_sdk::Vec<(soroban_sdk::Symbol, u32)> =
-        soroban_sdk::Vec::new(&env);
+    let mut milestones: soroban_sdk::Vec<(soroban_sdk::Symbol, u32)> = soroban_sdk::Vec::new(&env);
     milestones.push_back((sym(&env, "VERYLONGNAM1"), 20));
     milestones.push_back((sym(&env, "VERYLONGNAM2"), 20));
     milestones.push_back((sym(&env, "VERYLONGNAM3"), 20));
@@ -592,7 +591,10 @@ fn test_validate_symbol_overlong_is_idempotent() {
     let s = sym(&env, &long);
     let first = validate_symbol(&env, &s);
     let second = validate_symbol(&env, &s);
-    assert_eq!(first, second, "validate_symbol (overlong) must be idempotent");
+    assert_eq!(
+        first, second,
+        "validate_symbol (overlong) must be idempotent"
+    );
 }
 
 // ── Milestone: exact-length boundary through helper ──────────────────────────

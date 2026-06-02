@@ -257,7 +257,12 @@ fn test_lockout_is_stable_across_reruns() {
     for _ in 0..3 {
         assert!(
             matches!(
-                client.try_update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash),
+                client.try_update_status(
+                    &carrier,
+                    &shipment_id,
+                    &ShipmentStatus::InTransit,
+                    &data_hash
+                ),
                 Err(Ok(crate::NavinError::ShipmentFinalized))
             ),
             "update_status lockout must be stable"

@@ -526,9 +526,7 @@ pub fn has_persistent_shipment(env: &Env, shipment_id: u64) -> bool {
 
 /// Check whether escrow entry exists in persistent storage.
 pub fn has_escrow_entry(env: &Env, shipment_id: u64) -> bool {
-    env.storage()
-        .persistent()
-        .has(&escrow_key(shipment_id))
+    env.storage().persistent().has(&escrow_key(shipment_id))
 }
 
 /// Check whether confirmation hash exists in persistent storage.
@@ -671,9 +669,7 @@ pub fn set_escrow_freeze_reason(env: &Env, shipment_id: u64, reason: &EscrowFree
 /// ```
 #[allow(dead_code)]
 pub fn remove_escrow(env: &Env, shipment_id: u64) {
-    env.storage()
-        .persistent()
-        .remove(&escrow_key(shipment_id));
+    env.storage().persistent().remove(&escrow_key(shipment_id));
 }
 
 /// Check if an address is an observer for a specific shipment.

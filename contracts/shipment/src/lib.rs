@@ -53,6 +53,8 @@ mod test_auto_dispute;
 #[cfg(test)]
 mod test_carrier_relationship;
 #[cfg(test)]
+mod test_counter_overflow;
+#[cfg(test)]
 mod test_creation_quota;
 #[cfg(test)]
 mod test_diagnostics;

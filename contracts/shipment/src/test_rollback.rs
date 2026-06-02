@@ -257,7 +257,10 @@ fn test_release_escrow_failure_leaves_escrow_unchanged() {
     let escrow_before = client.get_escrow_balance(&id);
 
     let result = client.try_release_escrow(&receiver, &id);
-    assert!(result.is_err(), "release_escrow must fail with failing token");
+    assert!(
+        result.is_err(),
+        "release_escrow must fail with failing token"
+    );
 
     let escrow_after = client.get_escrow_balance(&id);
     assert_eq!(
