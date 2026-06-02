@@ -86,6 +86,14 @@ mod test_verification;
 mod test_zero_amount_escrow;
 #[cfg(test)]
 mod test_counter_overflow;
+#[cfg(test)]
+mod test_whitelist_multicompany;
+#[cfg(test)]
+mod test_suspension_cascade;
+#[cfg(test)]
+mod test_archive_restore_consistency;
+#[cfg(test)]
+mod test_deadline_grace;
 
 // ── Fuzz / property-based test harnesses ─────────────────────────────────────
 #[cfg(test)]
