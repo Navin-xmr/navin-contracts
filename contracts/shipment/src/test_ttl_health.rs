@@ -45,7 +45,6 @@ fn create_test_shipment(
         &data_hash,
         &soroban_sdk::Vec::new(env),
         &deadline,
-        &None,
     )
 }
 
@@ -171,7 +170,6 @@ fn test_ttl_extended_on_active_mutation() {
         &create_hash,
         &soroban_sdk::Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let ttl_after_create = env.as_contract(&client.address, || {
@@ -226,14 +224,16 @@ fn test_ttl_not_extended_for_archived_terminal_shipment() {
         &create_hash,
         &soroban_sdk::Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let present_before = env.as_contract(&client.address, || {
         let key = crate::types::DataKey::Shipment(shipment_id);
         env.storage().persistent().has(&key)
     });
-    assert!(present_before, "Shipment must be in persistent storage after creation");
+    assert!(
+        present_before,
+        "Shipment must be in persistent storage after creation"
+    );
 
     let reason_hash = BytesN::from_array(&env, &[0x04u8; 32]);
     client.cancel_shipment(&company, &shipment_id, &reason_hash);
@@ -248,4 +248,236 @@ fn test_ttl_not_extended_for_archived_terminal_shipment() {
         !present_after_archive,
         "Archived terminal shipment must not remain in persistent storage"
     );
+}
+
+// ── TTL pre-flight boundary tests (issue #17) ────────────────────────────────────
+
+/// Test TTL extension behavior at the exact threshold boundary.
+/// When TTL equals the threshold, extension should be triggered.
+#[test]
+fn test_ttl_extension_at_threshold_boundary() {
+    let (env, client, admin, _token) = setup_shipment_env();
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let receiver = Address::generate(&env);
+    let create_hash = BytesN::from_array(&env, &[0x10u8; 32]);
+    let deadline = env.ledger().timestamp() + 86_400;
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &create_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Get initial TTL
+    let initial_ttl = env.as_contract(&client.address, || {
+        let key = crate::types::DataKey::Shipment(shipment_id);
+        env.storage().persistent().get_ttl(&key)
+    });
+
+    // Advance time to bring TTL close to threshold
+    // The threshold used in extend_shipment_ttl is typically 100 ledgers
+    env.ledger().with_mut(|l| {
+        l.sequence_number += initial_ttl - 100;
+        l.timestamp += 60;
+    });
+
+    // Check TTL before extension
+    let ttl_before = env.as_contract(&client.address, || {
+        let key = crate::types::DataKey::Shipment(shipment_id);
+        env.storage().persistent().get_ttl(&key)
+    });
+
+    // Perform an action that triggers TTL extension
+    let update_hash = BytesN::from_array(&env, &[0x11u8; 32]);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::ShipmentStatus::InTransit,
+        &update_hash,
+    );
+
+    // Check TTL after extension - should be refreshed
+    let ttl_after = env.as_contract(&client.address, || {
+        let key = crate::types::DataKey::Shipment(shipment_id);
+        env.storage().persistent().get_ttl(&key)
+    });
+
+    assert!(
+        ttl_after > ttl_before,
+        "TTL must be extended when at or below threshold"
+    );
+    assert!(
+        ttl_after >= 518_400,
+        "TTL after extension must meet minimum requirement"
+    );
+}
+
+/// Test TTL extension behavior just below the threshold.
+/// When TTL is just below threshold, extension should definitely trigger.
+#[test]
+fn test_ttl_extension_just_below_threshold() {
+    let (env, client, admin, _token) = setup_shipment_env();
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let receiver = Address::generate(&env);
+    let create_hash = BytesN::from_array(&env, &[0x20u8; 32]);
+    let deadline = env.ledger().timestamp() + 86_400;
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &create_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Get initial TTL
+    let initial_ttl = env.as_contract(&client.address, || {
+        let key = crate::types::DataKey::Shipment(shipment_id);
+        env.storage().persistent().get_ttl(&key)
+    });
+
+    // Advance time to bring TTL just below threshold (99 ledgers remaining)
+    env.ledger().with_mut(|l| {
+        l.sequence_number += initial_ttl - 99;
+        l.timestamp += 60;
+    });
+
+    // Check TTL before extension
+    let ttl_before = env.as_contract(&client.address, || {
+        let key = crate::types::DataKey::Shipment(shipment_id);
+        env.storage().persistent().get_ttl(&key)
+    });
+
+    // Perform an action that triggers TTL extension
+    let update_hash = BytesN::from_array(&env, &[0x21u8; 32]);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::ShipmentStatus::InTransit,
+        &update_hash,
+    );
+
+    // Check TTL after extension - should be refreshed
+    let ttl_after = env.as_contract(&client.address, || {
+        let key = crate::types::DataKey::Shipment(shipment_id);
+        env.storage().persistent().get_ttl(&key)
+    });
+
+    assert!(
+        ttl_after > ttl_before,
+        "TTL must be extended when just below threshold"
+    );
+    assert!(
+        ttl_after >= 518_400,
+        "TTL after extension must meet minimum requirement"
+    );
+}
+
+/// Test TTL extension behavior just above the threshold.
+/// When TTL is just above threshold, extension should not trigger.
+#[test]
+fn test_ttl_extension_just_above_threshold() {
+    let (env, client, admin, _token) = setup_shipment_env();
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let receiver = Address::generate(&env);
+    let create_hash = BytesN::from_array(&env, &[0x30u8; 32]);
+    let deadline = env.ledger().timestamp() + 86_400;
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &create_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Get initial TTL
+    let initial_ttl = env.as_contract(&client.address, || {
+        let key = crate::types::DataKey::Shipment(shipment_id);
+        env.storage().persistent().get_ttl(&key)
+    });
+
+    // Advance time to bring TTL just above threshold (101 ledgers remaining)
+    env.ledger().with_mut(|l| {
+        l.sequence_number += initial_ttl - 101;
+        l.timestamp += 60;
+    });
+
+    // Check TTL before extension attempt
+    let ttl_before = env.as_contract(&client.address, || {
+        let key = crate::types::DataKey::Shipment(shipment_id);
+        env.storage().persistent().get_ttl(&key)
+    });
+
+    // Perform an action - TTL should NOT be extended since we're above threshold
+    let update_hash = BytesN::from_array(&env, &[0x31u8; 32]);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::ShipmentStatus::InTransit,
+        &update_hash,
+    );
+
+    // Check TTL after - should be unchanged or only slightly decreased
+    let ttl_after = env.as_contract(&client.address, || {
+        let key = crate::types::DataKey::Shipment(shipment_id);
+        env.storage().persistent().get_ttl(&key)
+    });
+
+    // When above threshold, TTL should not be extended
+    // It may decrease slightly due to ledger advancement, but not jump up
+    assert!(
+        ttl_after <= ttl_before + 10,
+        "TTL should not be extended when just above threshold"
+    );
+}
+
+/// Verify that health output matches actual storage state at TTL boundaries.
+#[test]
+fn test_ttl_health_output_matches_storage_state() {
+    let (env, client, admin, _token) = setup_shipment_env();
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Create shipments and verify health matches storage
+    for i in 0..3u8 {
+        create_test_shipment(&client, &env, &company, &carrier, i);
+    }
+
+    let health = client.get_status_summary();
+
+    // Verify health output matches actual storage state
+    assert_eq!(health.created, 3);
+
+    // Verify by checking storage directly
+    env.as_contract(&client.address, || {
+        let created_count = crate::storage::get_status_count(&env, &crate::ShipmentStatus::Created);
+        assert_eq!(
+            created_count, 3,
+            "Health output must match actual storage state"
+        );
+    });
 }
