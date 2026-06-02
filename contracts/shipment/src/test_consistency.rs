@@ -1088,8 +1088,7 @@ fn test_carrier_whitelist_storage_key_correctness() {
 
     // Verify internal storage using the canonical key order
     env.as_contract(&client.address, || {
-        let canonical_forward =
-            crate::storage::is_carrier_whitelisted(&env, &company, &carrier);
+        let canonical_forward = crate::storage::is_carrier_whitelisted(&env, &company, &carrier);
         assert!(
             canonical_forward,
             "canonical forward lookup (company, carrier) must succeed"
@@ -1208,7 +1207,10 @@ fn test_carrier_whitelist_nonexistent_pair_returns_false() {
     let result2 = client.is_carrier_whitelisted(&company, &carrier);
 
     assert!(!result1, "non-existent pair should return false");
-    assert_eq!(result1, result2, "non-existent pair query must be deterministic");
+    assert_eq!(
+        result1, result2,
+        "non-existent pair query must be deterministic"
+    );
 }
 
 /// Test: Whitelist state persists across multiple operations on other entities.
@@ -1329,19 +1331,6 @@ fn test_carrier_whitelist_remove_idempotent() {
         !client.is_carrier_whitelisted(&company, &carrier),
         "carrier should not be whitelisted after multiple removes"
     );
-}n_sdk::Vec;
-
-    let mut visited: Vec<u64> = Vec::new(env);
-    let mut path: Vec<u64> = Vec::new(env);
-
-    for i in 0..new_deps.len() {
-        if let Some(dep_id) = new_deps.get(i) {
-            if has_cycle_recursive(env, dep_id, start_id, &mut visited, &mut path) {
-                return true;
-            }
-        }
-    }
-    false
 }
 
 /// Recursive helper for cycle detection using DFS.
