@@ -761,6 +761,33 @@ pub struct ProposalActionDigest {
     pub computed_at: u64,
 }
 
+/// TTL health summary returned by `get_ttl_health_summary`.
+///
+/// Provides a snapshot of how many shipments are in persistent storage
+/// versus archived or missing, along with the configured TTL parameters.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct TtlHealthSummary {
+    /// Total number of shipments tracked by the contract counter.
+    pub total_shipment_count: u64,
+    /// Number of shipments sampled in this health check.
+    pub sampled_count: u64,
+    /// Number of sampled shipments found in persistent storage.
+    pub persistent_count: u64,
+    /// Number of sampled shipments not in persistent storage (archived or missing).
+    pub missing_or_archived_count: u64,
+    /// Percentage of sampled shipments in persistent storage (0–100).
+    pub persistent_percentage: u32,
+    /// Configured TTL threshold (ledgers remaining before extension fires).
+    pub ttl_threshold: u32,
+    /// Configured TTL extension (ledgers added when threshold is reached).
+    pub ttl_extension: u32,
+    /// Current ledger sequence number at query time.
+    pub current_ledger: u32,
+    /// Current ledger timestamp at query time.
+    pub query_timestamp: u64,
+}
+
 /// Configuration for platform revenue collection.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]

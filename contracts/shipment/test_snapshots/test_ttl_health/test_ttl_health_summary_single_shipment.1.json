@@ -70,7 +70,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 },
                 {
-                  "bytes": "1dab000000000000000000000000000000000000000000000000000000000000"
+                  "bytes": "3c01000000000000000000000000000000000000000000000000000000000000"
                 },
                 {
                   "vec": []
@@ -250,7 +250,7 @@
                   "symbol": "IdempotencyWindow"
                 },
                 {
-                  "bytes": "cae0bb42345b2e808f1a80d4eef2a738139ded294c2a80426b35cfc90c2e86d9"
+                  "bytes": "2ee5a7a8d3c0f8b38b136c7098a457e19da746f594fbddab45cfbbb1b9ee0673"
                 }
               ]
             },
@@ -270,7 +270,7 @@
                       "symbol": "IdempotencyWindow"
                     },
                     {
-                      "bytes": "cae0bb42345b2e808f1a80d4eef2a738139ded294c2a80426b35cfc90c2e86d9"
+                      "bytes": "2ee5a7a8d3c0f8b38b136c7098a457e19da746f594fbddab45cfbbb1b9ee0673"
                     }
                   ]
                 },
@@ -343,7 +343,7 @@
                         "symbol": "data_hash"
                       },
                       "val": {
-                        "bytes": "1dab000000000000000000000000000000000000000000000000000000000000"
+                        "bytes": "3c01000000000000000000000000000000000000000000000000000000000000"
                       }
                     },
                     {
@@ -353,6 +353,12 @@
                       "val": {
                         "u64": 172800
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "depends_on"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {
@@ -397,6 +403,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "milestones_completed"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "paid_milestones"
                       },
                       "val": {
@@ -437,6 +451,14 @@
                             "symbol": "Created"
                           }
                         ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "token_address"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                       }
                     },
                     {
@@ -553,6 +575,22 @@
                               },
                               "val": {
                                 "u32": 10
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "creation_quota_max"
+                              },
+                              "val": {
+                                "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "creation_quota_window_seconds"
+                              },
+                              "val": {
+                                "u64": 3600
                               }
                             },
                             {
