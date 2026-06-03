@@ -122,6 +122,8 @@ mod fuzz_storage_operations;
 mod fuzz_ttl_management;
 #[cfg(test)]
 mod fuzz_wallet_auth_integration;
+#[cfg(test)]
+mod preservation_property_tests;
 
 pub use config::*;
 pub use consistency::*;
