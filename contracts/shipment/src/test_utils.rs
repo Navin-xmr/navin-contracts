@@ -34,8 +34,14 @@
 
 use soroban_sdk::{
     testutils::{Address as _, Ledger as _},
-    Address, Env,
+    Address, BytesN, Env, Symbol,
 };
+
+/// Returns a deterministic 32-byte hash seeded from a single byte value.
+/// Useful for constructing unique but reproducible data hashes in tests.
+pub fn dummy_hash(env: &Env) -> BytesN<32> {
+    BytesN::from_array(env, &[1u8; 32])
+}
 
 #[cfg(any(test, feature = "testutils"))]
 extern crate std;

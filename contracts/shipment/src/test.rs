@@ -113,6 +113,28 @@ pub fn setup_shipment_env_with_failing_token(
     (env, client, admin, token_contract)
 }
 
+/// Creates a fully-initialized shipment environment ready for use.
+/// Calls `initialize` on the client so tests can call contract methods
+/// directly without an extra initialization step.
+pub fn setup_initialized_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
+    let (env, admin) = super::test_utils::setup_env();
+    let token_contract = env.register(MockToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    client.initialize(&admin, &token_contract);
+    (env, client, admin, token_contract)
+}
+
+/// Like `setup_initialized_shipment_env` but uses a token that always
+/// fails transfers — useful for testing rollback / failure paths.
+pub fn setup_initialized_shipment_env_with_failing_token(
+) -> (Env, NavinShipmentClient<'static>, Address, Address) {
+    let (env, admin) = super::test_utils::setup_env();
+    let token_contract = env.register(failing_token::FailingMockToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    client.initialize(&admin, &token_contract);
+    (env, client, admin, token_contract)
+}
+
 #[test]
 fn test_successful_initialization() {
     let (_env, client, admin, token_contract) = setup_shipment_env();
@@ -10832,4 +10854,270 @@ fn test_dispute_emits_escrow_frozen_event() {
         stored_reason,
         Some(crate::types::EscrowFreezeReason::DisputeRaised)
     );
+}
+
+// ── Finalization lock-out tests (issue #446) ──────────────────────────────────
+
+#[test]
+fn test_finalized_shipment_rejects_update_status() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xFAu8; 32]);
+    let deadline = super::test_utils::future_deadline(&env, 7200);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    client.cancel_shipment(&company, &id, &data_hash);
+    assert!(client.get_shipment(&id).finalized);
+
+    let result = client.try_update_status(&carrier, &id, &ShipmentStatus::InTransit, &data_hash);
+    assert!(
+        matches!(result, Err(Ok(NavinError::ShipmentFinalized))),
+        "update_status must be rejected after finalization"
+    );
+}
+
+#[test]
+fn test_finalized_shipment_rejects_deposit_escrow() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xFBu8; 32]);
+    let deadline = super::test_utils::future_deadline(&env, 7200);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    client.cancel_shipment(&company, &id, &data_hash);
+    assert!(client.get_shipment(&id).finalized);
+
+    let result = client.try_deposit_escrow(&company, &id, &1000_i128);
+    assert!(
+        matches!(result, Err(Ok(NavinError::ShipmentFinalized))),
+        "deposit_escrow must be rejected after finalization"
+    );
+}
+
+// ── Metadata symbol boundary tests (issue #448) ──────────────────────────────
+
+#[test]
+fn test_metadata_at_max_symbol_length_accepted() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0x01u8; 32]);
+    let deadline = super::test_utils::future_deadline(&env, 7200);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // 12-char key and value are exactly at the Stellar Symbol maximum — must be accepted
+    let key = Symbol::new(&env, "VERYLONGNAME"); // 12 chars
+    let val = Symbol::new(&env, "ABCDEFGHIJKL"); // 12 chars
+    client.set_shipment_metadata(&company, &id, &key, &val);
+
+    let shipment = client.get_shipment(&id);
+    assert!(
+        shipment.metadata.is_some(),
+        "12-char metadata key/value must be accepted"
+    );
+}
+
+// ── Rate-limit exhaustion and recovery tests (issue #18) ─────────────────────
+
+/// Test that rate limit exhaustion blocks the action as expected.
+#[test]
+fn test_rate_limit_exhaustion_blocks_action() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0x01u8; 32]);
+    let deadline = super::test_utils::future_deadline(&env, 7200);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // First update succeeds
+    let hash1 = BytesN::from_array(&env, &[0x02u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash1);
+
+    // Immediate second update should fail due to rate limit (60-second minimum interval)
+    let hash2 = BytesN::from_array(&env, &[0x03u8; 32]);
+    let result = client.try_update_status(&carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &hash2);
+    assert!(
+        result.is_err(),
+        "rapid update should be blocked by rate limit"
+    );
+    assert!(
+        matches!(result, Err(Ok(NavinError::RateLimitExceeded))),
+        "should return RateLimitExceeded error"
+    );
+}
+
+/// Test that advancing the ledger clears the rate limit window and restores the action.
+#[test]
+fn test_rate_limit_window_expiry_restores_action() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0x01u8; 32]);
+    let deadline = super::test_utils::future_deadline(&env, 7200);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // First update succeeds
+    let hash1 = BytesN::from_array(&env, &[0x02u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash1);
+
+    // Immediate second update fails
+    let hash2 = BytesN::from_array(&env, &[0x03u8; 32]);
+    let result = client.try_update_status(&carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &hash2);
+    assert!(result.is_err(), "rapid update should be blocked");
+
+    // Advance ledger past the rate limit window
+    super::test_utils::advance_past_rate_limit(&env);
+
+    // Third update after window expiry should succeed
+    let hash3 = BytesN::from_array(&env, &[0x04u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &hash3);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::AtCheckpoint);
+}
+
+/// Test that rate-limit behavior is deterministic across multiple cycles.
+#[test]
+fn test_rate_limit_behavior_deterministic() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0x01u8; 32]);
+    let deadline = super::test_utils::future_deadline(&env, 7200);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Cycle 1: update, block, advance, succeed
+    let hash1 = BytesN::from_array(&env, &[0x10u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash1);
+
+    let hash2 = BytesN::from_array(&env, &[0x11u8; 32]);
+    let result1 = client.try_update_status(&carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &hash2);
+    assert!(result1.is_err());
+
+    super::test_utils::advance_past_rate_limit(&env);
+
+    let hash3 = BytesN::from_array(&env, &[0x12u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &hash3);
+
+    // Cycle 2: update, block, advance, succeed
+    let hash4 = BytesN::from_array(&env, &[0x20u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash4);
+
+    let hash5 = BytesN::from_array(&env, &[0x21u8; 32]);
+    let result2 = client.try_update_status(&carrier, &shipment_id, &ShipmentStatus::Delivered, &hash5);
+    assert!(result2.is_err());
+
+    super::test_utils::advance_past_rate_limit(&env);
+
+    let hash6 = BytesN::from_array(&env, &[0x22u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::Delivered, &hash6);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Delivered);
+}
+
+
+#[test]
+fn test_metadata_over_max_symbol_length_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0x02u8; 32]);
+    let deadline = super::test_utils::future_deadline(&env, 7200);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // 13-char value exceeds the Stellar Symbol maximum — must be rejected
+    use std::string::ToString;
+    let long_val = "A".repeat(13);
+    let key = Symbol::new(&env, "weight");
+    let val = Symbol::new(&env, &long_val);
+    let result = client.try_set_shipment_metadata(&company, &id, &key, &val);
+    assert!(result.is_err(), "13-char metadata value must be rejected");
 }

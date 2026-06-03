@@ -28,11 +28,25 @@ extern crate std;
 
 use crate::{test_utils, NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
-    testutils::{Address as _, Events},
+    contract, contractimpl,
+    testutils::{Address as _, Events, Ledger as _},
     token::StellarAssetClient,
     Address, BytesN, Env, Symbol, TryFromVal, TryIntoVal, Vec,
 };
 use std::string::ToString;
+
+// ── Minimal no-op token for replay tests ─────────────────────────────────────
+
+#[contract]
+struct FixtureReplayToken;
+
+#[contractimpl]
+impl FixtureReplayToken {
+    pub fn transfer(_e: Env, _f: Address, _t: Address, _a: i128) {}
+    pub fn decimals(_e: Env) -> u32 {
+        7
+    }
+}
 
 // ── shared fixture setup ──────────────────────────────────────────────────────
 
@@ -766,5 +780,112 @@ fn test_snapshot_delivery_success_payload_shape() {
         event_idempotency_key.len(),
         32,
         "idempotency_key must be at index 5 and be 32 bytes"
+    );
+}
+
+
+// ── Issue #436: Event idempotency collision regression tests ──────────────────
+
+/// Distinct event inputs (different shipment IDs) must produce different
+/// idempotency keys — no two independent events may share the same key.
+#[test]
+fn test_idempotency_keys_are_distinct_for_different_shipment_ids() {
+    let env = Env::default();
+
+    let key_a = crate::events::generate_idempotency_key(&env, 1, 100, "status_changed", 1);
+    let key_b = crate::events::generate_idempotency_key(&env, 1, 200, "status_changed", 1);
+
+    assert_ne!(
+        key_a, key_b,
+        "Different shipment IDs must yield distinct idempotency keys"
+    );
+}
+
+/// Distinct event types for the same shipment must not collide.
+#[test]
+fn test_idempotency_keys_are_distinct_for_different_event_types() {
+    let env = Env::default();
+
+    let key_a = crate::events::generate_idempotency_key(&env, 1, 42, "status_changed", 1);
+    let key_b = crate::events::generate_idempotency_key(&env, 1, 42, "delivery_success", 1);
+
+    assert_ne!(
+        key_a, key_b,
+        "Different event types for the same shipment must yield distinct idempotency keys"
+    );
+}
+
+/// Distinct domains (event families) must not collide even with identical
+/// shipment ID, event type, and counter — domain separation is enforced.
+#[test]
+fn test_idempotency_keys_are_distinct_across_domains() {
+    let env = Env::default();
+
+    let key_a = crate::events::generate_idempotency_key(&env, 1, 42, "status_changed", 1);
+    let key_b = crate::events::generate_idempotency_key(&env, 2, 42, "status_changed", 1);
+
+    assert_ne!(
+        key_a, key_b,
+        "Different domain bytes must yield distinct idempotency keys"
+    );
+}
+
+/// Same inputs must always produce the same idempotency key — the function is
+/// deterministic and pure.
+#[test]
+fn test_idempotency_key_is_deterministic() {
+    let env = Env::default();
+
+    let key_a = crate::events::generate_idempotency_key(&env, 1, 99, "status_changed", 3);
+    let key_b = crate::events::generate_idempotency_key(&env, 1, 99, "status_changed", 3);
+
+    assert_eq!(
+        key_a, key_b,
+        "Identical inputs must always produce the same idempotency key"
+    );
+}
+
+/// Incrementing the event counter must produce a different key — counter field
+/// provides per-event uniqueness within the same (domain, shipment, type) space.
+#[test]
+fn test_idempotency_keys_differ_by_event_counter() {
+    let env = Env::default();
+
+    let key_1 = crate::events::generate_idempotency_key(&env, 1, 42, "status_changed", 1);
+    let key_2 = crate::events::generate_idempotency_key(&env, 1, 42, "status_changed", 2);
+
+    assert_ne!(
+        key_1, key_2,
+        "Different event counters must yield distinct idempotency keys"
+    );
+}
+
+/// Replay protection: a proposal with a reused salt must be rejected,
+/// proving duplicate event paths stay blocked in-window.
+#[test]
+fn test_event_replay_blocked_by_salt_reuse() {
+    let (env, admin) = test_utils::setup_env();
+    let token = env.register(FixtureReplayToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    client.initialize(&admin, &token);
+
+    // Set up multisig (need ≥ 2 admins).
+    let admin2 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &1);
+
+    let salt = BytesN::from_array(&env, &[0xDEu8; 32]);
+    let action = crate::types::AdminAction::Upgrade(BytesN::from_array(&env, &[1u8; 32]));
+
+    // First proposal with this salt succeeds (auto-executes with threshold=1).
+    let _id1 = client.propose_action(&admin, &action, &salt);
+
+    // Second proposal reusing the same salt must be rejected.
+    let result = client.try_propose_action(&admin, &action, &salt);
+    assert!(
+        result.is_err(),
+        "Reused salt must be rejected — replay protection must stay intact"
     );
 }

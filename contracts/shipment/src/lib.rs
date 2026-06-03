@@ -47,19 +47,31 @@ mod types;
 mod validation;
 
 #[cfg(test)]
+mod test_archive_restore_consistency;
+#[cfg(test)]
 mod test_auth;
 #[cfg(test)]
 mod test_auto_dispute;
 #[cfg(test)]
 mod test_carrier_relationship;
 #[cfg(test)]
+mod test_counter_overflow;
+#[cfg(test)]
+mod test_counter_overflow;
+#[cfg(test)]
 mod test_creation_quota;
 #[cfg(test)]
+mod test_deadline_grace;
+#[cfg(test)]
 mod test_diagnostics;
+#[cfg(test)]
+mod test_escrow_arithmetic;
 #[cfg(test)]
 mod test_hash_domain_separation;
 #[cfg(test)]
 mod test_iot_verification;
+#[cfg(test)]
+mod test_milestone_payout_order;
 #[cfg(test)]
 mod test_panic_free_invariants;
 #[cfg(test)]
@@ -71,24 +83,27 @@ mod test_proposal_digest;
 #[cfg(test)]
 mod test_require_auth_for_args;
 #[cfg(test)]
+mod test_settlement_machine;
+#[cfg(test)]
+mod test_settlement_transitions;
+#[cfg(test)]
 mod test_signature_argument_ordering;
 #[cfg(test)]
 mod test_suspension;
 #[cfg(test)]
-<<<<<<< test/symbol-validation-boundaries
+mod test_suspension_cascade;
+#[cfg(test)]
 mod test_symbol_validation;
 #[cfg(test)]
 mod test_ttl_health;
 #[cfg(test)]
-=======
->>>>>>> main
 mod test_utils;
 #[cfg(test)]
 mod test_verification;
 #[cfg(test)]
-mod test_zero_amount_escrow;
+mod test_whitelist_multicompany;
 #[cfg(test)]
-mod test_counter_overflow;
+mod test_zero_amount_escrow;
 
 // ── Fuzz / property-based test harnesses ─────────────────────────────────────
 #[cfg(test)]
@@ -107,6 +122,8 @@ mod fuzz_storage_operations;
 mod fuzz_ttl_management;
 #[cfg(test)]
 mod fuzz_wallet_auth_integration;
+#[cfg(test)]
+mod preservation_property_tests;
 
 pub use config::*;
 pub use consistency::*;
@@ -3642,6 +3659,14 @@ impl NavinShipment {
 
         if already_completed {
             return Err(NavinError::MilestoneAlreadyPaid);
+        }
+
+        // Enforce sequential ordering: all prior milestones must be paid first.
+        if idx > 0 {
+            let completed_count = shipment.milestones_completed.len() as usize;
+            if completed_count < idx {
+                return Err(NavinError::InvalidStatus);
+            }
         }
 
         let ms_config = shipment.payment_milestones.get(idx as u32).unwrap();

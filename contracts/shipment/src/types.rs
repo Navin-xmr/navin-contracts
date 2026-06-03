@@ -128,6 +128,10 @@ pub enum DataKey {
     CreationQuotaConfig,
     /// Deterministic action digest stored on proposal creation.
     ProposalDigest(u64),
+    /// Prerequisite shipment IDs for a shipment (dependencies).
+    ShipmentDeps(u64),
+    /// Shipments that depend on a specific shipment (reverse index).
+    ShipmentDependents(u64),
 }
 
 /// Structured reason codes for escrow freeze events.

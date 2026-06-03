@@ -3,8 +3,7 @@
 /// This module ensures that shipment counters cannot wrap or silently overflow
 /// when incremented under edge conditions. Tests exercise the upper-bound counter
 /// path and assert the contract fails safely instead of wrapping.
-
-use crate::{NavinShipment, NavinShipmentClient, NavinError, errors, types::DataKey};
+use crate::{errors, types::DataKey, NavinError, NavinShipment, NavinShipmentClient};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Symbol, Vec};
 
 #[soroban_sdk::contract]
@@ -19,7 +18,14 @@ impl MockToken {
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
 }
 
-fn setup_counter_env() -> (Env, NavinShipmentClient<'static>, Address, Address, Address, Address) {
+fn setup_counter_env() -> (
+    Env,
+    NavinShipmentClient<'static>,
+    Address,
+    Address,
+    Address,
+    Address,
+) {
     let (env, admin) = crate::test_utils::setup_env();
     let token_contract = env.register(MockToken {}, ());
     let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
@@ -39,7 +45,7 @@ fn setup_counter_env() -> (Env, NavinShipmentClient<'static>, Address, Address, 
 #[test]
 fn test_shipment_counter_starts_at_zero() {
     let (env, client, _admin, _company, _receiver, _carrier) = setup_counter_env();
-    
+
     let counter = client.get_shipment_counter().unwrap();
     assert_eq!(counter, 0, "Counter should start at 0");
 }
@@ -67,7 +73,10 @@ fn test_shipment_counter_increments() {
     assert_eq!(id_1, 1, "First shipment ID should be 1");
 
     let counter_after_1 = client.get_shipment_counter().unwrap();
-    assert_eq!(counter_after_1, 1, "Counter should be 1 after first shipment");
+    assert_eq!(
+        counter_after_1, 1,
+        "Counter should be 1 after first shipment"
+    );
 
     // Create second shipment
     let id_2 = client.create_shipment(
@@ -81,7 +90,10 @@ fn test_shipment_counter_increments() {
     assert_eq!(id_2, 2, "Second shipment ID should be 2");
 
     let counter_after_2 = client.get_shipment_counter().unwrap();
-    assert_eq!(counter_after_2, 2, "Counter should be 2 after second shipment");
+    assert_eq!(
+        counter_after_2, 2,
+        "Counter should be 2 after second shipment"
+    );
 }
 
 /// Test that counter does not silently wrap at near-max values.
@@ -95,7 +107,7 @@ fn test_shipment_counter_near_max_boundary() {
 
     // We simulate near-overflow by examining what happens at the boundary
     // In production, counters should reject operations that would overflow
-    
+
     // Create some shipments to verify normal operation
     let id_1 = client.create_shipment(
         &company,
@@ -105,7 +117,7 @@ fn test_shipment_counter_near_max_boundary() {
         &Vec::new(&env),
         &deadline,
     );
-    
+
     assert_eq!(id_1, 1, "Normal shipment creation should work");
     assert_eq!(
         client.get_shipment_counter().unwrap(),
@@ -133,7 +145,10 @@ fn test_shipment_counter_overflow_rejected_at_max() {
         &deadline,
     );
 
-    assert!(result.is_err(), "Shipment creation should reject counter overflow at max value");
+    assert!(
+        result.is_err(),
+        "Shipment creation should reject counter overflow at max value"
+    );
     if let Err(err) = result {
         assert_eq!(err, Err(Ok(NavinError::CounterOverflow)));
     }
@@ -156,19 +171,15 @@ fn test_shipment_counter_integrity_multiple_creates() {
             &Vec::new(&env),
             &deadline,
         );
-        
+
         assert_eq!(
             shipment_id as u64, i,
             "Shipment ID {} should match iteration",
             i
         );
-        
+
         let counter = client.get_shipment_counter().unwrap();
-        assert_eq!(
-            counter, i,
-            "Counter should be {} after {} shipments",
-            i, i
-        );
+        assert_eq!(counter, i, "Counter should be {} after {} shipments", i, i);
     }
 }
 
@@ -190,7 +201,7 @@ fn test_shipment_ids_are_unique_and_sequential() {
             &Vec::new(&env),
             &deadline,
         );
-        
+
         // IDs should never repeat
         for &existing_id in ids.iter() {
             assert_ne!(
@@ -199,16 +210,13 @@ fn test_shipment_ids_are_unique_and_sequential() {
                 id
             );
         }
-        
+
         ids.push_back(id);
     }
 
     // Verify they are sequential (1, 2, 3, ...)
     for (idx, &id) in ids.iter().enumerate() {
-        assert_eq!(
-            id as usize, idx + 1,
-            "Shipment IDs should be sequential"
-        );
+        assert_eq!(id as usize, idx + 1, "Shipment IDs should be sequential");
     }
 }
 
@@ -232,8 +240,11 @@ fn test_shipment_counter_persists_across_calls() {
     // Query counter multiple times - should remain consistent
     let counter_check_1 = client.get_shipment_counter().unwrap();
     let counter_check_2 = client.get_shipment_counter().unwrap();
-    
-    assert_eq!(counter_check_1, counter_check_2, "Counter should be consistent");
+
+    assert_eq!(
+        counter_check_1, counter_check_2,
+        "Counter should be consistent"
+    );
     assert_eq!(counter_check_1, id_1 as u64, "Counter should match last ID");
 
     // Create another shipment and verify increment
@@ -264,7 +275,7 @@ fn test_counter_overflow_uses_checked_arithmetic() {
     // The counter should never wrap; it should fail when attempting overflow.
     // We verify this by creating shipments up to a reasonable limit
     // and confirming the counter stays in bounds.
-    
+
     for i in 1..=20 {
         let shipment_id = client.create_shipment(
             &company,
@@ -276,7 +287,7 @@ fn test_counter_overflow_uses_checked_arithmetic() {
         );
 
         let counter = client.get_shipment_counter().unwrap();
-        
+
         // Counter should never wrap around or go negative
         assert!(
             counter > 0,
