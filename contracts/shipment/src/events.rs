@@ -115,12 +115,14 @@ pub fn emit_shipment_created(
         crate::event_topics::SHIPMENT_CREATED,
         event_counter,
     );
+    let token = crate::storage::get_token_contract(env).unwrap();
     env.events().publish(
         (Symbol::new(env, crate::event_topics::SHIPMENT_CREATED),),
         (
             shipment_id,
             sender.clone(),
             receiver.clone(),
+            token,
             data_hash.clone(),
             EVENT_SCHEMA_VERSION,
             event_counter,
@@ -175,12 +177,14 @@ pub fn emit_status_updated(
         crate::event_topics::STATUS_UPDATED,
         event_counter,
     );
+    let token = crate::storage::get_token_contract(env).unwrap();
     env.events().publish(
         (Symbol::new(env, crate::event_topics::STATUS_UPDATED),),
         (
             shipment_id,
             old_status.clone(),
             new_status.clone(),
+            token,
             data_hash.clone(),
             EVENT_SCHEMA_VERSION,
             event_counter,
@@ -294,11 +298,13 @@ pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount
         crate::event_topics::ESCROW_DEPOSITED,
         event_counter,
     );
+    let token = crate::storage::get_token_contract(env).unwrap();
     env.events().publish(
         (Symbol::new(env, crate::event_topics::ESCROW_DEPOSITED),),
         (
             shipment_id,
             from.clone(),
+            token,
             amount,
             EVENT_SCHEMA_VERSION,
             event_counter,
@@ -345,11 +351,13 @@ pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i
         crate::event_topics::ESCROW_RELEASED,
         event_counter,
     );
+    let token = crate::storage::get_token_contract(env).unwrap();
     env.events().publish(
         (Symbol::new(env, crate::event_topics::ESCROW_RELEASED),),
         (
             shipment_id,
             to.clone(),
+            token,
             amount,
             EVENT_SCHEMA_VERSION,
             event_counter,
@@ -396,11 +404,13 @@ pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i
         crate::event_topics::ESCROW_REFUNDED,
         event_counter,
     );
+    let token = crate::storage::get_token_contract(env).unwrap();
     env.events().publish(
         (Symbol::new(env, crate::event_topics::ESCROW_REFUNDED),),
         (
             shipment_id,
             to.clone(),
+            token,
             amount,
             EVENT_SCHEMA_VERSION,
             event_counter,

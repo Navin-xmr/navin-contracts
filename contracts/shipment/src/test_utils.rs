@@ -34,7 +34,7 @@
 
 use soroban_sdk::{
     testutils::{Address as _, Ledger as _},
-    Address, BytesN, Env, Symbol,
+    Address, BytesN, Env,
 };
 
 /// Returns a deterministic 32-byte hash seeded from a single byte value.

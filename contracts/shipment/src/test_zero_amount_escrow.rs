@@ -3,8 +3,8 @@
 /// This module ensures that zero-amount and negative-amount escrow operations
 /// are rejected consistently across all escrow call paths, preventing silent
 /// acceptance of invalid amounts and maintaining bounded, predictable behavior.
-use crate::{NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Symbol, Vec};
+use crate::{NavinShipment, NavinShipmentClient, ShipmentStatus};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec};
 
 #[soroban_sdk::contract]
 struct MockToken;
@@ -182,7 +182,7 @@ fn test_zero_amount_rejection_multiple_shipments() {
         &company,
         &receiver,
         &carrier,
-        &data_hash,
+        &BytesN::from_array(&env, &[1u8; 32]),
         &Vec::new(&env),
         &deadline,
     );
@@ -191,7 +191,7 @@ fn test_zero_amount_rejection_multiple_shipments() {
         &company,
         &receiver,
         &carrier,
-        &data_hash,
+        &BytesN::from_array(&env, &[2u8; 32]),
         &Vec::new(&env),
         &deadline,
     );

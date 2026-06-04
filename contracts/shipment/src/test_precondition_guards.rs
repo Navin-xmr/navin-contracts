@@ -11,7 +11,7 @@ mod tests {
     use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
     use soroban_sdk::{
         contract, contractimpl,
-        testutils::{Address as _, Ledger as _},
+        testutils::Address as _,
         Address, BytesN, Env, Vec,
     };
 

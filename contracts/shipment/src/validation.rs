@@ -117,7 +117,7 @@ pub fn validate_milestone_symbols(
             let other = &milestones.get_unchecked(j).0;
             let other_xdr = other.to_xdr(env);
             if current_xdr == other_xdr {
-                return Err(NavinError::InvalidShipmentInput);
+                return Err(NavinError::DuplicatePaymentMilestone);
             }
         }
     }
@@ -606,7 +606,7 @@ mod tests {
         milestones.push_back((Symbol::new(&env, "warehouse"), 50_u32));
         assert_eq!(
             validate_milestone_symbols(&env, &milestones),
-            Err(NavinError::InvalidShipmentInput)
+            Err(NavinError::DuplicatePaymentMilestone)
         );
     }
 
@@ -785,7 +785,7 @@ mod symbol_validation_tests {
         let result = validate_milestone_symbols(&env, &milestones);
         assert_eq!(
             result,
-            Err(NavinError::InvalidShipmentInput),
+            Err(NavinError::DuplicatePaymentMilestone),
             "Duplicate milestone symbols should be rejected"
         );
     }
@@ -958,8 +958,8 @@ mod symbol_validation_tests {
 
         assert_eq!(
             result,
-            Err(NavinError::InvalidShipmentInput),
-            "Duplicate milestone should return InvalidShipmentInput"
+            Err(NavinError::DuplicatePaymentMilestone),
+            "Duplicate milestone should return DuplicatePaymentMilestone"
         );
     }
 }

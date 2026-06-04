@@ -13,7 +13,7 @@
 #![cfg(test)]
 
 use crate::types::{DataKey, ShipmentStatus};
-use soroban_sdk::{Address, BytesN, Env};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
 /// **Property 2.1: Existing DataKey Variants Remain Functional**
 ///
@@ -315,6 +315,7 @@ fn test_property_match_exhaustiveness_preserved() {
         ShipmentStatus::Delivered => "completed",
         ShipmentStatus::Disputed => "disputed",
         ShipmentStatus::Cancelled => "cancelled",
+        ShipmentStatus::PartiallyRefunded => "refunded",
     };
     assert_eq!(category, "initial");
 }

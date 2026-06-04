@@ -71,15 +71,15 @@ fn create_shipment(
     client: &NavinShipmentClient,
     env: &Env,
     company: &Address,
+    receiver: &Address,
     carrier: &Address,
     seed: u64,
 ) -> u64 {
-    let receiver = Address::generate(env);
     let data_hash = hash_from_seed(env, seed);
     let deadline = env.ledger().timestamp() + 86_400 * 30;
     client.create_shipment(
         company,
-        &receiver,
+        receiver,
         carrier,
         &data_hash,
         &Vec::new(env),
@@ -130,7 +130,8 @@ fn fuzz_arithmetic_overflow_amounts_rejected() {
     for (i, &amount) in overflow_amounts.iter().enumerate() {
         let seed = xorshift64(&mut rng);
         env.ledger().with_mut(|l| l.timestamp += 2);
-        let id = create_shipment(&client, &env, &company, &carrier, seed + i as u64);
+        let receiver = Address::generate(&env);
+        let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed + i as u64);
 
         let result = client.try_deposit_escrow(&company, &id, &amount);
         assert!(
@@ -160,7 +161,8 @@ fn fuzz_arithmetic_boundary_amounts_accepted() {
     for (i, &amount) in boundary_amounts.iter().enumerate() {
         let seed = xorshift64(&mut rng);
         env.ledger().with_mut(|l| l.timestamp += 2);
-        let id = create_shipment(&client, &env, &company, &carrier, seed + i as u64);
+        let receiver = Address::generate(&env);
+        let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed + i as u64);
 
         let result = client.try_deposit_escrow(&company, &id, &amount);
         assert!(
@@ -254,7 +256,8 @@ fn fuzz_arithmetic_random_amounts_range_check() {
     for i in 0..iterations {
         let seed = xorshift64(&mut rng);
         env.ledger().with_mut(|l| l.timestamp += 2);
-        let id = create_shipment(&client, &env, &company, &carrier, seed + i as u64);
+        let receiver = Address::generate(&env);
+        let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed + i as u64);
 
         // Generate amount in full i128 range using two seeds
         let seed2 = xorshift64(&mut rng);
@@ -298,7 +301,8 @@ fn fuzz_arithmetic_total_escrow_volume_no_overflow() {
     for i in 0..iterations {
         let seed = xorshift64(&mut rng);
         env.ledger().with_mut(|l| l.timestamp += 2);
-        let id = create_shipment(&client, &env, &company, &carrier, seed + i as u64);
+        let receiver = Address::generate(&env);
+        let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed + i as u64);
 
         // Use small amounts to avoid hitting MAX_AMOUNT limit on total
         let amount = ((seed % 999) + 1) as i128;
@@ -337,7 +341,7 @@ fn test_minimum_escrow_balance_arithmetic() {
 
     let mut rng: u64 = 0xF000_0000_0000_6000;
     let seed = xorshift64(&mut rng);
-    let id = create_shipment(&client, &env, &company, &carrier, seed);
+    let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed);
 
     // Deposit minimum amount: 1 stroop
     client.deposit_escrow(&company, &id, &1);
@@ -369,7 +373,7 @@ fn test_exact_release_results_in_zero_not_negative() {
 
     let mut rng: u64 = 0xE000_F000_0000_7000;
     let seed = xorshift64(&mut rng);
-    let id = create_shipment(&client, &env, &company, &carrier, seed);
+    let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed);
 
     // Deposit some amount
     let deposit_amount: i128 = 10_000;
@@ -420,7 +424,7 @@ fn test_over_release_blocked_prevents_negative() {
 
     let mut rng: u64 = 0xD000_E000_0000_8000;
     let seed = xorshift64(&mut rng);
-    let id = create_shipment(&client, &env, &company, &carrier, seed);
+    let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed);
 
     // Deposit a small amount
     let deposit_amount: i128 = 5_000;
@@ -469,7 +473,7 @@ fn test_arithmetic_error_surfaced_on_underflow() {
     let over_release: i128 = 200;
 
     // This should fail with ArithmeticError (underflow protection)
-    let result = crate::checked_sub_i128(current_escrow, over_release);
+    let result = crate::checked_sub_escrow(current_escrow, over_release);
     assert!(
         result.is_err(),
         "checked_sub should return error when result would be negative"
@@ -494,7 +498,7 @@ fn test_storage_consistent_after_arithmetic_failure() {
 
     let mut rng: u64 = 0xC000_D000_0000_9000;
     let seed = xorshift64(&mut rng);
-    let id = create_shipment(&client, &env, &company, &carrier, seed);
+    let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed);
 
     // Deposit escrow
     let deposit_amount: i128 = 8_000;
@@ -583,7 +587,7 @@ fn test_multiple_releases_maintain_nonnegative_invariant() {
     client.update_status(&carrier, &id, &crate::ShipmentStatus::Delivered, &h2);
 
     // Release milestone (100% = all escrow)
-    client.release_milestone_escrow(&receiver, &id, &soroban_sdk::Symbol::new(&env, "delivery"));
+    client.release_escrow(&receiver, &id);
 
     // Verify balance is zero after milestone release
     let balance = client.get_escrow_balance(&id);
@@ -615,7 +619,8 @@ fn test_refund_maintains_nonnegative_invariant() {
 
     let mut rng: u64 = 0xA000_B000_0000_B000;
     let seed = xorshift64(&mut rng);
-    let id = create_shipment(&client, &env, &company, &carrier, seed);
+    let receiver = Address::generate(&env);
+    let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed);
 
     // Deposit escrow
     let deposit_amount: i128 = 7_500;
@@ -660,7 +665,7 @@ fn test_zero_escrow_operations_safe() {
 
     let mut rng: u64 = 0x9000_A000_0000_C000;
     let seed = xorshift64(&mut rng);
-    let id = create_shipment(&client, &env, &company, &carrier, seed);
+    let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed);
 
     // Create shipment with zero escrow (no deposit)
     let initial_balance = client.get_escrow_balance(&id);
@@ -694,7 +699,8 @@ fn test_consistency_check_detects_negative_escrow() {
 
     let mut rng: u64 = 0x8000_9000_0000_D000;
     let seed = xorshift64(&mut rng);
-    let id = create_shipment(&client, &env, &company, &carrier, seed);
+    let receiver = Address::generate(&env);
+    let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed);
 
     // Deposit normal escrow
     client.deposit_escrow(&company, &id, &5_000);
@@ -732,14 +738,14 @@ fn test_release_exact_amount_boundary() {
 
     let mut rng: u64 = 0x7000_8000_0000_E000;
     let seed = xorshift64(&mut rng);
-    let id = create_shipment(&client, &env, &company, &carrier, seed);
+    let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed);
 
     // Test with various amounts
     let test_amounts = [1i128, 100, 1_000, 10_000, 100_000, 1_000_000];
 
     for &amount in &test_amounts {
         env.ledger().with_mut(|l| l.timestamp += 2);
-        let test_id = create_shipment(&client, &env, &company, &carrier, seed + amount as u64);
+        let test_id = create_shipment(&client, &env, &company, &receiver, &carrier, seed + amount as u64);
 
         // Deposit exact amount
         client.deposit_escrow(&company, &test_id, &amount);
@@ -783,7 +789,7 @@ fn test_sequential_operations_prevent_negative() {
 
     let mut rng: u64 = 0x6000_7000_0000_F000;
     let seed = xorshift64(&mut rng);
-    let id = create_shipment(&client, &env, &company, &carrier, seed);
+    let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed);
 
     // Deposit initial escrow
     client.deposit_escrow(&company, &id, &15_000);

@@ -976,7 +976,6 @@ fn test_metadata_symbol_collision_via_set_shipment_metadata() {
         &soroban_sdk::BytesN::from_array(&env, &[3u8; 32]),
         &SorobanVec::new(&env),
         &deadline,
-        &None,
     );
 
     // Use the same symbol for both key and value — must be rejected.

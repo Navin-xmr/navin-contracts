@@ -81,15 +81,15 @@ fn create_shipment(
     client: &NavinShipmentClient,
     env: &Env,
     company: &Address,
+    receiver: &Address,
     carrier: &Address,
     seed: u64,
 ) -> u64 {
-    let receiver = Address::generate(env);
     let data_hash = hash_from_seed(env, seed);
     let deadline = env.ledger().timestamp() + 86_400 * 30;
     client.create_shipment(
         company,
-        &receiver,
+        receiver,
         carrier,
         &data_hash,
         &Vec::new(env),
@@ -132,7 +132,8 @@ fn fuzz_escrow_deposit_balance_equals_amount() {
         let seed = xorshift64(&mut rng);
         env.ledger().with_mut(|l| l.timestamp += 2);
 
-        let id = create_shipment(&client, &env, &company, &carrier, seed + i as u64);
+        let receiver = Address::generate(&env);
+        let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed + i as u64);
 
         // Random valid amount: 1 to 1_000_000_000_000_000 (MAX_AMOUNT)
         let amount = ((seed % 999_999_999_999_999) + 1) as i128;
@@ -186,7 +187,8 @@ fn fuzz_escrow_deposit_rejects_invalid_amounts() {
     for (i, &amount) in invalid_amounts.iter().enumerate() {
         let seed = xorshift64(&mut rng);
         env.ledger().with_mut(|l| l.timestamp += 2);
-        let id = create_shipment(&client, &env, &company, &carrier, seed + i as u64);
+        let receiver = Address::generate(&env);
+        let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed + i as u64);
 
         let result = client.try_deposit_escrow(&company, &id, &amount);
         assert!(
@@ -199,7 +201,8 @@ fn fuzz_escrow_deposit_rejects_invalid_amounts() {
     for i in 0..iterations {
         let seed = xorshift64(&mut rng);
         env.ledger().with_mut(|l| l.timestamp += 2);
-        let id = create_shipment(&client, &env, &company, &carrier, seed + i as u64 + 100_000);
+        let receiver = Address::generate(&env);
+        let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed + i as u64 + 100_000);
 
         // Generate negative amount
         let amount = -((seed % 1_000_000) as i128 + 1);
@@ -229,7 +232,8 @@ fn fuzz_escrow_no_double_deposit() {
     for i in 0..iterations {
         let seed = xorshift64(&mut rng);
         env.ledger().with_mut(|l| l.timestamp += 2);
-        let id = create_shipment(&client, &env, &company, &carrier, seed + i as u64);
+        let receiver = Address::generate(&env);
+        let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed + i as u64);
 
         let amount = ((seed % 999_999) + 1) as i128;
         client.deposit_escrow(&company, &id, &amount);
@@ -387,7 +391,8 @@ fn fuzz_escrow_refund_on_cancellation() {
     for i in 0..iterations {
         let seed = xorshift64(&mut rng);
         env.ledger().with_mut(|l| l.timestamp += 2);
-        let id = create_shipment(&client, &env, &company, &carrier, seed + i as u64);
+        let receiver = Address::generate(&env);
+        let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed + i as u64);
 
         let amount = ((seed % 999_999) + 1) as i128;
         client.deposit_escrow(&company, &id, &amount);

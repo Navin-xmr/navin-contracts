@@ -524,6 +524,13 @@ pub fn has_persistent_shipment(env: &Env, shipment_id: u64) -> bool {
         .has(&DataKey::Shipment(shipment_id))
 }
 
+/// Retrieve a shipment ONLY from persistent storage.
+pub fn get_persistent_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Shipment(shipment_id))
+}
+
 /// Check whether escrow entry exists in persistent storage.
 pub fn has_escrow_entry(env: &Env, shipment_id: u64) -> bool {
     env.storage().persistent().has(&escrow_key(shipment_id))

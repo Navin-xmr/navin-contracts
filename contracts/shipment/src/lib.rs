@@ -57,8 +57,6 @@ mod test_carrier_relationship;
 #[cfg(test)]
 mod test_counter_overflow;
 #[cfg(test)]
-mod test_counter_overflow;
-#[cfg(test)]
 mod test_creation_quota;
 #[cfg(test)]
 mod test_deadline_grace;
@@ -174,18 +172,86 @@ fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(),
 fn persist_shipment(env: &Env, shipment: &Shipment) -> Result<(), NavinError> {
     validation::validate_shipment_invariants(shipment)?;
     storage::set_shipment(env, shipment);
+    storage::set_escrow(env, shipment.id, shipment.escrow_amount);
     Ok(())
 }
 
-fn checked_add_i128(a: i128, b: i128) -> Result<i128, NavinError> {
+pub(crate) fn checked_add_i128(a: i128, b: i128) -> Result<i128, NavinError> {
     a.checked_add(b).ok_or(NavinError::ArithmeticError)
 }
 
-fn checked_sub_i128(a: i128, b: i128) -> Result<i128, NavinError> {
+pub(crate) fn checked_sub_i128(a: i128, b: i128) -> Result<i128, NavinError> {
     a.checked_sub(b).ok_or(NavinError::ArithmeticError)
 }
 
-fn checked_mul_div_i128(value: i128, multiplier: i128, divisor: i128) -> Result<i128, NavinError> {
+pub(crate) fn checked_sub_escrow(a: i128, b: i128) -> Result<i128, NavinError> {
+    let res = a.checked_sub(b).ok_or(NavinError::ArithmeticError)?;
+    if res < 0 {
+        return Err(NavinError::ArithmeticError);
+    }
+    Ok(res)
+}
+
+fn internal_release_escrow(
+    env: &Env,
+    shipment: &mut Shipment,
+    amount: i128,
+) -> Result<(), NavinError> {
+    if amount <= 0 {
+        return Ok(());
+    }
+    let actual_release = if amount > shipment.escrow_amount {
+        shipment.escrow_amount
+    } else {
+        amount
+    };
+
+    if actual_release > 0 {
+        // Get token contract address
+        let token_contract = storage::get_token_contract(env).ok_or(NavinError::NotInitialized)?;
+        let contract_address = env.current_contract_address();
+
+        // Create settlement record in Pending state
+        let settlement_id = create_settlement(
+            env,
+            shipment.id,
+            SettlementOperation::Release,
+            actual_release,
+            &contract_address,
+            &shipment.carrier,
+        )?;
+
+        // Transfer tokens from this contract to carrier
+        let transfer_result = invoke_token_transfer(
+            env,
+            &token_contract,
+            &contract_address,
+            &shipment.carrier,
+            actual_release,
+        );
+
+        match transfer_result {
+            Ok(()) => {
+                // Mark settlement as completed
+                complete_settlement(env, settlement_id, shipment.id)?;
+
+                shipment.escrow_amount = checked_sub_escrow(shipment.escrow_amount, actual_release)?;
+                shipment.updated_at = env.ledger().timestamp();
+                shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
+                persist_shipment(env, shipment)?;
+
+                events::emit_escrow_released(env, shipment.id, &shipment.carrier, actual_release);
+            }
+            Err(e) => {
+                fail_settlement(env, settlement_id, shipment.id, e as u32)?;
+                return Err(e);
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn checked_mul_div_i128(value: i128, multiplier: i128, divisor: i128) -> Result<i128, NavinError> {
     if divisor == 0 {
         return Err(NavinError::ArithmeticError);
     }
@@ -401,68 +467,6 @@ fn invoke_token_mint(
     args.push_back(to.clone().into_val(env));
     args.push_back(amount.into_val(env));
     invoke_token_operation(env, token_contract, TokenOperation::Mint, args)
-}
-
-fn internal_release_escrow(
-    env: &Env,
-    shipment: &mut Shipment,
-    amount: i128,
-) -> Result<(), NavinError> {
-    if amount <= 0 {
-        return Ok(());
-    }
-    let actual_release = if amount > shipment.escrow_amount {
-        shipment.escrow_amount
-    } else {
-        amount
-    };
-
-    if actual_release > 0 {
-        // Get token contract address
-        let token_contract = storage::get_token_contract(env).ok_or(NavinError::NotInitialized)?;
-        let contract_address = env.current_contract_address();
-
-        // Create settlement record in Pending state
-        let settlement_id = create_settlement(
-            env,
-            shipment.id,
-            SettlementOperation::Release,
-            actual_release,
-            &contract_address,
-            &shipment.carrier,
-        )?;
-
-        // Transfer tokens from this contract to carrier
-        let transfer_result = invoke_token_transfer(
-            env,
-            &token_contract,
-            &contract_address,
-            &shipment.carrier,
-            actual_release,
-        );
-
-        match transfer_result {
-            Ok(()) => {
-                // Mark settlement as completed
-                complete_settlement(env, settlement_id, shipment.id)?;
-
-                shipment.escrow_amount = checked_sub_i128(shipment.escrow_amount, actual_release)?;
-                shipment.updated_at = env.ledger().timestamp();
-                shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
-                persist_shipment(env, shipment)?;
-                storage::set_escrow(env, shipment.id, shipment.escrow_amount);
-
-                events::emit_escrow_released(env, shipment.id, &shipment.carrier, actual_release);
-            }
-            Err(e) => {
-                // Mark settlement as failed
-                fail_settlement(env, settlement_id, shipment.id, e as u32)?;
-                return Err(e);
-            }
-        }
-    }
-
-    Ok(())
 }
 
 fn require_initialized(env: &Env) -> Result<(), NavinError> {
@@ -942,6 +946,13 @@ impl NavinShipment {
         env.events().publish(
             (symbol_short!("init"),),
             (admin.clone(), token_contract.clone()),
+        );
+
+        // Extend contract instance TTL to prevent premature archival
+        let config = config::get_config(&env);
+        env.storage().instance().extend_ttl(
+            config.shipment_ttl_threshold,
+            config.shipment_ttl_extension,
         );
 
         Ok(())
@@ -2938,7 +2949,7 @@ impl NavinShipment {
         }
 
         let shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+            storage::get_persistent_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
         // Only allow archiving terminal state shipments
         if shipment.status != ShipmentStatus::Delivered
@@ -3421,15 +3432,28 @@ impl NavinShipment {
             }
 
             let milestone = mut_shipment.payment_milestones.get(idx as u32).unwrap();
-            let release_amount =
-                checked_mul_div_i128(mut_shipment.total_escrow, milestone.1 as i128, 100)?;
-
+            
             mut_shipment
                 .milestones_completed
                 .push_back(checkpoint.clone());
             if !mut_shipment.paid_milestones.iter().any(|m| m == checkpoint) {
                 mut_shipment.paid_milestones.push_back(checkpoint.clone());
             }
+
+            // Calculate total percentage paid including this one
+            let mut total_pct_paid = 0;
+            for (m_sym, m_pct) in mut_shipment.payment_milestones.iter() {
+                if mut_shipment.paid_milestones.iter().any(|p| p == m_sym) {
+                    total_pct_paid += m_pct;
+                }
+            }
+            
+            let release_amount = if total_pct_paid == 100 {
+                mut_shipment.escrow_amount
+            } else {
+                checked_mul_div_i128(mut_shipment.total_escrow, milestone.1 as i128, 100)?
+            };
+
 
             events::emit_milestone_payment_released(
                 &env,
@@ -3670,7 +3694,20 @@ impl NavinShipment {
         }
 
         let ms_config = shipment.payment_milestones.get(idx as u32).unwrap();
-        let release_amount = checked_mul_div_i128(shipment.total_escrow, ms_config.1 as i128, 100)?;
+
+        // Calculate total percentage paid including this one to handle rounding on last milestone
+        let mut total_pct_paid = 0;
+        for (m_sym, m_pct) in shipment.payment_milestones.iter() {
+            if shipment.milestones_completed.iter().any(|p| p == m_sym) || m_sym == milestone_name {
+                total_pct_paid += m_pct;
+            }
+        }
+
+        let release_amount = if total_pct_paid == 100 {
+            shipment.escrow_amount
+        } else {
+            checked_mul_div_i128(shipment.total_escrow, ms_config.1 as i128, 100)?
+        };
 
         if release_amount > 0 {
             shipment
@@ -4184,6 +4221,18 @@ impl NavinShipment {
 
             // Transfer tokens from this contract to company
             let contract_address = env.current_contract_address();
+
+            // Create settlement record in Pending state
+            let settlement_id = create_settlement(
+                &env,
+                shipment_id,
+                SettlementOperation::Refund,
+                escrow_amount,
+                &contract_address,
+                &shipment.sender,
+            )?;
+
+            // Transfer tokens
             invoke_token_transfer(
                 &env,
                 &token_contract,
@@ -4191,6 +4240,9 @@ impl NavinShipment {
                 &shipment.sender,
                 escrow_amount,
             )?;
+
+            // Mark settlement as completed
+            complete_settlement(&env, settlement_id, shipment_id)?;
 
             shipment.escrow_amount = 0;
             let old_status = shipment.status.clone();
@@ -4420,6 +4472,36 @@ impl NavinShipment {
                 shipment.sender.clone()
             }
         };
+
+        // Transfer tokens from this contract to recipient
+        let token_contract = storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
+        let contract_address = env.current_contract_address();
+
+        // Create settlement record in Pending state
+        let operation = match resolution {
+            DisputeResolution::ReleaseToCarrier => SettlementOperation::Release,
+            DisputeResolution::RefundToCompany => SettlementOperation::Refund,
+        };
+        let settlement_id = create_settlement(
+            &env,
+            shipment_id,
+            operation,
+            escrow_amount,
+            &contract_address,
+            &recipient,
+        )?;
+
+        // Transfer tokens
+        invoke_token_transfer(
+            &env,
+            &token_contract,
+            &contract_address,
+            &recipient,
+            escrow_amount,
+        )?;
+
+        // Mark settlement as completed
+        complete_settlement(&env, settlement_id, shipment_id)?;
 
         storage::decrement_status_count(&env, &ShipmentStatus::Disputed);
         storage::increment_status_count(&env, &shipment.status);

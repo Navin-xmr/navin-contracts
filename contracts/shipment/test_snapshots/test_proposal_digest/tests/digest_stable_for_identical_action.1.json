@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 4,
+    "address": 5,
     "nonce": 0
   },
   "auth": [
@@ -30,7 +30,7 @@
                   ]
                 },
                 {
-                  "u32": 1
+                  "u32": 2
                 }
               ]
             }
@@ -54,10 +54,10 @@
                 {
                   "vec": [
                     {
-                      "symbol": "Upgrade"
+                      "symbol": "TransferAdmin"
                     },
                     {
-                      "bytes": "0202020202020202020202020202020202020202020202020202020202020202"
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                     }
                   ]
                 }
@@ -83,10 +83,10 @@
                 {
                   "vec": [
                     {
-                      "symbol": "Upgrade"
+                      "symbol": "TransferAdmin"
                     },
                     {
-                      "bytes": "0202020202020202020202020202020202020202020202020202020202020202"
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                     }
                   ]
                 }
@@ -253,10 +253,10 @@
                       "val": {
                         "vec": [
                           {
-                            "symbol": "Upgrade"
+                            "symbol": "TransferAdmin"
                           },
                           {
-                            "bytes": "0202020202020202020202020202020202020202020202020202020202020202"
+                            "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                           }
                         ]
                       }
@@ -366,10 +366,10 @@
                       "val": {
                         "vec": [
                           {
-                            "symbol": "Upgrade"
+                            "symbol": "TransferAdmin"
                           },
                           {
-                            "bytes": "0202020202020202020202020202020202020202020202020202020202020202"
+                            "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                           }
                         ]
                       }
@@ -485,7 +485,7 @@
                         "symbol": "digest"
                       },
                       "val": {
-                        "bytes": "2c90f7da11068d8925b1ddae0eaa9b6cb8a20a6ef92a30b5c85db09828df16df"
+                        "bytes": "4daa89b1ed1c91cf2709306d3a1036b3ce5e58385099eb7ef5807bdc9d8a70c9"
                       }
                     },
                     {
@@ -555,7 +555,7 @@
                         "symbol": "digest"
                       },
                       "val": {
-                        "bytes": "3c6579eaaea96e197cc7834b1b7835883cf871f68e7c49ea64fb2eb7afe27e08"
+                        "bytes": "972209d7d6c01404c2a07e00353fab79785036dcd9ba8967a929d67b608d718c"
                       }
                     },
                     {
@@ -807,7 +807,7 @@
                           ]
                         },
                         "val": {
-                          "u32": 1
+                          "u32": 2
                         }
                       },
                       {
@@ -918,7 +918,7 @@
             },
             "ext": "v0"
           },
-          4096
+          518401
         ]
       ],
       [
@@ -971,7 +971,7 @@
             },
             "ext": "v0"
           },
-          4096
+          518401
         ]
       ]
     ]

@@ -10,6 +10,7 @@
 #[cfg(test)]
 mod tests {
     use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient};
+    use soroban_sdk::testutils::Ledger as _;
     use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
 
     #[contract]
@@ -29,12 +30,12 @@ mod tests {
         let token_id = env.register(MockToken, ());
         client.initialize(&admin, &token_id);
 
-        // Set up multi-sig with two admins and threshold 1 (so we can test easily).
+        // Set up multi-sig with two admins and threshold 2.
         let admin2 = Address::generate(&env);
         let mut admins = Vec::new(&env);
         admins.push_back(admin.clone());
         admins.push_back(admin2.clone());
-        client.init_multisig(&admin, &admins, &1);
+        client.init_multisig(&admin, &admins, &2);
 
         (env, client, admin, admin2)
     }
@@ -49,7 +50,7 @@ mod tests {
     fn digest_stored_when_proposal_created() {
         let (env, client, admin, _admin2) = setup_multisig();
 
-        let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 1));
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         let digest = client.get_proposal_action_digest(&proposal_id);
@@ -65,7 +66,7 @@ mod tests {
     fn digest_stable_for_identical_action() {
         let (env, client, admin, _admin2) = setup_multisig();
 
-        let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 2));
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
 
         let id1 = client.propose_action(&admin, &action);
         // Advance time so idempotency window doesn't block the second proposal.
@@ -85,7 +86,7 @@ mod tests {
     fn compute_digest_matches_stored_digest() {
         let (env, client, admin, _admin2) = setup_multisig();
 
-        let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 3));
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         let stored = client.get_proposal_action_digest(&proposal_id);
@@ -100,8 +101,8 @@ mod tests {
     fn digest_differs_for_different_actions() {
         let (env, client, admin, _admin2) = setup_multisig();
 
-        let action_a = crate::types::AdminAction::Upgrade(wasm_hash(&env, 4));
-        let action_b = crate::types::AdminAction::Upgrade(wasm_hash(&env, 5));
+        let action_a = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let action_b = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
 
         let id_a = client.propose_action(&admin, &action_a);
         crate::test_utils::advance_ledger_time(&env, 400);
@@ -174,7 +175,7 @@ mod tests {
     fn proposal_created_with_expiry_is_initially_usable() {
         let (env, client, admin, admin2) = setup_multisig();
 
-        let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 10));
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         // Verify proposal exists and has expiry set
@@ -186,9 +187,9 @@ mod tests {
         // Proposal should be usable (can be approved)
         client.approve_action(&admin2, &proposal_id);
 
-        // Verify approval was recorded
+        // Verify approval was recorded (proposer + admin2)
         let updated = client.get_proposal(&proposal_id);
-        assert_eq!(updated.approvals.len(), 1);
+        assert_eq!(updated.approvals.len(), 2);
     }
 
     /// Test: Advance ledger time beyond the expiry window, then verify proposal cannot be approved.
@@ -198,7 +199,7 @@ mod tests {
         let (env, client, admin, admin2) = setup_multisig();
 
         // Create proposal with default 7-day expiry
-        let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 11));
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         // Verify proposal is initially valid
@@ -227,7 +228,7 @@ mod tests {
         admins.push_back(admin3.clone());
         client.init_multisig(&admin, &admins, &2);
 
-        let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 12));
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         // Get one approval before expiry
@@ -247,7 +248,7 @@ mod tests {
     fn proposal_expiry_check_is_deterministic() {
         let (env, client, admin, admin2) = setup_multisig();
 
-        let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 13));
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         // Advance time past expiry
@@ -269,12 +270,12 @@ mod tests {
     fn proposal_state_consistent_after_expiry() {
         let (env, client, admin, _admin2) = setup_multisig();
 
-        let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 14));
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
-        // Capture initial state
+        // Capture initial state (proposer is auto-approved)
         let before_expiry = client.get_proposal(&proposal_id);
-        assert_eq!(before_expiry.approvals.len(), 0);
+        assert_eq!(before_expiry.approvals.len(), 1);
         assert!(!before_expiry.executed);
 
         // Advance time past expiry
@@ -283,7 +284,7 @@ mod tests {
         // Verify proposal can still be queried
         let after_expiry = client.get_proposal(&proposal_id);
         assert_eq!(after_expiry.id, proposal_id);
-        assert_eq!(after_expiry.approvals.len(), 0);
+        assert_eq!(after_expiry.approvals.len(), 1);
         assert!(!after_expiry.executed);
 
         // State fields should remain unchanged
@@ -298,7 +299,7 @@ mod tests {
     fn proposal_expires_at_exact_boundary() {
         let (env, client, admin, admin2) = setup_multisig();
 
-        let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 15));
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         let proposal = client.get_proposal(&proposal_id);
@@ -328,8 +329,8 @@ mod tests {
     fn multiple_proposals_expire_independently() {
         let (env, client, admin, admin2) = setup_multisig();
 
-        let action1 = crate::types::AdminAction::Upgrade(wasm_hash(&env, 16));
-        let action2 = crate::types::AdminAction::Upgrade(wasm_hash(&env, 17));
+        let action1 = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let action2 = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
 
         let proposal1 = client.propose_action(&admin, &action1);
         let p1 = client.get_proposal(&proposal1);
@@ -369,15 +370,15 @@ mod tests {
         admins.push_back(admin3.clone());
         client.init_multisig(&admin, &admins, &2);
 
-        let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 18));
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         // Get 1 approval while still valid
         client.approve_action(&admin2, &proposal_id);
 
-        // Verify 1 approval is recorded
+        // Verify 2 approvals are recorded (admin + admin2)
         let proposal = client.get_proposal(&proposal_id);
-        assert_eq!(proposal.approvals.len(), 1);
+        assert_eq!(proposal.approvals.len(), 2);
 
         // Advance past expiry
         crate::test_utils::advance_past_multisig_expiry(&env);
@@ -386,7 +387,7 @@ mod tests {
         let approve_result = client.try_approve_action(&admin3, &proposal_id);
         assert_eq!(approve_result, Err(Ok(crate::NavinError::ProposalExpired)));
 
-        // Cannot execute even though we have 1 approval
+        // Cannot execute even though we have 2 approvals
         let execute_result = client.try_execute_proposal(&proposal_id);
         assert_eq!(execute_result, Err(Ok(crate::NavinError::ProposalExpired)));
     }
@@ -397,7 +398,7 @@ mod tests {
     fn expired_proposal_digest_remains_queryable() {
         let (env, client, admin, _admin2) = setup_multisig();
 
-        let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 19));
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         // Capture digest before expiry
@@ -424,7 +425,7 @@ mod tests {
         config.proposal_expiry_seconds = 3_600; // 1 hour
         client.update_config(&admin, &config);
 
-        let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 20));
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         let proposal = client.get_proposal(&proposal_id);
@@ -451,7 +452,7 @@ mod tests {
         config.proposal_expiry_seconds = 3_600;
         client.update_config(&admin, &config);
 
-        let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 21));
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         // Should be usable immediately after creation
@@ -480,7 +481,7 @@ mod tests {
         let config = client.get_contract_config();
         let before_creation = env.ledger().timestamp();
 
-        let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 22));
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         let proposal = client.get_proposal(&proposal_id);

@@ -341,33 +341,38 @@ fn wasm_hash(env: &Env, seed: u8) -> BytesN<32> {
 fn proposal_approvals_are_recorded_in_insertion_order() {
     let (env, client, admin, admin2, _admin3) = setup_multisig_2of3();
 
-    let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 1));
+    let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
     let salt = BytesN::from_array(&env, &[0xAAu8; 32]);
-    let proposal_id = client.propose_action(&admin, &action, &salt);
+    let proposal_id = client.propose_action(&admin, &action);
 
-    // admin2 approves (threshold 2 not yet met with just admin2, since
-    // propose_action counts admin as approver #1, admin2 is #2 → auto-executes).
+    // admin2 approves (threshold 2 met with admin1 + admin2 → auto-executes).
     // Check approval count after propose but before approve_action.
     let proposal_before = client.get_proposal(&proposal_id);
     assert_eq!(
         proposal_before.approvals.len(),
-        0,
-        "No external approvals yet after proposal creation"
+        1,
+        "Proposer is auto-approved on creation"
     );
 
     let _ = client.try_approve_action(&admin2, &proposal_id);
 
     // After admin2 approves the proposal is executed; the approvals Vec
-    // must contain admin2 at index 0 (first and only explicit approver).
+    // must contain admin1 at index 0 and admin2 at index 1.
     let proposal = client.get_proposal(&proposal_id);
-    assert!(
-        proposal.approvals.len() >= 1,
-        "At least one approval must be recorded"
+    assert_eq!(
+        proposal.approvals.len(),
+        2,
+        "Two approvals must be recorded (proposer + admin2)"
     );
     assert_eq!(
         proposal.approvals.get(0),
+        Some(admin),
+        "Proposer must be at index 0"
+    );
+    assert_eq!(
+        proposal.approvals.get(1),
         Some(admin2),
-        "First approver must be at index 0"
+        "Second approver must be at index 1"
     );
 }
 
@@ -389,22 +394,27 @@ fn proposal_second_approver_appended_after_first() {
     client2.initialize(&admin, &token_id2);
     client2.init_multisig(&admin, &admins, &3);
 
-    let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 2));
+    let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
     let salt = BytesN::from_array(&env, &[0xBBu8; 32]);
-    let proposal_id = client2.propose_action(&admin, &action, &salt);
+    let proposal_id = client2.propose_action(&admin, &action);
 
     let _ = client2.try_approve_action(&admin2, &proposal_id);
 
     let proposal_mid = client2.get_proposal(&proposal_id);
     assert_eq!(
         proposal_mid.approvals.len(),
-        1,
-        "Exactly one approval after admin2 approves"
+        2,
+        "Two approvals after admin2 approves (proposer + admin2)"
     );
     assert_eq!(
         proposal_mid.approvals.get(0),
+        Some(admin),
+        "admin (proposer) must be at index 0"
+    );
+    assert_eq!(
+        proposal_mid.approvals.get(1),
         Some(admin2),
-        "admin2 must be at index 0"
+        "admin2 must be at index 1"
     );
 
     let _ = client2.try_approve_action(&admin3, &proposal_id);
@@ -412,13 +422,14 @@ fn proposal_second_approver_appended_after_first() {
     let proposal_final = client2.get_proposal(&proposal_id);
     assert_eq!(
         proposal_final.approvals.len(),
-        2,
-        "Two approvals after admin3 approves"
+        3,
+        "Three approvals after admin3 approves"
     );
+
     assert_eq!(
-        proposal_final.approvals.get(1),
+        proposal_final.approvals.get(2),
         Some(admin3),
-        "admin3 must be appended at index 1 — insertion order preserved"
+        "admin3 must be appended at index 2 — insertion order preserved"
     );
 }
 
@@ -429,18 +440,20 @@ fn proposal_second_approver_appended_after_first() {
 fn duplicate_approval_is_rejected() {
     let (env, client, admin, admin2, _admin3) = setup_multisig_2of3();
 
-    let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 3));
+    let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
     let salt = BytesN::from_array(&env, &[0xCCu8; 32]);
-    let proposal_id = client.propose_action(&admin, &action, &salt);
+    let proposal_id = client.propose_action(&admin, &action);
 
     // First approval by admin2 — succeeds.
+    // Proposer (admin) is already approved (count 1). 
+    // admin2 approving makes it count 2 (threshold 2 met, but we check if it succeeds).
     let first = client.try_approve_action(&admin2, &proposal_id);
-    assert!(first.is_ok(), "First approval must succeed");
+    assert!(first.is_ok() || matches!(first, Ok(Ok(_))), "First approval must succeed");
 
     // Second approval by admin2 on the same proposal — must be rejected.
     let duplicate = client.try_approve_action(&admin2, &proposal_id);
     assert!(
-        duplicate.is_err(),
+        duplicate.is_err() || matches!(duplicate, Ok(Err(_))),
         "Duplicate approval from same address must be rejected"
     );
 }
@@ -451,14 +464,14 @@ fn duplicate_approval_is_rejected() {
 fn proposal_digests_are_distinct_for_different_actions() {
     let (env, client, admin, _admin2, _admin3) = setup_multisig_2of3();
 
-    let action_a = crate::types::AdminAction::Upgrade(wasm_hash(&env, 10));
-    let action_b = crate::types::AdminAction::Upgrade(wasm_hash(&env, 11));
+    let action_a = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+    let action_b = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
 
     let salt_a = BytesN::from_array(&env, &[0x01u8; 32]);
     let salt_b = BytesN::from_array(&env, &[0x02u8; 32]);
 
-    let id_a = client.propose_action(&admin, &action_a, &salt_a);
-    let id_b = client.propose_action(&admin, &action_b, &salt_b);
+    let id_a = client.propose_action(&admin, &action_a);
+    let id_b = client.propose_action(&admin, &action_b);
 
     let digest_a = client.get_proposal_action_digest(&id_a);
     let digest_b = client.get_proposal_action_digest(&id_b);

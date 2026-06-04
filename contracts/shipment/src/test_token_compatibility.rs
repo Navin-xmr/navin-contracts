@@ -373,7 +373,6 @@ fn test_token_with_7_decimals_deposit_succeeds() {
         &dummy_hash(&ctx.env),
         &Vec::new(&ctx.env),
         &deadline,
-        &None,
     );
 
     // Should succeed — SAC tokens have 7 decimals
@@ -411,7 +410,6 @@ fn test_token_with_6_decimals_deposit_fails_with_invalid_token_decimals() {
         &dummy_hash(&env),
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let result = client.try_deposit_escrow(&company, &shipment_id, &500i128);
@@ -446,7 +444,6 @@ fn test_token_with_8_decimals_deposit_fails_with_invalid_token_decimals() {
         &BytesN::from_array(&env, &[2u8; 32]),
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let result = client.try_deposit_escrow(&company, &shipment_id, &500i128);

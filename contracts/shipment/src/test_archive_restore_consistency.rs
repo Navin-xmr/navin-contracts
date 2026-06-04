@@ -8,7 +8,13 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{test_utils, NavinShipment, NavinShipmentClient, ShipmentStatus};
+    extern crate std;
+    use crate::{
+        test_utils,
+        types::{DataKey, Shipment, StoragePresenceState},
+        NavinError, NavinShipment, NavinShipmentClient, PersistentRestoreDiagnostics,
+        ShipmentStatus,
+    };
     use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
 
     #[contract]
@@ -221,11 +227,21 @@ mod tests {
         let (shipment_id, _, _, _, _) = create_and_archive(&env, &client, &admin, 0x06);
 
         // Second archive call on the same (now archived) shipment must fail.
+        env.mock_all_auths();
         let result = client.try_archive_shipment(&admin, &shipment_id);
-        assert!(
-            result.is_err(),
-            "re-archiving an already-archived shipment must return an error"
-        );
+        match result {
+            Ok(Err(e)) => {
+                let expected_error = soroban_sdk::Error::from_contract_error(NavinError::ShipmentNotFound as u32);
+                let err_str = std::format!("{:?}", e);
+                let expected_str = std::format!("{:?}", expected_error);
+                assert!(err_str.contains(&expected_str) || err_str.contains("ShipmentNotFound"), "Expected ShipmentNotFound error, got {:?}", err_str);
+            },
+            Err(e) => {
+                let err_str = std::format!("{:?}", e);
+                assert!(err_str.contains("ShipmentNotFound") || err_str.contains("Code(4)"), "Expected ShipmentNotFound error in host error, got {:?}", err_str);
+            },
+            _ => panic!("Expected error but got success"),
+        }
     }
 
     // ── Cancelled shipment archival consistency ────────────────────────────────

@@ -54,7 +54,6 @@ fn test_clean_health_check() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let health = client.check_contract_health(&admin);
@@ -86,7 +85,6 @@ fn test_detect_anomalies_and_escrow() {
         &data_hash1,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     advance_ledger_time(&env, 1);
     let id2 = client.create_shipment(
@@ -96,7 +94,6 @@ fn test_detect_anomalies_and_escrow() {
         &data_hash2,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     client.deposit_escrow(&company, &id1, &1500);
@@ -147,7 +144,6 @@ fn test_detect_storage_inconsistencies() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let cid = client.address.clone();
@@ -281,7 +277,6 @@ fn test_restore_diagnostics_active_persistent_state() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let diag = client.get_restore_diagnostics(&shipment_id);
@@ -342,7 +337,6 @@ fn test_restore_diagnostics_shipment_id_echoed() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let diag = client.get_restore_diagnostics(&shipment_id);
@@ -371,7 +365,6 @@ fn test_health_check_no_inconsistencies_after_single_creation() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let health = client.check_contract_health(&admin);
@@ -410,7 +403,6 @@ fn test_restore_diagnostics_multiple_shipments_all_active() {
             &data_hash,
             &Vec::new(&env),
             &deadline,
-            &None,
         );
         ids.push_back(id);
     }
@@ -446,7 +438,6 @@ fn test_restore_diagnostics_escrow_present_flag() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let diag = client.get_restore_diagnostics(&shipment_id);
@@ -484,7 +475,6 @@ fn test_restore_diagnostics_archived_expected_state() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     // Verify initial state is active persistent
@@ -544,7 +534,6 @@ fn test_restore_diagnostics_flags_match_state_active_persistent() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let diag = client.get_restore_diagnostics(&shipment_id);
@@ -590,7 +579,6 @@ fn test_restore_diagnostics_flags_match_state_archived_expected() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     // Archive the shipment
@@ -678,7 +666,6 @@ fn test_restore_diagnostics_report_shape_stable() {
         &active_data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let archived_data_hash = BytesN::from_array(&env, &[12u8; 32]);
@@ -689,7 +676,6 @@ fn test_restore_diagnostics_report_shape_stable() {
         &archived_data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     client.update_status(
         &carrier,

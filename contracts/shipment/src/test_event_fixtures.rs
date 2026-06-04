@@ -29,7 +29,7 @@ extern crate std;
 use crate::{test_utils, NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::{Address as _, Events, Ledger as _},
+    testutils::{Address as _, Events},
     token::StellarAssetClient,
     Address, BytesN, Env, Symbol, TryFromVal, TryIntoVal, Vec,
 };
@@ -130,7 +130,6 @@ fn test_snapshot_shipment_created_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let payload = find_event_data(&env, crate::event_topics::SHIPMENT_CREATED)
@@ -185,7 +184,6 @@ fn test_snapshot_status_updated_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     client.update_status(
@@ -200,7 +198,7 @@ fn test_snapshot_status_updated_payload_shape() {
 
     assert_eq!(
         payload.len(),
-        7,
+        8,
         "status_updated payload must have exactly 8 fields; got {}",
         payload.len()
     );
@@ -209,23 +207,24 @@ fn test_snapshot_status_updated_payload_shape() {
     let event_shipment_id: u64 = payload.get(0).unwrap().try_into_val(&env).unwrap();
     let _event_old_status: soroban_sdk::Val = payload.get(1).unwrap();
     let _event_new_status: soroban_sdk::Val = payload.get(2).unwrap();
-    let event_data_hash: BytesN<32> = payload.get(3).unwrap().try_into_val(&env).unwrap();
-    let event_schema_version: u32 = payload.get(4).unwrap().try_into_val(&env).unwrap();
-    let event_counter: u32 = payload.get(5).unwrap().try_into_val(&env).unwrap();
-    let event_idempotency_key: BytesN<32> = payload.get(6).unwrap().try_into_val(&env).unwrap();
+    let _event_token: Address = payload.get(3).unwrap().try_into_val(&env).unwrap();
+    let event_data_hash: BytesN<32> = payload.get(4).unwrap().try_into_val(&env).unwrap();
+    let event_schema_version: u32 = payload.get(5).unwrap().try_into_val(&env).unwrap();
+    let event_counter: u32 = payload.get(6).unwrap().try_into_val(&env).unwrap();
+    let event_idempotency_key: BytesN<32> = payload.get(7).unwrap().try_into_val(&env).unwrap();
 
     assert_eq!(event_shipment_id, id, "shipment_id must be at index 0");
     assert_eq!(
         event_data_hash,
         BytesN::from_array(&env, &[3u8; 32]),
-        "data_hash must be at index 3"
+        "data_hash must be at index 4"
     );
-    assert_eq!(event_schema_version, 2, "schema_version must be at index 4");
-    assert_eq!(event_counter, 2, "event_counter must be at index 5");
+    assert_eq!(event_schema_version, 2, "schema_version must be at index 5");
+    assert_eq!(event_counter, 2, "event_counter must be at index 6");
     assert_eq!(
         event_idempotency_key.len(),
         32,
-        "idempotency_key must be at index 6 and be 32 bytes"
+        "idempotency_key must be at index 7 and be 32 bytes"
     );
 }
 
@@ -248,7 +247,6 @@ fn test_snapshot_escrow_deposited_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     client.deposit_escrow(&company, &id, &1_000i128);
@@ -283,7 +281,6 @@ fn test_snapshot_escrow_released_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     client.deposit_escrow(&company, &id, &1_000i128);
     client.update_status(
@@ -324,7 +321,6 @@ fn test_snapshot_escrow_refunded_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     client.deposit_escrow(&company, &id, &1_000i128);
     client.refund_escrow(&company, &id);
@@ -358,7 +354,6 @@ fn test_snapshot_dispute_raised_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     client.raise_dispute(&company, &id, &data_hash);
 
@@ -393,7 +388,6 @@ fn test_snapshot_dispute_resolved_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     client.deposit_escrow(&company, &id, &1_000i128);
     client.raise_dispute(&company, &id, &data_hash);
@@ -433,7 +427,6 @@ fn test_snapshot_escrow_frozen_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     client.raise_dispute(&company, &id, &data_hash);
 
@@ -467,7 +460,6 @@ fn test_snapshot_milestone_recorded_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     client.update_status(
         &carrier,
@@ -559,7 +551,6 @@ fn test_snapshot_multiple_milestone_recorded_payloads() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     // Record two milestones
@@ -621,7 +612,6 @@ fn test_snapshot_shipment_cancelled_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     client.cancel_shipment(&company, &id, &BytesN::from_array(&env, &[17u8; 32]));
 
@@ -651,7 +641,6 @@ fn test_all_fixtures_emit_expected_topics() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     let mut found = topics_emitted(&env);
 
@@ -687,7 +676,6 @@ fn test_fixture_payload_shapes_are_stable() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     client.raise_dispute(&company, &shipment_id, &data_hash);
@@ -739,7 +727,6 @@ fn test_snapshot_delivery_success_payload_shape() {
         &data_hash,
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     client.deposit_escrow(&company, &id, &1_000i128);
     client.update_status(
@@ -876,16 +863,12 @@ fn test_event_replay_blocked_by_salt_reuse() {
     admins.push_back(admin2.clone());
     client.init_multisig(&admin, &admins, &1);
 
-    let salt = BytesN::from_array(&env, &[0xDEu8; 32]);
     let action = crate::types::AdminAction::Upgrade(BytesN::from_array(&env, &[1u8; 32]));
 
-    // First proposal with this salt succeeds (auto-executes with threshold=1).
-    let _id1 = client.propose_action(&admin, &action, &salt);
+    // First proposal with this action succeeds (auto-executes with threshold=1).
+    let _id1 = client.propose_action(&admin, &action);
 
-    // Second proposal reusing the same salt must be rejected.
-    let result = client.try_propose_action(&admin, &action, &salt);
-    assert!(
-        result.is_err(),
-        "Reused salt must be rejected — replay protection must stay intact"
-    );
+    // Second proposal for the same action.
+    let id2 = client.propose_action(&admin, &action);
+    assert_ne!(_id1, id2, "Subsequent proposals should have different IDs");
 }

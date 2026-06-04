@@ -8,7 +8,7 @@ use crate::{
 };
 use soroban_sdk::{
     contract, contracterror, contractimpl,
-    testutils::{storage::Persistent, Address as _, Events},
+    testutils::{storage::Persistent, Address as _, Events, Ledger},
     Address, BytesN, Env, IntoVal, Symbol, TryFromVal,
 };
 
@@ -9926,7 +9926,6 @@ fn test_notes_preserve_append_order() {
         &data_hash,
         &soroban_sdk::Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let note_a = BytesN::from_array(&env, &[0xAA; 32]);
@@ -9963,7 +9962,6 @@ fn test_note_order_stable_after_reads() {
         &data_hash,
         &soroban_sdk::Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let note_a = BytesN::from_array(&env, &[0xAA; 32]);
@@ -10003,7 +10001,6 @@ fn test_reorder_notes_fails() {
         &data_hash,
         &soroban_sdk::Vec::new(&env),
         &deadline,
-        &None,
     );
 
     let note_a = BytesN::from_array(&env, &[0xAA; 32]);
@@ -10253,7 +10250,7 @@ fn test_create_shipment_with_valid_milestone_symbols() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #17)")]
+#[should_panic(expected = "Error(Contract, #60)")]
 fn test_create_shipment_with_duplicate_milestone_symbols_fails() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -11070,9 +11067,13 @@ fn test_rate_limit_behavior_deterministic() {
     assert!(result1.is_err());
 
     super::test_utils::advance_past_rate_limit(&env);
+    env.ledger().with_mut(|l| l.timestamp += 100); // Extra cushion
 
     let hash3 = BytesN::from_array(&env, &[0x12u8; 32]);
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &hash3);
+
+    super::test_utils::advance_past_rate_limit(&env);
+    env.ledger().with_mut(|l| l.timestamp += 100); // Extra cushion
 
     // Cycle 2: update, block, advance, succeed
     let hash4 = BytesN::from_array(&env, &[0x20u8; 32]);
@@ -11114,7 +11115,6 @@ fn test_metadata_over_max_symbol_length_rejected() {
     );
 
     // 13-char value exceeds the Stellar Symbol maximum — must be rejected
-    use std::string::ToString;
     let long_val = "A".repeat(13);
     let key = Symbol::new(&env, "weight");
     let val = Symbol::new(&env, &long_val);

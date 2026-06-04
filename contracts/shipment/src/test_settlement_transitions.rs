@@ -96,7 +96,7 @@ fn test_settlement_addresses() {
 
     // Test deposit: company → contract
     client.deposit_escrow(&company, &shipment_id, &1000);
-    let deposit_settlement = client.get_settlement(&1);
+    let deposit_settlement = client.get_settlement(&shipment_id);
     assert_eq!(deposit_settlement.from, company);
     assert_eq!(deposit_settlement.to, client.address);
     assert_eq!(deposit_settlement.operation, SettlementOperation::Deposit);
@@ -392,6 +392,7 @@ fn test_transition_matrix_exhaustive_regression() {
         (PartiallyDelivered, Cancelled),
         (Disputed, Cancelled),
         (Disputed, Delivered),
+        (Disputed, PartiallyRefunded),
     ];
 
     for from in &all {
@@ -400,8 +401,9 @@ fn test_transition_matrix_exhaustive_regression() {
             let is_expected = expected_valid.iter().any(|(f, t)| f == from && t == to);
             // The catch-all rules also allow any non-Delivered status -> Cancelled
             // and any non-Cancelled/non-Delivered status -> Disputed.
-            let catch_all = (to == &Cancelled && from != &Delivered)
-                || (to == &Disputed && from != &Cancelled && from != &Delivered);
+            // Terminal states (Delivered, Cancelled, PartiallyRefunded) cannot transition out.
+            let catch_all = (to == &Cancelled && from != &Delivered && from != &Cancelled && from != &PartiallyRefunded)
+                || (to == &Disputed && from != &Cancelled && from != &Delivered && from != &PartiallyRefunded && from != &Disputed);
             let should_be_valid = is_expected || catch_all;
             assert_eq!(
                 result, should_be_valid,

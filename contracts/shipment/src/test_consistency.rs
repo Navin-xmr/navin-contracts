@@ -1375,7 +1375,7 @@ fn has_cycle_recursive(
     }
 
     // Backtrack
-    let _ = path.pop();
+    let _ = path.pop_back();
     false
 }
 

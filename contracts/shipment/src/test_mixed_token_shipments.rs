@@ -387,7 +387,6 @@ fn test_happy_and_failing_token_escrow_and_settlement_flows_are_isolated() {
         &dummy_hash(&env, 99),
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     let id_bad_deposit = client_bad.create_shipment(
         &company,
@@ -396,7 +395,6 @@ fn test_happy_and_failing_token_escrow_and_settlement_flows_are_isolated() {
         &dummy_hash(&env, 100),
         &Vec::new(&env),
         &deadline,
-        &None,
     );
 
     client_sac.deposit_escrow(&company, &id_sac, &amount);
@@ -436,7 +434,6 @@ fn test_happy_and_failing_token_escrow_and_settlement_flows_are_isolated() {
         &dummy_hash(&env, 103),
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     inject_escrow(&env, &client_bad, id_bad_release, amount);
     client_bad.update_status(
@@ -463,7 +460,6 @@ fn test_happy_and_failing_token_escrow_and_settlement_flows_are_isolated() {
         &dummy_hash(&env, 106),
         &Vec::new(&env),
         &deadline,
-        &None,
     );
     inject_escrow(&env, &client_bad, id_bad_refund, amount);
     let err = client_bad
