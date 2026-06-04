@@ -1,10 +1,10 @@
 #![cfg(test)]
 
 use crate::test::*;
-use crate::test_utils::{dummy_hash};
+use crate::test_utils::dummy_hash;
 use crate::types::*;
 use soroban_sdk::testutils::Address as _;
-use soroban_sdk::{Address};
+use soroban_sdk::Address;
 
 /// Test that settlement state transitions are validated correctly.
 #[test]
@@ -163,14 +163,14 @@ fn test_settlement_ids_unique_and_sequential() {
 
     // Create settlement 1: deposit
     client.deposit_escrow(&company, &shipment_id, &1000);
-    
+
     // Transition to Delivered to allow release
     env.as_contract(&client.address, || {
         let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
         shipment.status = ShipmentStatus::Delivered;
         crate::storage::set_shipment(&env, &shipment);
     });
-    
+
     // Create settlement 2: release
     client.release_escrow(&receiver, &shipment_id);
 
@@ -184,7 +184,7 @@ fn test_settlement_ids_unique_and_sequential() {
     // Verify they're all associated with the same shipment
     assert_eq!(settlement1.shipment_id, shipment_id);
     assert_eq!(settlement2.shipment_id, shipment_id);
-    
+
     // Verify operations are correct
     assert_eq!(settlement1.operation, SettlementOperation::Deposit);
     assert_eq!(settlement2.operation, SettlementOperation::Release);
@@ -351,7 +351,9 @@ fn test_transition_matrix_from_disputed() {
 /// PartiallyDelivered chain: can continue delivering, dispute, or cancel.
 #[test]
 fn test_transition_matrix_from_partially_delivered() {
-    assert!(ShipmentStatus::PartiallyDelivered.is_valid_transition(&ShipmentStatus::PartiallyDelivered));
+    assert!(
+        ShipmentStatus::PartiallyDelivered.is_valid_transition(&ShipmentStatus::PartiallyDelivered)
+    );
     assert!(ShipmentStatus::PartiallyDelivered.is_valid_transition(&ShipmentStatus::Delivered));
     assert!(ShipmentStatus::PartiallyDelivered.is_valid_transition(&ShipmentStatus::Disputed));
     assert!(ShipmentStatus::PartiallyDelivered.is_valid_transition(&ShipmentStatus::Cancelled));
@@ -368,8 +370,14 @@ fn test_transition_matrix_from_partially_delivered() {
 fn test_transition_matrix_exhaustive_regression() {
     use ShipmentStatus::*;
     let all = [
-        Created, InTransit, AtCheckpoint, PartiallyDelivered,
-        Delivered, Disputed, Cancelled, PartiallyRefunded,
+        Created,
+        InTransit,
+        AtCheckpoint,
+        PartiallyDelivered,
+        Delivered,
+        Disputed,
+        Cancelled,
+        PartiallyRefunded,
     ];
 
     let expected_valid: &[(ShipmentStatus, ShipmentStatus)] = &[
@@ -402,8 +410,15 @@ fn test_transition_matrix_exhaustive_regression() {
             // The catch-all rules also allow any non-Delivered status -> Cancelled
             // and any non-Cancelled/non-Delivered status -> Disputed.
             // Terminal states (Delivered, Cancelled, PartiallyRefunded) cannot transition out.
-            let catch_all = (to == &Cancelled && from != &Delivered && from != &Cancelled && from != &PartiallyRefunded)
-                || (to == &Disputed && from != &Cancelled && from != &Delivered && from != &PartiallyRefunded && from != &Disputed);
+            let catch_all = (to == &Cancelled
+                && from != &Delivered
+                && from != &Cancelled
+                && from != &PartiallyRefunded)
+                || (to == &Disputed
+                    && from != &Cancelled
+                    && from != &Delivered
+                    && from != &PartiallyRefunded
+                    && from != &Disputed);
             let should_be_valid = is_expected || catch_all;
             assert_eq!(
                 result, should_be_valid,
@@ -447,5 +462,3 @@ fn test_failed_operation_rollback() {
     assert_eq!(shipment.escrow_amount, 0);
     assert_eq!(shipment.status, ShipmentStatus::Created);
 }
-
-

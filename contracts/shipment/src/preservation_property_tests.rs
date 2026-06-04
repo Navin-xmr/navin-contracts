@@ -148,7 +148,9 @@ fn test_property_existing_status_transitions_preserved() {
     assert!(ShipmentStatus::AtCheckpoint.is_valid_transition(&ShipmentStatus::Cancelled));
 
     // PartiallyDelivered transitions
-    assert!(ShipmentStatus::PartiallyDelivered.is_valid_transition(&ShipmentStatus::PartiallyDelivered));
+    assert!(
+        ShipmentStatus::PartiallyDelivered.is_valid_transition(&ShipmentStatus::PartiallyDelivered)
+    );
     assert!(ShipmentStatus::PartiallyDelivered.is_valid_transition(&ShipmentStatus::Delivered));
     assert!(ShipmentStatus::PartiallyDelivered.is_valid_transition(&ShipmentStatus::Disputed));
     assert!(ShipmentStatus::PartiallyDelivered.is_valid_transition(&ShipmentStatus::Cancelled));
@@ -358,8 +360,7 @@ mod property_based_tests {
         assert!(!ShipmentStatus::Delivered.is_valid_transition(&ShipmentStatus::Created));
         assert!(!ShipmentStatus::Delivered.is_valid_transition(&ShipmentStatus::InTransit));
         assert!(!ShipmentStatus::Delivered.is_valid_transition(&ShipmentStatus::AtCheckpoint));
-        assert!(!ShipmentStatus::Delivered
-            .is_valid_transition(&ShipmentStatus::PartiallyDelivered));
+        assert!(!ShipmentStatus::Delivered.is_valid_transition(&ShipmentStatus::PartiallyDelivered));
         assert!(!ShipmentStatus::Delivered.is_valid_transition(&ShipmentStatus::Disputed));
         assert!(!ShipmentStatus::Delivered.is_valid_transition(&ShipmentStatus::Cancelled));
 
@@ -367,8 +368,7 @@ mod property_based_tests {
         assert!(!ShipmentStatus::Cancelled.is_valid_transition(&ShipmentStatus::Created));
         assert!(!ShipmentStatus::Cancelled.is_valid_transition(&ShipmentStatus::InTransit));
         assert!(!ShipmentStatus::Cancelled.is_valid_transition(&ShipmentStatus::AtCheckpoint));
-        assert!(!ShipmentStatus::Cancelled
-            .is_valid_transition(&ShipmentStatus::PartiallyDelivered));
+        assert!(!ShipmentStatus::Cancelled.is_valid_transition(&ShipmentStatus::PartiallyDelivered));
         assert!(!ShipmentStatus::Cancelled.is_valid_transition(&ShipmentStatus::Delivered));
         assert!(!ShipmentStatus::Cancelled.is_valid_transition(&ShipmentStatus::Disputed));
     }

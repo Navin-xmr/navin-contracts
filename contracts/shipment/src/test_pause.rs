@@ -294,7 +294,9 @@ mod tests {
     /// Test valid Closed to Open transition when failure threshold is reached.
     #[test]
     fn test_circuit_breaker_closed_to_open_transition() {
-        use crate::circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker};
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
 
         let mut breaker = CircuitBreakerTracker::new();
         let config = CircuitBreakerConfig::new(3, 300, 3);
@@ -318,7 +320,9 @@ mod tests {
     /// Test HalfOpen recovery behavior - success in HalfOpen transitions back to Closed.
     #[test]
     fn test_circuit_breaker_half_open_recovery_behavior() {
-        use crate::circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker};
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
 
         let mut breaker = CircuitBreakerTracker::new();
         let config = CircuitBreakerConfig::new(1, 300, 3);
@@ -340,7 +344,9 @@ mod tests {
     /// Test HalfOpen failure behavior - failure in HalfOpen transitions back to Open.
     #[test]
     fn test_circuit_breaker_half_open_failure_reopens() {
-        use crate::circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker};
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
 
         let mut breaker = CircuitBreakerTracker::new();
         let config = CircuitBreakerConfig::new(1, 300, 3);
@@ -362,7 +368,9 @@ mod tests {
     /// Test illegal transition rejection - Open should not allow requests before timeout.
     #[test]
     fn test_circuit_breaker_open_rejects_requests_before_timeout() {
-        use crate::circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker};
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
 
         let mut breaker = CircuitBreakerTracker::new();
         let config = CircuitBreakerConfig::new(1, 300, 3);
@@ -380,7 +388,9 @@ mod tests {
     /// Test HalfOpen request limit - should reject after max requests exceeded.
     #[test]
     fn test_circuit_breaker_half_open_request_limit() {
-        use crate::circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker};
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
 
         let mut breaker = CircuitBreakerTracker::new();
         let config = CircuitBreakerConfig::new(1, 300, 2); // max 2 half-open requests
@@ -407,7 +417,9 @@ mod tests {
     /// Test all state transitions are covered in the transition matrix.
     #[test]
     fn test_circuit_breaker_all_transitions_covered() {
-        use crate::circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker};
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
 
         let config = CircuitBreakerConfig::new(2, 300, 3);
 

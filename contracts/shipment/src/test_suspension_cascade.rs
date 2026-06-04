@@ -64,7 +64,12 @@ mod tests {
         test_utils::advance_past_rate_limit(env);
 
         let transit_hash = BytesN::from_array(env, &[0xCDu8; 32]);
-        client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+        client.update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::InTransit,
+            &transit_hash,
+        );
 
         (company, receiver, carrier, shipment_id, data_hash)
     }

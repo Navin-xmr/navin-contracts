@@ -770,7 +770,6 @@ fn test_snapshot_delivery_success_payload_shape() {
     );
 }
 
-
 // ── Issue #436: Event idempotency collision regression tests ──────────────────
 
 /// Distinct event inputs (different shipment IDs) must produce different

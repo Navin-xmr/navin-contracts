@@ -64,11 +64,7 @@ mod tests {
 
     /// Helper: configure a grace period of `grace` seconds and return the
     /// updated config.
-    fn set_grace(
-        client: &NavinShipmentClient<'static>,
-        admin: &Address,
-        grace: u64,
-    ) {
+    fn set_grace(client: &NavinShipmentClient<'static>, admin: &Address, grace: u64) {
         let mut cfg = client.get_contract_config();
         cfg.deadline_grace_seconds = grace;
         client.update_config(admin, &cfg);
@@ -193,8 +189,7 @@ mod tests {
         let shipment = client.get_shipment(&id);
         assert_eq!(shipment.status, ShipmentStatus::Cancelled);
         assert_eq!(
-            shipment.escrow_amount,
-            0,
+            shipment.escrow_amount, 0,
             "escrow must be zero after deadline expiry"
         );
     }

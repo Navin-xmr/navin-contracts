@@ -23,22 +23,28 @@ mod tests {
             7
         }
     }
-fn setup() -> (Env, NavinShipmentClient<'static>, Address, Address, Address, Address) {
-    let (env, admin) = test_utils::setup_env();
-    let contract_id = env.register(NavinShipment, ());
-    let client = NavinShipmentClient::new(&env, &contract_id);
-    let token_id = env.register(MockToken, ());
-    client.initialize(&admin, &token_id);
+    fn setup() -> (
+        Env,
+        NavinShipmentClient<'static>,
+        Address,
+        Address,
+        Address,
+        Address,
+    ) {
+        let (env, admin) = test_utils::setup_env();
+        let contract_id = env.register(NavinShipment, ());
+        let client = NavinShipmentClient::new(&env, &contract_id);
+        let token_id = env.register(MockToken, ());
+        client.initialize(&admin, &token_id);
 
-    let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-    client.add_carrier_to_whitelist(&company, &carrier);
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+        client.add_carrier_to_whitelist(&company, &carrier);
 
-    (env, client, admin, company, carrier, token_id)
-}
-
+        (env, client, admin, company, carrier, token_id)
+    }
 
     fn make_hash(env: &Env, seed: u8) -> BytesN<32> {
         BytesN::from_array(env, &[seed; 32])
@@ -742,4 +748,3 @@ fn setup() -> (Env, NavinShipmentClient<'static>, Address, Address, Address, Add
         assert!(create_one(&env, &client, &company, &carrier, 3).is_ok());
     }
 }
-

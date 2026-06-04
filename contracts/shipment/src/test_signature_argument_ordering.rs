@@ -309,7 +309,9 @@ mod multisig_order_helpers {
     #[contractimpl]
     impl MultiSigOrderToken {
         pub fn transfer(_e: Env, _f: Address, _t: Address, _a: i128) {}
-        pub fn decimals(_e: Env) -> u32 { 7 }
+        pub fn decimals(_e: Env) -> u32 {
+            7
+        }
     }
 }
 
@@ -445,10 +447,13 @@ fn duplicate_approval_is_rejected() {
     let proposal_id = client.propose_action(&admin, &action);
 
     // First approval by admin2 — succeeds.
-    // Proposer (admin) is already approved (count 1). 
+    // Proposer (admin) is already approved (count 1).
     // admin2 approving makes it count 2 (threshold 2 met, but we check if it succeeds).
     let first = client.try_approve_action(&admin2, &proposal_id);
-    assert!(first.is_ok() || matches!(first, Ok(Ok(_))), "First approval must succeed");
+    assert!(
+        first.is_ok() || matches!(first, Ok(Ok(_))),
+        "First approval must succeed"
+    );
 
     // Second approval by admin2 on the same proposal — must be rejected.
     let duplicate = client.try_approve_action(&admin2, &proposal_id);

@@ -235,7 +235,8 @@ fn internal_release_escrow(
                 // Mark settlement as completed
                 complete_settlement(env, settlement_id, shipment.id)?;
 
-                shipment.escrow_amount = checked_sub_escrow(shipment.escrow_amount, actual_release)?;
+                shipment.escrow_amount =
+                    checked_sub_escrow(shipment.escrow_amount, actual_release)?;
                 shipment.updated_at = env.ledger().timestamp();
                 shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
                 persist_shipment(env, shipment)?;
@@ -251,7 +252,11 @@ fn internal_release_escrow(
     Ok(())
 }
 
-pub(crate) fn checked_mul_div_i128(value: i128, multiplier: i128, divisor: i128) -> Result<i128, NavinError> {
+pub(crate) fn checked_mul_div_i128(
+    value: i128,
+    multiplier: i128,
+    divisor: i128,
+) -> Result<i128, NavinError> {
     if divisor == 0 {
         return Err(NavinError::ArithmeticError);
     }
@@ -950,10 +955,9 @@ impl NavinShipment {
 
         // Extend contract instance TTL to prevent premature archival
         let config = config::get_config(&env);
-        env.storage().instance().extend_ttl(
-            config.shipment_ttl_threshold,
-            config.shipment_ttl_extension,
-        );
+        env.storage()
+            .instance()
+            .extend_ttl(config.shipment_ttl_threshold, config.shipment_ttl_extension);
 
         Ok(())
     }
@@ -2948,8 +2952,8 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
 
-        let shipment =
-            storage::get_persistent_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        let shipment = storage::get_persistent_shipment(&env, shipment_id)
+            .ok_or(NavinError::ShipmentNotFound)?;
 
         // Only allow archiving terminal state shipments
         if shipment.status != ShipmentStatus::Delivered
@@ -3432,7 +3436,7 @@ impl NavinShipment {
             }
 
             let milestone = mut_shipment.payment_milestones.get(idx as u32).unwrap();
-            
+
             mut_shipment
                 .milestones_completed
                 .push_back(checkpoint.clone());
@@ -3447,13 +3451,12 @@ impl NavinShipment {
                     total_pct_paid += m_pct;
                 }
             }
-            
+
             let release_amount = if total_pct_paid == 100 {
                 mut_shipment.escrow_amount
             } else {
                 checked_mul_div_i128(mut_shipment.total_escrow, milestone.1 as i128, 100)?
             };
-
 
             events::emit_milestone_payment_released(
                 &env,

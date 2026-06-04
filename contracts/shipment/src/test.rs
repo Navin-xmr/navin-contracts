@@ -10981,7 +10981,12 @@ fn test_rate_limit_exhaustion_blocks_action() {
 
     // Immediate second update should fail due to rate limit (60-second minimum interval)
     let hash2 = BytesN::from_array(&env, &[0x03u8; 32]);
-    let result = client.try_update_status(&carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &hash2);
+    let result = client.try_update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &hash2,
+    );
     assert!(
         result.is_err(),
         "rapid update should be blocked by rate limit"
@@ -11021,7 +11026,12 @@ fn test_rate_limit_window_expiry_restores_action() {
 
     // Immediate second update fails
     let hash2 = BytesN::from_array(&env, &[0x03u8; 32]);
-    let result = client.try_update_status(&carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &hash2);
+    let result = client.try_update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &hash2,
+    );
     assert!(result.is_err(), "rapid update should be blocked");
 
     // Advance ledger past the rate limit window
@@ -11029,7 +11039,12 @@ fn test_rate_limit_window_expiry_restores_action() {
 
     // Third update after window expiry should succeed
     let hash3 = BytesN::from_array(&env, &[0x04u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &hash3);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &hash3,
+    );
 
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, ShipmentStatus::AtCheckpoint);
@@ -11063,14 +11078,24 @@ fn test_rate_limit_behavior_deterministic() {
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash1);
 
     let hash2 = BytesN::from_array(&env, &[0x11u8; 32]);
-    let result1 = client.try_update_status(&carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &hash2);
+    let result1 = client.try_update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &hash2,
+    );
     assert!(result1.is_err());
 
     super::test_utils::advance_past_rate_limit(&env);
     env.ledger().with_mut(|l| l.timestamp += 100); // Extra cushion
 
     let hash3 = BytesN::from_array(&env, &[0x12u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &hash3);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &hash3,
+    );
 
     super::test_utils::advance_past_rate_limit(&env);
     env.ledger().with_mut(|l| l.timestamp += 100); // Extra cushion
@@ -11080,7 +11105,8 @@ fn test_rate_limit_behavior_deterministic() {
     client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &hash4);
 
     let hash5 = BytesN::from_array(&env, &[0x21u8; 32]);
-    let result2 = client.try_update_status(&carrier, &shipment_id, &ShipmentStatus::Delivered, &hash5);
+    let result2 =
+        client.try_update_status(&carrier, &shipment_id, &ShipmentStatus::Delivered, &hash5);
     assert!(result2.is_err());
 
     super::test_utils::advance_past_rate_limit(&env);
@@ -11091,7 +11117,6 @@ fn test_rate_limit_behavior_deterministic() {
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, ShipmentStatus::Delivered);
 }
-
 
 #[test]
 fn test_metadata_over_max_symbol_length_rejected() {

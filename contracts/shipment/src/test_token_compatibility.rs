@@ -453,4 +453,3 @@ fn test_token_with_8_decimals_deposit_fails_with_invalid_token_decimals() {
         "Token with 8 decimals must be rejected with InvalidTokenDecimals"
     );
 }
-

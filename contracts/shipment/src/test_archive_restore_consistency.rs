@@ -117,8 +117,7 @@ mod tests {
 
         let archived = client.get_shipment(&shipment_id);
         assert_eq!(
-            archived.escrow_amount,
-            0,
+            archived.escrow_amount, 0,
             "escrow_amount must be 0 in the archived copy after delivery"
         );
     }
@@ -231,15 +230,24 @@ mod tests {
         let result = client.try_archive_shipment(&admin, &shipment_id);
         match result {
             Ok(Err(e)) => {
-                let expected_error = soroban_sdk::Error::from_contract_error(NavinError::ShipmentNotFound as u32);
+                let expected_error =
+                    soroban_sdk::Error::from_contract_error(NavinError::ShipmentNotFound as u32);
                 let err_str = std::format!("{:?}", e);
                 let expected_str = std::format!("{:?}", expected_error);
-                assert!(err_str.contains(&expected_str) || err_str.contains("ShipmentNotFound"), "Expected ShipmentNotFound error, got {:?}", err_str);
-            },
+                assert!(
+                    err_str.contains(&expected_str) || err_str.contains("ShipmentNotFound"),
+                    "Expected ShipmentNotFound error, got {:?}",
+                    err_str
+                );
+            }
             Err(e) => {
                 let err_str = std::format!("{:?}", e);
-                assert!(err_str.contains("ShipmentNotFound") || err_str.contains("Code(4)"), "Expected ShipmentNotFound error in host error, got {:?}", err_str);
-            },
+                assert!(
+                    err_str.contains("ShipmentNotFound") || err_str.contains("Code(4)"),
+                    "Expected ShipmentNotFound error in host error, got {:?}",
+                    err_str
+                );
+            }
             _ => panic!("Expected error but got success"),
         }
     }

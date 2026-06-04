@@ -23,12 +23,12 @@ fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address)
     let token = env.register(TtlMockToken {}, ());
     let cid = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &cid);
-    
+
     // Extend contract instance TTL immediately after registration to a huge value
     env.as_contract(&cid, || {
         env.storage().instance().extend_ttl(500000, 500000);
     });
-    
+
     client.initialize(&admin, &token);
     (env, client, admin, token)
 }
@@ -61,18 +61,26 @@ fn extend_all_storage_ttl(env: &Env, client_address: &Address, shipment_id: u64,
         let key = crate::types::DataKey::Shipment(shipment_id);
         env.storage().persistent().extend_ttl(&key, 100000, 100000);
         let count_key = crate::types::DataKey::EventCount(shipment_id);
-        env.storage().persistent().extend_ttl(&count_key, 100000, 100000);
+        env.storage()
+            .persistent()
+            .extend_ttl(&count_key, 100000, 100000);
         let quota_key = crate::types::DataKey::CompanyCreationQuota(sender.clone());
         if env.storage().persistent().has(&quota_key) {
-            env.storage().persistent().extend_ttl(&quota_key, 100000, 100000);
+            env.storage()
+                .persistent()
+                .extend_ttl(&quota_key, 100000, 100000);
         }
         let rate_key = crate::types::DataKey::ActorQuota(sender.clone());
         if env.storage().persistent().has(&rate_key) {
-            env.storage().persistent().extend_ttl(&rate_key, 100000, 100000);
+            env.storage()
+                .persistent()
+                .extend_ttl(&rate_key, 100000, 100000);
         }
         let token_key = crate::types::DataKey::ShipmentToken(shipment_id);
         if env.storage().persistent().has(&token_key) {
-            env.storage().persistent().extend_ttl(&token_key, 100000, 100000);
+            env.storage()
+                .persistent()
+                .extend_ttl(&token_key, 100000, 100000);
         }
     });
 }

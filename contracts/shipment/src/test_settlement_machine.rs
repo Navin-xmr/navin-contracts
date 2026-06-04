@@ -1,10 +1,10 @@
 #![cfg(test)]
 
 use crate::test::*;
-use crate::test_utils::{dummy_hash};
+use crate::test_utils::dummy_hash;
 use crate::types::*;
 use soroban_sdk::testutils::Address as _;
-use soroban_sdk::{Address};
+use soroban_sdk::Address;
 
 /// Test that concurrent settlement operations are prevented.
 /// Note: Due to Soroban transaction rollback semantics, failed token transfers
@@ -31,11 +31,11 @@ fn test_settlement_concurrency_control() {
 
     // First deposit succeeds
     client.deposit_escrow(&company, &shipment_id, &1000);
-    
+
     // Verify settlement completed and cleared
     let active = client.get_active_settlement(&shipment_id);
     assert!(active.is_none());
-    
+
     let settlement = client.get_settlement(&1);
     assert_eq!(settlement.state, SettlementState::Completed);
 }

@@ -307,7 +307,9 @@ impl ShipmentStatus {
             (Self::Disputed, Self::PartiallyRefunded) => true,
             (_, Self::Cancelled) if self != &Self::Delivered && self != &Self::Cancelled => true,
             (_, Self::Disputed)
-                if self != &Self::Cancelled && self != &Self::Delivered && self != &Self::Disputed =>
+                if self != &Self::Cancelled
+                    && self != &Self::Delivered
+                    && self != &Self::Disputed =>
             {
                 true
             }

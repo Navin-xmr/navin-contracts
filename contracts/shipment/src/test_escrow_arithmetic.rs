@@ -6,7 +6,7 @@
 //! for representable values.
 
 use crate::errors::NavinError;
-use crate::{checked_add_i128, checked_sub_i128, checked_mul_div_i128};
+use crate::{checked_add_i128, checked_mul_div_i128, checked_sub_i128};
 
 // ── checked_add_i128 ─────────────────────────────────────────────────────────
 

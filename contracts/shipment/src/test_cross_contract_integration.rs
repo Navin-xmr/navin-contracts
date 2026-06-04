@@ -283,7 +283,7 @@ fn test_carrier_handoff_event_emitted() {
             }
         }
     }
-    
+
     let event = handoff_event.expect("carrier_handoff event not found");
 
     // Check from/to carrier in payload
@@ -292,7 +292,7 @@ fn test_carrier_handoff_event_emitted() {
     // Payload for carrier_handoff: [from_carrier, to_carrier, shipment_id]
     // Wait, let's check events.rs for emit_carrier_handoff_completed
     // events::emit_carrier_handoff_completed(&env, &old_carrier, &new_carrier, shipment_id);
-    
+
     let from_carrier: Address = Address::try_from_val(&ctx.env, &data.get(0).unwrap()).unwrap();
     let to_carrier: Address = Address::try_from_val(&ctx.env, &data.get(1).unwrap()).unwrap();
     assert_eq!(from_carrier, ctx.carrier);
@@ -322,7 +322,7 @@ fn test_rejected_handoff_when_caller_not_current_carrier() {
 
     // Try handoff with unauthorized caller (not current carrier)
     let unauthorized = Address::generate(&ctx.env);
-    
+
     // Ensure all auths are mocked for the try_ call
     ctx.env.mock_all_auths();
 
@@ -334,16 +334,25 @@ fn test_rejected_handoff_when_caller_not_current_carrier() {
     match result {
         Ok(Err(e)) => {
             // Success: contract returned error
-            let expected_error = soroban_sdk::Error::from_contract_error(NavinError::Unauthorized as u32);
+            let expected_error =
+                soroban_sdk::Error::from_contract_error(NavinError::Unauthorized as u32);
             let err_str = std::format!("{:?}", e);
             let expected_str = std::format!("{:?}", expected_error);
-            assert!(err_str.contains(&expected_str) || err_str.contains("Unauthorized"), "Expected Unauthorized error, got {:?}", err_str);
-        },
+            assert!(
+                err_str.contains(&expected_str) || err_str.contains("Unauthorized"),
+                "Expected Unauthorized error, got {:?}",
+                err_str
+            );
+        }
         Err(e) => {
             // Also accept if host reported the error directly
             let err_str = std::format!("{:?}", e);
-            assert!(err_str.contains("Unauthorized") || err_str.contains("Code(4)"), "Expected Unauthorized error in host error, got {:?}", err_str);
-        },
+            assert!(
+                err_str.contains("Unauthorized") || err_str.contains("Code(4)"),
+                "Expected Unauthorized error in host error, got {:?}",
+                err_str
+            );
+        }
         _ => panic!("Expected error but got success"),
     }
 }

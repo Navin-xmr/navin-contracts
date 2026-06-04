@@ -320,7 +320,10 @@ mod tests {
 
         // Now it should be expired
         let result_past_boundary = client.try_approve_action(&admin2, &proposal_id);
-        assert_eq!(result_past_boundary, Err(Ok(crate::NavinError::ProposalExpired)));
+        assert_eq!(
+            result_past_boundary,
+            Err(Ok(crate::NavinError::ProposalExpired))
+        );
     }
 
     /// Test: Multiple proposals expire independently.
@@ -514,4 +517,3 @@ mod tests {
         assert_eq!(execute_result, Err(Ok(crate::NavinError::ProposalExpired)));
     }
 }
-

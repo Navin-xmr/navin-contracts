@@ -150,18 +150,27 @@ fn test_shipment_counter_overflow_rejected_at_max() {
     // Verify it returns CounterOverflow error
     match result {
         Ok(Err(e)) => {
-            let expected_error = soroban_sdk::Error::from_contract_error(NavinError::CounterOverflow as u32);
+            let expected_error =
+                soroban_sdk::Error::from_contract_error(NavinError::CounterOverflow as u32);
             let err_str = std::format!("{:?}", e);
             let expected_str = std::format!("{:?}", expected_error);
-            assert!(err_str.contains(&expected_str) || err_str.contains("CounterOverflow"), "Expected CounterOverflow error, got {:?}", err_str);
-        },
+            assert!(
+                err_str.contains(&expected_str) || err_str.contains("CounterOverflow"),
+                "Expected CounterOverflow error, got {:?}",
+                err_str
+            );
+        }
         Err(e) => {
             let err_str = std::format!("{:?}", e);
-            assert!(err_str.contains("CounterOverflow") || err_str.contains("Code(11)"), "Expected CounterOverflow error in host error, got {:?}", err_str);
-        },
+            assert!(
+                err_str.contains("CounterOverflow") || err_str.contains("Code(11)"),
+                "Expected CounterOverflow error in host error, got {:?}",
+                err_str
+            );
+        }
         _ => panic!("Expected error but got success"),
     }
-    }
+}
 
 /// Test that multiple sequential shipment creations maintain counter integrity.
 #[test]

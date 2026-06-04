@@ -131,7 +131,14 @@ fn fuzz_arithmetic_overflow_amounts_rejected() {
         let seed = xorshift64(&mut rng);
         env.ledger().with_mut(|l| l.timestamp += 2);
         let receiver = Address::generate(&env);
-        let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed + i as u64);
+        let id = create_shipment(
+            &client,
+            &env,
+            &company,
+            &receiver,
+            &carrier,
+            seed + i as u64,
+        );
 
         let result = client.try_deposit_escrow(&company, &id, &amount);
         assert!(
@@ -162,7 +169,14 @@ fn fuzz_arithmetic_boundary_amounts_accepted() {
         let seed = xorshift64(&mut rng);
         env.ledger().with_mut(|l| l.timestamp += 2);
         let receiver = Address::generate(&env);
-        let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed + i as u64);
+        let id = create_shipment(
+            &client,
+            &env,
+            &company,
+            &receiver,
+            &carrier,
+            seed + i as u64,
+        );
 
         let result = client.try_deposit_escrow(&company, &id, &amount);
         assert!(
@@ -257,7 +271,14 @@ fn fuzz_arithmetic_random_amounts_range_check() {
         let seed = xorshift64(&mut rng);
         env.ledger().with_mut(|l| l.timestamp += 2);
         let receiver = Address::generate(&env);
-        let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed + i as u64);
+        let id = create_shipment(
+            &client,
+            &env,
+            &company,
+            &receiver,
+            &carrier,
+            seed + i as u64,
+        );
 
         // Generate amount in full i128 range using two seeds
         let seed2 = xorshift64(&mut rng);
@@ -302,7 +323,14 @@ fn fuzz_arithmetic_total_escrow_volume_no_overflow() {
         let seed = xorshift64(&mut rng);
         env.ledger().with_mut(|l| l.timestamp += 2);
         let receiver = Address::generate(&env);
-        let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed + i as u64);
+        let id = create_shipment(
+            &client,
+            &env,
+            &company,
+            &receiver,
+            &carrier,
+            seed + i as u64,
+        );
 
         // Use small amounts to avoid hitting MAX_AMOUNT limit on total
         let amount = ((seed % 999) + 1) as i128;
@@ -392,7 +420,10 @@ fn test_exact_release_results_in_zero_not_negative() {
 
     // Verify balance is zero, not negative
     let balance = client.get_escrow_balance(&id);
-    assert_eq!(balance, 0, "Balance should be exactly zero after full release");
+    assert_eq!(
+        balance, 0,
+        "Balance should be exactly zero after full release"
+    );
     assert!(
         balance >= 0,
         "Balance must not be negative after release: {}",
@@ -454,7 +485,10 @@ fn test_over_release_blocked_prevents_negative() {
 
     // Verify balance is still zero, not negative
     let final_balance = client.get_escrow_balance(&id);
-    assert_eq!(final_balance, 0, "Balance should remain zero after failed release");
+    assert_eq!(
+        final_balance, 0,
+        "Balance should remain zero after failed release"
+    );
     assert!(
         final_balance >= 0,
         "Balance must not go negative after failed release"
@@ -745,7 +779,14 @@ fn test_release_exact_amount_boundary() {
 
     for &amount in &test_amounts {
         env.ledger().with_mut(|l| l.timestamp += 2);
-        let test_id = create_shipment(&client, &env, &company, &receiver, &carrier, seed + amount as u64);
+        let test_id = create_shipment(
+            &client,
+            &env,
+            &company,
+            &receiver,
+            &carrier,
+            seed + amount as u64,
+        );
 
         // Deposit exact amount
         client.deposit_escrow(&company, &test_id, &amount);
@@ -805,7 +846,10 @@ fn test_sequential_operations_prevent_negative() {
     // First release
     client.release_escrow(&receiver, &id);
     let balance1 = client.get_escrow_balance(&id);
-    assert!(balance1 >= 0, "Balance must be non-negative after first release");
+    assert!(
+        balance1 >= 0,
+        "Balance must be non-negative after first release"
+    );
 
     // Second release attempt (should fail)
     let result2 = client.try_release_escrow(&receiver, &id);

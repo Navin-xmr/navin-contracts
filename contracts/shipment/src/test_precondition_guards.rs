@@ -9,11 +9,7 @@
 #[cfg(test)]
 mod tests {
     use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
-    use soroban_sdk::{
-        contract, contractimpl,
-        testutils::Address as _,
-        Address, BytesN, Env, Vec,
-    };
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
 
     #[contract]
     struct MockToken;
