@@ -273,7 +273,7 @@ fn test_carrier_handoff_event_emitted() {
     let target_topic = Symbol::new(&ctx.env, "carrier_handoff_completed");
     let mut handoff_event = None;
     for e in events.iter() {
-        if e.1.len() > 0 {
+        if !e.1.is_empty() {
             // Check if topic matches "carrier_handoff" (topic at index 0)
             if let Ok(topic) = Symbol::try_from_val(&ctx.env, &e.1.get(0).unwrap()) {
                 if topic == target_topic {

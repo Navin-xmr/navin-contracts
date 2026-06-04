@@ -189,7 +189,7 @@ fn test_shipment_counter_integrity_multiple_creates() {
         );
 
         assert_eq!(
-            shipment_id as u64, i,
+            shipment_id, i,
             "Shipment ID {} should match iteration",
             i
         );
@@ -259,7 +259,7 @@ fn test_shipment_counter_persists_across_calls() {
         counter_check_1, counter_check_2,
         "Counter should be consistent"
     );
-    assert_eq!(counter_check_1, id_1 as u64, "Counter should match last ID");
+    assert_eq!(counter_check_1, id_1, "Counter should match last ID");
 
     // Create another shipment and verify increment
     let id_2 = client.create_shipment(
@@ -273,7 +273,7 @@ fn test_shipment_counter_persists_across_calls() {
 
     let counter_after = client.get_shipment_counter();
     assert_eq!(
-        counter_after, id_2 as u64,
+        counter_after, id_2,
         "Counter should update after new shipment"
     );
 }

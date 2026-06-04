@@ -299,11 +299,7 @@ fn test_property_match_exhaustiveness_preserved() {
     let status = ShipmentStatus::Created;
 
     // Existing match patterns must continue to work
-    let is_terminal = match status {
-        ShipmentStatus::Delivered => true,
-        ShipmentStatus::Cancelled => true,
-        _ => false,
-    };
+    let is_terminal = matches!(status, ShipmentStatus::Delivered | ShipmentStatus::Cancelled);
     assert!(!is_terminal);
 
     // Explicit match on all existing variants must still be exhaustive
