@@ -617,7 +617,6 @@ pub fn set_escrow(env: &Env, shipment_id: u64, amount: i128) {
         .set(&escrow_key(shipment_id), &amount);
 }
 
-
 /// Get the latest escrow freeze reason code for a shipment.
 ///
 /// # Arguments
@@ -661,7 +660,6 @@ pub fn set_escrow_freeze_reason(env: &Env, shipment_id: u64, reason: &EscrowFree
 pub fn remove_escrow(env: &Env, shipment_id: u64) {
     env.storage().persistent().remove(&escrow_key(shipment_id));
 }
-
 
 /// Backwards-compatible name used by tests: set escrow balance.
 ///
@@ -747,7 +745,6 @@ pub fn escrow_key(shipment_id: u64) -> DataKey {
 pub fn confirmation_hash_key(shipment_id: u64) -> DataKey {
     DataKey::ConfirmationHash(shipment_id)
 }
-
 
 /// Construct a storage key for a shipment's escrow freeze reason.
 ///
@@ -854,7 +851,6 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
             .persistent()
             .extend_ttl(&escrow_key, threshold, extend_to);
     }
-
 
     let hash_key = confirmation_hash_key(shipment_id);
     if env.storage().persistent().has(&hash_key) {
@@ -1856,7 +1852,6 @@ pub fn set_settlement(env: &Env, settlement: &crate::types::SettlementRecord) {
         .set(&DataKey::Settlement(settlement.settlement_id), settlement);
 }
 
-
 /// Get the active settlement ID for a shipment.
 ///
 /// # Arguments
@@ -1963,7 +1958,6 @@ pub fn get_proposal_digest(
         .persistent()
         .get(&DataKey::ProposalDigest(proposal_id))
 }
-
 
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
@@ -2076,6 +2070,5 @@ mod tests {
         });
     }
 }
-
 
 // ============= Settlement State Storage Functions =============

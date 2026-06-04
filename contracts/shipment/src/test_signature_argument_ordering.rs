@@ -333,7 +333,6 @@ fn setup_multisig_2of3() -> (Env, NavinShipmentClient<'static>, Address, Address
     (env, client, admin, admin2, admin3)
 }
 
-
 /// Proposal approvals are stored in insertion order — first approver must appear
 /// at index 0 regardless of address lexicographic ordering.
 #[test]

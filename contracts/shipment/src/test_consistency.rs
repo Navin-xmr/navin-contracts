@@ -718,7 +718,6 @@ fn test_config_checksum_raw_compute_matches_saved() {
     assert_eq!(saved, recomputed, "saved checksum must match recomputed");
 }
 
-
 // ── [ISSUE #453] Carrier reverse-lookup consistency tests ───────────────────
 
 /// Test: Add forward whitelist entries and verify they can be read back.
@@ -1164,4 +1163,3 @@ fn test_carrier_whitelist_remove_idempotent() {
         "carrier should not be whitelisted after multiple removes"
     );
 }
-

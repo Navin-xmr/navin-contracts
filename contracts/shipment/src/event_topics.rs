@@ -213,7 +213,6 @@ pub const HASH_DOMAIN_NOTIFICATION: u8 = 0x08;
 #[allow(dead_code)]
 pub const HASH_DOMAIN_NOTE: u8 = 0x09;
 
-
 /// Domain tag for platform-level events (`platform_fee_collected`, `fee_config_updated`).
 pub const HASH_DOMAIN_PLATFORM: u8 = 0x0B;
 

@@ -55,7 +55,6 @@ fn create_test_shipment(
     )
 }
 
-
 #[test]
 fn test_ttl_health_summary_no_shipments() {
     let (_env, client, _admin, _token_contract) = setup_shipment_env();
