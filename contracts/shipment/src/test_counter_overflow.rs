@@ -188,11 +188,7 @@ fn test_shipment_counter_integrity_multiple_creates() {
             &deadline,
         );
 
-        assert_eq!(
-            shipment_id, i,
-            "Shipment ID {} should match iteration",
-            i
-        );
+        assert_eq!(shipment_id, i, "Shipment ID {} should match iteration", i);
 
         let counter = client.get_shipment_counter();
         assert_eq!(counter, i, "Counter should be {} after {} shipments", i, i);
