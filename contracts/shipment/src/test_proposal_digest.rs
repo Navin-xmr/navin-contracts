@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn force_release_and_force_refund_produce_distinct_digests() {
-        let (env, client, admin, _admin2) = setup_multisig();
+        let (_env, client, _admin, _admin2) = setup_multisig();
 
         let shipment_id = 42u64;
         let action_release = crate::types::AdminAction::ForceRelease(shipment_id);

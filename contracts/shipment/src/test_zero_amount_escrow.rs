@@ -174,7 +174,6 @@ fn test_deposit_escrow_exceeds_max_amount_rejected() {
 #[test]
 fn test_zero_amount_rejection_multiple_shipments() {
     let (env, client, _admin, company, receiver, carrier) = setup_escrow_env();
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
     // Create multiple shipments

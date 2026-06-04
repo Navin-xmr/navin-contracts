@@ -247,7 +247,7 @@ mod tests {
     /// Configuring deadline_grace_seconds = 604_800 (exactly 7 days) must succeed.
     #[test]
     fn grace_period_exactly_seven_days_is_accepted() {
-        let (env, client, admin) = setup();
+        let (_env, client, admin) = setup();
         let mut cfg = client.get_contract_config();
         cfg.deadline_grace_seconds = 604_800; // 7 days exactly
         let result = client.try_update_config(&admin, &cfg);
@@ -263,7 +263,7 @@ mod tests {
     /// must be rejected by update_config.
     #[test]
     fn grace_period_over_seven_days_is_rejected() {
-        let (env, client, admin) = setup();
+        let (_env, client, admin) = setup();
         let mut cfg = client.get_contract_config();
         cfg.deadline_grace_seconds = 604_801; // 1 s over cap
         let result = client.try_update_config(&admin, &cfg);
@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn check_deadline_on_non_existent_shipment_returns_not_found() {
         use crate::NavinError;
-        let (env, client, admin) = setup();
+        let (env, client, _admin) = setup();
 
         // Advance past any possible deadline.
         test_utils::set_ledger_time(&env, 999_999_999);

@@ -333,9 +333,6 @@ fn setup_multisig_2of3() -> (Env, NavinShipmentClient<'static>, Address, Address
     (env, client, admin, admin2, admin3)
 }
 
-fn wasm_hash(env: &Env, seed: u8) -> BytesN<32> {
-    BytesN::from_array(env, &[seed; 32])
-}
 
 /// Proposal approvals are stored in insertion order — first approver must appear
 /// at index 0 regardless of address lexicographic ordering.
@@ -344,7 +341,7 @@ fn proposal_approvals_are_recorded_in_insertion_order() {
     let (env, client, admin, admin2, _admin3) = setup_multisig_2of3();
 
     let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
-    let salt = BytesN::from_array(&env, &[0xAAu8; 32]);
+    let _salt = BytesN::from_array(&env, &[0xAAu8; 32]);
     let proposal_id = client.propose_action(&admin, &action);
 
     // admin2 approves (threshold 2 met with admin1 + admin2 → auto-executes).
@@ -381,7 +378,7 @@ fn proposal_approvals_are_recorded_in_insertion_order() {
 /// A second approver is appended after the first — insertion order is preserved.
 #[test]
 fn proposal_second_approver_appended_after_first() {
-    let (env, client, admin, admin2, admin3) = setup_multisig_2of3();
+    let (env, _client, admin, admin2, admin3) = setup_multisig_2of3();
 
     // Use threshold 3 so we can observe two approvals before auto-execution.
     let mut admins = Vec::new(&env);
@@ -397,7 +394,7 @@ fn proposal_second_approver_appended_after_first() {
     client2.init_multisig(&admin, &admins, &3);
 
     let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
-    let salt = BytesN::from_array(&env, &[0xBBu8; 32]);
+    let _salt = BytesN::from_array(&env, &[0xBBu8; 32]);
     let proposal_id = client2.propose_action(&admin, &action);
 
     let _ = client2.try_approve_action(&admin2, &proposal_id);
@@ -443,7 +440,7 @@ fn duplicate_approval_is_rejected() {
     let (env, client, admin, admin2, _admin3) = setup_multisig_2of3();
 
     let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
-    let salt = BytesN::from_array(&env, &[0xCCu8; 32]);
+    let _salt = BytesN::from_array(&env, &[0xCCu8; 32]);
     let proposal_id = client.propose_action(&admin, &action);
 
     // First approval by admin2 — succeeds.
@@ -472,8 +469,8 @@ fn proposal_digests_are_distinct_for_different_actions() {
     let action_a = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
     let action_b = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
 
-    let salt_a = BytesN::from_array(&env, &[0x01u8; 32]);
-    let salt_b = BytesN::from_array(&env, &[0x02u8; 32]);
+    let _salt_a = BytesN::from_array(&env, &[0x01u8; 32]);
+    let _salt_b = BytesN::from_array(&env, &[0x02u8; 32]);
 
     let id_a = client.propose_action(&admin, &action_a);
     let id_b = client.propose_action(&admin, &action_b);

@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn set_creation_quota_rejects_non_admin() {
-        let (env, client, _admin, company, _carrier, _token) = setup();
+        let (_env, client, _admin, company, _carrier, _token) = setup();
 
         let result = client.try_set_creation_quota(&company, &5, &3600);
         assert_eq!(result, Err(Ok(NavinError::Unauthorized)));

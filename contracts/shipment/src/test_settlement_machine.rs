@@ -76,7 +76,7 @@ fn test_settlement_query() {
 /// the expected deterministic value — counter growth must be safe and monotonic.
 #[test]
 fn test_settlement_counter_near_boundary_increments_safely() {
-    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let (env, client, _admin, _token_contract) = setup_initialized_shipment_env();
 
     // Seed the counter to u64::MAX - 2 via internal storage so we can observe
     // the last two safe increments without requiring many settlement operations.
@@ -108,7 +108,7 @@ fn test_settlement_counter_near_boundary_increments_safely() {
 /// back to the current value — the counter stays pinned at u64::MAX.
 #[test]
 fn test_settlement_counter_saturates_at_u64_max() {
-    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let (env, client, _admin, _token_contract) = setup_initialized_shipment_env();
 
     // Seed counter at the absolute maximum.
     env.as_contract(&client.address, || {
@@ -134,7 +134,7 @@ fn test_settlement_counter_saturates_at_u64_max() {
 /// This test must fail if the overflow guard (`checked_add`) is ever removed.
 #[test]
 fn test_settlement_counter_rollover_is_impossible() {
-    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let (env, client, _admin, _token_contract) = setup_initialized_shipment_env();
 
     env.as_contract(&client.address, || {
         crate::storage::set_settlement_counter(&env, u64::MAX);

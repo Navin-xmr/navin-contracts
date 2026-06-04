@@ -24,7 +24,7 @@
 mod tests {
     use crate::event_topics::{
         HASH_DOMAIN_ADMIN, HASH_DOMAIN_CARRIER, HASH_DOMAIN_CONDITION, HASH_DOMAIN_DISPUTE,
-        HASH_DOMAIN_ESCROW, HASH_DOMAIN_EVIDENCE, HASH_DOMAIN_NOTE, HASH_DOMAIN_NOTIFICATION,
+        HASH_DOMAIN_ESCROW, HASH_DOMAIN_NOTE, HASH_DOMAIN_NOTIFICATION,
         HASH_DOMAIN_RBAC, HASH_DOMAIN_SHIPMENT,
     };
     use soroban_sdk::{Bytes, BytesN, Env};
@@ -74,7 +74,6 @@ mod tests {
             HASH_DOMAIN_RBAC,
             HASH_DOMAIN_NOTIFICATION,
             HASH_DOMAIN_NOTE,
-            HASH_DOMAIN_EVIDENCE,
         ];
         domains.sort_unstable();
         for pair in domains.windows(2) {
@@ -98,7 +97,6 @@ mod tests {
         assert_eq!(HASH_DOMAIN_RBAC, 0x07);
         assert_eq!(HASH_DOMAIN_NOTIFICATION, 0x08);
         assert_eq!(HASH_DOMAIN_NOTE, 0x09);
-        assert_eq!(HASH_DOMAIN_EVIDENCE, 0x0A);
     }
 
     // ── 2. Cross-family separation ───────────────────────────────────────────
@@ -136,8 +134,6 @@ mod tests {
             counter,
         );
         let key_note = compute_key(&env, HASH_DOMAIN_NOTE, shipment_id, event_type, counter);
-        let key_evidence =
-            compute_key(&env, HASH_DOMAIN_EVIDENCE, shipment_id, event_type, counter);
 
         let all_keys = [
             key_shipment,
@@ -149,7 +145,6 @@ mod tests {
             key_rbac,
             key_notification,
             key_note,
-            key_evidence,
         ];
 
         // Every pair must be distinct.

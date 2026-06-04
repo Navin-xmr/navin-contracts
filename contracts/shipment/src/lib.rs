@@ -603,27 +603,6 @@ fn require_admin(env: &Env, caller: &Address) -> Result<(), NavinError> {
     Ok(())
 }
 
-/// Require that a shipment exists and return it. Centralizes the repeated
-/// `storage::get_shipment(&env, id).ok_or(ShipmentNotFound)?` pattern.
-fn require_shipment(env: &Env, shipment_id: u64) -> Result<Shipment, NavinError> {
-    storage::get_shipment(env, shipment_id).ok_or(NavinError::ShipmentNotFound)
-}
-
-/// Require that `caller` is the assigned carrier for a shipment (or admin).
-/// Returns the shipment on success.
-fn require_carrier_for_shipment(
-    env: &Env,
-    caller: &Address,
-    shipment_id: u64,
-) -> Result<Shipment, NavinError> {
-    let shipment = require_shipment(env, shipment_id)?;
-    let admin = storage::get_admin(env);
-    if *caller != shipment.carrier && *caller != admin {
-        return Err(NavinError::Unauthorized);
-    }
-    Ok(shipment)
-}
-
 #[contract]
 pub struct NavinShipment;
 

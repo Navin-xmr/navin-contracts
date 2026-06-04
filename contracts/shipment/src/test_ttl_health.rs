@@ -55,35 +55,6 @@ fn create_test_shipment(
     )
 }
 
-fn extend_all_storage_ttl(env: &Env, client_address: &Address, shipment_id: u64, sender: &Address) {
-    env.as_contract(client_address, || {
-        env.storage().instance().extend_ttl(100000, 100000);
-        let key = crate::types::DataKey::Shipment(shipment_id);
-        env.storage().persistent().extend_ttl(&key, 100000, 100000);
-        let count_key = crate::types::DataKey::EventCount(shipment_id);
-        env.storage()
-            .persistent()
-            .extend_ttl(&count_key, 100000, 100000);
-        let quota_key = crate::types::DataKey::CompanyCreationQuota(sender.clone());
-        if env.storage().persistent().has(&quota_key) {
-            env.storage()
-                .persistent()
-                .extend_ttl(&quota_key, 100000, 100000);
-        }
-        let rate_key = crate::types::DataKey::ActorQuota(sender.clone());
-        if env.storage().persistent().has(&rate_key) {
-            env.storage()
-                .persistent()
-                .extend_ttl(&rate_key, 100000, 100000);
-        }
-        let token_key = crate::types::DataKey::ShipmentToken(shipment_id);
-        if env.storage().persistent().has(&token_key) {
-            env.storage()
-                .persistent()
-                .extend_ttl(&token_key, 100000, 100000);
-        }
-    });
-}
 
 #[test]
 fn test_ttl_health_summary_no_shipments() {
@@ -188,7 +159,6 @@ fn test_ttl_health_summary_edge_case_exactly_20_shipments() {
 }
 
 #[test]
-#[ignore = "pre-existing failure from #377: advancing sequence archives the contract instance"]
 fn test_ttl_extended_on_active_mutation() {
     let (env, client, admin, _token) = setup_shipment_env();
 
@@ -196,6 +166,10 @@ fn test_ttl_extended_on_active_mutation() {
     let carrier = Address::generate(&env);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+
+    let mut cfg = client.get_contract_config();
+    cfg.shipment_ttl_threshold = 518_000;
+    client.update_config(&admin, &cfg);
 
     let receiver = Address::generate(&env);
     let create_hash = BytesN::from_array(&env, &[0x01u8; 32]);

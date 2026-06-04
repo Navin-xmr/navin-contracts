@@ -539,8 +539,8 @@ fn test_storage_consistent_after_arithmetic_failure() {
     client.deposit_escrow(&company, &id, &deposit_amount);
 
     // Capture initial state
-    let initial_balance = client.get_escrow_balance(&id);
-    let initial_shipment = client.get_shipment(&id);
+    let _initial_balance = client.get_escrow_balance(&id);
+    let _initial_shipment = client.get_shipment(&id);
 
     // Advance to Delivered
     env.ledger().with_mut(|l| l.timestamp += 65);
@@ -714,7 +714,7 @@ fn test_zero_escrow_operations_safe() {
     client.update_status(&carrier, &id, &crate::ShipmentStatus::Delivered, &h2);
 
     // Attempt to release zero escrow (should fail or be no-op)
-    let result = client.try_release_escrow(&receiver, &id);
+    let _result = client.try_release_escrow(&receiver, &id);
     // Either way, balance must remain zero and non-negative
     let balance_after = client.get_escrow_balance(&id);
     assert_eq!(balance_after, 0);
@@ -772,7 +772,7 @@ fn test_release_exact_amount_boundary() {
 
     let mut rng: u64 = 0x7000_8000_0000_E000;
     let seed = xorshift64(&mut rng);
-    let id = create_shipment(&client, &env, &company, &receiver, &carrier, seed);
+    let _id = create_shipment(&client, &env, &company, &receiver, &carrier, seed);
 
     // Test with various amounts
     let test_amounts = [1i128, 100, 1_000, 10_000, 100_000, 1_000_000];

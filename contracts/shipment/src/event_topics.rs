@@ -213,8 +213,6 @@ pub const HASH_DOMAIN_NOTIFICATION: u8 = 0x08;
 #[allow(dead_code)]
 pub const HASH_DOMAIN_NOTE: u8 = 0x09;
 
-/// Domain tag for dispute-evidence events (`evidence_added`).
-pub const HASH_DOMAIN_EVIDENCE: u8 = 0x0A;
 
 /// Domain tag for platform-level events (`platform_fee_collected`, `fee_config_updated`).
 pub const HASH_DOMAIN_PLATFORM: u8 = 0x0B;
@@ -385,7 +383,6 @@ mod tests {
             HASH_DOMAIN_RBAC,
             HASH_DOMAIN_NOTIFICATION,
             HASH_DOMAIN_NOTE,
-            HASH_DOMAIN_EVIDENCE,
         ];
         domains.sort_unstable();
         for pair in domains.windows(2) {
@@ -410,6 +407,5 @@ mod tests {
         assert_eq!(HASH_DOMAIN_RBAC, 0x07);
         assert_eq!(HASH_DOMAIN_NOTIFICATION, 0x08);
         assert_eq!(HASH_DOMAIN_NOTE, 0x09);
-        assert_eq!(HASH_DOMAIN_EVIDENCE, 0x0A);
     }
 }

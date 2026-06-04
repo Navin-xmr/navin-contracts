@@ -97,27 +97,7 @@ fn inject_escrow(env: &Env, client: &NavinShipmentClient<'static>, id: u64, amou
     });
 }
 
-fn advance_to_delivered(
-    env: &Env,
-    client: &NavinShipmentClient<'static>,
-    carrier: &Address,
-    id: u64,
-) {
-    test_utils::advance_past_rate_limit(env);
-    client.update_status(
-        carrier,
-        &id,
-        &ShipmentStatus::InTransit,
-        &dummy_hash(env, 200),
-    );
-    test_utils::advance_past_rate_limit(env);
-    client.update_status(
-        carrier,
-        &id,
-        &ShipmentStatus::Delivered,
-        &dummy_hash(env, 201),
-    );
-}
+
 
 /// Mint `amount` SAC tokens to `to` (SAC mint takes `(to, amount)` — no admin arg).
 fn mint_sac(env: &Env, token: &Address, to: &Address, amount: i128) {

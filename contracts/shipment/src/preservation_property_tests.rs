@@ -84,8 +84,6 @@ fn test_property_existing_datakey_variants_preserved() {
     let _company_creation_quota = DataKey::CompanyCreationQuota(addr.clone());
     let _creation_quota_config = DataKey::CreationQuotaConfig;
     let _proposal_digest = DataKey::ProposalDigest(1);
-    let _shipment_deps = DataKey::ShipmentDeps(1);
-    let _shipment_dependents = DataKey::ShipmentDependents(1);
 
     // If all variants compile and can be constructed, the test passes
     // This confirms that existing DataKey variants are preserved

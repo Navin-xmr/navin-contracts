@@ -538,7 +538,6 @@ fn find_all_event_data(
 }
 
 #[test]
-#[ignore = "pre-existing failure: record_milestone requires InTransit; snapshot needs update"]
 fn test_snapshot_multiple_milestone_recorded_payloads() {
     let (env, client, _admin, company, carrier, receiver) = fixture_env();
     let data_hash = BytesN::from_array(&env, &[21u8; 32]);
@@ -553,19 +552,25 @@ fn test_snapshot_multiple_milestone_recorded_payloads() {
         &deadline,
     );
 
-    // Record two milestones
-    client.record_milestone(
+    client.update_status(
         &carrier,
         &id,
-        &soroban_sdk::symbol_short!("m1"),
-        &BytesN::from_array(&env, &[22u8; 32]),
+        &crate::types::ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[14u8; 32]),
     );
-    client.record_milestone(
-        &carrier,
-        &id,
-        &soroban_sdk::symbol_short!("m2"),
-        &BytesN::from_array(&env, &[23u8; 32]),
-    );
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back((
+        soroban_sdk::symbol_short!("m1"),
+        BytesN::from_array(&env, &[22u8; 32]),
+    ));
+    milestones.push_back((
+        soroban_sdk::symbol_short!("m2"),
+        BytesN::from_array(&env, &[23u8; 32]),
+    ));
+
+    let r = client.try_record_milestones_batch(&carrier, &id, &milestones);
+    assert_eq!(r, Ok(Ok(())));
 
     let payloads = find_all_event_data(&env, crate::event_topics::MILESTONE_RECORDED);
     assert_eq!(payloads.len(), 2, "expected two milestone_recorded events");

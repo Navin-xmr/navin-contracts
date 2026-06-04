@@ -116,16 +116,6 @@ pub enum DataKey {
     ReentrancyLock,
     /// Settlement counter for generating unique settlement IDs.
     SettlementCounter,
-    /// Immutable token contract address for a specific shipment (per-shipment token).
-    ShipmentToken(u64),
-    /// Partial refund record keyed by shipment ID.
-    PartialRefundRecord(u64),
-    /// Shipment observer address indexed by (shipment_id, observer_address).
-    ShipmentObserver(u64, Address),
-    /// Observer count for a specific shipment.
-    ObserverCount(u64),
-    /// Salt usage tracker for idempotency (prevents replay attacks).
-    UsedSalt(BytesN<32>),
     /// Settlement record keyed by settlement ID.
     Settlement(u64),
     /// Active settlement ID for a shipment (only one active settlement per shipment).
@@ -138,10 +128,6 @@ pub enum DataKey {
     CreationQuotaConfig,
     /// Deterministic action digest stored on proposal creation.
     ProposalDigest(u64),
-    /// Prerequisite shipment IDs for a shipment (dependencies).
-    ShipmentDeps(u64),
-    /// Shipments that depend on a specific shipment (reverse index).
-    ShipmentDependents(u64),
 }
 
 /// Structured reason codes for escrow freeze events.
@@ -500,23 +486,6 @@ pub struct SettlementRecord {
     pub completed_at: Option<u64>,
     /// Optional error message for failed settlements.
     pub error_code: Option<u32>,
-}
-
-/// Partial refund record for tracking refunds on partially cancelled/disputed shipments.
-///
-/// Stored under DataKey::PartialRefundRecord(shipment_id) when a shipment
-/// receives a partial refund after dispute resolution or partial cancellation.
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct PartialRefundRecord {
-    /// The shipment ID this refund applies to.
-    pub shipment_id: u64,
-    /// Amount refunded to the company.
-    pub refund_amount: i128,
-    /// Ledger timestamp when the partial refund was processed.
-    pub refunded_at: u64,
-    /// Optional reason code or description for the refund.
-    pub reason: Option<Symbol>,
 }
 
 /// Geofence event types for tracking shipment location events.

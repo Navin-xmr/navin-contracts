@@ -43,7 +43,7 @@ fn setup_counter_env() -> (
 /// Test that counter starts at zero.
 #[test]
 fn test_shipment_counter_starts_at_zero() {
-    let (env, client, _admin, _company, _receiver, _carrier) = setup_counter_env();
+    let (_env, client, _admin, _company, _receiver, _carrier) = setup_counter_env();
 
     let counter = client.get_shipment_counter();
     assert_eq!(counter, 0, "Counter should start at 0");
@@ -53,7 +53,6 @@ fn test_shipment_counter_starts_at_zero() {
 #[test]
 fn test_shipment_counter_increments() {
     let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
     // Initial counter should be 0
@@ -176,7 +175,6 @@ fn test_shipment_counter_overflow_rejected_at_max() {
 #[test]
 fn test_shipment_counter_integrity_multiple_creates() {
     let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
     // Create 5 shipments and verify counter consistency
@@ -205,7 +203,6 @@ fn test_shipment_counter_integrity_multiple_creates() {
 #[test]
 fn test_shipment_ids_are_unique_and_sequential() {
     let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
     let mut ids = Vec::<u64>::new(&env);
@@ -242,7 +239,6 @@ fn test_shipment_ids_are_unique_and_sequential() {
 #[test]
 fn test_shipment_counter_persists_across_calls() {
     let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
     // Create first shipment
@@ -287,7 +283,6 @@ fn test_shipment_counter_persists_across_calls() {
 #[test]
 fn test_counter_overflow_uses_checked_arithmetic() {
     let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
     // The counter should never wrap; it should fail when attempting overflow.

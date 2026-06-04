@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn require_admin_rejects_non_admin() {
-        let (env, client, _admin, company, _carrier) = setup();
+        let (_env, client, _admin, company, _carrier) = setup();
 
         // set_shipment_limit uses require_admin internally.
         let result = client.try_set_shipment_limit(&company, &10);
