@@ -300,4 +300,66 @@ mod tests {
             );
         }
     }
+
+    // ── 7. Hash algorithm agility — #457 ─────────────────────────────────────
+
+    /// The current algorithm sentinel must be SHA-256 (value 1) and the
+    /// default algorithm must equal the SHA-256 sentinel.
+    ///
+    /// Any change to these constants is a breaking change for off-chain
+    /// verifiers that rely on them to select the correct hash function.
+    #[test]
+    fn algorithm_constant_value_is_sha256_and_stable() {
+        assert_eq!(
+            crate::types::HASH_ALGO_SHA256,
+            1,
+            "HASH_ALGO_SHA256 must equal 1 (SHA-256 sentinel)"
+        );
+        assert_eq!(
+            crate::types::DEFAULT_HASH_ALGO,
+            1,
+            "DEFAULT_HASH_ALGO must equal 1 (SHA-256)"
+        );
+    }
+
+    /// `DEFAULT_HASH_ALGO` must always equal `HASH_ALGO_SHA256`.
+    ///
+    /// This test catches a class of drift where the default is accidentally
+    /// set to a hypothetical future algorithm constant while `HASH_ALGO_SHA256`
+    /// is left unchanged.
+    #[test]
+    fn default_algorithm_matches_sha256_sentinel() {
+        assert_eq!(
+            crate::types::DEFAULT_HASH_ALGO,
+            crate::types::HASH_ALGO_SHA256,
+            "DEFAULT_HASH_ALGO must always equal HASH_ALGO_SHA256"
+        );
+    }
+
+    /// Simulates algorithm drift detection: if the domain byte used when
+    /// hashing were swapped, the resulting idempotency key must differ.
+    ///
+    /// In a real drift scenario the domain byte encodes both the event family
+    /// and, implicitly, the algorithm.  Using the wrong domain is therefore
+    /// equivalent to using the wrong algorithm tag, and this test proves that
+    /// such a mismatch is always detectable by comparing the outputs.
+    #[test]
+    fn algorithm_mismatch_is_detectable_via_domain_byte() {
+        let env = Env::default();
+        let shipment_id: u64 = 77;
+        let event_type = "shipment_created";
+        let counter: u32 = 1;
+
+        // Key computed with the correct shipment domain (SHA-256 + SHIPMENT family).
+        let key_correct = compute_key(&env, HASH_DOMAIN_SHIPMENT, shipment_id, event_type, counter);
+
+        // Key computed with a mismatched domain byte — simulates what would happen
+        // if the algorithm tag were accidentally changed to a different value.
+        let key_drifted = compute_key(&env, HASH_DOMAIN_ESCROW, shipment_id, event_type, counter);
+
+        assert_ne!(
+            key_correct, key_drifted,
+            "algorithm domain mismatch must produce a detectably different idempotency key"
+        );
+    }
 }

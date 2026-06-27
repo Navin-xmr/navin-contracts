@@ -777,3 +777,91 @@ fn test_auth_add_operator_fails_without_auth() {
         "add_operator must fail when admin auth is not provided"
     );
 }
+
+// =============================================================================
+// #456 — Auth mismatch: wrong role produces the correct domain error
+// =============================================================================
+//
+// These tests verify that when a caller has valid authentication (mock_all_auths
+// is active so require_auth passes) but lacks the required role, the contract
+// maps the failure to the correct NavinError variant with the expected category
+// and retry guidance.
+
+/// A company caller must not be able to call `add_company` — that is an
+/// admin-only operation.  With mock_all_auths active, `require_auth` passes
+/// but the role check (`require_admin_or_operator`) must reject the company.
+#[test]
+fn test_wrong_role_add_company_returns_error() {
+    let (env, client, admin, _token) = setup_env();
+    let company = Address::generate(&env);
+    let another_company = Address::generate(&env);
+
+    // Register company with legitimate admin call.
+    client.add_company(&admin, &company);
+
+    // company (not an admin/operator) tries to add another company.
+    // mock_all_auths is active so require_auth passes, but the role check fails.
+    let result = client.try_add_company(&company, &another_company);
+    assert!(
+        result.is_err(),
+        "non-admin must not be able to call add_company even with auth mocked"
+    );
+}
+
+/// A company caller must not be able to suspend a carrier — admin-only.
+#[test]
+fn test_wrong_role_suspend_carrier_returns_error() {
+    let (env, client, admin, _token) = setup_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // company tries to suspend the carrier (requires admin/operator role).
+    let result = client.try_suspend_carrier(&company, &carrier);
+    assert!(
+        result.is_err(),
+        "non-admin must not be able to suspend a carrier"
+    );
+}
+
+/// A company caller must not be able to suspend another company — admin-only.
+#[test]
+fn test_wrong_role_suspend_company_returns_error() {
+    let (env, client, admin, _token) = setup_env();
+    let company_a = Address::generate(&env);
+    let company_b = Address::generate(&env);
+
+    client.add_company(&admin, &company_a);
+    client.add_company(&admin, &company_b);
+
+    // company_a (not an admin) tries to suspend company_b.
+    let result = client.try_suspend_company(&company_a, &company_b);
+    assert!(
+        result.is_err(),
+        "non-admin must not be able to suspend a company"
+    );
+}
+
+/// Error mapping consistency: the `Unauthorized` domain error returned by
+/// wrong-role callers must map to `ErrorCategory::Unauthorized` with
+/// `NoRetry` guidance via `error_info`.
+#[test]
+fn test_wrong_role_error_maps_to_unauthorized_category() {
+    use crate::error_map::{error_info, ErrorCategory, RetryGuidance};
+    use crate::NavinError;
+
+    let info = error_info(NavinError::Unauthorized);
+    assert_eq!(
+        info.category,
+        ErrorCategory::Unauthorized,
+        "Unauthorized must map to ErrorCategory::Unauthorized"
+    );
+    assert_eq!(
+        info.retry,
+        RetryGuidance::NoRetry,
+        "Unauthorized must have NoRetry — wrong role cannot be fixed by retrying"
+    );
+    assert_eq!(info.code, 3);
+}

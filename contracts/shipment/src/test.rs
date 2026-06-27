@@ -6188,6 +6188,91 @@ fn test_get_status_summary_populated() {
     assert_eq!(summary.delivered, 0);
 }
 
+// ── #368: Status summary regression — every lifecycle bucket changes correctly
+//
+// This test covers a full mixed-state lifecycle: Created → InTransit →
+// AtCheckpoint → Delivered and Created → Cancelled.  The summary is asserted
+// after every individual transition so that any accounting drift in
+// `get_status_summary` (added or missing counter update) is caught immediately.
+
+#[test]
+fn test_get_status_summary_all_lifecycle_transitions() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    // Create 5 shipments — all start in Created state.
+    for i in 1u8..=5 {
+        client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &BytesN::from_array(&env, &[i; 32]),
+            &soroban_sdk::Vec::new(&env),
+            &deadline,
+        );
+    }
+
+    // ── Initial state: all 5 in Created ──────────────────────────────────────
+    let summary = client.get_status_summary();
+    assert_eq!(summary.created, 5, "all 5 shipments must start in Created");
+    assert_eq!(summary.in_transit, 0);
+    assert_eq!(summary.at_checkpoint, 0);
+    assert_eq!(summary.delivered, 0);
+    assert_eq!(summary.cancelled, 0);
+
+    // ── Shipment 1: Created → InTransit ──────────────────────────────────────
+    client.update_status(&carrier, &1, &ShipmentStatus::InTransit, &data_hash);
+    let summary = client.get_status_summary();
+    assert_eq!(summary.created, 4, "shipment 1 left Created");
+    assert_eq!(summary.in_transit, 1, "shipment 1 is now InTransit");
+    assert_eq!(summary.at_checkpoint, 0);
+    assert_eq!(summary.delivered, 0);
+    assert_eq!(summary.cancelled, 0);
+
+    // ── Shipment 2: Created → InTransit → AtCheckpoint ───────────────────────
+    client.update_status(&carrier, &2, &ShipmentStatus::InTransit, &data_hash);
+    // The rate limiter requires at least 60 seconds between updates on the
+    // same shipment; advance time before the second update on shipment 2.
+    super::test_utils::advance_ledger_time(&env, 61);
+    client.update_status(&carrier, &2, &ShipmentStatus::AtCheckpoint, &data_hash);
+    let summary = client.get_status_summary();
+    assert_eq!(summary.created, 3, "shipments 1 and 2 left Created");
+    assert_eq!(summary.in_transit, 1, "shipment 1 still InTransit");
+    assert_eq!(summary.at_checkpoint, 1, "shipment 2 is now AtCheckpoint");
+    assert_eq!(summary.delivered, 0);
+    assert_eq!(summary.cancelled, 0);
+
+    // ── Shipment 3: Created → InTransit → Delivered ───────────────────────────
+    client.update_status(&carrier, &3, &ShipmentStatus::InTransit, &data_hash);
+    client.confirm_delivery(&receiver, &3, &data_hash);
+    let summary = client.get_status_summary();
+    assert_eq!(summary.created, 2, "shipments 1, 2, and 3 left Created");
+    assert_eq!(summary.in_transit, 1, "shipment 1 still InTransit");
+    assert_eq!(summary.at_checkpoint, 1, "shipment 2 still AtCheckpoint");
+    assert_eq!(summary.delivered, 1, "shipment 3 is now Delivered");
+    assert_eq!(summary.cancelled, 0);
+
+    // ── Shipment 4: Created → Cancelled ──────────────────────────────────────
+    client.cancel_shipment(&company, &4, &data_hash);
+    let summary = client.get_status_summary();
+    assert_eq!(summary.created, 1, "only shipment 5 remains in Created");
+    assert_eq!(summary.in_transit, 1, "shipment 1 still InTransit");
+    assert_eq!(summary.at_checkpoint, 1, "shipment 2 still AtCheckpoint");
+    assert_eq!(summary.delivered, 1, "shipment 3 still Delivered");
+    assert_eq!(summary.cancelled, 1, "shipment 4 is now Cancelled");
+
+    // ── Shipment 5 remains in Created — no further transitions ───────────────
+    let summary = client.get_status_summary();
+    assert_eq!(summary.created, 1, "shipment 5 must still be in Created");
+}
+
 #[test]
 fn test_get_non_terminal_count_mixed_states() {
     let (env, client, admin, token_contract) = setup_shipment_env();

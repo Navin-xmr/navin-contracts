@@ -526,4 +526,77 @@ mod tests {
             );
         }
     }
+
+    // ── #456: Auth mismatch error-mapping tests ──────────────────────────────
+
+    /// `Unauthorized` is the primary domain error for callers with the wrong
+    /// role.  It must map to `ErrorCategory::Unauthorized` with `NoRetry`
+    /// guidance — the caller must fix their role before retrying.
+    #[test]
+    fn test_unauthorized_error_info() {
+        let info = error_info(NavinError::Unauthorized);
+        assert_eq!(info.error, NavinError::Unauthorized);
+        assert_eq!(info.code, 3);
+        assert_eq!(info.category, ErrorCategory::Unauthorized);
+        assert_eq!(info.retry, RetryGuidance::NoRetry);
+        assert!(
+            !info.message.is_empty(),
+            "Unauthorized must have a non-empty description"
+        );
+    }
+
+    /// `NotAnAdmin` is returned by multi-sig entry points when the caller is
+    /// not in the admin list.  It must map to `ErrorCategory::Unauthorized`
+    /// with `NoRetry` — joining the admin list requires admin action, not a retry.
+    #[test]
+    fn test_not_an_admin_error_info() {
+        let info = error_info(NavinError::NotAnAdmin);
+        assert_eq!(info.error, NavinError::NotAnAdmin);
+        assert_eq!(info.code, 27);
+        assert_eq!(info.category, ErrorCategory::Unauthorized);
+        assert_eq!(info.retry, RetryGuidance::NoRetry);
+        assert!(!info.message.is_empty());
+    }
+
+    /// Auth-failure errors (`Unauthorized`, `NotAnAdmin`) must consistently
+    /// map to `ErrorCategory::Unauthorized` so that error-handling middleware
+    /// can classify them without switching on individual variants.
+    #[test]
+    fn test_auth_mismatch_errors_map_to_unauthorized_category() {
+        let auth_errors = [NavinError::Unauthorized, NavinError::NotAnAdmin];
+        for err in &auth_errors {
+            let info = error_info(*err);
+            assert_eq!(
+                info.category,
+                ErrorCategory::Unauthorized,
+                "{:?} must be categorised as Unauthorized",
+                err
+            );
+            assert_eq!(
+                info.retry,
+                RetryGuidance::NoRetry,
+                "{:?} must have NoRetry guidance — wrong role cannot be fixed by retrying",
+                err
+            );
+        }
+    }
+
+    /// `error_info` must be consistent: calling it twice on auth-related
+    /// variants must return identical metadata.
+    #[test]
+    fn test_auth_error_info_is_deterministic() {
+        let a = error_info(NavinError::Unauthorized);
+        let b = error_info(NavinError::Unauthorized);
+        assert_eq!(a.code, b.code);
+        assert_eq!(a.category, b.category);
+        assert_eq!(a.retry, b.retry);
+        assert_eq!(a.message, b.message);
+
+        let c = error_info(NavinError::NotAnAdmin);
+        let d = error_info(NavinError::NotAnAdmin);
+        assert_eq!(c.code, d.code);
+        assert_eq!(c.category, d.category);
+        assert_eq!(c.retry, d.retry);
+        assert_eq!(c.message, d.message);
+    }
 }
