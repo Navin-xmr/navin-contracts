@@ -322,3 +322,30 @@ fn test_unknown_milestone_rejected() {
     let result = client.try_release_milestone_payment(&carrier, &id, &bogus);
     assert_eq!(result, Err(Ok(NavinError::InvalidShipmentInput)));
 }
+
+#[test]
+fn test_validation_rejects_zero_percentage_milestone() {
+    let (env, client, admin) = setup();
+    let company = soroban_sdk::Address::generate(&env);
+    let carrier = soroban_sdk::Address::generate(&env);
+    let receiver = soroban_sdk::Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((soroban_sdk::symbol_short!("zero"), 0u32));
+    milestones.push_back((soroban_sdk::symbol_short!("rest"), 100u32));
+
+    let deadline = env.ledger().timestamp() + 86_400;
+    let result = client.try_create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash(&env, 0xEE),
+        &milestones,
+        &deadline,
+    );
+
+    assert_eq!(result, Err(Ok(crate::errors::NavinError::InvalidConfig)));
+}

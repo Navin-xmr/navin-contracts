@@ -6227,9 +6227,9 @@ fn test_get_non_terminal_count_mixed_states() {
     client.cancel_shipment(&company, &2, &data_hash);
     assert_eq!(client.get_non_terminal_count(), 3);
 
-    // Raise dispute for 1 shipment (Terminal according to requirements)
+    // Raise dispute for 1 shipment (Non-terminal)
     client.raise_dispute(&company, &3, &data_hash);
-    assert_eq!(client.get_non_terminal_count(), 2);
+    assert_eq!(client.get_non_terminal_count(), 3);
 }
 
 // ============= Shipment Limit Tests =============
@@ -11145,4 +11145,37 @@ fn test_metadata_over_max_symbol_length_rejected() {
     let val = Symbol::new(&env, &long_val);
     let result = client.try_set_shipment_metadata(&company, &id, &key, &val);
     assert!(result.is_err(), "13-char metadata value must be rejected");
+}
+
+#[test]
+fn test_append_note_on_terminal_shipment() {
+    let (env, client, admin, _token) = setup_shipment_env();
+    client.initialize(&admin, &_token);
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Finalize the shipment
+    let confirmation_hash = BytesN::from_array(&env, &[2u8; 32]);
+    client.update_status(&carrier, &shipment_id, &crate::types::ShipmentStatus::InTransit, &data_hash);
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    let note_hash = BytesN::from_array(&env, &[3u8; 32]);
+    client.append_note_hash(&company, &shipment_id, &note_hash);
+
+    let count = client.get_note_count(&shipment_id);
+    assert_eq!(count, 1);
 }

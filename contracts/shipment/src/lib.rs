@@ -703,7 +703,6 @@ impl NavinShipment {
 
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
-        require_not_finalized(&shipment)?;
         let admin = storage::get_admin(&env);
 
         // Authorization: Sender, Receiver, Carrier, or Admin
@@ -1186,7 +1185,8 @@ impl NavinShipment {
         let count = storage::get_status_count(&env, &ShipmentStatus::Created)
             + storage::get_status_count(&env, &ShipmentStatus::InTransit)
             + storage::get_status_count(&env, &ShipmentStatus::AtCheckpoint)
-            + storage::get_status_count(&env, &ShipmentStatus::PartiallyDelivered);
+            + storage::get_status_count(&env, &ShipmentStatus::PartiallyDelivered)
+            + storage::get_status_count(&env, &ShipmentStatus::Disputed);
         Ok(count)
     }
 
