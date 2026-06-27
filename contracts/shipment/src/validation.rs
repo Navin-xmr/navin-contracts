@@ -107,6 +107,9 @@ pub fn validate_milestone_symbols(
     // Check each milestone symbol for validity
     for milestone in milestones.iter() {
         validate_symbol(env, &milestone.0)?;
+        if milestone.1 == 0 {
+            return Err(NavinError::InvalidConfig);
+        }
     }
 
     // Check for duplicate milestone names by comparing XDR representations

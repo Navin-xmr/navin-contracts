@@ -1163,3 +1163,43 @@ fn test_carrier_whitelist_remove_idempotent() {
         "carrier should not be whitelisted after multiple removes"
     );
 }
+
+#[test]
+fn test_upgrade_preserves_analytics_counters() {
+    let (env, client, admin, _token) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let id1 = client.create_shipment(&company, &receiver, &carrier, &BytesN::from_array(&env, &[1u8; 32]), &soroban_sdk::Vec::new(&env), &deadline);
+    let id2 = client.create_shipment(&company, &receiver, &carrier, &BytesN::from_array(&env, &[2u8; 32]), &soroban_sdk::Vec::new(&env), &deadline);
+
+    client.deposit_escrow(&company, &id1, &1000);
+    client.deposit_escrow(&company, &id2, &500);
+
+    let health_before = client.check_contract_health(&admin);
+    assert_eq!(health_before.total_shipments, 2);
+    assert_eq!(health_before.sum_of_escrow_balances, 1500);
+
+    let target_version = client.get_version() + 1;
+    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
+    
+    let contract_id = client.address.clone();
+    client.upgrade(&admin, &new_wasm_hash, &target_version);
+
+    env.as_contract(&contract_id, || {
+        let count = crate::storage::get_shipment_counter(&env);
+        assert_eq!(count, 2, "shipment counter should be preserved");
+        
+        let escrow1 = crate::storage::get_escrow(&env, id1);
+        assert_eq!(escrow1, 1000);
+        
+        let escrow2 = crate::storage::get_escrow(&env, id2);
+        assert_eq!(escrow2, 500);
+    });
+}
