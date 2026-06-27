@@ -876,3 +876,55 @@ fn test_event_replay_blocked_by_salt_reuse() {
     let id2 = client.propose_action(&admin, &action);
     assert_ne!(_id1, id2, "Subsequent proposals should have different IDs");
 }
+
+// ── #504: company_suspension event payload consistency ───────────────────────
+//
+// Expected topic:  "role_changed"
+// Expected tuple:  (action, admin, target, role, timestamp)
+// Length:          5
+//
+// Auditing systems trace role suspension events. This test verifies that all
+// variables in the role_changed payload map correctly when a company is
+// suspended: the admin (initiator) is at index 1 and the target company is
+// at index 2.
+
+#[test]
+fn test_snapshot_company_suspension_event_payload() {
+    let (env, client, admin, company, _carrier, _receiver) = fixture_env();
+
+    // Suspend the company; this emits a role_changed(Suspended, admin, company, Company, ts) event.
+    client.suspend_company(&admin, &company);
+
+    // Collect all role_changed events. fixture_env already emits role_changed
+    // for add_company (Assigned) and add_carrier (Assigned), so we need the
+    // last one which corresponds to the suspension.
+    let all_role_changed = find_all_event_data(&env, crate::event_topics::ROLE_CHANGED);
+    assert!(
+        !all_role_changed.is_empty(),
+        "at least one role_changed event must be emitted"
+    );
+
+    // The suspension event is the most recently emitted role_changed.
+    let payload = all_role_changed
+        .last()
+        .expect("suspension role_changed event must be present");
+
+    assert_eq!(
+        payload.len(),
+        5,
+        "role_changed payload must have exactly 5 fields (action, admin, target, role, timestamp); got {}",
+        payload.len()
+    );
+
+    // Index 1: admin — the initiator of the suspension.
+    let event_admin: Address = payload.get(1).unwrap().try_into_val(&env).unwrap();
+    assert_eq!(event_admin, admin, "admin (initiator) must be at index 1");
+
+    // Index 2: target — the company whose role was suspended.
+    let event_target: Address = payload.get(2).unwrap().try_into_val(&env).unwrap();
+    assert_eq!(event_target, company, "target company must be at index 2");
+
+    // Index 4: timestamp — must be a non-zero u64.
+    let event_timestamp: u64 = payload.get(4).unwrap().try_into_val(&env).unwrap();
+    assert!(event_timestamp > 0, "event timestamp must be non-zero");
+}
