@@ -451,3 +451,82 @@ fn test_vector_emitted_keys_match_recomputed() {
     }
     assert!(found, "shipment_created event was not emitted");
 }
+
+// ── #457: Hash algorithm agility assertions ───────────────────────────────────
+
+/// Assert that `HASH_ALGO_SHA256` and `DEFAULT_HASH_ALGO` are stable at their
+/// expected values.  Off-chain verifiers depend on these constants to select
+/// the correct hash function when recomputing idempotency keys.
+#[test]
+fn test_algorithm_constant_is_stable() {
+    assert_eq!(
+        crate::types::HASH_ALGO_SHA256,
+        1,
+        "HASH_ALGO_SHA256 sentinel must be 1; changing it breaks all off-chain verifiers"
+    );
+    assert_eq!(
+        crate::types::DEFAULT_HASH_ALGO,
+        1,
+        "DEFAULT_HASH_ALGO must be 1 (SHA-256) to match the active algorithm"
+    );
+    assert_eq!(
+        crate::types::DEFAULT_HASH_ALGO,
+        crate::types::HASH_ALGO_SHA256,
+        "DEFAULT_HASH_ALGO must equal HASH_ALGO_SHA256"
+    );
+}
+
+/// Verify that the SHA-256 output length is always 32 bytes (64 hex chars).
+/// Any accidental algorithm swap (e.g., to SHA-1 or SHA-512) would change the
+/// output length and be caught here.
+#[test]
+fn test_algorithm_output_length_is_deterministic() {
+    let env = setup();
+    let key = generate_idempotency_key(
+        &env,
+        crate::event_topics::HASH_DOMAIN_SHIPMENT,
+        1,
+        crate::event_topics::SHIPMENT_CREATED,
+        1,
+    );
+    let hex_output = hex(&key.to_array());
+    assert_eq!(
+        hex_output.len(),
+        64,
+        "SHA-256 must produce exactly 32 bytes (64 hex chars); algorithm drift detected"
+    );
+}
+
+/// Changing the domain byte (which encodes algorithm + event-family context)
+/// must always produce a detectably different idempotency key.
+///
+/// This is the primary regression guard against accidental algorithm drift:
+/// if someone were to remap a domain constant to a duplicate value, a different
+/// event family would start producing the same keys.
+#[test]
+fn test_algorithm_mismatch_is_detectable_by_different_output() {
+    let env = setup();
+    let shipment_id: u64 = 55;
+    let event_type = crate::event_topics::SHIPMENT_CREATED;
+    let counter: u32 = 1;
+
+    let key_shipment = generate_idempotency_key(
+        &env,
+        crate::event_topics::HASH_DOMAIN_SHIPMENT,
+        shipment_id,
+        event_type,
+        counter,
+    );
+    // Mismatched domain simulates using the wrong algorithm tag.
+    let key_mismatch = generate_idempotency_key(
+        &env,
+        crate::event_topics::HASH_DOMAIN_ESCROW,
+        shipment_id,
+        event_type,
+        counter,
+    );
+    assert_ne!(
+        key_shipment, key_mismatch,
+        "domain/algorithm mismatch must produce a different key — drift is detectable"
+    );
+}
