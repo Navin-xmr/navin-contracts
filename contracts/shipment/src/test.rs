@@ -1471,8 +1471,10 @@ fn test_update_eta_valid_emits_event() {
     let topic = Symbol::try_from_val(&env, &last.1.get(0).unwrap()).unwrap();
     assert_eq!(topic, Symbol::new(&env, "eta_updated"));
 
-    let event_data = <(u64, u64, BytesN<32>)>::try_from_val(&env, &last.2).unwrap();
-    assert_eq!(event_data, (shipment_id, eta_timestamp, eta_hash));
+    let event_data = <(u64, u64, BytesN<32>, u32, u32, BytesN<32>)>::try_from_val(&env, &last.2).unwrap();
+    assert_eq!(event_data.0, shipment_id);
+    assert_eq!(event_data.1, eta_timestamp);
+    assert_eq!(event_data.2, eta_hash);
 }
 
 #[test]
@@ -8580,9 +8582,9 @@ fn test_event_count_after_delivery() {
     let confirmation_hash = BytesN::from_array(&env, &[3u8; 32]);
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
 
-    // Should have 3 events: shipment_created, status_updated, delivery_success
+    // Should have 4 events: shipment_created, status_updated, delivery_confirmed, delivery_success
     let count = client.get_event_count(&shipment_id);
-    assert_eq!(count, 3, "Expected 3 events after delivery confirmation");
+    assert_eq!(count, 4, "Expected 4 events after delivery confirmation");
 }
 
 #[test]

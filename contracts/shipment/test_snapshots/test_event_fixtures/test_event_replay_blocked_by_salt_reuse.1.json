@@ -984,43 +984,6 @@
           "v0": {
             "topics": [
               {
-                "symbol": "propose"
-              }
-            ],
-            "data": {
-              "vec": [
-                {
-                  "u64": 2
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
-                },
-                {
-                  "vec": [
-                    {
-                      "symbol": "Upgrade"
-                    },
-                    {
-                      "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
-                    }
-                  ]
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000003",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
                 "symbol": "proposal_digest"
               }
             ],
@@ -1031,6 +994,9 @@
                 },
                 {
                   "bytes": "053d92f18ce5f7afdca1421750f4f645279da5251c13113c4b1da93190a02f48"
+                },
+                {
+                  "u64": 86400
                 }
               ]
             }

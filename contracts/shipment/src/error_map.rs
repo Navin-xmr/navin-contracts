@@ -422,6 +422,12 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "Metadata key and value symbols are identical; use distinct symbols.",
         ),
+        NavinError::ExternalIntegrationFailed => (
+            64,
+            Transient,
+            RetryAfterDelay,
+            "External integration failed (e.g. backend token release); retry or rollback the state.",
+        ),
     };
 
     ContractErrorInfo {
@@ -601,5 +607,4 @@ mod tests {
     }
 }
 
-// Keep domain error mapping explicit
-pub fn explicit_error_mapping_for_failure_branch() {}
+
