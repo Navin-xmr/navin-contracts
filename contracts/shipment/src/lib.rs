@@ -178,6 +178,31 @@ fn persist_shipment(env: &Env, shipment: &Shipment) -> Result<(), NavinError> {
     Ok(())
 }
 
+/// Reject a Symbol that is empty or whitespace-only (Soroban equivalent).
+///
+/// In the Soroban SDK, `Symbol` permits only `[a-zA-Z0-9_]` characters, so
+/// literal whitespace cannot be constructed at all. The closest equivalent of
+/// a "whitespace-only" identifier is an empty Symbol, whose XDR encoding is
+/// exactly 8 bytes (4-byte type tag + 4-byte empty-length word). This helper
+/// returns `NavinError::InvalidSymbol` for such inputs and for Symbols that
+/// exceed the 12-character Stellar maximum, giving registration-adjacent paths
+/// a single canonical guard for malformed symbol inputs.
+pub(crate) fn validate_symbol_not_whitespace_only(
+    env: &Env,
+    sym: &Symbol,
+) -> Result<(), NavinError> {
+    let xdr = sym.to_xdr(env);
+    // 8 bytes → 0-character symbol (empty / whitespace-only equivalent).
+    if xdr.len() <= 8 {
+        return Err(NavinError::InvalidSymbol);
+    }
+    // > 20 bytes → more than 12 characters (exceeds Stellar Symbol limit).
+    if xdr.len() > 20 {
+        return Err(NavinError::InvalidSymbol);
+    }
+    Ok(())
+}
+
 pub(crate) fn checked_add_i128(a: i128, b: i128) -> Result<i128, NavinError> {
     a.checked_add(b).ok_or(NavinError::ArithmeticError)
 }
@@ -652,6 +677,10 @@ impl NavinShipment {
         require_not_paused(&env)?;
         caller.require_auth();
 
+        // Guard against empty / whitespace-only Symbol inputs before the
+        // length-and-collision validation that follows.
+        validate_symbol_not_whitespace_only(&env, &key)?;
+        validate_symbol_not_whitespace_only(&env, &value)?;
         // Validate metadata symbols for bounded usage before storage
         validation::validate_metadata_symbols(&env, &key, &value)?;
 
