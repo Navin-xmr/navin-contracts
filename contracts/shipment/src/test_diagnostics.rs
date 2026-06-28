@@ -861,3 +861,20 @@ fn test_get_non_terminal_count_alignment() {
     client.confirm_delivery(&receiver, &id5, &BytesN::from_array(&env, &[5u8; 32]));
     assert_eq!(client.get_non_terminal_count(), 4);
 }
+
+#[test]
+fn test_get_status_summary_empty_database_returns_zeros() {
+    let (_env, client, _admin, _token) = prepare_test();
+
+    // Retrieve status summary immediately after initialization with no shipments
+    let summary = client.get_status_summary();
+
+    // Assert all status variant counts equal 0
+    assert_eq!(summary.created, 0);
+    assert_eq!(summary.in_transit, 0);
+    assert_eq!(summary.at_checkpoint, 0);
+    assert_eq!(summary.partially_delivered, 0);
+    assert_eq!(summary.delivered, 0);
+    assert_eq!(summary.disputed, 0);
+    assert_eq!(summary.cancelled, 0);
+}

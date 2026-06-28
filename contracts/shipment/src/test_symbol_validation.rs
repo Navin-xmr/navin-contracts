@@ -1049,8 +1049,6 @@ fn test_record_milestone_empty_checkpoint_fails() {
         &deadline,
     );
 
-    client.start_shipment(&carrier, &shipment_id);
-
     let empty_symbol = Symbol::new(&env, "");
     let data_hash = BytesN::from_array(&env, &[4u8; 32]);
     let result = client.try_record_milestone(&carrier, &shipment_id, &empty_symbol, &data_hash);
