@@ -770,33 +770,93 @@ fn test_get_non_terminal_count_alignment() {
 
     let deadline = env.ledger().timestamp() + 3600;
 
-    let _id1 = client.create_shipment(&company, &receiver, &carrier, &BytesN::from_array(&env, &[1u8; 32]), &Vec::new(&env), &deadline);
-    let id2 = client.create_shipment(&company, &receiver, &carrier, &BytesN::from_array(&env, &[2u8; 32]), &Vec::new(&env), &deadline);
-    let id3 = client.create_shipment(&company, &receiver, &carrier, &BytesN::from_array(&env, &[3u8; 32]), &Vec::new(&env), &deadline);
-    let id4 = client.create_shipment(&company, &receiver, &carrier, &BytesN::from_array(&env, &[4u8; 32]), &Vec::new(&env), &deadline);
-    let id5 = client.create_shipment(&company, &receiver, &carrier, &BytesN::from_array(&env, &[5u8; 32]), &Vec::new(&env), &deadline);
+    let _id1 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &Vec::new(&env),
+        &deadline,
+    );
+    let id2 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &Vec::new(&env),
+        &deadline,
+    );
+    let id3 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[3u8; 32]),
+        &Vec::new(&env),
+        &deadline,
+    );
+    let id4 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[4u8; 32]),
+        &Vec::new(&env),
+        &deadline,
+    );
+    let id5 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[5u8; 32]),
+        &Vec::new(&env),
+        &deadline,
+    );
 
     // Initial state: 5 Created
     assert_eq!(client.get_non_terminal_count(), 5);
 
     // id2 -> InTransit
-    client.update_status(&carrier, &id2, &ShipmentStatus::InTransit, &BytesN::from_array(&env, &[2u8; 32]));
+    client.update_status(
+        &carrier,
+        &id2,
+        &ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[2u8; 32]),
+    );
     assert_eq!(client.get_non_terminal_count(), 5);
 
     // id3 -> AtCheckpoint
-    client.update_status(&carrier, &id3, &ShipmentStatus::InTransit, &BytesN::from_array(&env, &[3u8; 32]));
+    client.update_status(
+        &carrier,
+        &id3,
+        &ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[3u8; 32]),
+    );
     advance_ledger_time(&env, 3600);
-    client.update_status(&carrier, &id3, &ShipmentStatus::AtCheckpoint, &BytesN::from_array(&env, &[3u8; 32]));
+    client.update_status(
+        &carrier,
+        &id3,
+        &ShipmentStatus::AtCheckpoint,
+        &BytesN::from_array(&env, &[3u8; 32]),
+    );
     assert_eq!(client.get_non_terminal_count(), 5);
 
     // id4 -> Disputed
-    client.update_status(&carrier, &id4, &ShipmentStatus::InTransit, &BytesN::from_array(&env, &[4u8; 32]));
+    client.update_status(
+        &carrier,
+        &id4,
+        &ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[4u8; 32]),
+    );
     advance_ledger_time(&env, 3600);
     client.raise_dispute(&company, &id4, &BytesN::from_array(&env, &[4u8; 32]));
     assert_eq!(client.get_non_terminal_count(), 5);
 
     // id5 -> Delivered (Terminal)
-    client.update_status(&carrier, &id5, &ShipmentStatus::InTransit, &BytesN::from_array(&env, &[5u8; 32]));
+    client.update_status(
+        &carrier,
+        &id5,
+        &ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[5u8; 32]),
+    );
     advance_ledger_time(&env, 3600);
     client.confirm_delivery(&receiver, &id5, &BytesN::from_array(&env, &[5u8; 32]));
     assert_eq!(client.get_non_terminal_count(), 4);
