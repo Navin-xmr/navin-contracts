@@ -208,7 +208,10 @@ pub fn validate_amount(amount: i128) -> Result<(), NavinError> {
 /// * `Ok(())` if `amount > 0`.
 /// * `Err(NavinError::InvalidAmount)` otherwise.
 pub fn validate_positive_amount(amount: i128) -> Result<(), NavinError> {
-    if amount <= 0 || amount > MAX_AMOUNT {
+    if amount <= 0 {
+        return Err(NavinError::InsufficientFunds);
+    }
+    if amount > MAX_AMOUNT {
         return Err(NavinError::InvalidAmount);
     }
     Ok(())
