@@ -173,6 +173,65 @@ fn test_auth_tree_revoke_role() {
     );
 }
 
+/// `add_carrier_to_whitelist` must record an auth invocation for the company
+/// address with the correct function name and argument list.
+#[test]
+fn test_auth_tree_add_carrier_to_whitelist() {
+    let (env, client, admin, _token) = setup_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let cid = contract_id(&client);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            company.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    cid,
+                    Symbol::new(&env, "add_carrier_to_whitelist"),
+                    (company.clone(), carrier.clone()).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            }
+        )]
+    );
+}
+
+/// `remove_carrier_from_whitelist` must record an auth invocation for the
+/// company address with the correct function name and argument list.
+#[test]
+fn test_auth_tree_remove_carrier_from_whitelist() {
+    let (env, client, admin, _token) = setup_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let cid = contract_id(&client);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    client.remove_carrier_from_whitelist(&company, &carrier);
+
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            company.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    cid,
+                    Symbol::new(&env, "remove_carrier_from_whitelist"),
+                    (company.clone(), carrier.clone()).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            }
+        )]
+    );
+}
+
 /// `force_cancel_shipment` must record admin auth with the shipment ID and
 /// reason hash, confirming the strict admin-only gate on forced cancellation.
 #[test]
@@ -775,6 +834,59 @@ fn test_auth_add_operator_fails_without_auth() {
     assert!(
         result.is_err(),
         "add_operator must fail when admin auth is not provided"
+    );
+}
+
+/// `add_carrier_to_whitelist` must fail when the company provides no auth.
+/// The `company.require_auth()` gate fires before the role check.
+#[test]
+fn test_auth_add_carrier_to_whitelist_fails_without_auth() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| {
+        li.protocol_version = crate::test_utils::DEFAULT_PROTOCOL_VERSION;
+    });
+    env.ledger()
+        .set_timestamp(crate::test_utils::DEFAULT_TIMESTAMP);
+
+    let admin = Address::generate(&env);
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let token = env.register(MockToken {}, ());
+    let cid = env.register(NavinShipment, ());
+    let client = NavinShipmentClient::new(&env, &cid);
+
+    client.initialize(&admin, &token);
+
+    let result = client.try_add_carrier_to_whitelist(&company, &carrier);
+    assert!(
+        result.is_err(),
+        "add_carrier_to_whitelist must fail when company auth is not provided"
+    );
+}
+
+/// `remove_carrier_from_whitelist` must fail when the company provides no auth.
+#[test]
+fn test_auth_remove_carrier_from_whitelist_fails_without_auth() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| {
+        li.protocol_version = crate::test_utils::DEFAULT_PROTOCOL_VERSION;
+    });
+    env.ledger()
+        .set_timestamp(crate::test_utils::DEFAULT_TIMESTAMP);
+
+    let admin = Address::generate(&env);
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let token = env.register(MockToken {}, ());
+    let cid = env.register(NavinShipment, ());
+    let client = NavinShipmentClient::new(&env, &cid);
+
+    client.initialize(&admin, &token);
+
+    let result = client.try_remove_carrier_from_whitelist(&company, &carrier);
+    assert!(
+        result.is_err(),
+        "remove_carrier_from_whitelist must fail when company auth is not provided"
     );
 }
 

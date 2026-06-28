@@ -223,6 +223,18 @@ pub const HASH_DOMAIN_PLATFORM: u8 = 0x0B;
 /// indexers can classify the freeze without parsing free-form text.
 pub const ESCROW_FROZEN: &str = "escrow_frozen";
 
+pub const CONTRACT_INITIALIZED: &str = "init";
+pub const SHIPMENT_LIMIT_UPDATED: &str = "set_limit";
+pub const COMPANY_LIMIT_UPDATED: &str = "set_cmp_limit";
+pub const CARRIER_SUSPENDED: &str = "carrier_suspended";
+pub const CARRIER_REACTIVATED: &str = "carrier_reactivated";
+pub const DELIVERY_CONFIRMED: &str = "delivery_confirmed";
+pub const GEOFENCE_EVENT: &str = "geofence_event";
+pub const ETA_UPDATED: &str = "eta_updated";
+pub const PROPOSAL_DIGEST: &str = "proposal_digest";
+pub const CONFIG_UPDATED: &str = "config_updated";
+pub const QUOTA_SET: &str = "quota_set";
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,16 +420,3 @@ mod tests {
         assert_eq!(HASH_DOMAIN_NOTE, 0x09);
     }
 }
-
-
-pub const CONTRACT_INITIALIZED: &str = "init";
-pub const SHIPMENT_LIMIT_UPDATED: &str = "set_limit";
-pub const COMPANY_LIMIT_UPDATED: &str = "set_cmp_limit";
-pub const CARRIER_SUSPENDED: &str = "carrier_suspended";
-pub const CARRIER_REACTIVATED: &str = "carrier_reactivated";
-pub const DELIVERY_CONFIRMED: &str = "delivery_confirmed";
-pub const GEOFENCE_EVENT: &str = "geofence_event";
-pub const ETA_UPDATED: &str = "eta_updated";
-pub const PROPOSAL_DIGEST: &str = "proposal_digest";
-pub const CONFIG_UPDATED: &str = "config_updated";
-pub const QUOTA_SET: &str = "quota_set";

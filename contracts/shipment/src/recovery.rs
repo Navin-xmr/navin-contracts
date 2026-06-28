@@ -284,59 +284,6 @@ fn verify_escrow_consistency(_env: &Env, shipment: &Shipment) -> Result<(), Navi
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_valid_recovery_transitions() {
-        // Created can transition to Cancelled
-        assert!(is_valid_recovery_transition(
-            &ShipmentStatus::Created,
-            &ShipmentStatus::Cancelled
-        ));
-
-        // InTransit can transition to Cancelled
-        assert!(is_valid_recovery_transition(
-            &ShipmentStatus::InTransit,
-            &ShipmentStatus::Cancelled
-        ));
-
-        // InTransit can transition to Disputed
-        assert!(is_valid_recovery_transition(
-            &ShipmentStatus::InTransit,
-            &ShipmentStatus::Disputed
-        ));
-
-        // Disputed can transition to Delivered
-        assert!(is_valid_recovery_transition(
-            &ShipmentStatus::Disputed,
-            &ShipmentStatus::Delivered
-        ));
-    }
-
-    #[test]
-    fn test_invalid_recovery_transitions() {
-        // Cancelled cannot transition to anything
-        assert!(!is_valid_recovery_transition(
-            &ShipmentStatus::Cancelled,
-            &ShipmentStatus::Delivered
-        ));
-
-        // AtCheckpoint cannot transition to Created
-        assert!(!is_valid_recovery_transition(
-            &ShipmentStatus::AtCheckpoint,
-            &ShipmentStatus::Created
-        ));
-
-        // Created cannot transition to Delivered directly
-        assert!(!is_valid_recovery_transition(
-            &ShipmentStatus::Created,
-            &ShipmentStatus::Delivered
-        ));
-    }
-}
-
 /// Admin function to roll back a shipment's state when an external integration fails (e.g., token transfer fails but status advanced).
 pub fn rollback_on_external_failure(
     env: &Env,
@@ -350,23 +297,24 @@ pub fn rollback_on_external_failure(
     if storage::get_admin(env) != *admin {
         return Err(NavinError::Unauthorized);
     }
-    
+
     // Validate reason hash
     crate::validate_hash(reason_hash)?;
 
-    let mut shipment = storage::get_shipment(env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
-    
+    let mut shipment =
+        storage::get_shipment(env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
     // Un-finalize if it was finalized during the broken transition
     if shipment.finalized {
         shipment.finalized = false;
     }
-    
+
     let old_status = shipment.status.clone();
-    
+
     // Rollback status
     shipment.status = previous_status.clone();
     shipment.updated_at = env.ledger().timestamp();
-    
+
     // Increment integration nonce to prevent replay of the failed state
     shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
@@ -383,4 +331,45 @@ pub fn rollback_on_external_failure(
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_recovery_transitions() {
+        assert!(is_valid_recovery_transition(
+            &ShipmentStatus::Created,
+            &ShipmentStatus::Cancelled
+        ));
+        assert!(is_valid_recovery_transition(
+            &ShipmentStatus::InTransit,
+            &ShipmentStatus::Cancelled
+        ));
+        assert!(is_valid_recovery_transition(
+            &ShipmentStatus::InTransit,
+            &ShipmentStatus::Disputed
+        ));
+        assert!(is_valid_recovery_transition(
+            &ShipmentStatus::Disputed,
+            &ShipmentStatus::Delivered
+        ));
+    }
+
+    #[test]
+    fn test_invalid_recovery_transitions() {
+        assert!(!is_valid_recovery_transition(
+            &ShipmentStatus::Cancelled,
+            &ShipmentStatus::Delivered
+        ));
+        assert!(!is_valid_recovery_transition(
+            &ShipmentStatus::AtCheckpoint,
+            &ShipmentStatus::Created
+        ));
+        assert!(!is_valid_recovery_transition(
+            &ShipmentStatus::Created,
+            &ShipmentStatus::Delivered
+        ));
+    }
 }
