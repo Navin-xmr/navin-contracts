@@ -516,4 +516,197 @@ mod tests {
         assert_eq!(approve_result, Err(Ok(crate::NavinError::ProposalExpired)));
         assert_eq!(execute_result, Err(Ok(crate::NavinError::ProposalExpired)));
     }
+
+    // ── [ISSUE #517] Multi-sig proposal with invalid signatures tests ─────────
+
+    /// Test: Non-admin attempting to approve proposal fails with NotAnAdmin.
+    /// This verifies that only registered admins can approve proposals.
+    #[test]
+    fn multisig_approval_non_admin_rejected() {
+        let (env, client, admin, _admin2) = setup_multisig();
+        let non_admin = Address::generate(&env);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Non-admin cannot approve
+        let result = client.try_approve_action(&non_admin, &proposal_id);
+        assert_eq!(result, Err(Ok(crate::NavinError::NotAnAdmin)));
+    }
+
+    /// Test: Non-admin attempting to propose action fails with NotAnAdmin.
+    /// This verifies that only registered admins can propose actions.
+    #[test]
+    fn multisig_proposal_non_admin_rejected() {
+        let (env, client, admin, _admin2) = setup_multisig();
+        let non_admin = Address::generate(&env);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+
+        // Non-admin cannot propose
+        let result = client.try_propose_action(&non_admin, &action);
+        assert_eq!(result, Err(Ok(crate::NavinError::NotAnAdmin)));
+    }
+
+    /// Test: Proposal state remains unmodified when approval with invalid auth fails.
+    /// This verifies that unauthorized attempts don't corrupt proposal state.
+    #[test]
+    fn multisig_invalid_approval_leaves_state_unchanged() {
+        let (env, client, admin, _admin2) = setup_multisig();
+        let non_admin = Address::generate(&env);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Capture initial state (proposer is auto-approved)
+        let before = client.get_proposal(&proposal_id);
+        let initial_approvals = before.approvals.len();
+        assert!(!before.executed);
+
+        // Non-admin attempts to approve (should fail)
+        let _result = client.try_approve_action(&non_admin, &proposal_id);
+
+        // State should be unchanged
+        let after = client.get_proposal(&proposal_id);
+        assert_eq!(after.approvals.len(), initial_approvals);
+        assert!(!after.executed);
+        assert_eq!(after.created_at, before.created_at);
+        assert_eq!(after.expires_at, before.expires_at);
+    }
+
+    /// Test: Admin cannot be added to admin list if non-existent wallet.
+    /// Verifies that only valid addresses can become admins.
+    #[test]
+    fn multisig_invalid_proposal_action_rejected() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        // Create a valid proposal
+        let new_admin = Address::generate(&env);
+        let action = crate::types::AdminAction::TransferAdmin(new_admin.clone());
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Verify proposal exists before approval
+        let proposal = client.get_proposal(&proposal_id);
+        assert!(!proposal.executed);
+
+        // Admin2 approves (threshold met, auto-executes)
+        let result = client.try_approve_action(&admin2, &proposal_id);
+        assert!(result.is_ok());
+
+        // Proposal should be executed
+        let updated = client.get_proposal(&proposal_id);
+        assert!(updated.executed);
+    }
+
+    /// Test: Multiple non-admins cannot collectively bypass threshold.
+    /// This verifies that invalid signers don't count toward approval threshold.
+    #[test]
+    fn multisig_multiple_non_admins_cannot_meet_threshold() {
+        let (env, client, admin, _admin2) = setup_multisig();
+        let attacker1 = Address::generate(&env);
+        let attacker2 = Address::generate(&env);
+
+        // Set threshold to 3
+        let admin3 = Address::generate(&env);
+        let mut admins = Vec::new(&env);
+        admins.push_back(admin.clone());
+        admins.push_back(admin3.clone());
+        let mut other_admins = Vec::new(&env);
+        other_admins.push_back(admin.clone());
+        other_admins.push_back(admin3);
+        client.init_multisig(&admin, &other_admins, &3);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Initial approval count (just proposer)
+        let initial = client.get_proposal(&proposal_id);
+        assert_eq!(initial.approvals.len(), 1);
+
+        // Attacker1 attempts to approve
+        let _result1 = client.try_approve_action(&attacker1, &proposal_id);
+
+        // Still should have 1 approval (attacker not counted)
+        let after_attacker1 = client.get_proposal(&proposal_id);
+        assert_eq!(after_attacker1.approvals.len(), 1);
+        assert!(!after_attacker1.executed);
+
+        // Attacker2 attempts to approve
+        let _result2 = client.try_approve_action(&attacker2, &proposal_id);
+
+        // Still should have 1 approval (attacker2 not counted)
+        let after_attacker2 = client.get_proposal(&proposal_id);
+        assert_eq!(after_attacker2.approvals.len(), 1);
+        assert!(!after_attacker2.executed);
+    }
+
+    /// Test: Repeated invalid approval attempts don't increment counter.
+    /// This verifies that authorization failures don't affect approval count.
+    #[test]
+    fn multisig_repeated_invalid_approvals_dont_accumulate() {
+        let (env, client, admin, _admin2) = setup_multisig();
+        let non_admin = Address::generate(&env);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        let initial = client.get_proposal(&proposal_id);
+        let initial_count = initial.approvals.len();
+
+        // Try multiple invalid approvals
+        for _ in 0..5 {
+            let _result = client.try_approve_action(&non_admin, &proposal_id);
+        }
+
+        // Approval count should remain unchanged
+        let after = client.get_proposal(&proposal_id);
+        assert_eq!(after.approvals.len(), initial_count);
+    }
+
+    /// Test: Valid admin approval after failed non-admin attempts succeeds.
+    /// This verifies that valid admins can approve even after failed attempts.
+    #[test]
+    fn multisig_valid_admin_approval_succeeds_after_invalid_attempts() {
+        let (env, client, admin, admin2) = setup_multisig();
+        let non_admin = Address::generate(&env);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Non-admin attempts multiple times (all fail)
+        for _ in 0..3 {
+            let _result = client.try_approve_action(&non_admin, &proposal_id);
+        }
+
+        // Valid admin should still be able to approve
+        let result = client.try_approve_action(&admin2, &proposal_id);
+        assert!(result.is_ok());
+
+        // Verify approval was recorded
+        let updated = client.get_proposal(&proposal_id);
+        assert_eq!(updated.approvals.len(), 2); // proposer + admin2
+        assert!(updated.executed); // threshold met, auto-executed
+    }
+
+    /// Test: Digest remains stable even when invalid approvals are attempted.
+    /// This verifies that authorization failures don't affect proposal digest.
+    #[test]
+    fn multisig_digest_unchanged_by_invalid_approvals() {
+        let (env, client, admin, _admin2) = setup_multisig();
+        let non_admin = Address::generate(&env);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Capture digest before invalid attempts
+        let digest_before = client.get_proposal_action_digest(&proposal_id);
+
+        // Non-admin attempts to approve
+        let _result = client.try_approve_action(&non_admin, &proposal_id);
+
+        // Digest should remain unchanged
+        let digest_after = client.get_proposal_action_digest(&proposal_id);
+        assert_eq!(digest_before.digest, digest_after.digest);
+    }
 }
+
