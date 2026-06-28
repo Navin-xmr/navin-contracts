@@ -141,4 +141,10 @@ pub enum NavinError {
     InvalidPaymentMilestoneName = 62,
     /// Metadata key and value symbols are identical, which is considered a collision.
     MetadataSymbolCollision = 63,
+    /// The provided symbol is empty or invalid.
+    InvalidSymbol = 64,
+    /// Note not found or index out of bounds.
+    NoteNotFound = 65,
+    /// Evidence not found or index out of bounds.
+    EvidenceNotFound = 66,
 }

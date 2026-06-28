@@ -825,6 +825,10 @@ impl NavinShipment {
         if storage::get_shipment(&env, shipment_id).is_none() {
             return Err(NavinError::ShipmentNotFound);
         }
+        let count = storage::get_evidence_count(&env, shipment_id);
+        if index >= count {
+            return Err(NavinError::EvidenceNotFound);
+        }
         Ok(storage::get_evidence_hash(&env, shipment_id, index))
     }
 
@@ -878,6 +882,10 @@ impl NavinShipment {
         require_initialized(&env)?;
         if storage::get_shipment(&env, shipment_id).is_none() {
             return Err(NavinError::ShipmentNotFound);
+        }
+        let count = storage::get_note_count(&env, shipment_id);
+        if index >= count {
+            return Err(NavinError::NoteNotFound);
         }
         Ok(storage::get_note_hash(&env, shipment_id, index))
     }
@@ -3359,6 +3367,9 @@ impl NavinShipment {
 
         require_not_finalized(&shipment)?;
 
+        // Validate checkpoint symbol
+        validation::validate_checkpoint_symbol(&env, &checkpoint)?;
+
         // Validate hash before storage
         validation::validate_hash(&data_hash)?;
 
@@ -4869,6 +4880,15 @@ impl NavinShipment {
         let admin_count = admins.len();
         if admin_count < config.multisig_min_admins || admin_count > config.multisig_max_admins {
             return Err(NavinError::InvalidMultiSigConfig);
+        }
+
+        // Validate uniqueness of admin list
+        let mut seen = soroban_sdk::Vec::new(&env);
+        for admin_addr in admins.iter() {
+            if seen.contains(&admin_addr) {
+                return Err(NavinError::InvalidConfig);
+            }
+            seen.push_back(admin_addr);
         }
 
         if threshold == 0 || threshold > admin_count {
