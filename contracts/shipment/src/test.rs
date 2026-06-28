@@ -11264,3 +11264,152 @@ fn test_append_note_on_terminal_shipment() {
     let count = client.get_note_count(&shipment_id);
     assert_eq!(count, 1);
 }
+
+#[test]
+fn test_recover_shipment_emits_audit_trail() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let reason_hash = BytesN::from_array(&env, &[9u8; 32]);
+
+    client.add_company(&admin, &admin);
+
+    let res = crate::recovery::recover_shipment(
+        &env,
+        &admin,
+        shipment_id,
+        crate::types::ShipmentStatus::Cancelled,
+        &reason_hash,
+    );
+    assert!(res.is_ok());
+
+    let events = env.events().all();
+    let mut found = false;
+    for event in events.iter() {
+        if let Ok(topic) = event.1.get(0).unwrap().try_into_val(&env) {
+            let topic_sym: soroban_sdk::Symbol = topic;
+            if topic_sym == soroban_sdk::Symbol::new(&env, "recovery_event") {
+                found = true;
+                break;
+            }
+        }
+    }
+    assert!(found, "recovery_event was not emitted");
+    
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::types::ShipmentStatus::Cancelled);
+}
+
+#[test]
+fn test_unlock_escrow_emits_audit_trail() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    client.deposit_escrow(&company, &shipment_id, &1000);
+
+    let reason_hash = BytesN::from_array(&env, &[9u8; 32]);
+
+    client.add_company(&admin, &admin);
+
+    let res = crate::recovery::unlock_escrow(&env, &admin, shipment_id, &reason_hash);
+    assert!(res.is_ok());
+
+    let events = env.events().all();
+    let mut found = false;
+    for event in events.iter() {
+        if let Ok(topic) = event.1.get(0).unwrap().try_into_val(&env) {
+            let topic_sym: soroban_sdk::Symbol = topic;
+            if topic_sym == soroban_sdk::Symbol::new(&env, "escrow_unlock_event") {
+                found = true;
+                break;
+            }
+        }
+    }
+    assert!(found, "escrow_unlock_event was not emitted");
+    
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+#[test]
+fn test_clear_finalization_emits_audit_trail() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    client.cancel_shipment(&company, &shipment_id, &data_hash);
+    
+    let shipment_pre = client.get_shipment(&shipment_id);
+    assert!(shipment_pre.finalized);
+
+    let reason_hash = BytesN::from_array(&env, &[9u8; 32]);
+
+    client.add_company(&admin, &admin);
+
+    let res = crate::recovery::clear_finalization(&env, &admin, shipment_id, &reason_hash);
+    assert!(res.is_ok());
+
+    let events = env.events().all();
+    let mut found = false;
+    for event in events.iter() {
+        if let Ok(topic) = event.1.get(0).unwrap().try_into_val(&env) {
+            let topic_sym: soroban_sdk::Symbol = topic;
+            if topic_sym == soroban_sdk::Symbol::new(&env, "finalization_clear_event") {
+                found = true;
+                break;
+            }
+        }
+    }
+    assert!(found, "finalization_clear_event was not emitted");
+    
+    let shipment = client.get_shipment(&shipment_id);
+    assert!(!shipment.finalized);
+}
+
