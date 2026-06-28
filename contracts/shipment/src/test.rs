@@ -11491,3 +11491,197 @@ fn test_clear_finalization_emits_audit_trail() {
     let shipment = client.get_shipment(&shipment_id);
     assert!(!shipment.finalized);
 }
+
+#[test]
+fn test_fractional_milestone_sums_to_100() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    for (i, pct) in crate::types::FRACTIONAL_MILESTONE_PCTS.iter().enumerate() {
+        let name = match i {
+            0 => Symbol::new(&env, "warehouse"),
+            1 => Symbol::new(&env, "port"),
+            _ => Symbol::new(&env, "last_mile"),
+        };
+        milestones.push_back((name, *pct));
+    }
+
+    let sum: u32 = crate::types::FRACTIONAL_MILESTONE_PCTS.iter().sum();
+    assert_eq!(sum, 100);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.payment_milestones.len(), 3);
+}
+
+#[test]
+fn test_fractional_milestone_payout_math() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let escrow_amount: i128 = 1000;
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "warehouse"), 17));
+    milestones.push_back((Symbol::new(&env, "port"), 33));
+    milestones.push_back((Symbol::new(&env, "last_mile"), 50));
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    // 17% of 1000 = 170
+    client.record_milestone(
+        &carrier,
+        &shipment_id,
+        &Symbol::new(&env, "warehouse"),
+        &data_hash,
+    );
+    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 830);
+
+    // 33% of 1000 = 330
+    client.record_milestone(
+        &carrier,
+        &shipment_id,
+        &Symbol::new(&env, "port"),
+        &data_hash,
+    );
+    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 500);
+
+    // 50% — final milestone drains remaining escrow
+    client.record_milestone(
+        &carrier,
+        &shipment_id,
+        &Symbol::new(&env, "last_mile"),
+        &data_hash,
+    );
+    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 0);
+}
+
+#[test]
+fn test_fractional_milestone_payout_rounding() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let escrow_amount: i128 = 99;
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "warehouse"), 17));
+    milestones.push_back((Symbol::new(&env, "port"), 33));
+    milestones.push_back((Symbol::new(&env, "last_mile"), 50));
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    // 17% of 99 = 16 (truncated)
+    client.record_milestone(
+        &carrier,
+        &shipment_id,
+        &Symbol::new(&env, "warehouse"),
+        &data_hash,
+    );
+    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 83);
+
+    // 33% of 99 = 32 (truncated)
+    client.record_milestone(
+        &carrier,
+        &shipment_id,
+        &Symbol::new(&env, "port"),
+        &data_hash,
+    );
+    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 51);
+
+    // 50% — final milestone drains remaining escrow to zero
+    client.record_milestone(
+        &carrier,
+        &shipment_id,
+        &Symbol::new(&env, "last_mile"),
+        &data_hash,
+    );
+    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #18)")]
+fn test_fractional_milestone_invalid_total_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "alpha"), 33));
+    milestones.push_back((Symbol::new(&env, "beta"), 33));
+    milestones.push_back((Symbol::new(&env, "gamma"), 33)); // Total 99%
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+}

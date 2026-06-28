@@ -805,3 +805,8 @@ pub struct FeeConfig {
     /// The address where collected fees are sent.
     pub treasury: Address,
 }
+
+/// Sample fractional milestone percentages used in tests to verify
+/// integer-division rounding behavior during milestone payouts.
+/// Values (17, 33, 50) sum to exactly 100.
+pub const FRACTIONAL_MILESTONE_PCTS: [u32; 3] = [17, 33, 50];
