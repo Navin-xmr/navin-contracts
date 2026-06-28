@@ -370,6 +370,77 @@ pub fn validate_shipment_invariants(shipment: &Shipment) -> Result<(), NavinErro
     Ok(())
 }
 
+/// Validate that `created_at` is within acceptable bounds relative to current ledger time.
+///
+/// This ensures that the creation timestamp is not too far in the future (which would be
+/// impossible) and not too far in the past (which would indicate malformed input).
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `created_at` - The timestamp to validate.
+///
+/// # Returns
+/// * `Ok(())` if the timestamp is within acceptable bounds.
+/// * `Err(NavinError::InvalidTimestamp)` otherwise.
+pub fn validate_created_at_versus_now(env: &Env, created_at: u64) -> Result<(), NavinError> {
+    let now = env.ledger().timestamp();
+
+    // created_at must not be in the future (with small tolerance for clock skew)
+    if created_at > now {
+        return Err(NavinError::InvalidTimestamp);
+    }
+
+    // created_at must not be too far in the past
+    let earliest = now.saturating_sub(MAX_PAST_OFFSET);
+    if created_at < earliest {
+        return Err(NavinError::InvalidTimestamp);
+    }
+
+    Ok(())
+}
+
+/// Validate that `updated_at` is not earlier than `created_at`.
+///
+/// This enforces the invariant that a shipment cannot be updated before it was created.
+///
+/// # Arguments
+/// * `created_at` - Timestamp when the shipment was created.
+/// * `updated_at` - Timestamp of the last update to validate.
+///
+/// # Returns
+/// * `Ok(())` if updated_at >= created_at.
+/// * `Err(NavinError::InvalidStatus)` if the relationship is impossible.
+pub fn validate_created_at_versus_updated_at(
+    created_at: u64,
+    updated_at: u64,
+) -> Result<(), NavinError> {
+    if updated_at < created_at {
+        return Err(NavinError::InvalidStatus);
+    }
+    Ok(())
+}
+
+/// Validate that `created_at` is before `deadline`.
+///
+/// This enforces that the deadline must be in the future relative to creation time.
+///
+/// # Arguments
+/// * `created_at` - Timestamp when the shipment was created.
+/// * `deadline` - The deadline timestamp to validate.
+///
+/// # Returns
+/// * `Ok(())` if created_at < deadline.
+/// * `Err(NavinError::InvalidShipmentDeadline)` if the relationship is impossible.
+pub fn validate_created_at_versus_deadline(
+    created_at: u64,
+    deadline: u64,
+) -> Result<(), NavinError> {
+    if deadline <= created_at {
+        return Err(NavinError::InvalidShipmentDeadline);
+    }
+    Ok(())
+}
+
 // Tests
 #[cfg(test)]
 mod tests {
@@ -680,7 +751,7 @@ mod symbol_validation_tests {
     extern crate std;
 
     use super::*;
-    use soroban_sdk::{Env, Symbol, Vec};
+    use soroban_sdk::{testutils::Ledger, Env, Symbol, Vec};
 
     // Boundary tests for symbol length
     #[test]
@@ -963,6 +1034,107 @@ mod symbol_validation_tests {
             result,
             Err(NavinError::DuplicatePaymentMilestone),
             "Duplicate milestone should return DuplicatePaymentMilestone"
+        );
+    }
+
+    // ── created_at relativity tests (issue #460) ─────────────────────────────────
+
+    #[test]
+    fn test_validate_created_at_versus_now_accepts_current_time() {
+        let env = Env::default();
+        let now = env.ledger().timestamp();
+        assert_eq!(validate_created_at_versus_now(&env, now), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_now_accepts_past_within_bounds() {
+        let env = Env::default();
+        // Set ledger time to a value that allows subtraction for the test
+        env.ledger().with_mut(|li| {
+            li.timestamp = MAX_PAST_OFFSET + 24 * 60 * 60 + 100;
+        });
+        let adjusted_now = env.ledger().timestamp();
+        // 1 day in the past - within MAX_PAST_OFFSET
+        let past_ts = adjusted_now - 24 * 60 * 60;
+        assert_eq!(validate_created_at_versus_now(&env, past_ts), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_now_rejects_future() {
+        let env = Env::default();
+        let now = env.ledger().timestamp();
+        // Any future timestamp should be rejected
+        let future_ts = now + 100;
+        assert_eq!(
+            validate_created_at_versus_now(&env, future_ts),
+            Err(NavinError::InvalidTimestamp)
+        );
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_now_rejects_far_past() {
+        let env = Env::default();
+        // Set ledger time far enough ahead
+        env.ledger().with_mut(|li| {
+            li.timestamp = MAX_PAST_OFFSET + 100;
+        });
+        let now = env.ledger().timestamp();
+        let far_past = now - MAX_PAST_OFFSET - 1;
+        assert_eq!(
+            validate_created_at_versus_now(&env, far_past),
+            Err(NavinError::InvalidTimestamp)
+        );
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_updated_at_accepts_equal() {
+        // When created and updated at same time (initial state)
+        assert_eq!(validate_created_at_versus_updated_at(100, 100), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_updated_at_accepts_later() {
+        // updated_at after created_at is valid
+        assert_eq!(validate_created_at_versus_updated_at(100, 200), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_updated_at_rejects_earlier() {
+        // Impossible: updated before created
+        assert_eq!(
+            validate_created_at_versus_updated_at(200, 100),
+            Err(NavinError::InvalidStatus)
+        );
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_deadline_accepts_later() {
+        let created_at: u64 = 1000;
+        let deadline: u64 = 2000;
+        assert_eq!(
+            validate_created_at_versus_deadline(created_at, deadline),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_deadline_rejects_equal() {
+        // Deadline must be strictly after creation
+        let ts: u64 = 1000;
+        assert_eq!(
+            validate_created_at_versus_deadline(ts, ts),
+            Err(NavinError::InvalidShipmentDeadline)
+        );
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_deadline_rejects_earlier() {
+        // Impossible: deadline before creation
+        let created_at: u64 = 2000;
+        let deadline: u64 = 1000;
+        assert_eq!(
+            validate_created_at_versus_deadline(created_at, deadline),
+            Err(NavinError::InvalidShipmentDeadline)
         );
     }
 }

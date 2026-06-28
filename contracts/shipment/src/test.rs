@@ -11269,3 +11269,132 @@ fn test_append_note_on_terminal_shipment() {
     let count = client.get_note_count(&shipment_id);
     assert_eq!(count, 1);
 }
+
+// ============= Timestamp Relativity Tests (issue #460) =============
+
+#[test]
+fn test_created_at_versus_now_accepts_valid_creation() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let now = env.ledger().timestamp();
+    let deadline = now + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let created_at = client.get_shipment_created_at(&shipment_id);
+    // created_at should be close to current ledger time (within a few seconds)
+    assert!(
+        created_at <= now + 5,
+        "created_at should be at or near current time"
+    );
+}
+
+#[test]
+fn test_created_at_versus_updated_at_consistency() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let created_at = client.get_shipment_created_at(&shipment_id);
+    let updated_at_initial = client.get_shipment_updated_at(&shipment_id);
+
+    // Initially, created_at and updated_at should be equal
+    assert_eq!(
+        created_at, updated_at_initial,
+        "created_at and updated_at should match initially"
+    );
+
+    // Update status to change updated_at
+    let update_hash = BytesN::from_array(&env, &[2u8; 32]);
+    super::test_utils::advance_past_rate_limit(&env);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &update_hash,
+    );
+
+    let updated_at_later = client.get_shipment_updated_at(&shipment_id);
+    // updated_at should still be >= created_at (immutability constraint)
+    assert!(
+        updated_at_later >= created_at,
+        "updated_at must be >= created_at after status update"
+    );
+}
+
+#[test]
+fn test_created_at_versus_deadline_relativity() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let now = env.ledger().timestamp();
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Case 1: Valid - deadline after creation
+    let valid_deadline = now + 86400; // 1 day in future
+    let id1 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &valid_deadline,
+    );
+    let created_at1 = client.get_shipment_created_at(&id1);
+    let shipment1 = client.get_shipment(&id1);
+    assert!(
+        shipment1.deadline > created_at1,
+        "deadline should be after created_at"
+    );
+
+    // Case 2: Invalid - deadline in the past (before creation time)
+    let past_deadline = now - 100;
+    let result = client.try_create_shipment(
+        &company,
+        &Address::generate(&env),
+        &carrier,
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &past_deadline,
+    );
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::InvalidTimestamp)),
+        "past deadline should be rejected"
+    );
+}
