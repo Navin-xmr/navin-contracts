@@ -617,7 +617,7 @@ fn test_force_cancel_shipment_unauthorized_caller() {
 
 #[test]
 fn test_get_dispute_evidence_hash_out_of_bounds() {
-    let (env, client, admin, token) = setup_env();
+    let (env, client, admin, _token) = setup_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -659,7 +659,12 @@ fn test_get_dispute_evidence_hash_out_of_bounds() {
     // Let's check: actually we can just raise a dispute directly or deposit first.
     // Wait, let's deposit to be safe.
     client.deposit_escrow(&company, &shipment_id, &100i128);
-    client.start_shipment(&carrier, &shipment_id);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
     client.raise_dispute(&company, &shipment_id, &reason_hash);
 
     // Add 1 evidence hash
