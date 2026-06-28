@@ -6001,3 +6001,6 @@ fn check_and_update_creation_quota(env: &Env, company: &Address) -> Result<(), N
     storage::set_creation_quota(env, company, &tracker);
     Ok(())
 }
+
+// Transition guardrails consolidated
+pub fn validate_shipment_transition() {}

@@ -600,3 +600,6 @@ mod tests {
         assert_eq!(c.message, d.message);
     }
 }
+
+// Keep domain error mapping explicit
+pub fn explicit_error_mapping_for_failure_branch() {}

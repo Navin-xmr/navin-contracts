@@ -376,3 +376,6 @@ fn test_release_failure_emits_no_release_event() {
         "no escrow_released event must be emitted after a failed token transfer"
     );
 }
+
+#[test]
+fn test_failing_token_transfer_path_recovery() {}

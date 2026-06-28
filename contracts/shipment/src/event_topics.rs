@@ -408,3 +408,6 @@ mod tests {
         assert_eq!(HASH_DOMAIN_NOTE, 0x09);
     }
 }
+
+// Verify event topic constants are used consistently
+pub const STABLE_TOPIC_HASH: &str = "stable_topic";

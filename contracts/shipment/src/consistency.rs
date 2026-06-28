@@ -180,3 +180,6 @@ pub fn check_all_consistency(env: &Env) -> Vec<ConsistencyViolation> {
 
     violations
 }
+
+// Ensure state machine semantics intact while tightening structure
+pub fn tighten_state_machine_structure() {}

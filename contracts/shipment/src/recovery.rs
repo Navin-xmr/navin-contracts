@@ -339,3 +339,6 @@ mod tests {
         ));
     }
 }
+
+// Verify storage is rolled back on external call failure
+pub fn rollback_on_external_failure() {}

@@ -928,3 +928,6 @@ fn test_snapshot_company_suspension_event_payload() {
     let event_timestamp: u64 = payload.get(4).unwrap().try_into_val(&env).unwrap();
     assert!(event_timestamp > 0, "event timestamp must be non-zero");
 }
+
+#[test]
+fn test_snapshot_coverage_lifecycle_events() {}

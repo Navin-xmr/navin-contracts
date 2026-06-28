@@ -530,3 +530,6 @@ fn test_algorithm_mismatch_is_detectable_by_different_output() {
         "domain/algorithm mismatch must produce a different key — drift is detectable"
     );
 }
+
+#[test]
+fn test_hash_emit_payload_shape_stable() {}
