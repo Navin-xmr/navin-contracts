@@ -4,7 +4,7 @@ use crate::test::*;
 use crate::test_utils::dummy_hash;
 use crate::types::*;
 use soroban_sdk::testutils::Address as _;
-use soroban_sdk::Address;
+use soroban_sdk::{Address, BytesN, Env};
 
 /// Test that settlement state transitions are validated correctly.
 #[test]
@@ -461,4 +461,286 @@ fn test_failed_operation_rollback() {
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.escrow_amount, 0);
     assert_eq!(shipment.status, ShipmentStatus::Created);
+}
+
+// ── Issue #505: AtCheckpoint state transition loop tests ────────────────────
+
+fn hash_with_seed(env: &Env, seed: u8) -> BytesN<32> {
+    BytesN::from_array(env, &[seed; 32])
+}
+
+/// Cycle a shipment through InTransit -> AtCheckpoint -> InTransit -> AtCheckpoint
+/// multiple times and verify all state fields remain consistent after each cycle.
+#[test]
+fn test_at_checkpoint_transition_loop_stability() {
+    let (e, client, admin, _t) = setup_initialized_shipment_env();
+    let company = Address::generate(&e);
+    let carrier = Address::generate(&e);
+    let receiver = Address::generate(&e);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &hash_with_seed(&e, 1),
+        &soroban_sdk::Vec::new(&e),
+        &(e.ledger().timestamp() + 86400),
+    );
+
+    let mut s = 2u8;
+    client.update_status(&admin, &shipment_id, &ShipmentStatus::InTransit, &hash_with_seed(&e, s));
+    s += 1;
+
+    for cycle in 1..=3 {
+        client.update_status(
+            &admin,
+            &shipment_id,
+            &ShipmentStatus::AtCheckpoint,
+            &hash_with_seed(&e, s),
+        );
+        s += 1;
+        let sp = client.get_shipment(&shipment_id);
+        assert_eq!(sp.status, ShipmentStatus::AtCheckpoint, "cycle {cycle}");
+
+        client.update_status(
+            &admin,
+            &shipment_id,
+            &ShipmentStatus::InTransit,
+            &hash_with_seed(&e, s),
+        );
+        s += 1;
+        let sp = client.get_shipment(&shipment_id);
+        assert_eq!(sp.status, ShipmentStatus::InTransit, "cycle {cycle} return");
+    }
+}
+
+/// Verify that a long sequence (10 cycles) of InTransit <-> AtCheckpoint
+/// transitions does not corrupt state, overflow counters, or lose updates.
+#[test]
+fn test_at_checkpoint_transition_loop_long_cycle() {
+    let (e, client, admin, _t) = setup_initialized_shipment_env();
+    let company = Address::generate(&e);
+    let carrier = Address::generate(&e);
+    let receiver = Address::generate(&e);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &hash_with_seed(&e, 1),
+        &soroban_sdk::Vec::new(&e),
+        &(e.ledger().timestamp() + 86400),
+    );
+
+    let mut s = 2u8;
+    client.update_status(&admin, &shipment_id, &ShipmentStatus::InTransit, &hash_with_seed(&e, s));
+    s += 1;
+
+    for _ in 0..10 {
+        client.update_status(
+            &admin,
+            &shipment_id,
+            &ShipmentStatus::AtCheckpoint,
+            &hash_with_seed(&e, s),
+        );
+        s += 1;
+        client.update_status(
+            &admin,
+            &shipment_id,
+            &ShipmentStatus::InTransit,
+            &hash_with_seed(&e, s),
+        );
+        s += 1;
+    }
+
+    let sp = client.get_shipment(&shipment_id);
+    assert_eq!(sp.status, ShipmentStatus::InTransit);
+    assert!(sp.integration_nonce >= 21, "nonce={}", sp.integration_nonce);
+    assert!(!sp.finalized);
+    assert_eq!(sp.escrow_amount, 0);
+}
+
+/// Verify that notes appended during InTransit <-> AtCheckpoint cycling are
+/// preserved and retrievable in the correct order.
+#[test]
+fn test_at_checkpoint_loop_note_preservation() {
+    let (e, client, admin, _t) = setup_initialized_shipment_env();
+    let company = Address::generate(&e);
+    let carrier = Address::generate(&e);
+    let receiver = Address::generate(&e);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &hash_with_seed(&e, 1),
+        &soroban_sdk::Vec::new(&e),
+        &(e.ledger().timestamp() + 86400),
+    );
+
+    let mut s = 2u8;
+    client.update_status(&admin, &shipment_id, &ShipmentStatus::InTransit, &hash_with_seed(&e, s));
+    s += 1;
+
+    for _ in 1..=3 {
+        client.append_note_hash(&carrier, &shipment_id, &hash_with_seed(&e, s));
+        s += 1;
+
+        client.update_status(
+            &admin,
+            &shipment_id,
+            &ShipmentStatus::AtCheckpoint,
+            &hash_with_seed(&e, s),
+        );
+        s += 1;
+
+        client.append_note_hash(&carrier, &shipment_id, &hash_with_seed(&e, s));
+        s += 1;
+
+        client.update_status(
+            &admin,
+            &shipment_id,
+            &ShipmentStatus::InTransit,
+            &hash_with_seed(&e, s),
+        );
+        s += 1;
+    }
+
+    let note_count = client.get_note_count(&shipment_id);
+    assert_eq!(note_count, 6, "should have 6 notes after cycling");
+
+    for i in 0..note_count {
+        let note = client.get_note_hash(&shipment_id, &i);
+        assert!(note.is_some(), "note at index {i} should be retrievable");
+    }
+
+    let sp = client.get_shipment(&shipment_id);
+    assert_eq!(sp.status, ShipmentStatus::InTransit);
+}
+
+/// Verify that status counters tracked in instance storage remain consistent
+/// after multiple InTransit <-> AtCheckpoint cycles.
+#[test]
+fn test_at_checkpoint_loop_status_counts_consistent() {
+    let (e, client, admin, _t) = setup_initialized_shipment_env();
+    let company = Address::generate(&e);
+    let carrier = Address::generate(&e);
+    let receiver = Address::generate(&e);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &hash_with_seed(&e, 1),
+        &soroban_sdk::Vec::new(&e),
+        &(e.ledger().timestamp() + 86400),
+    );
+
+    let b = client.get_status_summary();
+    assert_eq!(b.created, 1);
+    assert_eq!(b.in_transit, 0);
+    assert_eq!(b.at_checkpoint, 0);
+
+    let mut s = 2u8;
+    client.update_status(&admin, &shipment_id, &ShipmentStatus::InTransit, &hash_with_seed(&e, s));
+    s += 1;
+    let a = client.get_status_summary();
+    assert_eq!(a.created, 0);
+    assert_eq!(a.in_transit, 1);
+
+    for _ in 1..=3 {
+        client.update_status(
+            &admin,
+            &shipment_id,
+            &ShipmentStatus::AtCheckpoint,
+            &hash_with_seed(&e, s),
+        );
+        s += 1;
+        let cp = client.get_status_summary();
+        assert_eq!(cp.in_transit, 0);
+        assert_eq!(cp.at_checkpoint, 1);
+
+        client.update_status(
+            &admin,
+            &shipment_id,
+            &ShipmentStatus::InTransit,
+            &hash_with_seed(&e, s),
+        );
+        s += 1;
+        let tr = client.get_status_summary();
+        assert_eq!(tr.in_transit, 1);
+        assert_eq!(tr.at_checkpoint, 0);
+    }
+
+    let f = client.get_status_summary();
+    assert_eq!(f.created, 0);
+    assert_eq!(f.in_transit, 1);
+    assert_eq!(f.at_checkpoint, 0);
+}
+
+/// Verify that after extensive InTransit <-> AtCheckpoint cycling, the
+/// consistency checker (including the new StatusCountMismatch invariant)
+/// reports no violations.
+#[test]
+fn test_at_checkpoint_loop_consistency_check() {
+    let (e, client, admin, _t) = setup_initialized_shipment_env();
+    let company = Address::generate(&e);
+    let carrier = Address::generate(&e);
+    let receiver = Address::generate(&e);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &hash_with_seed(&e, 1),
+        &soroban_sdk::Vec::new(&e),
+        &(e.ledger().timestamp() + 86400),
+    );
+
+    let mut s = 2u8;
+    client.update_status(&admin, &shipment_id, &ShipmentStatus::InTransit, &hash_with_seed(&e, s));
+    s += 1;
+
+    for _ in 1..=5 {
+        client.update_status(
+            &admin,
+            &shipment_id,
+            &ShipmentStatus::AtCheckpoint,
+            &hash_with_seed(&e, s),
+        );
+        s += 1;
+        client.update_status(
+            &admin,
+            &shipment_id,
+            &ShipmentStatus::InTransit,
+            &hash_with_seed(&e, s),
+        );
+        s += 1;
+    }
+
+    for _ in 0..3 {
+        client.append_note_hash(&carrier, &shipment_id, &hash_with_seed(&e, s));
+        s += 1;
+    }
+
+    let violations = client.check_consistency_violations(&admin);
+    assert!(
+        violations.is_empty(),
+        "expected no violations after cycling, got: {violations:?}"
+    );
 }
