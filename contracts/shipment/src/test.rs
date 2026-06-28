@@ -11257,7 +11257,12 @@ fn test_append_note_on_terminal_shipment() {
 
     // Finalize the shipment
     let confirmation_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &crate::types::ShipmentStatus::InTransit, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::types::ShipmentStatus::InTransit,
+        &data_hash,
+    );
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
 
     let note_hash = BytesN::from_array(&env, &[3u8; 32]);
@@ -11265,4 +11270,59 @@ fn test_append_note_on_terminal_shipment() {
 
     let count = client.get_note_count(&shipment_id);
     assert_eq!(count, 1);
+}
+
+// ── Reentrancy guard tests (issue #458) ───────────────────────────────────────────
+
+/// Tests that the reentrancy lock is properly released after an operation fails
+/// due to invalid status, not just success. This ensures the guard doesn't trap
+/// in an inconsistent state.
+#[test]
+fn test_reentrancy_lock_released_after_wrong_status_failure() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    client.deposit_escrow(&company, &shipment_id, &1000);
+
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::ShipmentStatus::Delivered;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+
+    let _result = client.try_deposit_escrow(&company, &shipment_id, &500);
+
+    env.as_contract(&client.address, || {
+        let locked = env
+            .storage()
+            .instance()
+            .get::<DataKey, bool>(&DataKey::ReentrancyLock)
+            .unwrap_or(false);
+        assert!(
+            !locked,
+            "lock must be released after operation failure inside guard"
+        );
+    });
+
+    let release_result = client.try_release_escrow(&receiver, &shipment_id);
+    assert!(
+        release_result.is_ok(),
+        "subsequent guarded ops must succeed after lock release"
+    );
 }
