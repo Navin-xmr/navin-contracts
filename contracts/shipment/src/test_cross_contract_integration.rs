@@ -740,3 +740,98 @@ fn test_batch_creation_does_not_call_token_contract() {
     let ids = ctx.client.create_shipments_batch(&ctx.company, &inputs);
     assert_eq!(ids.len(), 3);
 }
+
+// ── Reentrancy bypass tests ───────────────────────────────────────────────────────
+
+/// Verifies that a reentrancy bypass attempt during a guarded operation is blocked
+/// and the lock is properly released afterward. This simulates a malicious token
+/// that attempts to call back into the shipment contract during a transfer.
+#[test]
+fn test_reentrancy_bypass_attempt_blocked_during_release() {
+    let ctx = setup_fail();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x70),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+    inject_escrow(&ctx, id, 500);
+    advance_to_delivered(&ctx, id);
+
+    let err = ctx
+        .client
+        .try_release_escrow(&receiver, &id)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, NavinError::TokenTransferFailed);
+
+    ctx.env.as_contract(&ctx.client.address, || {
+        let locked = ctx
+            .env
+            .storage()
+            .instance()
+            .get::<crate::types::DataKey, bool>(&crate::types::DataKey::ReentrancyLock)
+            .unwrap_or(false);
+        assert!(
+            !locked,
+            "lock must be released after token transfer failure in release_escrow"
+        );
+    });
+}
+
+/// Tests that a second escrow deposit attempt during an active lock is rejected
+/// and the guard resets correctly, allowing subsequent operations to proceed.
+#[test]
+fn test_reentrancy_guard_resets_after_rejection() {
+    let ctx = setup_ok();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &Address::generate(&ctx.env),
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x71),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+
+    ctx.env.as_contract(&ctx.client.address, || {
+        ctx.env
+            .storage()
+            .instance()
+            .set(&crate::types::DataKey::ReentrancyLock, &true);
+    });
+
+    let result = ctx.client.try_deposit_escrow(&ctx.company, &id, &500);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::ReentrancyDetected)),
+        "bypass attempt must be rejected"
+    );
+
+    ctx.env.as_contract(&ctx.client.address, || {
+        let locked = ctx
+            .env
+            .storage()
+            .instance()
+            .get::<crate::types::DataKey, bool>(&crate::types::DataKey::ReentrancyLock)
+            .unwrap_or(false);
+        assert!(
+            locked,
+            "lock must remain held after rejection (simulates outer op still active)"
+        );
+    });
+
+    ctx.env.as_contract(&ctx.client.address, || {
+        ctx.env
+            .storage()
+            .instance()
+            .set(&crate::types::DataKey::ReentrancyLock, &false);
+    });
+
+    let result = ctx.client.try_deposit_escrow(&ctx.company, &id, &500);
+    assert!(result.is_ok(), "operation must succeed after guard reset");
+}
