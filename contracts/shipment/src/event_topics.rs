@@ -409,7 +409,6 @@ mod tests {
     }
 }
 
-
 pub const CONTRACT_INITIALIZED: &str = "init";
 pub const SHIPMENT_LIMIT_UPDATED: &str = "set_limit";
 pub const COMPANY_LIMIT_UPDATED: &str = "set_cmp_limit";

@@ -350,23 +350,24 @@ pub fn rollback_on_external_failure(
     if storage::get_admin(env) != *admin {
         return Err(NavinError::Unauthorized);
     }
-    
+
     // Validate reason hash
     crate::validate_hash(reason_hash)?;
 
-    let mut shipment = storage::get_shipment(env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
-    
+    let mut shipment =
+        storage::get_shipment(env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
     // Un-finalize if it was finalized during the broken transition
     if shipment.finalized {
         shipment.finalized = false;
     }
-    
+
     let old_status = shipment.status.clone();
-    
+
     // Rollback status
     shipment.status = previous_status.clone();
     shipment.updated_at = env.ledger().timestamp();
-    
+
     // Increment integration nonce to prevent replay of the failed state
     shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 

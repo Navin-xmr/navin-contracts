@@ -416,7 +416,10 @@ fn test_failing_token_transfer_path_recovery() {
     client.update_status(&carrier, &id, &ShipmentStatus::Delivered, &delivery_hash);
 
     let shipment_before = client.get_shipment(&id);
-    assert!(!shipment_before.finalized, "Shipment is not finalized until escrow is fully released");
+    assert!(
+        !shipment_before.finalized,
+        "Shipment is not finalized until escrow is fully released"
+    );
 
     // Attempt to release escrow - it will fail due to token failure
     let result = client.try_release_escrow(&receiver, &id);
@@ -428,7 +431,10 @@ fn test_failing_token_transfer_path_recovery() {
 
     let shipment_after = client.get_shipment(&id);
     assert_eq!(shipment_after.status, ShipmentStatus::InTransit);
-    assert_eq!(shipment_after.finalized, false, "Shipment must be un-finalized");
+    assert_eq!(
+        shipment_after.finalized, false,
+        "Shipment must be un-finalized"
+    );
     assert!(
         shipment_after.integration_nonce > shipment_before.integration_nonce,
         "Integration nonce must be incremented"

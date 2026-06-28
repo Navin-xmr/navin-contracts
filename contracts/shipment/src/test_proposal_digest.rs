@@ -516,4 +516,170 @@ mod tests {
         assert_eq!(approve_result, Err(Ok(crate::NavinError::ProposalExpired)));
         assert_eq!(execute_result, Err(Ok(crate::NavinError::ProposalExpired)));
     }
+
+    // ── Threshold boundary tests (issue #464) ──────────────────────────────
+
+    fn reconfigure_multisig(
+        env: &Env,
+        client: &NavinShipmentClient,
+        admin: &Address,
+        n_extra: u32,
+        threshold: u32,
+    ) -> soroban_sdk::Vec<Address> {
+        let mut admins = Vec::new(env);
+        admins.push_back(admin.clone());
+        for _ in 0..n_extra {
+            admins.push_back(Address::generate(env));
+        }
+        client.init_multisig(admin, &admins, &threshold);
+        admins
+    }
+
+    /// At exactly threshold-1 approvals, the proposal must NOT auto-execute,
+    /// and explicit execute_proposal must fail with InsufficientApprovals.
+    #[test]
+    fn threshold_minus_one_does_not_execute() {
+        let (env, client, admin, _admin2) = setup_multisig();
+        // Reconfigure: admin + 4 extra = 5 admins, threshold=4.
+        let admins = reconfigure_multisig(&env, &client, &admin, 4, 4);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // proposer is first admin = 1 approval. Add 2 more = 3 total (threshold-1).
+        client.approve_action(&admins.get(1).unwrap(), &proposal_id);
+        client.approve_action(&admins.get(2).unwrap(), &proposal_id);
+
+        let p = client.get_proposal(&proposal_id);
+        assert_eq!(p.approvals.len(), 3, "must have threshold-1 approvals");
+        assert!(!p.executed, "must NOT auto-execute at threshold-1");
+
+        let result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::InsufficientApprovals)),
+            "execute must fail at threshold-1"
+        );
+    }
+
+    /// At exactly threshold approvals, the proposal auto-executes on the
+    /// final approve_action call.
+    #[test]
+    fn threshold_exact_auto_executes() {
+        let (env, client, admin, _admin2) = setup_multisig();
+        // Reconfigure: admin + 3 extra = 4 admins, threshold=3.
+        let admins = reconfigure_multisig(&env, &client, &admin, 3, 3);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // 1 approval (proposer). Add 1 more = 2 → still below threshold.
+        client.approve_action(&admins.get(1).unwrap(), &proposal_id);
+        let p = client.get_proposal(&proposal_id);
+        assert_eq!(p.approvals.len(), 2);
+        assert!(!p.executed);
+
+        // 3rd approval hits threshold → must auto-execute.
+        client.approve_action(&admins.get(2).unwrap(), &proposal_id);
+        let p = client.get_proposal(&proposal_id);
+        assert_eq!(p.approvals.len(), 3, "final approval recorded");
+        assert!(p.executed, "auto-executed at threshold");
+    }
+
+    /// Minimum viable threshold (1) with 2 admins — proposer alone meets
+    /// threshold. propose_action does NOT auto-execute; explicit execute succeeds.
+    #[test]
+    fn threshold_one_execute_succeeds() {
+        let (env, client, admin, _admin2) = setup_multisig();
+        reconfigure_multisig(&env, &client, &admin, 1, 1);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        let p = client.get_proposal(&proposal_id);
+        assert_eq!(p.approvals.len(), 1, "proposer counted as sole approval");
+        assert!(
+            !p.executed,
+            "not executed until explicit execute or approve"
+        );
+
+        client.execute_proposal(&proposal_id);
+        let p = client.get_proposal(&proposal_id);
+        assert!(p.executed);
+    }
+
+    /// After auto-execution at threshold, additional approve calls are
+    /// rejected with ProposalAlreadyExecuted.
+    #[test]
+    fn approve_after_auto_execute_is_blocked() {
+        let (env, client, admin, _admin2) = setup_multisig();
+        // Reconfigure: admin + 2 extra = 3 admins, threshold=2.
+        let admins = reconfigure_multisig(&env, &client, &admin, 2, 2);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // 1 approval (proposer). 2nd approval hits threshold → auto-executes.
+        client.approve_action(&admins.get(1).unwrap(), &proposal_id);
+        let p = client.get_proposal(&proposal_id);
+        assert!(p.executed, "must be executed after threshold hit");
+
+        // 3rd admin tries to approve → must fail.
+        let result = client.try_approve_action(&admins.get(2).unwrap(), &proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::ProposalAlreadyExecuted)),
+            "approve after execution must be blocked"
+        );
+    }
+
+    /// Under-threshold explicit execute is consistently rejected.
+    #[test]
+    fn under_threshold_execute_rejected() {
+        let (env, client, admin, _admin2) = setup_multisig();
+        // Reconfigure: admin + 5 extra = 6 admins, threshold=5.
+        let _admins = reconfigure_multisig(&env, &client, &admin, 5, 5);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        let p = client.get_proposal(&proposal_id);
+        assert_eq!(p.approvals.len(), 1);
+
+        let result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::InsufficientApprovals)),
+            "under-threshold execute must be rejected"
+        );
+    }
+
+    /// Approval count is tracked correctly at every step from 1 up to and past threshold.
+    #[test]
+    fn approval_count_tracking_is_consistent() {
+        let (env, client, admin, _admin2) = setup_multisig();
+        // Reconfigure: admin + 5 extra = 6 admins, threshold=4.
+        let admins = reconfigure_multisig(&env, &client, &admin, 5, 4);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        let p = client.get_proposal(&proposal_id);
+        assert_eq!(p.approvals.len(), 1);
+
+        client.approve_action(&admins.get(1).unwrap(), &proposal_id);
+        let p = client.get_proposal(&proposal_id);
+        assert_eq!(p.approvals.len(), 2);
+        assert!(!p.executed);
+
+        client.approve_action(&admins.get(2).unwrap(), &proposal_id);
+        let p = client.get_proposal(&proposal_id);
+        assert_eq!(p.approvals.len(), 3);
+        assert!(!p.executed);
+
+        client.approve_action(&admins.get(3).unwrap(), &proposal_id);
+        let p = client.get_proposal(&proposal_id);
+        assert_eq!(p.approvals.len(), 4);
+        assert!(p.executed);
+    }
 }

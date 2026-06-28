@@ -9,7 +9,7 @@ use crate::{
 use soroban_sdk::{
     contract, contracterror, contractimpl,
     testutils::{storage::Persistent, Address as _, Events, Ledger},
-    Address, BytesN, Env, IntoVal, Symbol, TryFromVal,
+    Address, BytesN, Env, IntoVal, Symbol, TryFromVal, TryIntoVal,
 };
 
 #[contract]
@@ -1471,7 +1471,8 @@ fn test_update_eta_valid_emits_event() {
     let topic = Symbol::try_from_val(&env, &last.1.get(0).unwrap()).unwrap();
     assert_eq!(topic, Symbol::new(&env, "eta_updated"));
 
-    let event_data = <(u64, u64, BytesN<32>, u32, u32, BytesN<32>)>::try_from_val(&env, &last.2).unwrap();
+    let event_data =
+        <(u64, u64, BytesN<32>, u32, u32, BytesN<32>)>::try_from_val(&env, &last.2).unwrap();
     assert_eq!(event_data.0, shipment_id);
     assert_eq!(event_data.1, eta_timestamp);
     assert_eq!(event_data.2, eta_hash);
@@ -11389,7 +11390,7 @@ fn test_recover_shipment_emits_audit_trail() {
         }
     }
     assert!(found, "recovery_event was not emitted");
-    
+
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, crate::types::ShipmentStatus::Cancelled);
 }
@@ -11436,7 +11437,7 @@ fn test_unlock_escrow_emits_audit_trail() {
         }
     }
     assert!(found, "escrow_unlock_event was not emitted");
-    
+
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.escrow_amount, 0);
 }
@@ -11463,7 +11464,7 @@ fn test_clear_finalization_emits_audit_trail() {
     );
 
     client.cancel_shipment(&company, &shipment_id, &data_hash);
-    
+
     let shipment_pre = client.get_shipment(&shipment_id);
     assert!(shipment_pre.finalized);
 
@@ -11486,8 +11487,7 @@ fn test_clear_finalization_emits_audit_trail() {
         }
     }
     assert!(found, "finalization_clear_event was not emitted");
-    
+
     let shipment = client.get_shipment(&shipment_id);
     assert!(!shipment.finalized);
 }
-
