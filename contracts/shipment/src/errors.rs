@@ -143,4 +143,10 @@ pub enum NavinError {
     MetadataSymbolCollision = 63,
     /// External integration failed (e.g. backend failed to release token).
     ExternalIntegrationFailed = 64,
+    /// The provided symbol is empty or invalid.
+    InvalidSymbol = 65,
+    /// Note not found or index out of bounds.
+    NoteNotFound = 66,
+    /// Evidence not found or index out of bounds.
+    EvidenceNotFound = 67,
 }

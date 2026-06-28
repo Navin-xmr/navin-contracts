@@ -7648,6 +7648,22 @@ fn test_init_multisig_returns_invalid_multisig_config_empty_admins() {
     client.init_multisig(&admin, &admins, &1);
 }
 
+#[test]
+#[should_panic(expected = "Error(Contract, #31)")]
+fn test_init_multisig_duplicate_admins() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+    admins.push_back(admin.clone());
+
+    client.initialize(&admin, &token_contract);
+
+    client.init_multisig(&admin, &admins, &2);
+}
+
 // ============= Error #29: NotExpired Tests =============
 
 #[test]
@@ -10027,6 +10043,61 @@ fn test_notes_preserve_append_order() {
     assert_eq!(client.get_note_hash(&shipment_id, &0), Some(note_a.clone()));
     assert_eq!(client.get_note_hash(&shipment_id, &1), Some(note_b.clone()));
     assert_eq!(client.get_note_hash(&shipment_id, &2), Some(note_c.clone()));
+}
+
+#[test]
+fn test_get_note_hash_out_of_bounds() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[3u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Call on empty shipment (0 notes)
+    assert_eq!(client.get_note_count(&shipment_id), 0);
+    let result_empty = client.try_get_note_hash(&shipment_id, &0);
+    assert_eq!(
+        result_empty,
+        Err(Ok(crate::NavinError::NoteNotFound)),
+        "querying index 0 on empty notes must fail with NoteNotFound"
+    );
+
+    // Populate notes
+    let note_a = BytesN::from_array(&env, &[0xAA; 32]);
+    client.append_note_hash(&company, &shipment_id, &note_a);
+
+    // Query valid index
+    assert_eq!(client.get_note_hash(&shipment_id, &0), Some(note_a));
+
+    // Query index equal to count (1)
+    let result_equal = client.try_get_note_hash(&shipment_id, &1);
+    assert_eq!(
+        result_equal,
+        Err(Ok(crate::NavinError::NoteNotFound)),
+        "querying index equal to count must fail with NoteNotFound"
+    );
+
+    // Query index greater than count (2)
+    let result_greater = client.try_get_note_hash(&shipment_id, &2);
+    assert_eq!(
+        result_greater,
+        Err(Ok(crate::NavinError::NoteNotFound)),
+        "querying index greater than count must fail with NoteNotFound"
+    );
 }
 
 #[test]
