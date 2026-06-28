@@ -358,6 +358,14 @@ fn require_not_finalized(shipment: &Shipment) -> Result<(), NavinError> {
     Ok(())
 }
 
+/// Centralized state machine guardrail for all shipment lifecycle transitions.
+pub(crate) fn validate_shipment_transition(from: &ShipmentStatus, to: &ShipmentStatus) -> Result<(), NavinError> {
+    if !from.is_valid_transition(to) {
+        return Err(NavinError::InvalidStatus);
+    }
+    Ok(())
+}
+
 /// Build a 32-byte action hash from arbitrary bytes and check/set the idempotency window.
 /// Returns `DuplicateAction` if the hash is already present in temporary storage.
 fn check_idempotency(env: &Env, payload: soroban_sdk::Bytes) -> Result<(), NavinError> {
@@ -936,10 +944,7 @@ impl NavinShipment {
         config::set_config(&env, &default_config);
         storage::set_shipment_limit(&env, default_config.default_shipment_limit);
 
-        env.events().publish(
-            (symbol_short!("init"),),
-            (admin.clone(), token_contract.clone()),
-        );
+        events::emit_contract_initialized(&env, &admin, &token_contract);
 
         // Extend contract instance TTL to prevent premature archival
         let config = config::get_config(&env);
@@ -967,8 +972,7 @@ impl NavinShipment {
 
         storage::set_shipment_limit(&env, limit);
 
-        env.events()
-            .publish((Symbol::new(&env, "set_limit"),), (admin, limit));
+        events::emit_shipment_limit_updated(&env, &admin, limit);
 
         Ok(())
     }
@@ -994,10 +998,7 @@ impl NavinShipment {
         }
 
         storage::set_company_shipment_limit(&env, &company, limit);
-        env.events().publish(
-            (Symbol::new(&env, "set_cmp_limit"),),
-            (admin, company, limit),
-        );
+        events::emit_company_limit_updated(&env, &admin, &company, limit);
         Ok(())
     }
 
@@ -1582,8 +1583,7 @@ impl NavinShipment {
         require_admin_or_operator(&env, &admin)?;
 
         storage::suspend_carrier(&env, &carrier);
-        env.events()
-            .publish((Symbol::new(&env, "carrier_suspended"),), (admin, carrier));
+        events::emit_carrier_suspended(&env, &admin, &carrier);
         Ok(())
     }
 
@@ -1602,10 +1602,7 @@ impl NavinShipment {
         require_admin_or_operator(&env, &admin)?;
 
         storage::reactivate_carrier(&env, &carrier);
-        env.events().publish(
-            (Symbol::new(&env, "carrier_reactivated"),),
-            (admin, carrier),
-        );
+        events::emit_carrier_reactivated(&env, &admin, &carrier);
         Ok(())
     }
 
@@ -2509,9 +2506,7 @@ impl NavinShipment {
             }
         }
 
-        if !shipment.status.is_valid_transition(&new_status) {
-            return Err(NavinError::InvalidStatus);
-        }
+        crate::validate_shipment_transition(&shipment.status, &new_status)?;
 
         let old_status = shipment.status.clone();
         shipment.status = new_status.clone();
@@ -3032,12 +3027,7 @@ impl NavinShipment {
         require_not_finalized(&shipment)?;
 
         // Validate transition to Delivered
-        if !shipment
-            .status
-            .is_valid_transition(&ShipmentStatus::Delivered)
-        {
-            return Err(NavinError::InvalidStatus);
-        }
+        crate::validate_shipment_transition(&shipment.status, &ShipmentStatus::Delivered)?;
 
         let now = env.ledger().timestamp();
         let old_status = shipment.status.clone();
@@ -3056,10 +3046,7 @@ impl NavinShipment {
         finalize_if_settled(&env, &mut shipment);
         persist_shipment(&env, &shipment)?;
 
-        env.events().publish(
-            (Symbol::new(&env, "delivery_confirmed"),),
-            (shipment_id, receiver, confirmation_hash.clone()),
-        );
+        events::emit_delivery_confirmed(&env, shipment_id, &receiver, &confirmation_hash);
 
         // Reputation: record successful delivery for the carrier
         events::emit_delivery_success(&env, &shipment.carrier, shipment_id, now);
@@ -3255,12 +3242,7 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
 
-        let timestamp = env.ledger().timestamp();
-
-        env.events().publish(
-            (Symbol::new(&env, "geofence_event"),),
-            (shipment_id, zone_type, data_hash, timestamp),
-        );
+        events::emit_geofence_event(&env, shipment_id, zone_type, &data_hash);
 
         Ok(())
     }
@@ -3317,10 +3299,7 @@ impl NavinShipment {
             return Err(NavinError::InvalidTimestamp);
         }
 
-        env.events().publish(
-            (Symbol::new(&env, "eta_updated"),),
-            (shipment_id, eta_timestamp, data_hash),
-        );
+        events::emit_eta_updated(&env, shipment_id, eta_timestamp, &data_hash);
 
         Ok(())
     }
@@ -4973,13 +4952,7 @@ impl NavinShipment {
         };
         storage::set_proposal_digest(&env, proposal_id, &digest_record);
 
-        env.events()
-            .publish((symbol_short!("propose"),), (proposal_id, proposer, action));
-        // Emit digest event so off-chain indexers can capture it without a query.
-        env.events().publish(
-            (Symbol::new(&env, "proposal_digest"),),
-            (proposal_id, digest_hash),
-        );
+        events::emit_proposal_digest(&env, proposal_id, digest_hash.clone(), now);
 
         Ok(proposal_id)
     }
@@ -5283,8 +5256,7 @@ impl NavinShipment {
         config::set_config(&env, &new_config);
 
         // Emit config_updated event
-        env.events()
-            .publish((Symbol::new(&env, "config_updated"),), (admin, new_config));
+        events::emit_config_updated(&env, &admin, &new_config);
 
         Ok(())
     }
@@ -5847,10 +5819,7 @@ impl NavinShipment {
         cfg.creation_quota_window_seconds = window_seconds;
         config::set_config(&env, &cfg);
 
-        env.events().publish(
-            (Symbol::new(&env, "quota_set"),),
-            (admin, max_per_window, window_seconds),
-        );
+        events::emit_quota_set(&env, &admin, max_per_window, window_seconds);
 
         Ok(())
     }
@@ -5948,6 +5917,48 @@ impl NavinShipment {
         use soroban_sdk::xdr::ToXdr;
         let xdr_bytes = fields.to_xdr(&env);
         env.crypto().sha256(&xdr_bytes).into()
+    }
+
+    // =========================================================================
+    // Recovery Operations
+    // =========================================================================
+
+    pub fn recover_shipment(
+        env: Env,
+        admin: Address,
+        shipment_id: u64,
+        target_status: ShipmentStatus,
+        reason_hash: BytesN<32>,
+    ) -> Result<(), NavinError> {
+        recovery::recover_shipment(&env, &admin, shipment_id, target_status, &reason_hash)
+    }
+
+    pub fn unlock_escrow(
+        env: Env,
+        admin: Address,
+        shipment_id: u64,
+        reason_hash: BytesN<32>,
+    ) -> Result<(), NavinError> {
+        recovery::unlock_escrow(&env, &admin, shipment_id, &reason_hash)
+    }
+
+    pub fn clear_finalization(
+        env: Env,
+        admin: Address,
+        shipment_id: u64,
+        reason_hash: BytesN<32>,
+    ) -> Result<(), NavinError> {
+        recovery::clear_finalization(&env, &admin, shipment_id, &reason_hash)
+    }
+
+    pub fn rollback_on_external_failure(
+        env: Env,
+        admin: Address,
+        shipment_id: u64,
+        previous_status: ShipmentStatus,
+        reason_hash: BytesN<32>,
+    ) -> Result<(), NavinError> {
+        recovery::rollback_on_external_failure(&env, &admin, shipment_id, previous_status, &reason_hash)
     }
 }
 

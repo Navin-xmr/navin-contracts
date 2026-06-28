@@ -68,8 +68,7 @@ pub fn recover_shipment(
 ) -> Result<(), NavinError> {
     // Verify admin authorization
     admin.require_auth();
-    crate::require_role(env, admin, Role::Company)?;
-    if !storage::is_admin(env, admin) {
+    if storage::get_admin(env) != *admin {
         return Err(NavinError::Unauthorized);
     }
 
@@ -143,8 +142,7 @@ pub fn unlock_escrow(
 ) -> Result<(), NavinError> {
     // Verify admin authorization
     admin.require_auth();
-    crate::require_role(env, admin, Role::Company)?;
-    if !storage::is_admin(env, admin) {
+    if storage::get_admin(env) != *admin {
         return Err(NavinError::Unauthorized);
     }
 
@@ -202,8 +200,7 @@ pub fn clear_finalization(
 ) -> Result<(), NavinError> {
     // Verify admin authorization
     admin.require_auth();
-    crate::require_role(env, admin, Role::Company)?;
-    if !storage::is_admin(env, admin) {
+    if storage::get_admin(env) != *admin {
         return Err(NavinError::Unauthorized);
     }
 
@@ -338,4 +335,52 @@ mod tests {
             &ShipmentStatus::Delivered
         ));
     }
+}
+
+/// Admin function to roll back a shipment's state when an external integration fails (e.g., token transfer fails but status advanced).
+pub fn rollback_on_external_failure(
+    env: &Env,
+    admin: &Address,
+    shipment_id: u64,
+    previous_status: ShipmentStatus,
+    reason_hash: &BytesN<32>,
+) -> Result<(), NavinError> {
+    // Verify admin authorization
+    admin.require_auth();
+    if storage::get_admin(env) != *admin {
+        return Err(NavinError::Unauthorized);
+    }
+    
+    // Validate reason hash
+    crate::validate_hash(reason_hash)?;
+
+    let mut shipment = storage::get_shipment(env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+    
+    // Un-finalize if it was finalized during the broken transition
+    if shipment.finalized {
+        shipment.finalized = false;
+    }
+    
+    let old_status = shipment.status.clone();
+    
+    // Rollback status
+    shipment.status = previous_status.clone();
+    shipment.updated_at = env.ledger().timestamp();
+    
+    // Increment integration nonce to prevent replay of the failed state
+    shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
+
+    storage::set_shipment(env, &shipment);
+    crate::extend_shipment_ttl(env, shipment_id);
+
+    events::emit_recovery_event(
+        env,
+        shipment_id,
+        admin,
+        &old_status,
+        &previous_status,
+        reason_hash,
+    );
+
+    Ok(())
 }

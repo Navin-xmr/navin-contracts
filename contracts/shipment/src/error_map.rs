@@ -422,6 +422,12 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "Metadata key and value symbols are identical; use distinct symbols.",
         ),
+        NavinError::ExternalIntegrationFailed => (
+            64,
+            Transient,
+            RetryAfterDelay,
+            "External integration failed (e.g. backend token release); retry or rollback the state.",
+        ),
     };
 
     ContractErrorInfo {
@@ -600,3 +606,5 @@ mod tests {
         assert_eq!(c.message, d.message);
     }
 }
+
+

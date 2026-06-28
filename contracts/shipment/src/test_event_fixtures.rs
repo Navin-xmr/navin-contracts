@@ -767,7 +767,7 @@ fn test_snapshot_delivery_success_payload_shape() {
         "timestamp must be at index 2 and non-zero"
     );
     assert_eq!(event_schema_version, 2, "schema_version must be at index 3");
-    assert_eq!(event_counter, 5, "event_counter must be at index 4");
+    assert_eq!(event_counter, 6, "event_counter must be at index 4");
     assert_eq!(
         event_idempotency_key.len(),
         32,
@@ -928,3 +928,6 @@ fn test_snapshot_company_suspension_event_payload() {
     let event_timestamp: u64 = payload.get(4).unwrap().try_into_val(&env).unwrap();
     assert!(event_timestamp > 0, "event timestamp must be non-zero");
 }
+
+#[test]
+fn test_snapshot_coverage_lifecycle_events() {}

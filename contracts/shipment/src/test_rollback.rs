@@ -376,3 +376,61 @@ fn test_release_failure_emits_no_release_event() {
         "no escrow_released event must be emitted after a failed token transfer"
     );
 }
+
+#[test]
+fn test_failing_token_transfer_path_recovery() {
+    let (env, client, admin, _) = setup_failing_token();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0x76u8; 32]);
+    let deadline = test_utils::future_deadline(&env, 3600);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    // Inject escrow directly into storage so we can test recovery.
+    env.as_contract(&client.address, || {
+        let mut s = crate::storage::get_shipment(&env, id).unwrap();
+        s.escrow_amount = 3000;
+        s.total_escrow = 3000;
+        crate::storage::set_shipment(&env, &s);
+        crate::storage::set_escrow(&env, id, 3000);
+    });
+
+    // Advance to Delivered
+    test_utils::advance_past_rate_limit(&env);
+    client.update_status(&carrier, &id, &ShipmentStatus::InTransit, &data_hash);
+    test_utils::advance_past_rate_limit(&env);
+    let delivery_hash = BytesN::from_array(&env, &[0x77u8; 32]);
+    client.update_status(&carrier, &id, &ShipmentStatus::Delivered, &delivery_hash);
+
+    let shipment_before = client.get_shipment(&id);
+    assert!(!shipment_before.finalized, "Shipment is not finalized until escrow is fully released");
+
+    // Attempt to release escrow - it will fail due to token failure
+    let result = client.try_release_escrow(&receiver, &id);
+    assert!(result.is_err());
+
+    // Admin rolls back the state because of the external integration failure
+    let reason_hash = BytesN::from_array(&env, &[0xffu8; 32]);
+    client.rollback_on_external_failure(&admin, &id, &ShipmentStatus::InTransit, &reason_hash);
+
+    let shipment_after = client.get_shipment(&id);
+    assert_eq!(shipment_after.status, ShipmentStatus::InTransit);
+    assert_eq!(shipment_after.finalized, false, "Shipment must be un-finalized");
+    assert!(
+        shipment_after.integration_nonce > shipment_before.integration_nonce,
+        "Integration nonce must be incremented"
+    );
+}
