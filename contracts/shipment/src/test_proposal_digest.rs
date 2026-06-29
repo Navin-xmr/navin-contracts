@@ -665,5 +665,49 @@ mod tests {
             "Proposal must be expired after 7-day threshold"
         );
     }
+
+    // ── [ISSUE #507] Zero-duration proposal expiry rejection tests ─────────────
+
+    /// Test: propose_action is rejected when proposal_expiry_seconds is zero.
+    /// Bypasses update_config validation to directly set a zero-duration expiry
+    /// in config storage, then verifies propose_action returns InvalidConfig.
+    #[test]
+    fn propose_action_rejected_when_expiry_seconds_is_zero() {
+        let (env, client, admin, _admin2) = setup_multisig();
+
+        // Bypass config validation and force proposal_expiry_seconds = 0.
+        env.as_contract(&client.address, || {
+            let mut cfg = crate::config::get_config(&env);
+            cfg.proposal_expiry_seconds = 0;
+            crate::config::set_config(&env, &cfg);
+        });
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let result = client.try_propose_action(&admin, &action);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::InvalidConfig)),
+            "zero-duration expiry must be rejected"
+        );
+    }
+
+    /// Test: propose_action succeeds when proposal_expiry_seconds is positive.
+    /// Verifies that the check does not reject valid positive-duration proposals.
+    #[test]
+    fn propose_action_succeeds_with_positive_expiry_seconds() {
+        let (env, client, admin, _admin2) = setup_multisig();
+
+        // Explicitly set a positive expiry (1 hour) to confirm acceptance.
+        let mut cfg = client.get_contract_config();
+        cfg.proposal_expiry_seconds = 3_600;
+        client.update_config(&admin, &cfg);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let result = client.try_propose_action(&admin, &action);
+        assert!(
+            result.is_ok(),
+            "positive-duration expiry must be accepted"
+        );
+    }
 }
 

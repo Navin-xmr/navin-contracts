@@ -4962,6 +4962,9 @@ impl NavinShipment {
 
         let now = env.ledger().timestamp();
         let config = config::get_config(&env);
+        if config.proposal_expiry_seconds == 0 {
+            return Err(NavinError::InvalidConfig);
+        }
         let expires_at = now + config.proposal_expiry_seconds;
 
         let mut approvals = soroban_sdk::Vec::new(&env);
