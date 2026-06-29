@@ -691,6 +691,132 @@ fn test_get_dispute_evidence_hash_out_of_bounds() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// append_note_hash() - Boundary and Invalid Input Tests (issue #500)
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn setup_shipment_for_notes(
+    env: &Env,
+    client: &NavinShipmentClient,
+    admin: &Address,
+) -> (Address, Address, Address, u64) {
+    let company = Address::generate(env);
+    let receiver = Address::generate(env);
+    let carrier = Address::generate(env);
+
+    client.add_company(admin, &company);
+    client.add_carrier(admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(env, &[1u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(env),
+        &deadline,
+    );
+
+    (company, receiver, carrier, shipment_id)
+}
+
+#[test]
+fn test_append_note_hash_invalid_zero_hash() {
+    let (env, client, admin, _token) = setup_env();
+    let (company, _receiver, _carrier, shipment_id) =
+        setup_shipment_for_notes(&env, &client, &admin);
+
+    let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+    let result = client.try_append_note_hash(&company, &shipment_id, &zero_hash);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::InvalidHash)),
+        "append_note_hash must reject all-zero hash"
+    );
+    assert_eq!(client.get_note_count(&shipment_id), 0);
+}
+
+#[test]
+fn test_append_note_hash_valid_32_byte_hash() {
+    let (env, client, admin, _token) = setup_env();
+    let (company, _receiver, _carrier, shipment_id) =
+        setup_shipment_for_notes(&env, &client, &admin);
+
+    let note_hash = BytesN::from_array(&env, &[42u8; 32]);
+    assert!(client
+        .try_append_note_hash(&company, &shipment_id, &note_hash)
+        .is_ok());
+    assert_eq!(client.get_note_count(&shipment_id), 1);
+    assert_eq!(
+        client.get_note_hash(&shipment_id, &0),
+        Some(note_hash)
+    );
+}
+
+#[test]
+fn test_append_note_hash_nonexistent_shipment() {
+    let (env, client, admin, _token) = setup_env();
+    let company = Address::generate(&env);
+    client.add_company(&admin, &company);
+
+    let note_hash = BytesN::from_array(&env, &[5u8; 32]);
+    let result = client.try_append_note_hash(&company, &999u64, &note_hash);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ShipmentNotFound)),
+        "append_note_hash on missing shipment must return ShipmentNotFound"
+    );
+}
+
+#[test]
+fn test_append_note_hash_unauthorized_caller() {
+    let (env, client, admin, _token) = setup_env();
+    let (_company, _receiver, _carrier, shipment_id) =
+        setup_shipment_for_notes(&env, &client, &admin);
+
+    let outsider = Address::generate(&env);
+    let note_hash = BytesN::from_array(&env, &[6u8; 32]);
+    let result = client.try_append_note_hash(&outsider, &shipment_id, &note_hash);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::Unauthorized)),
+        "append_note_hash must reject unauthorized caller"
+    );
+}
+
+#[test]
+fn test_append_note_hash_exceeds_note_limit() {
+    use crate::ContractConfig;
+    let (env, client, admin, _token) = setup_env();
+    let (company, _receiver, _carrier, shipment_id) =
+        setup_shipment_for_notes(&env, &client, &admin);
+
+    let mut config = ContractConfig::default();
+    config.max_notes_per_shipment = 2;
+    client.update_config(&admin, &config);
+
+    let note_a = BytesN::from_array(&env, &[10u8; 32]);
+    let note_b = BytesN::from_array(&env, &[11u8; 32]);
+    let note_c = BytesN::from_array(&env, &[12u8; 32]);
+
+    assert!(client
+        .try_append_note_hash(&company, &shipment_id, &note_a)
+        .is_ok());
+    assert!(client
+        .try_append_note_hash(&company, &shipment_id, &note_b)
+        .is_ok());
+
+    let result = client.try_append_note_hash(&company, &shipment_id, &note_c);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::NoteLimitExceeded)),
+        "append_note_hash must reject when max notes per shipment is reached"
+    );
+    assert_eq!(client.get_note_count(&shipment_id), 2);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Summary: All tests verify panic-free error handling
 // ─────────────────────────────────────────────────────────────────────────────
 // Each test ensures that invalid inputs return Err instead of panicking.

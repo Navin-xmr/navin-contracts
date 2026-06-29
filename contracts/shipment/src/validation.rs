@@ -14,6 +14,21 @@ const MAX_PAST_OFFSET: u64 = 365 * 24 * 60 * 60;
 /// Roughly 10 years.
 const MAX_FUTURE_OFFSET: u64 = 10 * 365 * 24 * 60 * 60;
 
+/// Expected byte length for SHA-256 hashes (`BytesN<32>`).
+pub const HASH_BYTE_LENGTH: usize = 32;
+
+/// Validate a note hash: enforce exact 32-byte length and reject all-zero sentinels.
+///
+/// Soroban enforces `BytesN<32>` at the type level; this helper documents and
+/// re-checks the length boundary before storage.
+pub fn validate_note_hash(hash: &BytesN<32>) -> Result<(), NavinError> {
+    let bytes: [u8; HASH_BYTE_LENGTH] = hash.to_array();
+    if bytes.len() != HASH_BYTE_LENGTH {
+        return Err(NavinError::InvalidHash);
+    }
+    validate_hash(hash)
+}
+
 /// Ensure a `BytesN<32>` hash is not the all-zeros sentinel value.
 ///
 /// This validator performs a sanity check on external hashes (data_hash, reason_hash, etc.)
@@ -396,6 +411,20 @@ mod tests {
     use super::*;
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::{testutils::Ledger, BytesN, Env, Symbol};
+
+    #[test]
+    fn test_validate_note_hash_rejects_zero_hash() {
+        let env = Env::default();
+        let zero_hash: BytesN<32> = BytesN::from_array(&env, &[0u8; 32]);
+        assert_eq!(validate_note_hash(&zero_hash), Err(NavinError::InvalidHash));
+    }
+
+    #[test]
+    fn test_validate_note_hash_accepts_valid_32_byte_hash() {
+        let env = Env::default();
+        let hash: BytesN<32> = BytesN::from_array(&env, &[0xAB_u8; 32]);
+        assert_eq!(validate_note_hash(&hash), Ok(()));
+    }
 
     // validate_hash
     #[test]

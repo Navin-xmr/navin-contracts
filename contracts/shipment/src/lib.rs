@@ -742,8 +742,8 @@ impl NavinShipment {
         require_not_paused(&env)?;
         reporter.require_auth();
 
-        // Validate hash before storage
-        validation::validate_hash(&note_hash)?;
+        // Validate note hash length (32 bytes) and reject malformed sentinels.
+        validation::validate_note_hash(&note_hash)?;
 
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
