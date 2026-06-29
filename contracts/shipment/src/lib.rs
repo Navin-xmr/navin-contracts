@@ -1371,6 +1371,14 @@ impl NavinShipment {
         company.require_auth();
         require_role(&env, &company, Role::Company)?;
 
+        // Issue #539 — reject duplicate whitelist additions. Without this
+        // check the storage write is silently idempotent and emits a
+        // spurious `add_wl` event, making it impossible for off-chain
+        // monitors to distinguish a re-add from a first-time add.
+        if storage::is_carrier_whitelisted(&env, &company, &carrier) {
+            return Err(NavinError::CarrierAlreadyWhitelisted);
+        }
+
         storage::add_carrier_to_whitelist(&env, &company, &carrier);
 
         env.events().publish(
