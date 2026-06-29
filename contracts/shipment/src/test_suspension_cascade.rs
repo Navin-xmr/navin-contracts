@@ -416,20 +416,135 @@ mod tests {
         client.add_carrier_to_whitelist(&company, &carrier);
 
         client.suspend_company(&admin, &company);
-        let blocked = client.try_create_shipments_batch(
-            &company,
-            &build_batch_inputs(&env, &carrier, 1),
-        );
+        let blocked =
+            client.try_create_shipments_batch(&company, &build_batch_inputs(&env, &carrier, 1));
         assert!(blocked.is_err());
 
         client.reactivate_company(&admin, &company);
-        let after = client.try_create_shipments_batch(
-            &company,
-            &build_batch_inputs(&env, &carrier, 1),
-        );
+        let after =
+            client.try_create_shipments_batch(&company, &build_batch_inputs(&env, &carrier, 1));
         assert!(
             after.is_ok(),
             "reactivated company must be able to create batches again"
+        );
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ISSUE #548 — suspended carriers must be blocked from geofence reporting
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// A non-suspended carrier assigned to an in-transit shipment must be able
+    /// to call `report_geofence_event` — baseline to anchor the negative tests.
+    #[test]
+    fn issue_548_active_carrier_can_report_geofence_event() {
+        let (env, client, admin) = setup();
+        let (_, _, carrier, shipment_id, _) = create_in_transit_shipment(&env, &client, &admin);
+
+        let data_hash = BytesN::from_array(&env, &[0xA1u8; 32]);
+        let result = client.try_report_geofence_event(
+            &carrier,
+            &shipment_id,
+            &crate::GeofenceEvent::ZoneEntry,
+            &data_hash,
+        );
+        assert!(
+            result.is_ok(),
+            "active carrier must be able to report geofence events (baseline)"
+        );
+    }
+
+    /// Suspending the carrier must immediately block subsequent
+    /// `report_geofence_event` calls with `NavinError::CarrierSuspended`.
+    #[test]
+    fn issue_548_suspended_carrier_cannot_report_geofence_event() {
+        let (env, client, admin) = setup();
+        let (_, _, carrier, shipment_id, _) = create_in_transit_shipment(&env, &client, &admin);
+
+        client.suspend_carrier(&admin, &carrier);
+
+        let data_hash = BytesN::from_array(&env, &[0xA2u8; 32]);
+        let result = client.try_report_geofence_event(
+            &carrier,
+            &shipment_id,
+            &crate::GeofenceEvent::ZoneEntry,
+            &data_hash,
+        );
+        assert!(
+            result.is_err(),
+            "suspended carrier must not report geofence events"
+        );
+        assert_eq!(
+            result,
+            Err(Ok(crate::NavinError::CarrierSuspended)),
+            "suspended carrier must surface CarrierSuspended error"
+        );
+    }
+
+    /// Reactivating a suspended carrier must restore the ability to call
+    /// `report_geofence_event` on the same shipment.
+    #[test]
+    fn issue_548_reactivated_carrier_can_report_geofence_event() {
+        let (env, client, admin) = setup();
+        let (_, _, carrier, shipment_id, _) = create_in_transit_shipment(&env, &client, &admin);
+
+        client.suspend_carrier(&admin, &carrier);
+
+        // Confirm the suspension blocks the event.
+        let blocked_hash = BytesN::from_array(&env, &[0xA3u8; 32]);
+        let blocked = client.try_report_geofence_event(
+            &carrier,
+            &shipment_id,
+            &crate::GeofenceEvent::ZoneEntry,
+            &blocked_hash,
+        );
+        assert!(blocked.is_err());
+
+        // Reactivate and verify access is restored.
+        client.reactivate_carrier(&admin, &carrier);
+        let ok_hash = BytesN::from_array(&env, &[0xA4u8; 32]);
+        let result = client.try_report_geofence_event(
+            &carrier,
+            &shipment_id,
+            &crate::GeofenceEvent::ZoneExit,
+            &ok_hash,
+        );
+        assert!(
+            result.is_ok(),
+            "reactivated carrier must be able to report geofence events again"
+        );
+    }
+
+    /// A carrier suspended while a shipment is in-transit must be blocked from
+    /// reporting both ZoneEntry and ZoneExit geofence event types.
+    #[test]
+    fn issue_548_suspension_blocks_all_geofence_event_types() {
+        let (env, client, admin) = setup();
+        let (_, _, carrier, shipment_id, _) = create_in_transit_shipment(&env, &client, &admin);
+
+        client.suspend_carrier(&admin, &carrier);
+
+        let hash_entry = BytesN::from_array(&env, &[0xA5u8; 32]);
+        let result_entry = client.try_report_geofence_event(
+            &carrier,
+            &shipment_id,
+            &crate::GeofenceEvent::ZoneEntry,
+            &hash_entry,
+        );
+        assert!(
+            result_entry.is_err(),
+            "suspended carrier must not report ZoneEntry"
+        );
+
+        let hash_exit = BytesN::from_array(&env, &[0xA6u8; 32]);
+        let result_exit = client.try_report_geofence_event(
+            &carrier,
+            &shipment_id,
+            &crate::GeofenceEvent::ZoneExit,
+            &hash_exit,
+        );
+        assert!(
+            result_exit.is_err(),
+            "suspended carrier must not report ZoneExit"
         );
     }
 }

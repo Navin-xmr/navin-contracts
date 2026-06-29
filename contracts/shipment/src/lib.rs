@@ -81,6 +81,8 @@ mod test_precondition_guards;
 #[cfg(test)]
 mod test_proposal_digest;
 #[cfg(test)]
+mod test_replay_protection;
+#[cfg(test)]
 mod test_require_auth_for_args;
 #[cfg(test)]
 mod test_settlement;
@@ -106,8 +108,6 @@ mod test_verification;
 mod test_whitelist_multicompany;
 #[cfg(test)]
 mod test_zero_amount_escrow;
-#[cfg(test)]
-mod test_replay_protection;
 
 // ── Fuzz / property-based test harnesses ─────────────────────────────────────
 #[cfg(test)]
@@ -3276,6 +3276,7 @@ impl NavinShipment {
         require_initialized(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
+        require_active_carrier(&env, &carrier)?;
 
         // Verify shipment exists and carrier is assigned
         let shipment =

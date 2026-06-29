@@ -10042,6 +10042,127 @@ fn test_shipment_notes_unauthorized() {
     client.append_note_hash(&outsider, &shipment_id, &note_hash);
 }
 
+// ============= Note Count Zero Tests (#547) =============
+
+#[test]
+fn test_get_note_count_returns_zero_on_fresh_shipment() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    assert_eq!(
+        client.get_note_count(&shipment_id),
+        0,
+        "fresh shipment must report zero notes"
+    );
+}
+
+#[test]
+fn test_get_note_count_zero_across_multiple_shipments() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let shipment_a = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0xAAu8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    let shipment_b = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0xBBu8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    assert_eq!(
+        client.get_note_count(&shipment_a),
+        0,
+        "shipment_a must have zero notes before any are appended"
+    );
+    assert_eq!(
+        client.get_note_count(&shipment_b),
+        0,
+        "shipment_b must have zero notes before any are appended"
+    );
+}
+
+#[test]
+fn test_get_note_count_increments_independently_per_shipment() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let shipment_a = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0x01u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    let shipment_b = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0x02u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Both start at zero
+    assert_eq!(client.get_note_count(&shipment_a), 0);
+    assert_eq!(client.get_note_count(&shipment_b), 0);
+
+    // Append one note to shipment_a only
+    client.append_note_hash(
+        &company,
+        &shipment_a,
+        &BytesN::from_array(&env, &[0xFFu8; 32]),
+    );
+
+    // shipment_a incremented; shipment_b remains zero
+    assert_eq!(client.get_note_count(&shipment_a), 1);
+    assert_eq!(
+        client.get_note_count(&shipment_b),
+        0,
+        "shipment_b note count must remain zero when only shipment_a received a note"
+    );
+}
+
 // ============= Note Append-Order Immutability Tests =============
 
 #[test]
@@ -11560,7 +11681,10 @@ fn test_get_admin_consistent_across_queries_in_multisig_mode() {
 
     let first = client.get_admin();
     let second = client.get_admin();
-    assert_eq!(first, second, "repeated get_admin calls must return the same address");
+    assert_eq!(
+        first, second,
+        "repeated get_admin calls must return the same address"
+    );
     assert_eq!(first, admin);
 }
 
