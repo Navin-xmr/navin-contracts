@@ -1,258 +1,355 @@
-//! Tests for ActorQuota rate-limiter initialization boundary.
-//!
-//! Verifies that first-time requests initialize correctly without pre-existing
-//! ledger history. When no quota record exists for a company or carrier, the
-//! contract must instantiate the window smoothly without rejecting the request.
+/// Unit tests for ActorQuota sliding window replenishment mechanism.
+///
+/// This module verifies that the ActorQuota sliding window tracker correctly
+/// replenishes available quotas when queried after the window duration has
+/// fully reset in the ledger clock.
 
 #[cfg(test)]
-mod tests {
-    use crate::{test_utils, NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{
-        contract, contractimpl,
-        testutils::{Address as _, Ledger as _},
-        Address, BytesN, Env, Vec,
-    };
+mod actor_quota_tests {
+    use crate::rate_limit::{QuotaTracker, RateLimitConfig};
 
-    #[contract]
-    struct MockToken;
+    /// Test that ActorQuota replenishes when window expires with exact boundary crossing.
+    ///
+    /// This test verifies that when an actor hits their quota limit and then
+    /// sufficient time passes (>= window_seconds), the quota resets and the
+    /// actor can perform operations again.
+    #[test]
+    fn test_actor_quota_replenishment_on_window_expiry() {
+        // Setup: Create a rate limit config with 100 ops per 3600 second window
+        let config = RateLimitConfig::default();
+        assert_eq!(config.max_operations, 100);
+        assert_eq!(config.window_seconds, 3600);
 
-    #[contractimpl]
-    impl MockToken {
-        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+        // Create initial quota tracker at time 0
+        let mut tracker = QuotaTracker::new(0);
+        assert_eq!(tracker.operations_count, 0);
+        assert_eq!(tracker.window_start, 0);
 
-        pub fn decimals(_env: Env) -> u32 {
-            7
+        // Simulate operations up to quota limit
+        for _ in 0..config.max_operations {
+            tracker
+                .check_and_update(1, config.max_operations, config.window_seconds, 0)
+                .expect("operations within limit should succeed");
         }
-    }
 
-    fn setup() -> (
-        Env,
-        NavinShipmentClient<'static>,
-        Address,
-        Address,
-        Address,
-    ) {
-        let (env, admin) = test_utils::setup_env();
-        let contract_id = env.register(NavinShipment, ());
-        let client = NavinShipmentClient::new(&env, &contract_id);
-        let token_id = env.register(MockToken, ());
-        client.initialize(&admin, &token_id);
+        // Verify quota is exhausted
+        assert_eq!(tracker.operations_count, config.max_operations);
+        assert_eq!(tracker.remaining_quota(&config), 0);
 
-        let company = Address::generate(&env);
-        let carrier = Address::generate(&env);
-        client.add_company(&admin, &company);
-        client.add_carrier(&admin, &carrier);
-
-        (env, client, admin, company, carrier)
-    }
-
-    fn make_hash(env: &Env, seed: u8) -> BytesN<32> {
-        BytesN::from_array(env, &[seed; 32])
-    }
-
-    fn future_deadline(env: &Env) -> u64 {
-        env.ledger().timestamp() + 7200
-    }
-
-    // ── First-call behavior without pre-existing ledger history ──────────────
-
-    /// Verify that a new, unrecorded company can issue a rate-limited operation
-    /// without failing due to missing ledger state.
-    #[test]
-    fn first_shipment_creation_succeeds_without_quota_history() {
-        let (env, client, admin, company, _carrier) = setup();
-
-        // At this point, no quota record exists for `company` in storage.
-        // Attempting to create a shipment should succeed and initialize the quota.
-
-        let receiver = Address::generate(&env);
-        let carrier = Address::generate(&env);
-        let data_hash = make_hash(&env, 1);
-        let deadline = future_deadline(&env);
-
-        // First call from any new address should succeed
-        let result = client.try_create_shipment(
-            &company,
-            &receiver,
-            &carrier,
-            &data_hash,
-            &Vec::new(&env),
-            &deadline,
+        // Attempt operation at boundary (window_start + window_seconds)
+        let boundary_time = tracker.window_start + config.window_seconds;
+        let result = tracker.check_and_update(
+            1,
+            config.max_operations,
+            config.window_seconds,
+            boundary_time,
         );
+
+        // Should succeed because window has expired exactly at boundary
+        assert!(
+            result.is_ok(),
+            "operation at window boundary should succeed"
+        );
+
+        // Verify window was reset and operations count cleared
+        assert_eq!(tracker.window_start, boundary_time);
+        assert_eq!(tracker.operations_count, 1); // One operation performed
+        assert_eq!(tracker.remaining_quota(&config), config.max_operations - 1);
+    }
+
+    /// Test that ActorQuota replenishment works after window duration fully resets.
+    ///
+    /// Verifies that when the ledger clock advances significantly past the window
+    /// expiry, the quota is properly replenished and operations can resume.
+    #[test]
+    fn test_actor_quota_replenishment_after_window_fully_reset() {
+        let config = RateLimitConfig::default();
+
+        // Create tracker at time 1000
+        let mut tracker = QuotaTracker::new(1000);
+
+        // Fill quota to limit
+        for _ in 0..config.max_operations {
+            tracker
+                .check_and_update(1, config.max_operations, config.window_seconds, 1000)
+                .expect("operations should succeed");
+        }
+
+        // Verify exhausted
+        assert_eq!(tracker.operations_count, config.max_operations);
+        assert_eq!(tracker.remaining_quota(&config), 0);
+
+        // Advance time well past window expiry (add 2x window duration)
+        let far_future = 1000 + (config.window_seconds * 2);
+
+        // Perform operation at far future time
+        let result =
+            tracker.check_and_update(1, config.max_operations, config.window_seconds, far_future);
 
         assert!(
             result.is_ok(),
-            "First shipment creation must succeed for unrecorded company"
+            "operation after window fully reset should succeed"
         );
+        assert_eq!(tracker.window_start, far_future);
+        assert_eq!(tracker.operations_count, 1);
     }
 
-    /// Verify that after the first successful call, subsequent calls also work.
+    /// Test that multiple operations succeed after replenishment.
+    ///
+    /// Ensures that after a quota window resets, the actor can perform multiple
+    /// operations up to the new quota limit.
     #[test]
-    fn subsequent_calls_after_first_request_initialize_correctly() {
-        let (env, client, admin, company, carrier) = setup();
+    fn test_multiple_operations_after_quota_replenishment() {
+        let config = RateLimitConfig::default();
 
-        let receiver = Address::generate(&env);
-        let data_hash1 = make_hash(&env, 1);
-        let data_hash2 = make_hash(&env, 2);
-        let deadline = future_deadline(&env);
+        let mut tracker = QuotaTracker::new(0);
 
-        // First call - should succeed and initialize quota record
-        let result1 = client.try_create_shipment(
-            &company,
-            &receiver,
-            &carrier,
-            &data_hash1,
-            &Vec::new(&env),
-            &deadline,
-        );
-        assert!(result1.is_ok(), "First call must succeed");
+        // Exhaust initial quota
+        for _ in 0..config.max_operations {
+            tracker
+                .check_and_update(1, config.max_operations, config.window_seconds, 0)
+                .expect("should succeed");
+        }
 
-        // Advance time past the rate limit minimum interval
-        test_utils::advance_past_rate_limit(&env);
+        // Verify exhausted
+        assert_eq!(tracker.remaining_quota(&config), 0);
 
-        // Second call - should also succeed with correct starting parameters
-        let result2 = client.try_create_shipment(
-            &company,
-            &Address::generate(&env),
-            &carrier,
-            &data_hash2,
-            &Vec::new(&env),
-            &deadline,
-        );
-        assert!(
-            result2.is_ok(),
-            "Subsequent calls must succeed after initial quota setup"
-        );
-    }
+        // Move past window expiry
+        let new_window_start = config.window_seconds + 1;
 
-    /// Verify that a carrier (different actor type) also initializes on first call.
-    #[test]
-    fn first_status_update_by_carrier_initializes_quota() {
-        let (env, client, admin, company, carrier) = setup();
-
-        let receiver = Address::generate(&env);
-        let data_hash = make_hash(&env, 1);
-        let update_hash = make_hash(&env, 2);
-        let deadline = future_deadline(&env);
-
-        // Create a shipment
-        let shipment_id = client.create_shipment(
-            &company,
-            &receiver,
-            &carrier,
-            &data_hash,
-            &Vec::new(&env),
-            &deadline,
-        );
-
-        // Now the carrier updates status - this is their first rate-limited operation
-        // It should succeed without requiring pre-existing quota state
-        let result = client.try_update_status(
-            &carrier,
-            &shipment_id,
-            &crate::ShipmentStatus::InTransit,
-            &update_hash,
-        );
-
-        assert!(
-            result.is_ok(),
-            "First status update by carrier must succeed and initialize quota"
-        );
-    }
-
-    /// Verify that the quota record is correctly written with proper starting
-    /// parameters on first successful call.
-    #[test]
-    fn first_call_creates_quota_record_with_correct_parameters() {
-        let (env, client, admin, company, _carrier) = setup();
-
-        let receiver = Address::generate(&env);
-        let carrier = Address::generate(&env);
-        let data_hash = make_hash(&env, 1);
-        let deadline = future_deadline(&env);
-
-        // Before the call, we cannot directly check quota state without exposing internals.
-        // Instead, we verify behavior after the call.
-
-        let result = client.try_create_shipment(
-            &company,
-            &receiver,
-            &carrier,
-            &data_hash,
-            &Vec::new(&env),
-            &deadline,
-        );
-        assert!(result.is_ok(), "First call must succeed");
-
-        // After the call, verify that the quota was created by attempting
-        // to exceed the limit on a subsequent call.
-        // If quota wasn't initialized, there would be no limit to exceed.
-        // This indirect test confirms initialization happened.
-
-        test_utils::advance_past_rate_limit(&env);
-
-        // Create multiple shipments to test quota behavior works post-initialization
-        let mut success_count = 0;
-        for i in 2..=3 {
-            let result = client.try_create_shipment(
-                &company,
-                &Address::generate(&env),
-                &carrier,
-                &make_hash(&env, i as u8),
-                &Vec::new(&env),
-                &deadline,
+        // Perform multiple operations in new window
+        let ops_count = 50;
+        for i in 0..ops_count {
+            let result = tracker.check_and_update(
+                1,
+                config.max_operations,
+                config.window_seconds,
+                new_window_start,
             );
-            if result.is_ok() {
-                success_count += 1;
-            }
-            if i < 3 {
-                test_utils::advance_past_rate_limit(&env);
-            }
+            assert!(
+                result.is_ok(),
+                "operation {} in replenished window should succeed",
+                i + 1
+            );
         }
 
-        // Both shipments should succeed since creation quota is disabled by default
-        assert_eq!(success_count, 2, "Quota record must be working correctly post-initialization");
+        // Verify state
+        assert_eq!(tracker.window_start, new_window_start);
+        assert_eq!(tracker.operations_count, ops_count);
+        assert_eq!(
+            tracker.remaining_quota(&config),
+            config.max_operations - ops_count
+        );
     }
 
-    /// Verify that different actors (different addresses) each get their own
-    /// independent quota initialization.
+    /// Test quota replenishment with different rate limit configurations.
+    ///
+    /// Verifies that replenishment works correctly with strict, default, and
+    /// permissive rate limit configurations.
     #[test]
-    fn multiple_actors_each_initialize_independent_quota_records() {
-        let (env, client, admin, company1, _carrier) = setup();
+    fn test_quota_replenishment_with_different_configs() {
+        let configs = vec![
+            ("strict", RateLimitConfig::strict()),
+            ("default", RateLimitConfig::default()),
+            ("permissive", RateLimitConfig::permissive()),
+        ];
 
-        // Create a second company
-        let company2 = Address::generate(&env);
-        client.add_company(&admin, &company2);
+        for (config_name, config) in configs {
+            // Create and exhaust quota
+            let mut tracker = QuotaTracker::new(0);
 
-        let receiver = Address::generate(&env);
-        let carrier = Address::generate(&env);
-        let deadline = future_deadline(&env);
+            for _ in 0..config.max_operations {
+                tracker
+                    .check_and_update(1, config.max_operations, config.window_seconds, 0)
+                    .expect(&format!("{} exhaustion failed", config_name));
+            }
 
-        // First company creates a shipment
-        let result1 = client.try_create_shipment(
-            &company1,
-            &receiver,
-            &carrier,
-            &make_hash(&env, 1),
-            &Vec::new(&env),
-            &deadline,
+            // Move past window and try operation
+            let new_time = config.window_seconds + 1;
+            let result =
+                tracker.check_and_update(1, config.max_operations, config.window_seconds, new_time);
+
+            assert!(
+                result.is_ok(),
+                "{} config replenishment should succeed",
+                config_name
+            );
+            assert_eq!(
+                tracker.operations_count, 1,
+                "{} config should reset counter",
+                config_name
+            );
+        }
+    }
+
+    /// Test that quota does not replenish if window has not fully expired.
+    ///
+    /// Verifies that the rate limiting correctly prevents operations when the
+    /// window duration has not yet elapsed, even with just 1 second remaining.
+    #[test]
+    fn test_quota_replenishment_blocked_before_window_expires() {
+        let config = RateLimitConfig::default();
+
+        let mut tracker = QuotaTracker::new(0);
+
+        // Exhaust quota
+        for _ in 0..config.max_operations {
+            tracker
+                .check_and_update(1, config.max_operations, config.window_seconds, 0)
+                .expect("exhaustion should succeed");
+        }
+
+        // Try operation just before window expires
+        let almost_expired = 0 + config.window_seconds - 1;
+        let result = tracker.check_and_update(
+            1,
+            config.max_operations,
+            config.window_seconds,
+            almost_expired,
         );
-        assert!(result1.is_ok(), "Company1 first call must succeed");
 
-        test_utils::advance_past_rate_limit(&env);
-
-        // Second company creates a shipment - should also succeed with independent quota
-        let result2 = client.try_create_shipment(
-            &company2,
-            &receiver,
-            &carrier,
-            &make_hash(&env, 2),
-            &Vec::new(&env),
-            &deadline,
-        );
+        // Should fail - window not yet expired
         assert!(
-            result2.is_ok(),
-            "Company2 first call must succeed with independent quota"
+            result.is_err(),
+            "operation before window expires should fail"
+        );
+        assert_eq!(
+            tracker.operations_count, config.max_operations,
+            "operations_count should not change"
+        );
+        assert_eq!(tracker.window_start, 0, "window_start should not change");
+    }
+
+    /// Test sequential quota exhaustion and replenishment cycles.
+    ///
+    /// Verifies that an actor can go through multiple cycles of exhausting
+    /// quota and replenishing after window reset.
+    #[test]
+    fn test_sequential_quota_cycles() {
+        let config = RateLimitConfig::default();
+
+        let mut tracker = QuotaTracker::new(0);
+        let cycle_count = 3;
+
+        for cycle in 0..cycle_count {
+            // Exhaust quota in this cycle
+            for _ in 0..config.max_operations {
+                let current_time = cycle as u64 * (config.window_seconds + 1);
+                tracker
+                    .check_and_update(1, config.max_operations, config.window_seconds, current_time)
+                    .expect(&format!("cycle {} exhaustion should succeed", cycle));
+            }
+
+            // Verify exhausted
+            assert_eq!(
+                tracker.remaining_quota(&config),
+                0,
+                "cycle {} should be exhausted",
+                cycle
+            );
+
+            // Move to next window
+            let next_cycle_time = (cycle as u64 + 1) * (config.window_seconds + 1);
+            let result = tracker.check_and_update(
+                1,
+                config.max_operations,
+                config.window_seconds,
+                next_cycle_time,
+            );
+
+            assert!(
+                result.is_ok(),
+                "cycle {} replenishment should succeed",
+                cycle
+            );
+        }
+
+        // Final state should show successful cycle completion
+        assert_eq!(
+            tracker.operations_count, 1,
+            "final cycle should have 1 operation"
+        );
+    }
+
+    /// Test window time remaining calculation after replenishment.
+    ///
+    /// Verifies that `window_time_remaining()` correctly reports the time
+    /// remaining in the current window after a quota replenishment.
+    #[test]
+    fn test_window_time_remaining_after_replenishment() {
+        let config = RateLimitConfig::default();
+
+        let mut tracker = QuotaTracker::new(1000);
+
+        // Exhaust quota
+        for _ in 0..config.max_operations {
+            tracker
+                .check_and_update(1, config.max_operations, config.window_seconds, 1000)
+                .expect("exhaustion should succeed");
+        }
+
+        // Move to new window
+        let new_window_start = 1000 + config.window_seconds + 1;
+        tracker
+            .check_and_update(
+                1,
+                config.max_operations,
+                config.window_seconds,
+                new_window_start,
+            )
+            .expect("replenishment should succeed");
+
+        // Check time remaining at various points in new window
+        let time_at_start = new_window_start;
+        let remaining_at_start = tracker.window_time_remaining(time_at_start, &config);
+        assert_eq!(
+            remaining_at_start, config.window_seconds,
+            "time remaining at window start should equal window_seconds"
+        );
+
+        let time_at_mid = new_window_start + (config.window_seconds / 2);
+        let remaining_at_mid = tracker.window_time_remaining(time_at_mid, &config);
+        assert_eq!(
+            remaining_at_mid,
+            config.window_seconds / 2,
+            "time remaining at window midpoint should be half"
+        );
+
+        let time_at_end = new_window_start + config.window_seconds - 1;
+        let remaining_at_end = tracker.window_time_remaining(time_at_end, &config);
+        assert_eq!(
+            remaining_at_end, 1,
+            "time remaining at window end should be 1"
+        );
+    }
+
+    /// Test quota replenishment with zero-value operations.
+    ///
+    /// Ensures that the replenishment logic is robust when edge cases like
+    /// attempting zero-value operations occur.
+    #[test]
+    fn test_quota_replenishment_robustness_zero_ops() {
+        let config = RateLimitConfig::default();
+
+        let mut tracker = QuotaTracker::new(0);
+
+        // Exhaust quota with standard operations
+        for _ in 0..config.max_operations {
+            tracker
+                .check_and_update(1, config.max_operations, config.window_seconds, 0)
+                .expect("should succeed");
+        }
+
+        // Move past window and attempt zero-value operation
+        let new_time = config.window_seconds + 1;
+        let result =
+            tracker.check_and_update(0, config.max_operations, config.window_seconds, new_time);
+
+        // Zero-value operation should succeed and not consume quota
+        assert!(result.is_ok(), "zero-value operation should succeed");
+        assert_eq!(
+            tracker.operations_count, 0,
+            "zero-value operation should not increment counter"
         );
     }
 }

@@ -1,7 +1,10 @@
 extern crate std;
 
 use crate::errors::NavinError;
-use crate::validation::{validate_metadata_symbols, validate_milestone_symbols, validate_symbol, validate_checkpoint_symbol};
+use crate::validation::{
+    validate_checkpoint_symbol, validate_metadata_symbols, validate_milestone_symbols,
+    validate_symbol,
+};
 use soroban_sdk::{Env, Symbol, Vec};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1013,15 +1016,12 @@ fn test_validate_checkpoint_symbol_oversized_fails() {
 fn test_validate_checkpoint_symbol_valid_passes() {
     let env = Env::default();
     let symbol = Symbol::new(&env, "warehouse");
-    assert_eq!(
-        validate_checkpoint_symbol(&env, &symbol),
-        Ok(())
-    );
+    assert_eq!(validate_checkpoint_symbol(&env, &symbol), Ok(()));
 }
 
 #[test]
 fn test_record_milestone_empty_checkpoint_fails() {
-    use crate::{test_utils, NavinShipment, NavinShipmentClient};
+    use crate::{test_utils, NavinShipment, NavinShipmentClient, ShipmentStatus};
     use soroban_sdk::{testutils::Address as _, Address, Vec as SorobanVec, BytesN};
 
     let (env, admin) = test_utils::setup_env();
@@ -1048,6 +1048,9 @@ fn test_record_milestone_empty_checkpoint_fails() {
         &SorobanVec::new(&env),
         &deadline,
     );
+
+    let status_hash = BytesN::from_array(&env, &[1u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &status_hash);
 
     let empty_symbol = Symbol::new(&env, "");
     let data_hash = BytesN::from_array(&env, &[4u8; 32]);

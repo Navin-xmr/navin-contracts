@@ -203,3 +203,125 @@ fn test_checked_mul_div_truncates_remainder() {
         "Integer division must truncate toward zero"
     );
 }
+
+// ── TotalEscrowVolume overflow boundary tests (issue #519) ───────────────────
+//
+// These tests verify that the contract-wide volume tracker (`TotalEscrowVolume`)
+// uses checked arithmetic and returns `ArithmeticError` rather than panicking
+// when additions would overflow the i128 boundary.
+
+mod total_escrow_volume_overflow {
+    use crate::errors::NavinError;
+    use crate::{storage, NavinShipment, NavinShipmentClient};
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env};
+
+    #[contract]
+    struct MockToken;
+
+    #[contractimpl]
+    impl MockToken {
+        pub fn decimals(_env: Env) -> u32 {
+            7
+        }
+        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+    }
+
+    fn setup() -> (Env, NavinShipmentClient<'static>, Address) {
+        let (env, admin) = crate::test_utils::setup_env();
+        let token = env.register(MockToken, ());
+        let cid = env.register(NavinShipment, ());
+        let client = NavinShipmentClient::new(&env, &cid);
+        client.initialize(&admin, &token);
+        (env, client, admin)
+    }
+
+    /// Seeding TotalEscrowVolume to i128::MAX then adding 1 must return
+    /// ArithmeticError — overflow is caught by checked_add.
+    #[test]
+    fn test_overflow_at_max_plus_one_returns_arithmetic_error() {
+        let (env, client, _admin) = setup();
+        let cid = client.address.clone();
+
+        // Seed the tracker to i128::MAX.
+        env.as_contract(&cid, || {
+            env.storage()
+                .instance()
+                .set(&crate::DataKey::TotalEscrowVolume, &i128::MAX);
+        });
+
+        let result = env.as_contract(&cid, || storage::add_total_escrow_volume(&env, 1));
+
+        assert_eq!(
+            result,
+            Err(NavinError::ArithmeticError),
+            "adding 1 to i128::MAX must overflow and return ArithmeticError"
+        );
+    }
+
+    /// i128::MAX + i128::MAX is the worst-case overflow; must not panic.
+    #[test]
+    fn test_overflow_max_plus_max_returns_arithmetic_error() {
+        let (env, client, _admin) = setup();
+        let cid = client.address.clone();
+
+        env.as_contract(&cid, || {
+            env.storage()
+                .instance()
+                .set(&crate::DataKey::TotalEscrowVolume, &i128::MAX);
+        });
+
+        let result =
+            env.as_contract(&cid, || storage::add_total_escrow_volume(&env, i128::MAX));
+
+        assert_eq!(
+            result,
+            Err(NavinError::ArithmeticError),
+            "i128::MAX + i128::MAX must return ArithmeticError"
+        );
+    }
+
+    /// Filling the tracker to exactly i128::MAX in two steps must succeed.
+    #[test]
+    fn test_near_max_accumulation_succeeds_then_overflows() {
+        let (env, client, _admin) = setup();
+        let cid = client.address.clone();
+
+        // Seed to i128::MAX - 100.
+        env.as_contract(&cid, || {
+            env.storage()
+                .instance()
+                .set(&crate::DataKey::TotalEscrowVolume, &(i128::MAX - 100));
+        });
+
+        // Adding exactly 100 fills to MAX — must succeed.
+        let ok = env.as_contract(&cid, || storage::add_total_escrow_volume(&env, 100));
+        assert_eq!(ok, Ok(()), "filling to i128::MAX must succeed");
+
+        // Verify the stored value.
+        let volume =
+            env.as_contract(&cid, || storage::get_total_escrow_volume(&env));
+        assert_eq!(volume, i128::MAX);
+
+        // One more unit overflows.
+        let overflow =
+            env.as_contract(&cid, || storage::add_total_escrow_volume(&env, 1));
+        assert_eq!(
+            overflow,
+            Err(NavinError::ArithmeticError),
+            "adding 1 past i128::MAX must return ArithmeticError"
+        );
+    }
+
+    /// From the default zero state, normal accumulation must work correctly.
+    #[test]
+    fn test_volume_tracker_accumulates_from_zero() {
+        let (env, client, _admin) = setup();
+        let cid = client.address.clone();
+
+        let result = env.as_contract(&cid, || storage::add_total_escrow_volume(&env, 5_000));
+        assert_eq!(result, Ok(()));
+
+        let volume = env.as_contract(&cid, || storage::get_total_escrow_volume(&env));
+        assert_eq!(volume, 5_000);
+    }
+}

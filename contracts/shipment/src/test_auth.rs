@@ -865,3 +865,144 @@ fn test_wrong_role_error_maps_to_unauthorized_category() {
     );
     assert_eq!(info.code, 3);
 }
+
+// =============================================================================
+// #521 — Whitespace-only symbol rejection in role-registration context
+// =============================================================================
+//
+// `validate_symbol_not_whitespace_only` is the canonical guard for detecting
+// empty or whitespace-equivalent Symbol inputs. Because the Soroban SDK restricts
+// Symbol characters to [a-zA-Z0-9_] at construction time, a zero-character Symbol
+// (XDR length ≤ 8 bytes) is the closest representable equivalent of a
+// "whitespace-only" identifier.
+//
+// The tests below verify the helper's behaviour both in isolation (unit) and
+// end-to-end through `set_shipment_metadata`, which is the registration path
+// where company/carrier actors supply arbitrary Symbol keys and values.
+
+/// An empty Symbol (0 characters, XDR = 8 bytes) must be rejected with
+/// `NavinError::InvalidSymbol` by the whitespace-rejection helper.
+#[test]
+fn test_whitespace_only_symbol_empty_returns_invalid_symbol() {
+    let (env, client, _admin, _token) = setup_env();
+    let cid = client.address.clone();
+
+    let empty = Symbol::new(&env, "");
+    let result = env.as_contract(&cid, || {
+        crate::validate_symbol_not_whitespace_only(&env, &empty)
+    });
+
+    assert_eq!(
+        result,
+        Err(crate::NavinError::InvalidSymbol),
+        "empty Symbol must be rejected as whitespace-only"
+    );
+}
+
+/// A valid alphanumeric Symbol must pass the whitespace-rejection helper.
+#[test]
+fn test_valid_symbol_passes_whitespace_rejection_helper() {
+    let (env, client, _admin, _token) = setup_env();
+    let cid = client.address.clone();
+
+    let valid = Symbol::new(&env, "carrier");
+    let result = env.as_contract(&cid, || {
+        crate::validate_symbol_not_whitespace_only(&env, &valid)
+    });
+
+    assert_eq!(result, Ok(()));
+}
+
+/// A Symbol that exceeds the 12-character Stellar limit must also be rejected
+/// by the whitespace-rejection helper (XDR > 20 bytes).
+#[test]
+fn test_oversized_symbol_rejected_by_whitespace_helper() {
+    extern crate std;
+    let (env, client, _admin, _token) = setup_env();
+    let cid = client.address.clone();
+
+    let long: std::string::String = "A".repeat(13);
+    let oversized = Symbol::new(&env, &long);
+    let result = env.as_contract(&cid, || {
+        crate::validate_symbol_not_whitespace_only(&env, &oversized)
+    });
+
+    assert_eq!(
+        result,
+        Err(crate::NavinError::InvalidSymbol),
+        "oversized Symbol must be rejected by the whitespace helper"
+    );
+}
+
+/// End-to-end: calling `set_shipment_metadata` with an empty key Symbol must
+/// return `InvalidSymbol`, demonstrating the whitespace guard is active in a
+/// registration path that company callers exercise.
+#[test]
+fn test_set_shipment_metadata_rejects_empty_key_symbol() {
+    extern crate std;
+    let (env, client, admin, _token) = setup_env();
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = crate::test_utils::future_deadline(&env, 3_600);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let empty_key = Symbol::new(&env, "");
+    let valid_value = Symbol::new(&env, "value");
+    let result =
+        client.try_set_shipment_metadata(&company, &shipment_id, &empty_key, &valid_value);
+
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::InvalidSymbol)),
+        "set_shipment_metadata with an empty key Symbol must return InvalidSymbol"
+    );
+}
+
+/// End-to-end: calling `set_shipment_metadata` with an empty value Symbol must
+/// also be rejected, ensuring both key and value are guarded.
+#[test]
+fn test_set_shipment_metadata_rejects_empty_value_symbol() {
+    extern crate std;
+    let (env, client, admin, _token) = setup_env();
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = crate::test_utils::future_deadline(&env, 3_600);
+    let data_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let valid_key = Symbol::new(&env, "weight");
+    let empty_value = Symbol::new(&env, "");
+    let result =
+        client.try_set_shipment_metadata(&company, &shipment_id, &valid_key, &empty_value);
+
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::InvalidSymbol)),
+        "set_shipment_metadata with an empty value Symbol must return InvalidSymbol"
+    );
+}
