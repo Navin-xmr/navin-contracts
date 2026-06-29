@@ -51,6 +51,8 @@ mod test_archive_restore_consistency;
 #[cfg(test)]
 mod test_auth;
 #[cfg(test)]
+mod test_auth_matrix;
+#[cfg(test)]
 mod test_auto_dispute;
 #[cfg(test)]
 mod test_carrier_relationship;
