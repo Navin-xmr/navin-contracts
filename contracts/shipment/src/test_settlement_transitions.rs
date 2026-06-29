@@ -486,3 +486,48 @@ fn test_valid_and_invalid_transitions_guard_boundary() {
         .unwrap_err();
     assert_eq!(err, crate::NavinError::InvalidStatus);
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// ISSUE #542 — AtCheckpoint → AtCheckpoint transitions must be rejected
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Direct `AtCheckpoint -> AtCheckpoint` transition must be rejected by the
+/// pure transition matrix. A shipment must hop back to `InTransit` before
+/// entering a new checkpoint, preventing duplicate checkpoint records.
+#[test]
+fn issue_542_at_checkpoint_to_at_checkpoint_is_invalid_in_matrix() {
+    assert!(
+        !ShipmentStatus::AtCheckpoint.is_valid_transition(&ShipmentStatus::AtCheckpoint),
+        "AtCheckpoint -> AtCheckpoint must be rejected by is_valid_transition"
+    );
+}
+
+/// The high-level `validate_shipment_transition` helper (used by all
+/// status-changing entry points) must surface the rejection as
+/// `NavinError::InvalidStatus` so callers get a typed, machine-checkable
+/// error rather than a generic panic.
+#[test]
+fn issue_542_at_checkpoint_to_at_checkpoint_returns_invalid_status() {
+    use crate::validate_shipment_transition;
+    let err = validate_shipment_transition(
+        &ShipmentStatus::AtCheckpoint,
+        &ShipmentStatus::AtCheckpoint,
+    )
+    .unwrap_err();
+    assert_eq!(err, crate::NavinError::InvalidStatus);
+}
+
+/// Sanity-check the legitimate hop: `AtCheckpoint -> InTransit -> AtCheckpoint`
+/// must remain valid in both directions so the validation rule only blocks
+/// the direct loop, not the canonical workflow.
+#[test]
+fn issue_542_at_checkpoint_via_in_transit_to_at_checkpoint_is_valid() {
+    assert!(
+        ShipmentStatus::AtCheckpoint.is_valid_transition(&ShipmentStatus::InTransit),
+        "AtCheckpoint -> InTransit must remain valid"
+    );
+    assert!(
+        ShipmentStatus::InTransit.is_valid_transition(&ShipmentStatus::AtCheckpoint),
+        "InTransit -> AtCheckpoint must remain valid"
+    );
+}
