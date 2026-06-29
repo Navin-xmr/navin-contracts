@@ -1104,8 +1104,14 @@ fn test_carrier_whitelist_parameter_order_matters() {
     );
 }
 
-/// Test: Repeated add operations are idempotent.
-/// This ensures adding the same carrier multiple times has no adverse effects.
+/// Test: Repeated add operations are now rejected (issue #539).
+///
+/// Originally this contract treated duplicate whitelist adds as silently
+/// idempotent. Issue #539 hardened that path: the first add succeeds, and
+/// subsequent adds for the same (company, carrier) pair return
+/// `CarrierAlreadyWhitelisted`. The underlying state remains consistent
+/// after the rejection — exactly one entry persists, and a single remove
+/// clears it as before.
 #[test]
 fn test_carrier_whitelist_add_idempotent() {
     let (env, client, admin, _) = setup();
@@ -1115,22 +1121,35 @@ fn test_carrier_whitelist_add_idempotent() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    // Add carrier multiple times
-    client.add_carrier_to_whitelist(&company, &carrier);
-    client.add_carrier_to_whitelist(&company, &carrier);
+    // First add succeeds.
     client.add_carrier_to_whitelist(&company, &carrier);
 
-    // Should still be whitelisted (no error, state is correct)
-    assert!(
-        client.is_carrier_whitelisted(&company, &carrier),
-        "carrier should be whitelisted after multiple adds"
+    // Subsequent adds for the same pair are now rejected with a typed error.
+    let dup = client.try_add_carrier_to_whitelist(&company, &carrier);
+    assert_eq!(
+        dup,
+        Err(Ok(crate::NavinError::CarrierAlreadyWhitelisted)),
+        "duplicate whitelist add must surface CarrierAlreadyWhitelisted (issue #539)"
+    );
+    let dup2 = client.try_add_carrier_to_whitelist(&company, &carrier);
+    assert_eq!(
+        dup2,
+        Err(Ok(crate::NavinError::CarrierAlreadyWhitelisted)),
+        "rejection must be stable across multiple duplicate attempts"
     );
 
-    // Remove once should clear it
+    // State is unchanged — the original entry persists.
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "carrier must remain whitelisted after rejected duplicate adds"
+    );
+
+    // Single remove still clears it (no phantom extra entries from the
+    // rejected adds).
     client.remove_carrier_from_whitelist(&company, &carrier);
     assert!(
         !client.is_carrier_whitelisted(&company, &carrier),
-        "carrier should not be whitelisted after single remove"
+        "single remove must clear the carrier after rejected duplicates"
     );
 }
 
