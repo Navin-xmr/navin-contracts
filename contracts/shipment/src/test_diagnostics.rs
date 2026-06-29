@@ -936,3 +936,81 @@ fn test_get_shipment_creator_returns_sender_for_valid_shipment() {
         "get_shipment_creator must return the original sender address"
     );
 }
+
+// =============================================================================
+// Issue #534 — get_non_terminal_count decrements on refund resolution
+// =============================================================================
+
+/// Verify that `get_non_terminal_count` decrements by 1 when a shipment is
+/// resolved via `refund_escrow`. Cancelled is a terminal state so the count
+/// must drop immediately after the refund.
+#[test]
+fn test_non_terminal_count_decrements_on_refund() {
+    let (env, client, admin, _token) = prepare_test();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[10u8; 32]);
+
+    let shipment_id = client.create_shipment(
+        &company, &receiver, &carrier,
+        &data_hash, &Vec::new(&env), &deadline,
+    );
+
+    let count_before = client.get_non_terminal_count();
+    assert_eq!(count_before, 1, "Non-terminal count should be 1 after creation");
+
+    // Deposit escrow so refund can proceed
+    client.deposit_escrow(&company, &shipment_id, &1_000);
+
+    // refund_escrow transitions the shipment to Cancelled (terminal)
+    client.refund_escrow(&company, &shipment_id);
+
+    let count_after = client.get_non_terminal_count();
+    assert_eq!(count_after, 0, "Non-terminal count must decrement to 0 after refund_escrow");
+}
+
+/// Verify count decrements correctly when only one of many shipments is refunded.
+#[test]
+fn test_non_terminal_count_decrements_for_one_of_many_on_refund() {
+    let (env, client, admin, _token) = prepare_test();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let id1 = client.create_shipment(
+        &company, &receiver, &carrier,
+        &BytesN::from_array(&env, &[20u8; 32]),
+        &Vec::new(&env), &deadline,
+    );
+    let _id2 = client.create_shipment(
+        &company, &receiver, &carrier,
+        &BytesN::from_array(&env, &[21u8; 32]),
+        &Vec::new(&env), &deadline,
+    );
+    let _id3 = client.create_shipment(
+        &company, &receiver, &carrier,
+        &BytesN::from_array(&env, &[22u8; 32]),
+        &Vec::new(&env), &deadline,
+    );
+
+    assert_eq!(client.get_non_terminal_count(), 3);
+
+    client.deposit_escrow(&company, &id1, &500);
+    client.refund_escrow(&company, &id1);
+
+    assert_eq!(
+        client.get_non_terminal_count(), 2,
+        "Only the refunded shipment should reduce the non-terminal count"
+    );
+}
