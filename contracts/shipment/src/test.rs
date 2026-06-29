@@ -11524,3 +11524,64 @@ fn test_clear_finalization_emits_audit_trail() {
     let shipment = client.get_shipment(&shipment_id);
     assert!(!shipment.finalized);
 }
+
+// ── [ISSUE #506] get_admin in multi-admin configurations ─────────────────────
+
+#[test]
+fn test_get_admin_returns_primary_admin_after_multisig_init() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let admin2 = Address::generate(&env);
+    let admin3 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    assert_eq!(
+        client.get_admin(),
+        admin,
+        "get_admin must return the primary admin set during initialize"
+    );
+}
+
+#[test]
+fn test_get_admin_consistent_across_queries_in_multisig_mode() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let admin2 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    let first = client.get_admin();
+    let second = client.get_admin();
+    assert_eq!(first, second, "repeated get_admin calls must return the same address");
+    assert_eq!(first, admin);
+}
+
+#[test]
+fn test_get_admin_unaffected_by_additional_multisig_admins() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let before = client.get_admin();
+
+    let admin2 = Address::generate(&env);
+    let admin3 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3.clone());
+    client.init_multisig(&admin, &admins, &3);
+
+    let after = client.get_admin();
+    assert_eq!(
+        before, after,
+        "get_admin must not change after init_multisig"
+    );
+}

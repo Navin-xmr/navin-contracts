@@ -51,6 +51,8 @@ mod test_archive_restore_consistency;
 #[cfg(test)]
 mod test_auth;
 #[cfg(test)]
+mod test_auth_matrix;
+#[cfg(test)]
 mod test_auto_dispute;
 #[cfg(test)]
 mod test_carrier_relationship;
@@ -4962,6 +4964,9 @@ impl NavinShipment {
 
         let now = env.ledger().timestamp();
         let config = config::get_config(&env);
+        if config.proposal_expiry_seconds == 0 {
+            return Err(NavinError::InvalidConfig);
+        }
         let expires_at = now + config.proposal_expiry_seconds;
 
         let mut approvals = soroban_sdk::Vec::new(&env);
