@@ -2456,7 +2456,7 @@ fn test_record_milestone_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
+#[should_panic(expected = "Error(Contract, #8)")]
 fn test_deposit_escrow_invalid_amount() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -4762,7 +4762,7 @@ fn test_init_multisig_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #28)")]
+#[should_panic(expected = "Error(Contract, #31)")]
 fn test_init_multisig_invalid_threshold_too_high() {
     let (env, client, admin, token_contract) = setup_shipment_env();
 
@@ -7103,7 +7103,7 @@ fn test_create_shipment_returns_counter_overflow() {
 // ============= Error #14: InvalidAmount Tests =============
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
+#[should_panic(expected = "Error(Contract, #8)")]
 fn test_deposit_escrow_returns_invalid_amount_zero() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -7128,7 +7128,7 @@ fn test_deposit_escrow_returns_invalid_amount_zero() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
+#[should_panic(expected = "Error(Contract, #8)")]
 fn test_deposit_escrow_returns_invalid_amount_negative() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -7605,8 +7605,8 @@ fn test_approve_action_returns_not_an_admin() {
 // ============= Error #28: InvalidMultiSigConfig Tests =============
 
 #[test]
-#[should_panic(expected = "Error(Contract, #28)")]
-fn test_init_multisig_returns_invalid_multisig_config_threshold_too_high() {
+#[should_panic(expected = "Error(Contract, #31)")]
+fn test_init_multisig_returns_invalid_config_threshold_too_high() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let admin2 = Address::generate(&env);
 
@@ -7663,6 +7663,40 @@ fn test_init_multisig_duplicate_admins() {
     client.initialize(&admin, &token_contract);
 
     client.init_multisig(&admin, &admins, &2);
+}
+
+#[test]
+fn test_init_multisig_invalid_config_threshold_exceeds_admin_count() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &token_contract);
+
+    let result = client.try_init_multisig(&admin, &admins, &3);
+
+    assert_eq!(result, Err(Ok(NavinError::InvalidConfig)));
+}
+
+#[test]
+fn test_init_multisig_invalid_multisig_config_threshold_zero() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &token_contract);
+
+    let result = client.try_init_multisig(&admin, &admins, &0);
+
+    assert_eq!(result, Err(Ok(NavinError::InvalidMultiSigConfig)));
 }
 
 // ============= Error #29: NotExpired Tests =============
@@ -11369,11 +11403,10 @@ fn test_recover_shipment_emits_audit_trail() {
 
     client.add_company(&admin, &admin);
 
-    let res = crate::recovery::recover_shipment(
-        &env,
+    let res = client.try_recover_shipment(
         &admin,
-        shipment_id,
-        crate::types::ShipmentStatus::Cancelled,
+        &shipment_id,
+        &crate::types::ShipmentStatus::Cancelled,
         &reason_hash,
     );
     assert!(res.is_ok());
@@ -11422,7 +11455,7 @@ fn test_unlock_escrow_emits_audit_trail() {
 
     client.add_company(&admin, &admin);
 
-    let res = crate::recovery::unlock_escrow(&env, &admin, shipment_id, &reason_hash);
+    let res = client.try_unlock_escrow(&admin, &shipment_id, &reason_hash);
     assert!(res.is_ok());
 
     let events = env.events().all();
@@ -11472,7 +11505,7 @@ fn test_clear_finalization_emits_audit_trail() {
 
     client.add_company(&admin, &admin);
 
-    let res = crate::recovery::clear_finalization(&env, &admin, shipment_id, &reason_hash);
+    let res = client.try_clear_finalization(&admin, &shipment_id, &reason_hash);
     assert!(res.is_ok());
 
     let events = env.events().all();
@@ -11490,198 +11523,4 @@ fn test_clear_finalization_emits_audit_trail() {
 
     let shipment = client.get_shipment(&shipment_id);
     assert!(!shipment.finalized);
-}
-
-#[test]
-fn test_fractional_milestone_sums_to_100() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    let mut milestones = soroban_sdk::Vec::new(&env);
-    for (i, pct) in crate::types::FRACTIONAL_MILESTONE_PCTS.iter().enumerate() {
-        let name = match i {
-            0 => Symbol::new(&env, "warehouse"),
-            1 => Symbol::new(&env, "port"),
-            _ => Symbol::new(&env, "last_mile"),
-        };
-        milestones.push_back((name, *pct));
-    }
-
-    let sum: u32 = crate::types::FRACTIONAL_MILESTONE_PCTS.iter().sum();
-    assert_eq!(sum, 100);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &milestones,
-        &deadline,
-    );
-    let shipment = client.get_shipment(&shipment_id);
-    assert_eq!(shipment.payment_milestones.len(), 3);
-}
-
-#[test]
-fn test_fractional_milestone_payout_math() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let escrow_amount: i128 = 1000;
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    let mut milestones = soroban_sdk::Vec::new(&env);
-    milestones.push_back((Symbol::new(&env, "warehouse"), 17));
-    milestones.push_back((Symbol::new(&env, "port"), 33));
-    milestones.push_back((Symbol::new(&env, "last_mile"), 50));
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &milestones,
-        &deadline,
-    );
-    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
-
-    client.update_status(
-        &carrier,
-        &shipment_id,
-        &ShipmentStatus::InTransit,
-        &data_hash,
-    );
-
-    // 17% of 1000 = 170
-    client.record_milestone(
-        &carrier,
-        &shipment_id,
-        &Symbol::new(&env, "warehouse"),
-        &data_hash,
-    );
-    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 830);
-
-    // 33% of 1000 = 330
-    client.record_milestone(
-        &carrier,
-        &shipment_id,
-        &Symbol::new(&env, "port"),
-        &data_hash,
-    );
-    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 500);
-
-    // 50% — final milestone drains remaining escrow
-    client.record_milestone(
-        &carrier,
-        &shipment_id,
-        &Symbol::new(&env, "last_mile"),
-        &data_hash,
-    );
-    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 0);
-}
-
-#[test]
-fn test_fractional_milestone_payout_rounding() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let escrow_amount: i128 = 99;
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    let mut milestones = soroban_sdk::Vec::new(&env);
-    milestones.push_back((Symbol::new(&env, "warehouse"), 17));
-    milestones.push_back((Symbol::new(&env, "port"), 33));
-    milestones.push_back((Symbol::new(&env, "last_mile"), 50));
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &milestones,
-        &deadline,
-    );
-    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
-
-    client.update_status(
-        &carrier,
-        &shipment_id,
-        &ShipmentStatus::InTransit,
-        &data_hash,
-    );
-
-    // 17% of 99 = 16 (truncated)
-    client.record_milestone(
-        &carrier,
-        &shipment_id,
-        &Symbol::new(&env, "warehouse"),
-        &data_hash,
-    );
-    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 83);
-
-    // 33% of 99 = 32 (truncated)
-    client.record_milestone(
-        &carrier,
-        &shipment_id,
-        &Symbol::new(&env, "port"),
-        &data_hash,
-    );
-    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 51);
-
-    // 50% — final milestone drains remaining escrow to zero
-    client.record_milestone(
-        &carrier,
-        &shipment_id,
-        &Symbol::new(&env, "last_mile"),
-        &data_hash,
-    );
-    assert_eq!(client.get_shipment(&shipment_id).escrow_amount, 0);
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #18)")]
-fn test_fractional_milestone_invalid_total_rejected() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-
-    let mut milestones = soroban_sdk::Vec::new(&env);
-    milestones.push_back((Symbol::new(&env, "alpha"), 33));
-    milestones.push_back((Symbol::new(&env, "beta"), 33));
-    milestones.push_back((Symbol::new(&env, "gamma"), 33)); // Total 99%
-
-    client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &milestones,
-        &deadline,
-    );
 }

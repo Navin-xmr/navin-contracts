@@ -431,10 +431,7 @@ fn test_failing_token_transfer_path_recovery() {
 
     let shipment_after = client.get_shipment(&id);
     assert_eq!(shipment_after.status, ShipmentStatus::InTransit);
-    assert_eq!(
-        shipment_after.finalized, false,
-        "Shipment must be un-finalized"
-    );
+    assert!(!shipment_after.finalized, "Shipment must be un-finalized");
     assert!(
         shipment_after.integration_nonce > shipment_before.integration_nonce,
         "Integration nonce must be incremented"
