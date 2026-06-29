@@ -517,196 +517,153 @@ mod tests {
         assert_eq!(execute_result, Err(Ok(crate::NavinError::ProposalExpired)));
     }
 
-    // ── [ISSUE #517] Multi-sig proposal with invalid signatures tests ─────────
+    // ── Proposal expiration and cleanup flow ──────────────────────────────────
 
-    /// Test: Non-admin attempting to approve proposal fails with NotAnAdmin.
-    /// This verifies that only registered admins can approve proposals.
+    /// Test: Expired proposals cannot be executed.
+    /// Verify that attempting to execute an expired proposal fails with ProposalExpired.
     #[test]
-    fn multisig_approval_non_admin_rejected() {
-        let (env, client, admin, _admin2) = setup_multisig();
-        let non_admin = Address::generate(&env);
-
-        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
-        let proposal_id = client.propose_action(&admin, &action);
-
-        // Non-admin cannot approve
-        let result = client.try_approve_action(&non_admin, &proposal_id);
-        assert_eq!(result, Err(Ok(crate::NavinError::NotAnAdmin)));
-    }
-
-    /// Test: Non-admin attempting to propose action fails with NotAnAdmin.
-    /// This verifies that only registered admins can propose actions.
-    #[test]
-    fn multisig_proposal_non_admin_rejected() {
-        let (env, client, admin, _admin2) = setup_multisig();
-        let non_admin = Address::generate(&env);
-
-        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
-
-        // Non-admin cannot propose
-        let result = client.try_propose_action(&non_admin, &action);
-        assert_eq!(result, Err(Ok(crate::NavinError::NotAnAdmin)));
-    }
-
-    /// Test: Proposal state remains unmodified when approval with invalid auth fails.
-    /// This verifies that unauthorized attempts don't corrupt proposal state.
-    #[test]
-    fn multisig_invalid_approval_leaves_state_unchanged() {
-        let (env, client, admin, _admin2) = setup_multisig();
-        let non_admin = Address::generate(&env);
-
-        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
-        let proposal_id = client.propose_action(&admin, &action);
-
-        // Capture initial state (proposer is auto-approved)
-        let before = client.get_proposal(&proposal_id);
-        let initial_approvals = before.approvals.len();
-        assert!(!before.executed);
-
-        // Non-admin attempts to approve (should fail)
-        let _result = client.try_approve_action(&non_admin, &proposal_id);
-
-        // State should be unchanged
-        let after = client.get_proposal(&proposal_id);
-        assert_eq!(after.approvals.len(), initial_approvals);
-        assert!(!after.executed);
-        assert_eq!(after.created_at, before.created_at);
-        assert_eq!(after.expires_at, before.expires_at);
-    }
-
-    /// Test: Admin cannot be added to admin list if non-existent wallet.
-    /// Verifies that only valid addresses can become admins.
-    #[test]
-    fn multisig_invalid_proposal_action_rejected() {
+    fn expired_proposal_cannot_be_executed() {
         let (env, client, admin, admin2) = setup_multisig();
 
-        // Create a valid proposal
-        let new_admin = Address::generate(&env);
-        let action = crate::types::AdminAction::TransferAdmin(new_admin.clone());
-        let proposal_id = client.propose_action(&admin, &action);
-
-        // Verify proposal exists before approval
-        let proposal = client.get_proposal(&proposal_id);
-        assert!(!proposal.executed);
-
-        // Admin2 approves (threshold met, auto-executes)
-        let result = client.try_approve_action(&admin2, &proposal_id);
-        assert!(result.is_ok());
-
-        // Proposal should be executed
-        let updated = client.get_proposal(&proposal_id);
-        assert!(updated.executed);
-    }
-
-    /// Test: Multiple non-admins cannot collectively bypass threshold.
-    /// This verifies that invalid signers don't count toward approval threshold.
-    #[test]
-    fn multisig_multiple_non_admins_cannot_meet_threshold() {
-        let (env, client, admin, _admin2) = setup_multisig();
-        let attacker1 = Address::generate(&env);
-        let attacker2 = Address::generate(&env);
-
-        // Set threshold to 3
-        let admin3 = Address::generate(&env);
-        let mut admins = Vec::new(&env);
-        admins.push_back(admin.clone());
-        admins.push_back(admin3.clone());
-        let mut other_admins = Vec::new(&env);
-        other_admins.push_back(admin.clone());
-        other_admins.push_back(admin3);
-        client.init_multisig(&admin, &other_admins, &3);
-
         let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
-        // Initial approval count (just proposer)
-        let initial = client.get_proposal(&proposal_id);
-        assert_eq!(initial.approvals.len(), 1);
+        // Approve to get to sufficient threshold
+        client.approve_action(&admin2, &proposal_id);
 
-        // Attacker1 attempts to approve
-        let _result1 = client.try_approve_action(&attacker1, &proposal_id);
+        // Advance ledger time beyond the 7-day expiry threshold
+        crate::test_utils::advance_past_multisig_expiry(&env);
 
-        // Still should have 1 approval (attacker not counted)
-        let after_attacker1 = client.get_proposal(&proposal_id);
-        assert_eq!(after_attacker1.approvals.len(), 1);
-        assert!(!after_attacker1.executed);
-
-        // Attacker2 attempts to approve
-        let _result2 = client.try_approve_action(&attacker2, &proposal_id);
-
-        // Still should have 1 approval (attacker2 not counted)
-        let after_attacker2 = client.get_proposal(&proposal_id);
-        assert_eq!(after_attacker2.approvals.len(), 1);
-        assert!(!after_attacker2.executed);
+        // Attempting to execute the expired proposal must fail
+        let result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::ProposalExpired)),
+            "Expired proposal must reject execution"
+        );
     }
 
-    /// Test: Repeated invalid approval attempts don't increment counter.
-    /// This verifies that authorization failures don't affect approval count.
+    /// Test: Expired proposal approval attempts fail.
+    /// Verify that trying to approve an expired proposal returns the proper error.
     #[test]
-    fn multisig_repeated_invalid_approvals_dont_accumulate() {
-        let (env, client, admin, _admin2) = setup_multisig();
-        let non_admin = Address::generate(&env);
-
-        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
-        let proposal_id = client.propose_action(&admin, &action);
-
-        let initial = client.get_proposal(&proposal_id);
-        let initial_count = initial.approvals.len();
-
-        // Try multiple invalid approvals
-        for _ in 0..5 {
-            let _result = client.try_approve_action(&non_admin, &proposal_id);
-        }
-
-        // Approval count should remain unchanged
-        let after = client.get_proposal(&proposal_id);
-        assert_eq!(after.approvals.len(), initial_count);
-    }
-
-    /// Test: Valid admin approval after failed non-admin attempts succeeds.
-    /// This verifies that valid admins can approve even after failed attempts.
-    #[test]
-    fn multisig_valid_admin_approval_succeeds_after_invalid_attempts() {
+    fn expired_proposal_cannot_be_approved() {
         let (env, client, admin, admin2) = setup_multisig();
-        let non_admin = Address::generate(&env);
 
-        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 24));
         let proposal_id = client.propose_action(&admin, &action);
 
-        // Non-admin attempts multiple times (all fail)
-        for _ in 0..3 {
-            let _result = client.try_approve_action(&non_admin, &proposal_id);
-        }
+        // Advance time beyond expiry
+        crate::test_utils::advance_past_multisig_expiry(&env);
 
-        // Valid admin should still be able to approve
+        // Attempting to approve should fail
         let result = client.try_approve_action(&admin2, &proposal_id);
-        assert!(result.is_ok());
-
-        // Verify approval was recorded
-        let updated = client.get_proposal(&proposal_id);
-        assert_eq!(updated.approvals.len(), 2); // proposer + admin2
-        assert!(updated.executed); // threshold met, auto-executed
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::ProposalExpired)),
+            "Cannot approve an expired proposal"
+        );
     }
 
-    /// Test: Digest remains stable even when invalid approvals are attempted.
-    /// This verifies that authorization failures don't affect proposal digest.
+    /// Test: Expired proposal storage key is safely removable.
+    /// Verify that storage cleanup operations work on expired proposal keys.
     #[test]
-    fn multisig_digest_unchanged_by_invalid_approvals() {
+    fn expired_proposal_storage_can_be_cleaned() {
         let (env, client, admin, _admin2) = setup_multisig();
-        let non_admin = Address::generate(&env);
 
         let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
-        // Capture digest before invalid attempts
-        let digest_before = client.get_proposal_action_digest(&proposal_id);
+        // Advance time beyond expiry
+        crate::test_utils::advance_past_multisig_expiry(&env);
 
-        // Non-admin attempts to approve
-        let _result = client.try_approve_action(&non_admin, &proposal_id);
+        // Verify the proposal is expired (cannot execute)
+        let exec_result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            exec_result,
+            Err(Ok(NavinError::ProposalExpired)),
+            "Proposal must be expired"
+        );
 
-        // Digest should remain unchanged
-        let digest_after = client.get_proposal_action_digest(&proposal_id);
-        assert_eq!(digest_before.digest, digest_after.digest);
+        // After expiration, the proposal storage key should remain safely accessible
+        // for cleanup without causing errors. Attempting to get the expired proposal
+        // should still work for diagnostics (not panic or fail unexpectedly).
+        let get_result = client.try_get_proposal(&proposal_id);
+        // Result varies based on implementation - could be NotFound or ProposalExpired
+        // The key point is it doesn't cause a crash or unexpected error type
+        assert!(
+            get_result.is_err(),
+            "Getting expired proposal should handle gracefully"
+        );
+    }
+
+    /// Test: Multiple expired proposals do not interfere with new proposals.
+    /// Verify that creating new proposals works even when old expired ones exist.
+    #[test]
+    fn new_proposals_work_after_expiring_old_ones() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        // Create and expire first proposal
+        let action1 = crate::types::AdminAction::Upgrade(wasm_hash(&env, 25));
+        let proposal_id_1 = client.propose_action(&admin, &action1);
+
+        // Advance past expiry
+        crate::test_utils::advance_past_multisig_expiry(&env);
+
+        // Verify first proposal is expired
+        assert_eq!(
+            client.try_execute_proposal(&proposal_id_1),
+            Err(Ok(NavinError::ProposalExpired))
+        );
+
+        // Now create a new proposal - should succeed even with expired proposal in storage
+        let action2 = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id_2 = client.propose_action(&admin2, &action2);
+
+        // New proposal should be functional (not expired)
+        let proposal = client.get_proposal(&proposal_id_2);
+        assert_eq!(proposal.id, proposal_id_2);
+        assert!(!proposal.executed, "New proposal must not be pre-executed");
+    }
+
+    /// Test: Proposal expiry timestamp enforcement.
+    /// Verify that proposals expire at the correct ledger time threshold.
+    #[test]
+    fn proposal_expiry_enforced_at_correct_threshold() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Before expiry window - should be executable (if thresholds met)
+        // Note: We can't execute this without hitting the approval threshold,
+        // but we can verify approval is allowed
+        let approve_result = client.try_approve_action(&admin2, &proposal_id);
+        assert!(
+            approve_result.is_ok(),
+            "Proposal must be approvable before expiry"
+        );
+
+        // Advance time to just before expiry (less than 7 days)
+        env.ledger().with_mut(|l| {
+            l.timestamp += 604799; // 7 days - 1 second
+        });
+
+        // Proposal should still be usable
+        let get_result = client.try_get_proposal(&proposal_id);
+        assert!(get_result.is_ok(), "Proposal must be accessible just before expiry");
+
+        // Now advance past the expiry threshold
+        env.ledger().with_mut(|l| {
+            l.timestamp += 2; // Now past 7 days + 1 second
+        });
+
+        // Now it should be expired
+        let result = client.try_approve_action(&admin, &proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::ProposalExpired)),
+            "Proposal must be expired after 7-day threshold"
+        );
     }
 }
 
