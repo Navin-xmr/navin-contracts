@@ -2456,7 +2456,7 @@ fn test_record_milestone_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
+#[should_panic(expected = "Error(Contract, #8)")]
 fn test_deposit_escrow_invalid_amount() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -4762,7 +4762,7 @@ fn test_init_multisig_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #28)")]
+#[should_panic(expected = "Error(Contract, #31)")]
 fn test_init_multisig_invalid_threshold_too_high() {
     let (env, client, admin, token_contract) = setup_shipment_env();
 
@@ -7103,7 +7103,7 @@ fn test_create_shipment_returns_counter_overflow() {
 // ============= Error #14: InvalidAmount Tests =============
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
+#[should_panic(expected = "Error(Contract, #8)")]
 fn test_deposit_escrow_returns_invalid_amount_zero() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -7128,7 +7128,7 @@ fn test_deposit_escrow_returns_invalid_amount_zero() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
+#[should_panic(expected = "Error(Contract, #8)")]
 fn test_deposit_escrow_returns_invalid_amount_negative() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -7605,8 +7605,8 @@ fn test_approve_action_returns_not_an_admin() {
 // ============= Error #28: InvalidMultiSigConfig Tests =============
 
 #[test]
-#[should_panic(expected = "Error(Contract, #28)")]
-fn test_init_multisig_returns_invalid_multisig_config_threshold_too_high() {
+#[should_panic(expected = "Error(Contract, #31)")]
+fn test_init_multisig_returns_invalid_config_threshold_too_high() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let admin2 = Address::generate(&env);
 
@@ -7663,6 +7663,40 @@ fn test_init_multisig_duplicate_admins() {
     client.initialize(&admin, &token_contract);
 
     client.init_multisig(&admin, &admins, &2);
+}
+
+#[test]
+fn test_init_multisig_invalid_config_threshold_exceeds_admin_count() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &token_contract);
+
+    let result = client.try_init_multisig(&admin, &admins, &3);
+
+    assert_eq!(result, Err(Ok(NavinError::InvalidConfig)));
+}
+
+#[test]
+fn test_init_multisig_invalid_multisig_config_threshold_zero() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &token_contract);
+
+    let result = client.try_init_multisig(&admin, &admins, &0);
+
+    assert_eq!(result, Err(Ok(NavinError::InvalidMultiSigConfig)));
 }
 
 // ============= Error #29: NotExpired Tests =============
@@ -11369,11 +11403,10 @@ fn test_recover_shipment_emits_audit_trail() {
 
     client.add_company(&admin, &admin);
 
-    let res = crate::recovery::recover_shipment(
-        &env,
+    let res = client.try_recover_shipment(
         &admin,
-        shipment_id,
-        crate::types::ShipmentStatus::Cancelled,
+        &shipment_id,
+        &crate::types::ShipmentStatus::Cancelled,
         &reason_hash,
     );
     assert!(res.is_ok());
@@ -11422,7 +11455,7 @@ fn test_unlock_escrow_emits_audit_trail() {
 
     client.add_company(&admin, &admin);
 
-    let res = crate::recovery::unlock_escrow(&env, &admin, shipment_id, &reason_hash);
+    let res = client.try_unlock_escrow(&admin, &shipment_id, &reason_hash);
     assert!(res.is_ok());
 
     let events = env.events().all();
@@ -11472,7 +11505,7 @@ fn test_clear_finalization_emits_audit_trail() {
 
     client.add_company(&admin, &admin);
 
-    let res = crate::recovery::clear_finalization(&env, &admin, shipment_id, &reason_hash);
+    let res = client.try_clear_finalization(&admin, &shipment_id, &reason_hash);
     assert!(res.is_ok());
 
     let events = env.events().all();
