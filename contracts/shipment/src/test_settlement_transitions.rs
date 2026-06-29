@@ -466,28 +466,23 @@ fn test_failed_operation_rollback() {
 #[test]
 fn test_valid_and_invalid_transitions_guard_boundary() {
     use crate::validate_shipment_transition;
-    
+
     // Valid transitions
-    assert!(validate_shipment_transition(
-        &ShipmentStatus::Created, 
-        &ShipmentStatus::InTransit
-    ).is_ok());
-    assert!(validate_shipment_transition(
-        &ShipmentStatus::InTransit, 
-        &ShipmentStatus::Delivered
-    ).is_ok());
+    assert!(
+        validate_shipment_transition(&ShipmentStatus::Created, &ShipmentStatus::InTransit).is_ok()
+    );
+    assert!(
+        validate_shipment_transition(&ShipmentStatus::InTransit, &ShipmentStatus::Delivered)
+            .is_ok()
+    );
 
     // Invalid transition
-    let err = validate_shipment_transition(
-        &ShipmentStatus::Created, 
-        &ShipmentStatus::Delivered
-    ).unwrap_err();
+    let err = validate_shipment_transition(&ShipmentStatus::Created, &ShipmentStatus::Delivered)
+        .unwrap_err();
     assert_eq!(err, crate::NavinError::InvalidStatus);
 
     // Terminal state transition (should be invalid)
-    let err = validate_shipment_transition(
-        &ShipmentStatus::Delivered, 
-        &ShipmentStatus::InTransit
-    ).unwrap_err();
+    let err = validate_shipment_transition(&ShipmentStatus::Delivered, &ShipmentStatus::InTransit)
+        .unwrap_err();
     assert_eq!(err, crate::NavinError::InvalidStatus);
 }
