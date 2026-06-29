@@ -1530,6 +1530,10 @@ impl NavinShipment {
 
         require_admin_or_operator(&env, &admin)?;
 
+        if storage::has_role(&env, &carrier, &Role::Carrier) {
+            return Err(NavinError::RoleAlreadyAssigned);
+        }
+
         storage::set_carrier_role(&env, &carrier);
 
         // Emit role history event
