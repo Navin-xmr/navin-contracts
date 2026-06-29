@@ -11403,11 +11403,10 @@ fn test_recover_shipment_emits_audit_trail() {
 
     client.add_company(&admin, &admin);
 
-    let res = crate::recovery::recover_shipment(
-        &env,
+    let res = client.try_recover_shipment(
         &admin,
-        shipment_id,
-        crate::types::ShipmentStatus::Cancelled,
+        &shipment_id,
+        &crate::types::ShipmentStatus::Cancelled,
         &reason_hash,
     );
     assert!(res.is_ok());
@@ -11456,7 +11455,7 @@ fn test_unlock_escrow_emits_audit_trail() {
 
     client.add_company(&admin, &admin);
 
-    let res = crate::recovery::unlock_escrow(&env, &admin, shipment_id, &reason_hash);
+    let res = client.try_unlock_escrow(&admin, &shipment_id, &reason_hash);
     assert!(res.is_ok());
 
     let events = env.events().all();
@@ -11506,7 +11505,7 @@ fn test_clear_finalization_emits_audit_trail() {
 
     client.add_company(&admin, &admin);
 
-    let res = crate::recovery::clear_finalization(&env, &admin, shipment_id, &reason_hash);
+    let res = client.try_clear_finalization(&admin, &shipment_id, &reason_hash);
     assert!(res.is_ok());
 
     let events = env.events().all();

@@ -6,6 +6,7 @@
 
 #[cfg(test)]
 mod actor_quota_tests {
+    extern crate std;
     use crate::rate_limit::{QuotaTracker, RateLimitConfig};
 
     /// Test that ActorQuota replenishes when window expires with exact boundary crossing.
@@ -28,7 +29,7 @@ mod actor_quota_tests {
         // Simulate operations up to quota limit
         for _ in 0..config.max_operations {
             tracker
-                .check_and_update(1, config.max_operations, config.window_seconds, 0)
+                .check_and_update(0, &config, 1)
                 .expect("operations within limit should succeed");
         }
 
@@ -39,10 +40,9 @@ mod actor_quota_tests {
         // Attempt operation at boundary (window_start + window_seconds)
         let boundary_time = tracker.window_start + config.window_seconds;
         let result = tracker.check_and_update(
-            1,
-            config.max_operations,
-            config.window_seconds,
             boundary_time,
+            &config,
+            1,
         );
 
         // Should succeed because window has expired exactly at boundary
@@ -71,7 +71,7 @@ mod actor_quota_tests {
         // Fill quota to limit
         for _ in 0..config.max_operations {
             tracker
-                .check_and_update(1, config.max_operations, config.window_seconds, 1000)
+                .check_and_update(1000, &config, 1)
                 .expect("operations should succeed");
         }
 
@@ -84,7 +84,7 @@ mod actor_quota_tests {
 
         // Perform operation at far future time
         let result =
-            tracker.check_and_update(1, config.max_operations, config.window_seconds, far_future);
+            tracker.check_and_update(far_future, &config, 1);
 
         assert!(
             result.is_ok(),
@@ -107,7 +107,7 @@ mod actor_quota_tests {
         // Exhaust initial quota
         for _ in 0..config.max_operations {
             tracker
-                .check_and_update(1, config.max_operations, config.window_seconds, 0)
+                .check_and_update(0, &config, 1)
                 .expect("should succeed");
         }
 
@@ -121,10 +121,9 @@ mod actor_quota_tests {
         let ops_count = 50;
         for i in 0..ops_count {
             let result = tracker.check_and_update(
-                1,
-                config.max_operations,
-                config.window_seconds,
                 new_window_start,
+                &config,
+                1,
             );
             assert!(
                 result.is_ok(),
@@ -148,7 +147,7 @@ mod actor_quota_tests {
     /// permissive rate limit configurations.
     #[test]
     fn test_quota_replenishment_with_different_configs() {
-        let configs = vec![
+        let configs = std::vec![
             ("strict", RateLimitConfig::strict()),
             ("default", RateLimitConfig::default()),
             ("permissive", RateLimitConfig::permissive()),
@@ -160,14 +159,14 @@ mod actor_quota_tests {
 
             for _ in 0..config.max_operations {
                 tracker
-                    .check_and_update(1, config.max_operations, config.window_seconds, 0)
-                    .expect(&format!("{} exhaustion failed", config_name));
+                    .check_and_update(0, &config, 1)
+                    .expect(&std::format!("{} exhaustion failed", config_name));
             }
 
             // Move past window and try operation
             let new_time = config.window_seconds + 1;
             let result =
-                tracker.check_and_update(1, config.max_operations, config.window_seconds, new_time);
+                tracker.check_and_update(new_time, &config, 1);
 
             assert!(
                 result.is_ok(),
@@ -195,17 +194,16 @@ mod actor_quota_tests {
         // Exhaust quota
         for _ in 0..config.max_operations {
             tracker
-                .check_and_update(1, config.max_operations, config.window_seconds, 0)
+                .check_and_update(0, &config, 1)
                 .expect("exhaustion should succeed");
         }
 
         // Try operation just before window expires
         let almost_expired = 0 + config.window_seconds - 1;
         let result = tracker.check_and_update(
-            1,
-            config.max_operations,
-            config.window_seconds,
             almost_expired,
+            &config,
+            1,
         );
 
         // Should fail - window not yet expired
@@ -232,12 +230,19 @@ mod actor_quota_tests {
         let cycle_count = 3;
 
         for cycle in 0..cycle_count {
-            // Exhaust quota in this cycle
-            for _ in 0..config.max_operations {
-                let current_time = cycle as u64 * (config.window_seconds + 1);
+            // Each cycle starts in a fresh window
+            let cycle_start = cycle as u64 * (config.window_seconds + 1);
+
+            // First call in cycle triggers window reset (if cycle > 0)
+            tracker
+                .check_and_update(cycle_start, &config, 1)
+                .expect(&std::format!("cycle {} first op should succeed", cycle));
+
+            // Exhaust remaining quota in this cycle
+            for _ in 1..config.max_operations {
                 tracker
-                    .check_and_update(1, config.max_operations, config.window_seconds, current_time)
-                    .expect(&format!("cycle {} exhaustion should succeed", cycle));
+                    .check_and_update(cycle_start, &config, 1)
+                    .expect(&std::format!("cycle {} exhaustion should succeed", cycle));
             }
 
             // Verify exhausted
@@ -247,27 +252,12 @@ mod actor_quota_tests {
                 "cycle {} should be exhausted",
                 cycle
             );
-
-            // Move to next window
-            let next_cycle_time = (cycle as u64 + 1) * (config.window_seconds + 1);
-            let result = tracker.check_and_update(
-                1,
-                config.max_operations,
-                config.window_seconds,
-                next_cycle_time,
-            );
-
-            assert!(
-                result.is_ok(),
-                "cycle {} replenishment should succeed",
-                cycle
-            );
         }
 
-        // Final state should show successful cycle completion
+        // Final state should show quota fully exhausted after last cycle
         assert_eq!(
-            tracker.operations_count, 1,
-            "final cycle should have 1 operation"
+            tracker.operations_count, config.max_operations,
+            "final cycle should have max operations count"
         );
     }
 
@@ -284,7 +274,7 @@ mod actor_quota_tests {
         // Exhaust quota
         for _ in 0..config.max_operations {
             tracker
-                .check_and_update(1, config.max_operations, config.window_seconds, 1000)
+                .check_and_update(1000, &config, 1)
                 .expect("exhaustion should succeed");
         }
 
@@ -292,10 +282,9 @@ mod actor_quota_tests {
         let new_window_start = 1000 + config.window_seconds + 1;
         tracker
             .check_and_update(
-                1,
-                config.max_operations,
-                config.window_seconds,
                 new_window_start,
+                &config,
+                1,
             )
             .expect("replenishment should succeed");
 
@@ -336,14 +325,14 @@ mod actor_quota_tests {
         // Exhaust quota with standard operations
         for _ in 0..config.max_operations {
             tracker
-                .check_and_update(1, config.max_operations, config.window_seconds, 0)
+                .check_and_update(0, &config, 1)
                 .expect("should succeed");
         }
 
         // Move past window and attempt zero-value operation
         let new_time = config.window_seconds + 1;
         let result =
-            tracker.check_and_update(0, config.max_operations, config.window_seconds, new_time);
+            tracker.check_and_update(new_time, &config, 0);
 
         // Zero-value operation should succeed and not consume quota
         assert!(result.is_ok(), "zero-value operation should succeed");
