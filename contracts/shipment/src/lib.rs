@@ -384,7 +384,10 @@ fn require_not_finalized(shipment: &Shipment) -> Result<(), NavinError> {
 }
 
 /// Centralized state machine guardrail for all shipment lifecycle transitions.
-pub(crate) fn validate_shipment_transition(from: &ShipmentStatus, to: &ShipmentStatus) -> Result<(), NavinError> {
+pub(crate) fn validate_shipment_transition(
+    from: &ShipmentStatus,
+    to: &ShipmentStatus,
+) -> Result<(), NavinError> {
     if !from.is_valid_transition(to) {
         return Err(NavinError::InvalidStatus);
     }
@@ -4901,8 +4904,11 @@ impl NavinShipment {
             seen.push_back(admin_addr);
         }
 
-        if threshold == 0 || threshold > admin_count {
+        if threshold == 0 {
             return Err(NavinError::InvalidMultiSigConfig);
+        }
+        if threshold > admin_count {
+            return Err(NavinError::InvalidConfig);
         }
 
         storage::set_admin_list(&env, &admins);
@@ -5987,7 +5993,13 @@ impl NavinShipment {
         previous_status: ShipmentStatus,
         reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
-        recovery::rollback_on_external_failure(&env, &admin, shipment_id, previous_status, &reason_hash)
+        recovery::rollback_on_external_failure(
+            &env,
+            &admin,
+            shipment_id,
+            previous_status,
+            &reason_hash,
+        )
     }
 }
 
