@@ -1,7 +1,10 @@
 extern crate std;
 
 use crate::errors::NavinError;
-use crate::validation::{validate_metadata_symbols, validate_milestone_symbols, validate_symbol, validate_checkpoint_symbol};
+use crate::validation::{
+    validate_checkpoint_symbol, validate_metadata_symbols, validate_milestone_symbols,
+    validate_symbol,
+};
 use soroban_sdk::{Env, Symbol, Vec};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1013,10 +1016,7 @@ fn test_validate_checkpoint_symbol_oversized_fails() {
 fn test_validate_checkpoint_symbol_valid_passes() {
     let env = Env::default();
     let symbol = Symbol::new(&env, "warehouse");
-    assert_eq!(
-        validate_checkpoint_symbol(&env, &symbol),
-        Ok(())
-    );
+    assert_eq!(validate_checkpoint_symbol(&env, &symbol), Ok(()));
 }
 
 #[test]

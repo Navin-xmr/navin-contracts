@@ -1471,7 +1471,8 @@ fn test_update_eta_valid_emits_event() {
     let topic = Symbol::try_from_val(&env, &last.1.get(0).unwrap()).unwrap();
     assert_eq!(topic, Symbol::new(&env, "eta_updated"));
 
-    let event_data = <(u64, u64, BytesN<32>, u32, u32, BytesN<32>)>::try_from_val(&env, &last.2).unwrap();
+    let event_data =
+        <(u64, u64, BytesN<32>, u32, u32, BytesN<32>)>::try_from_val(&env, &last.2).unwrap();
     assert_eq!(event_data.0, shipment_id);
     assert_eq!(event_data.1, eta_timestamp);
     assert_eq!(event_data.2, eta_hash);
@@ -4761,7 +4762,7 @@ fn test_init_multisig_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #28)")]
+#[should_panic(expected = "Error(Contract, #31)")]
 fn test_init_multisig_invalid_threshold_too_high() {
     let (env, client, admin, token_contract) = setup_shipment_env();
 
@@ -7604,8 +7605,8 @@ fn test_approve_action_returns_not_an_admin() {
 // ============= Error #28: InvalidMultiSigConfig Tests =============
 
 #[test]
-#[should_panic(expected = "Error(Contract, #28)")]
-fn test_init_multisig_returns_invalid_multisig_config_threshold_too_high() {
+#[should_panic(expected = "Error(Contract, #31)")]
+fn test_init_multisig_returns_invalid_config_threshold_too_high() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let admin2 = Address::generate(&env);
 
@@ -7662,6 +7663,40 @@ fn test_init_multisig_duplicate_admins() {
     client.initialize(&admin, &token_contract);
 
     client.init_multisig(&admin, &admins, &2);
+}
+
+#[test]
+fn test_init_multisig_invalid_config_threshold_exceeds_admin_count() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &token_contract);
+
+    let result = client.try_init_multisig(&admin, &admins, &3);
+
+    assert_eq!(result, Err(Ok(NavinError::InvalidConfig)));
+}
+
+#[test]
+fn test_init_multisig_invalid_multisig_config_threshold_zero() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &token_contract);
+
+    let result = client.try_init_multisig(&admin, &admins, &0);
+
+    assert_eq!(result, Err(Ok(NavinError::InvalidMultiSigConfig)));
 }
 
 // ============= Error #29: NotExpired Tests =============
@@ -11388,7 +11423,7 @@ fn test_recover_shipment_emits_audit_trail() {
         }
     }
     assert!(found, "recovery_event was not emitted");
-    
+
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, crate::types::ShipmentStatus::Cancelled);
 }
@@ -11435,7 +11470,7 @@ fn test_unlock_escrow_emits_audit_trail() {
         }
     }
     assert!(found, "escrow_unlock_event was not emitted");
-    
+
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.escrow_amount, 0);
 }
@@ -11462,7 +11497,7 @@ fn test_clear_finalization_emits_audit_trail() {
     );
 
     client.cancel_shipment(&company, &shipment_id, &data_hash);
-    
+
     let shipment_pre = client.get_shipment(&shipment_id);
     assert!(shipment_pre.finalized);
 
@@ -11485,8 +11520,7 @@ fn test_clear_finalization_emits_audit_trail() {
         }
     }
     assert!(found, "finalization_clear_event was not emitted");
-    
+
     let shipment = client.get_shipment(&shipment_id);
     assert!(!shipment.finalized);
 }
-

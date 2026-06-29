@@ -1495,7 +1495,10 @@ pub fn emit_contract_initialized(env: &Env, admin: &Address, token_contract: &Ad
 
 pub fn emit_shipment_limit_updated(env: &Env, admin: &Address, limit: u32) {
     env.events().publish(
-        (Symbol::new(env, crate::event_topics::SHIPMENT_LIMIT_UPDATED),),
+        (Symbol::new(
+            env,
+            crate::event_topics::SHIPMENT_LIMIT_UPDATED,
+        ),),
         (admin.clone(), limit),
     );
 }
@@ -1521,7 +1524,12 @@ pub fn emit_carrier_reactivated(env: &Env, admin: &Address, carrier: &Address) {
     );
 }
 
-pub fn emit_delivery_confirmed(env: &Env, shipment_id: u64, receiver: &Address, data_hash: &BytesN<32>) {
+pub fn emit_delivery_confirmed(
+    env: &Env,
+    shipment_id: u64,
+    receiver: &Address,
+    data_hash: &BytesN<32>,
+) {
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,
@@ -1544,7 +1552,12 @@ pub fn emit_delivery_confirmed(env: &Env, shipment_id: u64, receiver: &Address, 
     crate::storage::increment_event_count(env, shipment_id);
 }
 
-pub fn emit_geofence_event(env: &Env, shipment_id: u64, zone_type: crate::types::GeofenceEvent, data_hash: &BytesN<32>) {
+pub fn emit_geofence_event(
+    env: &Env,
+    shipment_id: u64,
+    zone_type: crate::types::GeofenceEvent,
+    data_hash: &BytesN<32>,
+) {
     let event_counter = next_event_counter(env, shipment_id);
     let idempotency_key = generate_idempotency_key(
         env,

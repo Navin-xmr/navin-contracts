@@ -617,7 +617,7 @@ fn test_force_cancel_shipment_unauthorized_caller() {
 
 #[test]
 fn test_get_dispute_evidence_hash_out_of_bounds() {
-    let (env, client, admin, token) = setup_env();
+    let (env, client, admin, _token) = setup_env();
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
