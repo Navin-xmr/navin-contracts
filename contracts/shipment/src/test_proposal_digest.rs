@@ -588,11 +588,10 @@ mod tests {
         // for cleanup without causing errors. Attempting to get the expired proposal
         // should still work for diagnostics (not panic or fail unexpectedly).
         let get_result = client.try_get_proposal(&proposal_id);
-        // Result varies based on implementation - could be NotFound or ProposalExpired
-        // The key point is it doesn't cause a crash or unexpected error type
+        // Expired proposals remain readable for diagnostics and cleanup.
         assert!(
-            get_result.is_err(),
-            "Getting expired proposal should handle gracefully"
+            get_result.is_ok(),
+            "Getting expired proposal should remain accessible without panicking"
         );
     }
 
