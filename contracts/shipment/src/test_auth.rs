@@ -865,3 +865,19 @@ fn test_wrong_role_error_maps_to_unauthorized_category() {
     );
     assert_eq!(info.code, 3);
 }
+
+#[test]
+fn test_role_revocation_query() {
+    let (env, client, admin, _token) = setup_env();
+    let target = Address::generate(&env);
+    
+    // Grant role
+    client.add_company(&admin, &target);
+    assert_eq!(client.get_role(&target), crate::Role::Company);
+    
+    // Revoke role
+    client.revoke_role(&admin, &target);
+    
+    // Query again
+    assert_eq!(client.get_role(&target), crate::Role::Unassigned);
+}

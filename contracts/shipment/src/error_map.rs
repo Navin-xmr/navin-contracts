@@ -428,6 +428,24 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             RetryAfterDelay,
             "External integration failed (e.g. backend token release); retry or rollback the state.",
         ),
+        NavinError::InvalidSymbol => (
+            65,
+            InvalidInput,
+            NoRetry,
+            "Symbol metadata cannot be empty.",
+        ),
+        NavinError::NoteNotFound => (
+            66,
+            NotFound,
+            NoRetry,
+            "Note not found or index out of bounds.",
+        ),
+        NavinError::EvidenceNotFound => (
+            67,
+            NotFound,
+            NoRetry,
+            "Evidence not found or index out of bounds.",
+        ),
     };
 
     ContractErrorInfo {

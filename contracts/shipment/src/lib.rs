@@ -4919,6 +4919,13 @@ impl NavinShipment {
             return Err(NavinError::NotAnAdmin);
         }
 
+        // Validate action
+        if let crate::types::AdminAction::Upgrade(hash) = &action {
+            if hash.to_array() == [0u8; 32] {
+                return Err(NavinError::InvalidHash);
+            }
+        }
+
         let proposal_id = storage::get_proposal_counter(&env)
             .checked_add(1)
             .ok_or(NavinError::CounterOverflow)?;

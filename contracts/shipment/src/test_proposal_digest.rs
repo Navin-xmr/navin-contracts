@@ -98,6 +98,17 @@ mod tests {
     // ── digest changes for different actions ─────────────────────────────────
 
     #[test]
+    fn test_reject_zero_hash_upgrade() {
+        let (env, client, admin, _admin2) = setup_multisig();
+
+        let zero_hash = BytesN::from_array(&env, &[0; 32]);
+        let action = crate::types::AdminAction::Upgrade(zero_hash);
+
+        let res = client.try_propose_action(&admin, &action);
+        assert_eq!(res, Err(Ok(crate::errors::NavinError::InvalidHash)));
+    }
+
+    #[test]
     fn digest_differs_for_different_actions() {
         let (env, client, admin, _admin2) = setup_multisig();
 
