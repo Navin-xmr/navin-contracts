@@ -432,7 +432,7 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             65,
             InvalidInput,
             NoRetry,
-            "Provided symbol is empty or invalid.",
+            "The provided symbol is empty or invalid.",
         ),
         NavinError::NoteNotFound => (
             66,

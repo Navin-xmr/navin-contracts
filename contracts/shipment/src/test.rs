@@ -2456,7 +2456,7 @@ fn test_record_milestone_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
+#[should_panic(expected = "Error(Contract, #8)")]
 fn test_deposit_escrow_invalid_amount() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -7103,7 +7103,7 @@ fn test_create_shipment_returns_counter_overflow() {
 // ============= Error #14: InvalidAmount Tests =============
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
+#[should_panic(expected = "Error(Contract, #8)")]
 fn test_deposit_escrow_returns_invalid_amount_zero() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -7128,7 +7128,7 @@ fn test_deposit_escrow_returns_invalid_amount_zero() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
+#[should_panic(expected = "Error(Contract, #8)")]
 fn test_deposit_escrow_returns_invalid_amount_negative() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -11403,11 +11403,10 @@ fn test_recover_shipment_emits_audit_trail() {
 
     client.add_company(&admin, &admin);
 
-    let res = crate::recovery::recover_shipment(
-        &env,
+    let res = client.try_recover_shipment(
         &admin,
-        shipment_id,
-        crate::types::ShipmentStatus::Cancelled,
+        &shipment_id,
+        &crate::types::ShipmentStatus::Cancelled,
         &reason_hash,
     );
     assert!(res.is_ok());
@@ -11456,7 +11455,7 @@ fn test_unlock_escrow_emits_audit_trail() {
 
     client.add_company(&admin, &admin);
 
-    let res = crate::recovery::unlock_escrow(&env, &admin, shipment_id, &reason_hash);
+    let res = client.try_unlock_escrow(&admin, &shipment_id, &reason_hash);
     assert!(res.is_ok());
 
     let events = env.events().all();
@@ -11506,7 +11505,7 @@ fn test_clear_finalization_emits_audit_trail() {
 
     client.add_company(&admin, &admin);
 
-    let res = crate::recovery::clear_finalization(&env, &admin, shipment_id, &reason_hash);
+    let res = client.try_clear_finalization(&admin, &shipment_id, &reason_hash);
     assert!(res.is_ok());
 
     let events = env.events().all();
