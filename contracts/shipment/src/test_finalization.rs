@@ -1,4 +1,4 @@
-use crate::{NavinShipment, NavinShipmentClient, ShipmentStatus};
+use crate::{audit, NavinShipment, NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Symbol, Vec};
 
 #[soroban_sdk::contract]
@@ -316,4 +316,80 @@ fn test_archival_permitted_after_finalization() {
     // Verify it's still readable (fallback to temporary storage works)
     let archived = client.get_shipment(&shipment_id);
     assert_eq!(archived.id, shipment_id);
+}
+
+// ── Audit sequence continuity (issue #535) ──────────────────────────────────
+
+#[test]
+fn test_audit_sequence_continuity() {
+    let env = soroban_sdk::Env::default();
+    let contract_id = env.register(crate::NavinShipment, ());
+    let _client = NavinShipmentClient::new(&env, &contract_id);
+
+    // Initial count must be 0
+    let initial_count = env.as_contract(&contract_id, || audit::get_audit_entry_count(&env));
+    assert_eq!(initial_count, 0, "audit entry count must start at 0");
+
+    // Insert entries and verify monotonic IDs
+    let admin = Address::generate(&env);
+    let actor1 = Address::generate(&env);
+    let actor2 = Address::generate(&env);
+    let actor3 = Address::generate(&env);
+
+    let ids: Vec<u64> = env.as_contract(&contract_id, || {
+        let id1 = audit::get_next_audit_entry_id(&env).unwrap();
+        audit::store_audit_entry(
+            &env,
+            &audit::AuditLogEntry {
+                entry_id: id1,
+                event_type: audit::AuditEventType::RoleAssigned,
+                actor: admin.clone(),
+                target: actor1,
+                timestamp: 1000,
+            },
+        );
+
+        let id2 = audit::get_next_audit_entry_id(&env).unwrap();
+        audit::store_audit_entry(
+            &env,
+            &audit::AuditLogEntry {
+                entry_id: id2,
+                event_type: audit::AuditEventType::RoleRevoked,
+                actor: admin.clone(),
+                target: actor2,
+                timestamp: 2000,
+            },
+        );
+
+        let id3 = audit::get_next_audit_entry_id(&env).unwrap();
+        audit::store_audit_entry(
+            &env,
+            &audit::AuditLogEntry {
+                entry_id: id3,
+                event_type: audit::AuditEventType::RoleSuspended,
+                actor: admin.clone(),
+                target: actor3,
+                timestamp: 3000,
+            },
+        );
+
+        soroban_sdk::vec![&env, id1, id2, id3]
+    });
+
+    // Verify monotonic sequence: 0, 1, 2
+    assert_eq!(ids.len(), 3, "must have 3 audit entries");
+    assert_eq!(ids.get(0).unwrap(), 0, "first entry ID must be 0");
+    assert_eq!(ids.get(1).unwrap(), 1, "second entry ID must be 1");
+    assert_eq!(ids.get(2).unwrap(), 2, "third entry ID must be 2");
+
+    // Verify count reflects 3 entries
+    let final_count = env.as_contract(&contract_id, || audit::get_audit_entry_count(&env));
+    assert_eq!(
+        final_count, 3,
+        "audit entry count must be 3 after inserting 3 entries"
+    );
+
+    // Verify entries can be read back (they exist in storage)
+    let count_again = env.as_contract(&contract_id, || audit::get_audit_entry_count(&env));
+    assert_eq!(count_again, 3, "count must persist between reads");
 }

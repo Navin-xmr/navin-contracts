@@ -660,7 +660,12 @@ fn test_get_dispute_evidence_hash_out_of_bounds() {
     // Wait, let's deposit to be safe.
     client.deposit_escrow(&company, &shipment_id, &100i128);
     let status_hash = BytesN::from_array(&env, &[1u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &status_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &status_hash,
+    );
     client.raise_dispute(&company, &shipment_id, &reason_hash);
 
     // Add 1 evidence hash

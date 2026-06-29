@@ -182,6 +182,58 @@ mod tests {
         assert_eq!(remaining, 3);
     }
 
+    // ── get_effective_shipment_limit: company override vs global fallback ─────
+
+    #[test]
+    fn effective_limit_falls_back_to_global_when_no_company_override() {
+        let (env, client, admin, company, _carrier, _token) = setup();
+
+        // Set global limit to 7
+        client.set_shipment_limit(&admin, &7);
+
+        // No company override → should return global
+        assert_eq!(client.get_effective_shipment_limit(&company), 7);
+    }
+
+    #[test]
+    fn effective_limit_returns_company_override_when_set() {
+        let (env, client, admin, company, _carrier, _token) = setup();
+
+        client.set_shipment_limit(&admin, &50);
+        client.set_company_shipment_limit(&admin, &company, &10);
+
+        // Company override of 10 should be returned, not the global 50
+        assert_eq!(client.get_effective_shipment_limit(&company), 10);
+    }
+
+    #[test]
+    fn effective_limit_reverts_to_global_after_override_removed() {
+        let (env, client, admin, company, _carrier, _token) = setup();
+
+        client.set_shipment_limit(&admin, &25);
+        client.set_company_shipment_limit(&admin, &company, &5);
+        assert_eq!(client.get_effective_shipment_limit(&company), 5);
+
+        // Remove override by setting to 0
+        client.set_company_shipment_limit(&admin, &company, &0);
+        // After clearing, should fall back to global 25
+        assert_eq!(client.get_effective_shipment_limit(&company), 0);
+    }
+
+    #[test]
+    fn effective_limit_respects_different_companies_with_different_overrides() {
+        let (env, client, admin, company1, _carrier, _token) = setup();
+        let company2 = Address::generate(&env);
+        client.add_company(&admin, &company2);
+
+        client.set_shipment_limit(&admin, &100);
+        client.set_company_shipment_limit(&admin, &company1, &20);
+        client.set_company_shipment_limit(&admin, &company2, &50);
+
+        assert_eq!(client.get_effective_shipment_limit(&company1), 20);
+        assert_eq!(client.get_effective_shipment_limit(&company2), 50);
+    }
+
     // ── set_creation_quota validation ────────────────────────────────────────
 
     #[test]

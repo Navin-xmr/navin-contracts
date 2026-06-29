@@ -236,7 +236,12 @@ mod actor_quota_tests {
             for _ in 0..config.max_operations {
                 let current_time = cycle as u64 * (config.window_seconds + 1);
                 tracker
-                    .check_and_update(1, config.max_operations, config.window_seconds, current_time)
+                    .check_and_update(
+                        1,
+                        config.max_operations,
+                        config.window_seconds,
+                        current_time,
+                    )
                     .expect(&format!("cycle {} exhaustion should succeed", cycle));
             }
 

@@ -79,6 +79,8 @@ mod test_precondition_guards;
 #[cfg(test)]
 mod test_proposal_digest;
 #[cfg(test)]
+mod test_replay_protection;
+#[cfg(test)]
 mod test_require_auth_for_args;
 #[cfg(test)]
 mod test_settlement;
@@ -104,8 +106,6 @@ mod test_verification;
 mod test_whitelist_multicompany;
 #[cfg(test)]
 mod test_zero_amount_escrow;
-#[cfg(test)]
-mod test_replay_protection;
 
 // ── Fuzz / property-based test harnesses ─────────────────────────────────────
 #[cfg(test)]
@@ -207,6 +207,30 @@ pub(crate) fn validate_symbol_not_whitespace_only(
 
 pub(crate) fn checked_add_i128(a: i128, b: i128) -> Result<i128, NavinError> {
     a.checked_add(b).ok_or(NavinError::ArithmeticError)
+}
+
+/// Check if an `Address` is the zero-address sentinel (all-zero XDR key bytes).
+///
+/// In Soroban, an `Address` wraps either an `Account` (Ed25519 public key) or a
+/// `Contract` (SHA-256 hash).  This function checks whether the 32-byte key
+/// portion of the XDR encoding is entirely zero, which is the Soroban equivalent
+/// of an uninitialised / null address.
+pub(crate) fn is_zero_address(env: &Env, addr: &Address) -> bool {
+    let xdr = addr.to_xdr(env);
+    let len = xdr.len();
+    // An Account/Contract Address XDR is 40 bytes:
+    //   bytes 0-3:  ScVal type tag (0x0A = ScAddress)
+    //   bytes 4-7:  ScAddress discriminant (0 = Account, 1 = Contract)
+    //   bytes 8-39: 32-byte key
+    if len < 40 {
+        return true;
+    }
+    for i in 8..40 {
+        if xdr.get(i).unwrap_or(1) != 0 {
+            return false;
+        }
+    }
+    true
 }
 
 pub(crate) fn checked_sub_i128(a: i128, b: i128) -> Result<i128, NavinError> {
@@ -998,6 +1022,7 @@ impl NavinShipment {
     /// * `limit` - The new active shipment limit.
     pub fn set_shipment_limit(env: Env, admin: Address, limit: u32) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -1025,6 +1050,7 @@ impl NavinShipment {
         limit: u32,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -5280,6 +5306,7 @@ impl NavinShipment {
         new_config: ContractConfig,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -5318,6 +5345,10 @@ impl NavinShipment {
 
         if fee_bps > 1000 {
             return Err(NavinError::InvalidAmount);
+        }
+
+        if is_zero_address(&env, &treasury) {
+            return Err(NavinError::InvalidAddress);
         }
 
         let config = FeeConfig {

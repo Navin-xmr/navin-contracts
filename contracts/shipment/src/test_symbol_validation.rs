@@ -1022,7 +1022,7 @@ fn test_validate_checkpoint_symbol_valid_passes() {
 #[test]
 fn test_record_milestone_empty_checkpoint_fails() {
     use crate::{test_utils, NavinShipment, NavinShipmentClient, ShipmentStatus};
-    use soroban_sdk::{testutils::Address as _, Address, Vec as SorobanVec, BytesN};
+    use soroban_sdk::{testutils::Address as _, Address, BytesN, Vec as SorobanVec};
 
     let (env, admin) = test_utils::setup_env();
     let contract_id = env.register(NavinShipment, ());
@@ -1050,7 +1050,12 @@ fn test_record_milestone_empty_checkpoint_fails() {
     );
 
     let status_hash = BytesN::from_array(&env, &[1u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &status_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &status_hash,
+    );
 
     let empty_symbol = Symbol::new(&env, "");
     let data_hash = BytesN::from_array(&env, &[4u8; 32]);

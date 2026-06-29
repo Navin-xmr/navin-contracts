@@ -743,3 +743,29 @@ fn test_batch_creation_does_not_call_token_contract() {
 
 #[test]
 fn test_recovery_behavior_deterministic_across_reruns() {}
+
+// ── Zero-address treasury validation ───────────────────────────────────────────
+
+#[test]
+fn test_set_platform_fee_rejects_zero_treasury() {
+    let ctx = setup_ok();
+    // Generate a sentinel zero-address by using all-zero-XDR key bytes.
+    let zero_addr = Address::from_str(
+        &ctx.env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    );
+    let result = ctx
+        .client
+        .try_set_platform_fee(&ctx.admin, &100, &zero_addr);
+    assert_eq!(result, Err(Ok(NavinError::InvalidAddress)));
+}
+
+#[test]
+fn test_set_platform_fee_accepts_valid_treasury() {
+    let ctx = setup_ok();
+    let valid_treasury = Address::generate(&ctx.env);
+    assert!(ctx
+        .client
+        .try_set_platform_fee(&ctx.admin, &100, &valid_treasury)
+        .is_ok());
+}

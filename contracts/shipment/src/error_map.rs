@@ -446,6 +446,12 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "Evidence not found or index out of bounds.",
         ),
+        NavinError::InvalidAddress => (
+            68,
+            InvalidInput,
+            NoRetry,
+            "Address is invalid (e.g., zero-address sentinel).",
+        ),
     };
 
     ContractErrorInfo {

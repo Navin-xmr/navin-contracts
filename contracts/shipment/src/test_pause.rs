@@ -5,7 +5,9 @@ mod tests {
     use crate::test_utils::*;
     use crate::types::*;
     use crate::{NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
+    use soroban_sdk::{
+        contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Symbol, Vec,
+    };
 
     #[contract]
     struct MockToken;
@@ -287,6 +289,182 @@ mod tests {
             ),
             "deposit_escrow must still be rejected after pause/unpause cycle"
         );
+    }
+
+    // ── Mutating config entry points fail when paused (issue #535) ─────────────
+
+    fn setup_config_env() -> (Env, NavinShipmentClient<'static>, Address) {
+        let (env, client, admin, token_contract) = setup_test_env();
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &Address::generate(&env));
+        (env, client, admin)
+    }
+
+    #[test]
+    fn test_update_config_fails_when_paused() {
+        let (_env, client, admin) = setup_config_env();
+        client.pause(&admin);
+        let config = crate::config::ContractConfig::default();
+        let result = client.try_update_config(&admin, &config);
+        assert!(result.is_err());
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_set_shipment_limit_fails_when_paused() {
+        let (_env, client, admin) = setup_config_env();
+        client.pause(&admin);
+        let result = client.try_set_shipment_limit(&admin, &50);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_set_company_shipment_limit_fails_when_paused() {
+        let (env, client, admin) = setup_config_env();
+        let company = Address::generate(&env);
+        client.add_company(&admin, &company);
+        client.pause(&admin);
+        let result = client.try_set_company_shipment_limit(&admin, &company, &10);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_set_platform_fee_fails_when_paused() {
+        let (_env, client, admin) = setup_config_env();
+        let treasury = Address::generate(&_env);
+        client.pause(&admin);
+        let result = client.try_set_platform_fee(&admin, &100, &treasury);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_deposit_escrow_fails_when_paused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &BytesN::from_array(&env, &[1u8; 32]),
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+        );
+
+        client.pause(&admin);
+        let result = client.try_deposit_escrow(&company, &shipment_id, &1000);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_cancel_shipment_fails_when_paused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+        );
+
+        client.pause(&admin);
+        let result = client.try_cancel_shipment(&company, &shipment_id, &hash);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_raise_dispute_fails_when_paused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+        );
+
+        client.pause(&admin);
+        let result = client.try_raise_dispute(&company, &shipment_id, &hash);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_confirm_delivery_fails_when_paused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+        );
+
+        client.pause(&admin);
+        let result = client.try_confirm_delivery(&receiver, &shipment_id, &hash);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_set_shipment_metadata_fails_when_paused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &BytesN::from_array(&env, &[1u8; 32]),
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+        );
+
+        client.pause(&admin);
+        let result = client.try_set_shipment_metadata(
+            &company,
+            &shipment_id,
+            &Symbol::new(&env, "weight"),
+            &Symbol::new(&env, "kg_100"),
+        );
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
     }
 
     // ── Circuit breaker transition matrix tests (issue #19) ───────────────────────

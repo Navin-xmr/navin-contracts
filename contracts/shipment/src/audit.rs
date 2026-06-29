@@ -393,12 +393,12 @@ pub fn cleanup_audit_logs(
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn get_next_audit_entry_id(env: &Env) -> Result<u64, NavinError> {
+pub(crate) fn get_next_audit_entry_id(env: &Env) -> Result<u64, NavinError> {
     let count = get_audit_entry_count(env);
     Ok(count as u64)
 }
 
-fn get_audit_entry_count(env: &Env) -> u32 {
+pub(crate) fn get_audit_entry_count(env: &Env) -> u32 {
     env.storage()
         .persistent()
         .get(&DataKey::AuditEntryCount)
@@ -412,7 +412,7 @@ fn increment_audit_entry_count(env: &Env) {
         .set(&DataKey::AuditEntryCount, &count.saturating_add(1));
 }
 
-fn store_audit_entry(env: &Env, entry: &AuditLogEntry) {
+pub(crate) fn store_audit_entry(env: &Env, entry: &AuditLogEntry) {
     let entry_id = entry.entry_id;
     env.storage()
         .persistent()

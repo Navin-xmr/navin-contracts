@@ -149,4 +149,6 @@ pub enum NavinError {
     NoteNotFound = 66,
     /// Evidence not found or index out of bounds.
     EvidenceNotFound = 67,
+    /// Address is invalid (e.g., zero-address sentinel).
+    InvalidAddress = 68,
 }

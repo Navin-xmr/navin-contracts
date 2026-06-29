@@ -270,8 +270,7 @@ mod total_escrow_volume_overflow {
                 .set(&crate::DataKey::TotalEscrowVolume, &i128::MAX);
         });
 
-        let result =
-            env.as_contract(&cid, || storage::add_total_escrow_volume(&env, i128::MAX));
+        let result = env.as_contract(&cid, || storage::add_total_escrow_volume(&env, i128::MAX));
 
         assert_eq!(
             result,
@@ -298,13 +297,11 @@ mod total_escrow_volume_overflow {
         assert_eq!(ok, Ok(()), "filling to i128::MAX must succeed");
 
         // Verify the stored value.
-        let volume =
-            env.as_contract(&cid, || storage::get_total_escrow_volume(&env));
+        let volume = env.as_contract(&cid, || storage::get_total_escrow_volume(&env));
         assert_eq!(volume, i128::MAX);
 
         // One more unit overflows.
-        let overflow =
-            env.as_contract(&cid, || storage::add_total_escrow_volume(&env, 1));
+        let overflow = env.as_contract(&cid, || storage::add_total_escrow_volume(&env, 1));
         assert_eq!(
             overflow,
             Err(NavinError::ArithmeticError),
