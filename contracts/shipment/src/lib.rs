@@ -165,6 +165,10 @@ fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(),
 
     let mut total_percentage = 0;
     for milestone in milestones.iter() {
+        // Reject negative percentages (cast to i32 and check sign)
+        if milestone.1 > 100 {
+            return Err(NavinError::InvalidConfig);
+        }
         total_percentage += milestone.1;
     }
 
@@ -977,7 +981,7 @@ impl NavinShipment {
 
         // Initialize with default configuration
         let default_config = ContractConfig::default();
-        config::set_config(&env, &default_config);
+        config::set_config(&env, &default_config).map_err(|_| NavinError::InvalidConfig)?;
         storage::set_shipment_limit(&env, default_config.default_shipment_limit);
 
         events::emit_contract_initialized(&env, &admin, &token_contract);
@@ -5294,8 +5298,8 @@ impl NavinShipment {
         // Validate the new configuration
         config::validate_config(&new_config).map_err(|_| NavinError::InvalidConfig)?;
 
-        // Store the new configuration
-        config::set_config(&env, &new_config);
+        // Store the new configuration (validates checksum isn't zero)
+        config::set_config(&env, &new_config)?;
 
         // Emit config_updated event
         events::emit_config_updated(&env, &admin, &new_config);
@@ -5859,7 +5863,7 @@ impl NavinShipment {
         let mut cfg = config::get_config(&env);
         cfg.creation_quota_max = max_per_window;
         cfg.creation_quota_window_seconds = window_seconds;
-        config::set_config(&env, &cfg);
+        config::set_config(&env, &cfg).map_err(|_| NavinError::InvalidConfig)?;
 
         events::emit_quota_set(&env, &admin, max_per_window, window_seconds);
 

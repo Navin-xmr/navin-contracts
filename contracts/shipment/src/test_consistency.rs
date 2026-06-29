@@ -718,6 +718,21 @@ fn test_config_checksum_raw_compute_matches_saved() {
     assert_eq!(saved, recomputed, "saved checksum must match recomputed");
 }
 
+/// The checksum of the default configuration is a non-zero, deterministic value.
+///
+/// This guards against `compute_config_checksum` returning an all-zero hash
+/// for any realistic config — a zero checksum would defeat drift detection.
+#[test]
+fn test_config_checksum_never_zero_for_defaults() {
+    let (env, client, _admin, _) = setup();
+    let checksum = client.get_config_checksum();
+    let bytes: [u8; 32] = checksum.to_array();
+    assert!(
+        bytes.iter().any(|&b| b != 0),
+        "Config checksum for default ContractConfig must not be all zeros"
+    );
+}
+
 // ── [ISSUE #453] Carrier reverse-lookup consistency tests ───────────────────
 
 /// Test: Add forward whitelist entries and verify they can be read back.
