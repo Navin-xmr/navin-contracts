@@ -1,7 +1,10 @@
 extern crate std;
 
 use crate::errors::NavinError;
-use crate::validation::{validate_metadata_symbols, validate_milestone_symbols, validate_symbol};
+use crate::validation::{
+    validate_checkpoint_symbol, validate_metadata_symbols, validate_milestone_symbols,
+    validate_symbol,
+};
 use soroban_sdk::{Env, Symbol, Vec};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -985,5 +988,76 @@ fn test_metadata_symbol_collision_via_set_shipment_metadata() {
         result,
         Err(Ok(crate::NavinError::MetadataSymbolCollision)),
         "set_shipment_metadata with key==value must return MetadataSymbolCollision"
+    );
+}
+
+#[test]
+fn test_validate_checkpoint_symbol_empty_fails() {
+    let env = Env::default();
+    let empty = Symbol::new(&env, "");
+    assert_eq!(
+        validate_checkpoint_symbol(&env, &empty),
+        Err(NavinError::InvalidSymbol)
+    );
+}
+
+#[test]
+fn test_validate_checkpoint_symbol_oversized_fails() {
+    let env = Env::default();
+    let long = "A".repeat(13);
+    let symbol = Symbol::new(&env, &long);
+    assert_eq!(
+        validate_checkpoint_symbol(&env, &symbol),
+        Err(NavinError::InvalidSymbol)
+    );
+}
+
+#[test]
+fn test_validate_checkpoint_symbol_valid_passes() {
+    let env = Env::default();
+    let symbol = Symbol::new(&env, "warehouse");
+    assert_eq!(validate_checkpoint_symbol(&env, &symbol), Ok(()));
+}
+
+#[test]
+fn test_record_milestone_empty_checkpoint_fails() {
+    use crate::{test_utils, NavinShipment, NavinShipmentClient, ShipmentStatus};
+    use soroban_sdk::{testutils::Address as _, Address, Vec as SorobanVec, BytesN};
+
+    let (env, admin) = test_utils::setup_env();
+    let contract_id = env.register(NavinShipment, ());
+    let client = NavinShipmentClient::new(&env, &contract_id);
+
+    let token = env.register_stellar_asset_contract_v2(admin.clone());
+    client.initialize(&admin, &token.address());
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[3u8; 32]),
+        &SorobanVec::new(&env),
+        &deadline,
+    );
+
+    let status_hash = BytesN::from_array(&env, &[1u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &status_hash);
+
+    let empty_symbol = Symbol::new(&env, "");
+    let data_hash = BytesN::from_array(&env, &[4u8; 32]);
+    let result = client.try_record_milestone(&carrier, &shipment_id, &empty_symbol, &data_hash);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::InvalidSymbol)),
+        "record_milestone with empty symbol must return InvalidSymbol"
     );
 }

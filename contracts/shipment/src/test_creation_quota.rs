@@ -747,4 +747,176 @@ mod tests {
         // Should now succeed
         assert!(create_one(&env, &client, &company, &carrier, 3).is_ok());
     }
+
+    // ── sliding window shifts forward on reset ──────────────────────────────
+
+    #[test]
+    fn test_sliding_window_shifts_forward_on_reset() {
+        let (env, client, admin, company, carrier, _token) = setup();
+
+        // Quota: max 2 per 3600-second window.
+        client.set_creation_quota(&admin, &2, &3600);
+        let t0 = env.ledger().timestamp();
+
+        // Window 1: fill quota.
+        assert!(create_one(&env, &client, &company, &carrier, 1).is_ok());
+        env.ledger().with_mut(|l| l.timestamp = t0 + 1);
+        assert!(create_one(&env, &client, &company, &carrier, 2).is_ok());
+        env.ledger().with_mut(|l| l.timestamp = t0 + 2);
+
+        // Verify quota exhausted in window 1.
+        let result = create_one(&env, &client, &company, &carrier, 3);
+        assert_eq!(result, Err(NavinError::CreationQuotaExceeded));
+
+        // Advance past the window boundary — old window expires at t0 + 3600.
+        env.ledger().with_mut(|l| l.timestamp = t0 + 3600);
+
+        // The window slides forward: count resets to 0 then increments to 1.
+        assert!(create_one(&env, &client, &company, &carrier, 4).is_ok());
+
+        // New window should have count = 1, remaining = 1.
+        let (used, remaining) = client.get_creation_quota_status(&company);
+        assert_eq!(used, 1);
+        assert_eq!(remaining, 1);
+
+        // Fill the new window.
+        assert!(create_one(&env, &client, &company, &carrier, 5).is_ok());
+        let (used, remaining) = client.get_creation_quota_status(&company);
+        assert_eq!(used, 2);
+        assert_eq!(remaining, 0);
+
+        // Verify exhaustion in the new window.
+        let result = create_one(&env, &client, &company, &carrier, 6);
+        assert_eq!(result, Err(NavinError::CreationQuotaExceeded));
+    }
+
+    // ── multiple consecutive window slides ──────────────────────────────────
+
+    #[test]
+    fn test_sliding_window_multiple_consecutive_windows() {
+        let (env, client, admin, company, carrier, _token) = setup();
+
+        // Quota: max 2 per 1000-second window (short window for fast test).
+        client.set_creation_quota(&admin, &2, &1000);
+        let t0 = env.ledger().timestamp();
+
+        // ── Window 1 ──
+        assert!(create_one(&env, &client, &company, &carrier, 1).is_ok());
+        env.ledger().with_mut(|l| l.timestamp = t0 + 10);
+        assert!(create_one(&env, &client, &company, &carrier, 2).is_ok());
+        env.ledger().with_mut(|l| l.timestamp = t0 + 20);
+        let result = create_one(&env, &client, &company, &carrier, 3);
+        assert_eq!(result, Err(NavinError::CreationQuotaExceeded));
+
+        // Slide into window 2.
+        env.ledger().with_mut(|l| l.timestamp = t0 + 1000);
+
+        // ── Window 2 ──
+        assert!(create_one(&env, &client, &company, &carrier, 4).is_ok());
+        env.ledger().with_mut(|l| l.timestamp = t0 + 1010);
+        assert!(create_one(&env, &client, &company, &carrier, 5).is_ok());
+        env.ledger().with_mut(|l| l.timestamp = t0 + 1020);
+        let result = create_one(&env, &client, &company, &carrier, 6);
+        assert_eq!(result, Err(NavinError::CreationQuotaExceeded));
+
+        // Slide into window 3.
+        env.ledger().with_mut(|l| l.timestamp = t0 + 2000);
+
+        // ── Window 3 ──
+        assert!(create_one(&env, &client, &company, &carrier, 7).is_ok());
+        env.ledger().with_mut(|l| l.timestamp = t0 + 2010);
+        assert!(create_one(&env, &client, &company, &carrier, 8).is_ok());
+        env.ledger().with_mut(|l| l.timestamp = t0 + 2020);
+
+        // Verify status shows full usage in window 3.
+        let (used, remaining) = client.get_creation_quota_status(&company);
+        assert_eq!(used, 2);
+        assert_eq!(remaining, 0);
+
+        let result = create_one(&env, &client, &company, &carrier, 9);
+        assert_eq!(result, Err(NavinError::CreationQuotaExceeded));
+    }
+
+    // ── large time jump past multiple windows ────────────────────────────────
+
+    #[test]
+    fn test_sliding_window_large_time_jump() {
+        let (env, client, admin, company, carrier, _token) = setup();
+
+        // Quota: max 3 per 3600-second window.
+        client.set_creation_quota(&admin, &3, &3600);
+        let t0 = env.ledger().timestamp();
+
+        // Create 2 shipments (not yet at quota).
+        assert!(create_one(&env, &client, &company, &carrier, 1).is_ok());
+        env.ledger().with_mut(|l| l.timestamp = t0 + 10);
+        assert!(create_one(&env, &client, &company, &carrier, 2).is_ok());
+
+        // Jump way past the window (100x window length).
+        env.ledger().with_mut(|l| l.timestamp = t0 + 360_000);
+
+        // Window should have expired — creation resets the tracker.
+        assert!(create_one(&env, &client, &company, &carrier, 3).is_ok());
+
+        // Verify reset: only 1 used in the new window.
+        let (used, remaining) = client.get_creation_quota_status(&company);
+        assert_eq!(used, 1);
+        assert_eq!(remaining, 2);
+
+        // Fill the new window.
+        assert!(create_one(&env, &client, &company, &carrier, 4).is_ok());
+        assert!(create_one(&env, &client, &company, &carrier, 5).is_ok());
+        let (used, remaining) = client.get_creation_quota_status(&company);
+        assert_eq!(used, 3);
+        assert_eq!(remaining, 0);
+
+        // Verify exhausted.
+        let result = create_one(&env, &client, &company, &carrier, 6);
+        assert_eq!(result, Err(NavinError::CreationQuotaExceeded));
+    }
+
+    // ── get_creation_quota_status reflects window shift ─────────────────────
+
+    #[test]
+    fn test_sliding_window_status_after_window_shift() {
+        let (env, client, admin, company, carrier, _token) = setup();
+
+        // Quota: max 3 per 3600-second window.
+        client.set_creation_quota(&admin, &3, &3600);
+        let t0 = env.ledger().timestamp();
+
+        // Create 2 in window 1.
+        assert!(create_one(&env, &client, &company, &carrier, 1).is_ok());
+        env.ledger().with_mut(|l| l.timestamp = t0 + 10);
+        assert!(create_one(&env, &client, &company, &carrier, 2).is_ok());
+        env.ledger().with_mut(|l| l.timestamp = t0 + 20);
+
+        // Status within window: used=2, remaining=1.
+        let (used, remaining) = client.get_creation_quota_status(&company);
+        assert_eq!(used, 2);
+        assert_eq!(remaining, 1);
+
+        // Advance past the window.
+        env.ledger().with_mut(|l| l.timestamp = t0 + 3600);
+
+        // Status shows window expired: used=0, remaining=3 (even before creating).
+        let (used, remaining) = client.get_creation_quota_status(&company);
+        assert_eq!(used, 0);
+        assert_eq!(remaining, 3);
+
+        // Create should now succeed (window already considered expired by status).
+        assert!(create_one(&env, &client, &company, &carrier, 3).is_ok());
+
+        // Status shows 1 used in new sliding window.
+        let (used, remaining) = client.get_creation_quota_status(&company);
+        assert_eq!(used, 1);
+        assert_eq!(remaining, 2);
+
+        // Fill the new window.
+        assert!(create_one(&env, &client, &company, &carrier, 4).is_ok());
+        assert!(create_one(&env, &client, &company, &carrier, 5).is_ok());
+        let (used, remaining) = client.get_creation_quota_status(&company);
+        assert_eq!(used, 3);
+        assert_eq!(remaining, 0);
+    }
 }

@@ -453,3 +453,14 @@ fn test_token_with_8_decimals_deposit_fails_with_invalid_token_decimals() {
         "Token with 8 decimals must be rejected with InvalidTokenDecimals"
     );
 }
+
+#[test]
+fn test_get_expected_token_decimals_matches_setting() {
+    let ctx = setup_test(TokenVariant::StellarAsset);
+    let decimals = ctx.shipment_client.get_expected_token_decimals();
+    assert_eq!(
+        decimals,
+        7,
+        "get_expected_token_decimals must return 7 decimals"
+    );
+}

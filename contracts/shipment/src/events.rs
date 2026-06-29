@@ -1485,3 +1485,141 @@ pub fn emit_fee_config_updated(env: &Env, admin: &Address, fee_bps: u32, treasur
         ),
     );
 }
+
+pub fn emit_contract_initialized(env: &Env, admin: &Address, token_contract: &Address) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::CONTRACT_INITIALIZED),),
+        (admin.clone(), token_contract.clone()),
+    );
+}
+
+pub fn emit_shipment_limit_updated(env: &Env, admin: &Address, limit: u32) {
+    env.events().publish(
+        (Symbol::new(
+            env,
+            crate::event_topics::SHIPMENT_LIMIT_UPDATED,
+        ),),
+        (admin.clone(), limit),
+    );
+}
+
+pub fn emit_company_limit_updated(env: &Env, admin: &Address, company: &Address, limit: u32) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::COMPANY_LIMIT_UPDATED),),
+        (admin.clone(), company.clone(), limit),
+    );
+}
+
+pub fn emit_carrier_suspended(env: &Env, admin: &Address, carrier: &Address) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::CARRIER_SUSPENDED),),
+        (admin.clone(), carrier.clone()),
+    );
+}
+
+pub fn emit_carrier_reactivated(env: &Env, admin: &Address, carrier: &Address) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::CARRIER_REACTIVATED),),
+        (admin.clone(), carrier.clone()),
+    );
+}
+
+pub fn emit_delivery_confirmed(
+    env: &Env,
+    shipment_id: u64,
+    receiver: &Address,
+    data_hash: &BytesN<32>,
+) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        crate::event_topics::HASH_DOMAIN_SHIPMENT,
+        shipment_id,
+        crate::event_topics::DELIVERY_CONFIRMED,
+        event_counter,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::DELIVERY_CONFIRMED),),
+        (
+            shipment_id,
+            receiver.clone(),
+            data_hash.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
+
+pub fn emit_geofence_event(
+    env: &Env,
+    shipment_id: u64,
+    zone_type: crate::types::GeofenceEvent,
+    data_hash: &BytesN<32>,
+) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        crate::event_topics::HASH_DOMAIN_SHIPMENT,
+        shipment_id,
+        crate::event_topics::GEOFENCE_EVENT,
+        event_counter,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::GEOFENCE_EVENT),),
+        (
+            shipment_id,
+            zone_type,
+            data_hash.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
+
+pub fn emit_eta_updated(env: &Env, shipment_id: u64, new_eta: u64, data_hash: &BytesN<32>) {
+    let event_counter = next_event_counter(env, shipment_id);
+    let idempotency_key = generate_idempotency_key(
+        env,
+        crate::event_topics::HASH_DOMAIN_SHIPMENT,
+        shipment_id,
+        crate::event_topics::ETA_UPDATED,
+        event_counter,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::ETA_UPDATED),),
+        (
+            shipment_id,
+            new_eta,
+            data_hash.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
+
+pub fn emit_proposal_digest(env: &Env, proposal_id: u64, digest: BytesN<32>, computed_at: u64) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::PROPOSAL_DIGEST),),
+        (proposal_id, digest, computed_at),
+    );
+}
+
+pub fn emit_config_updated(env: &Env, admin: &Address, new_config: &crate::ContractConfig) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::CONFIG_UPDATED),),
+        (admin.clone(), new_config.clone()),
+    );
+}
+
+pub fn emit_quota_set(env: &Env, company: &Address, count: u32, window_start: u64) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::QUOTA_SET),),
+        (company.clone(), count, window_start),
+    );
+}

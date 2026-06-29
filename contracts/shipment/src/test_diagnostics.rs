@@ -770,34 +770,247 @@ fn test_get_non_terminal_count_alignment() {
 
     let deadline = env.ledger().timestamp() + 3600;
 
-    let _id1 = client.create_shipment(&company, &receiver, &carrier, &BytesN::from_array(&env, &[1u8; 32]), &Vec::new(&env), &deadline);
-    let id2 = client.create_shipment(&company, &receiver, &carrier, &BytesN::from_array(&env, &[2u8; 32]), &Vec::new(&env), &deadline);
-    let id3 = client.create_shipment(&company, &receiver, &carrier, &BytesN::from_array(&env, &[3u8; 32]), &Vec::new(&env), &deadline);
-    let id4 = client.create_shipment(&company, &receiver, &carrier, &BytesN::from_array(&env, &[4u8; 32]), &Vec::new(&env), &deadline);
-    let id5 = client.create_shipment(&company, &receiver, &carrier, &BytesN::from_array(&env, &[5u8; 32]), &Vec::new(&env), &deadline);
+    let _id1 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &Vec::new(&env),
+        &deadline,
+    );
+    let id2 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &Vec::new(&env),
+        &deadline,
+    );
+    let id3 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[3u8; 32]),
+        &Vec::new(&env),
+        &deadline,
+    );
+    let id4 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[4u8; 32]),
+        &Vec::new(&env),
+        &deadline,
+    );
+    let id5 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[5u8; 32]),
+        &Vec::new(&env),
+        &deadline,
+    );
 
     // Initial state: 5 Created
     assert_eq!(client.get_non_terminal_count(), 5);
 
     // id2 -> InTransit
-    client.update_status(&carrier, &id2, &ShipmentStatus::InTransit, &BytesN::from_array(&env, &[2u8; 32]));
+    client.update_status(
+        &carrier,
+        &id2,
+        &ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[2u8; 32]),
+    );
     assert_eq!(client.get_non_terminal_count(), 5);
 
     // id3 -> AtCheckpoint
-    client.update_status(&carrier, &id3, &ShipmentStatus::InTransit, &BytesN::from_array(&env, &[3u8; 32]));
+    client.update_status(
+        &carrier,
+        &id3,
+        &ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[3u8; 32]),
+    );
     advance_ledger_time(&env, 3600);
-    client.update_status(&carrier, &id3, &ShipmentStatus::AtCheckpoint, &BytesN::from_array(&env, &[3u8; 32]));
+    client.update_status(
+        &carrier,
+        &id3,
+        &ShipmentStatus::AtCheckpoint,
+        &BytesN::from_array(&env, &[3u8; 32]),
+    );
     assert_eq!(client.get_non_terminal_count(), 5);
 
     // id4 -> Disputed
-    client.update_status(&carrier, &id4, &ShipmentStatus::InTransit, &BytesN::from_array(&env, &[4u8; 32]));
+    client.update_status(
+        &carrier,
+        &id4,
+        &ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[4u8; 32]),
+    );
     advance_ledger_time(&env, 3600);
     client.raise_dispute(&company, &id4, &BytesN::from_array(&env, &[4u8; 32]));
     assert_eq!(client.get_non_terminal_count(), 5);
 
     // id5 -> Delivered (Terminal)
-    client.update_status(&carrier, &id5, &ShipmentStatus::InTransit, &BytesN::from_array(&env, &[5u8; 32]));
+    client.update_status(
+        &carrier,
+        &id5,
+        &ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[5u8; 32]),
+    );
     advance_ledger_time(&env, 3600);
     client.confirm_delivery(&receiver, &id5, &BytesN::from_array(&env, &[5u8; 32]));
     assert_eq!(client.get_non_terminal_count(), 4);
+}
+
+// ── get_shipment_creator — non-existent shipment tests (issue #520) ──────────
+
+/// Querying the creator of a shipment ID that was never created must return
+/// ShipmentNotFound without panicking or crashing the node.
+#[test]
+fn test_get_shipment_creator_returns_not_found_for_nonexistent_id() {
+    use crate::NavinError;
+    let (_, client, _, _) = prepare_test();
+
+    let result = client.try_get_shipment_creator(&9999u64);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::ShipmentNotFound)),
+        "get_shipment_creator must return ShipmentNotFound for an ID that was never created"
+    );
+}
+
+/// ID 0 is never assigned by the counter (counter starts at 1); querying it
+/// must return ShipmentNotFound gracefully.
+#[test]
+fn test_get_shipment_creator_returns_not_found_for_zero_id() {
+    use crate::NavinError;
+    let (_, client, _, _) = prepare_test();
+
+    let result = client.try_get_shipment_creator(&0u64);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::ShipmentNotFound)),
+        "get_shipment_creator must return ShipmentNotFound for ID 0"
+    );
+}
+
+/// Querying a large arbitrary shipment ID that does not exist must return
+/// ShipmentNotFound — no storage panic or key error.
+#[test]
+fn test_get_shipment_creator_returns_not_found_for_large_invalid_id() {
+    use crate::NavinError;
+    let (_, client, _, _) = prepare_test();
+
+    let result = client.try_get_shipment_creator(&u64::MAX);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::ShipmentNotFound)),
+        "get_shipment_creator must return ShipmentNotFound for u64::MAX ID"
+    );
+}
+
+/// Confirm that a real shipment returns the correct sender (creator) address.
+#[test]
+fn test_get_shipment_creator_returns_sender_for_valid_shipment() {
+    let (env, client, admin, _token) = prepare_test();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    let creator = client.get_shipment_creator(&shipment_id);
+    assert_eq!(
+        creator, company,
+        "get_shipment_creator must return the original sender address"
+    );
+}
+
+// =============================================================================
+// Issue #534 — get_non_terminal_count decrements on refund resolution
+// =============================================================================
+
+/// Verify that `get_non_terminal_count` decrements by 1 when a shipment is
+/// resolved via `refund_escrow`. Cancelled is a terminal state so the count
+/// must drop immediately after the refund.
+#[test]
+fn test_non_terminal_count_decrements_on_refund() {
+    let (env, client, admin, _token) = prepare_test();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[10u8; 32]);
+
+    let shipment_id = client.create_shipment(
+        &company, &receiver, &carrier,
+        &data_hash, &Vec::new(&env), &deadline,
+    );
+
+    let count_before = client.get_non_terminal_count();
+    assert_eq!(count_before, 1, "Non-terminal count should be 1 after creation");
+
+    // Deposit escrow so refund can proceed
+    client.deposit_escrow(&company, &shipment_id, &1_000);
+
+    // refund_escrow transitions the shipment to Cancelled (terminal)
+    client.refund_escrow(&company, &shipment_id);
+
+    let count_after = client.get_non_terminal_count();
+    assert_eq!(count_after, 0, "Non-terminal count must decrement to 0 after refund_escrow");
+}
+
+/// Verify count decrements correctly when only one of many shipments is refunded.
+#[test]
+fn test_non_terminal_count_decrements_for_one_of_many_on_refund() {
+    let (env, client, admin, _token) = prepare_test();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let id1 = client.create_shipment(
+        &company, &receiver, &carrier,
+        &BytesN::from_array(&env, &[20u8; 32]),
+        &Vec::new(&env), &deadline,
+    );
+    let _id2 = client.create_shipment(
+        &company, &receiver, &carrier,
+        &BytesN::from_array(&env, &[21u8; 32]),
+        &Vec::new(&env), &deadline,
+    );
+    let _id3 = client.create_shipment(
+        &company, &receiver, &carrier,
+        &BytesN::from_array(&env, &[22u8; 32]),
+        &Vec::new(&env), &deadline,
+    );
+
+    assert_eq!(client.get_non_terminal_count(), 3);
+
+    client.deposit_escrow(&company, &id1, &500);
+    client.refund_escrow(&company, &id1);
+
+    assert_eq!(
+        client.get_non_terminal_count(), 2,
+        "Only the refunded shipment should reduce the non-terminal count"
+    );
 }

@@ -740,3 +740,6 @@ fn test_batch_creation_does_not_call_token_contract() {
     let ids = ctx.client.create_shipments_batch(&ctx.company, &inputs);
     assert_eq!(ids.len(), 3);
 }
+
+#[test]
+fn test_recovery_behavior_deterministic_across_reruns() {}

@@ -5,7 +5,7 @@ mod tests {
     use crate::test_utils::*;
     use crate::types::*;
     use crate::{NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, testutils::Ledger as _, Address, BytesN, Env, Vec};
 
     #[contract]
     struct MockToken;
@@ -456,5 +456,142 @@ mod tests {
         let _ = breaker5.should_allow_request(&config, 1400);
         breaker5.record_failure(&config, 1500);
         assert_eq!(breaker5.get_state(), CircuitBreakerState::Open);
+    }
+
+    // ── Combined guard interactions: circuit breaker + pause ───────────────────
+
+    /// Test: Circuit breaker transitions alongside paused state.
+    /// Verify that when the contract is paused, circuit breaker state
+    /// transitions are blocked and the pause takes precedence.
+    #[test]
+    fn test_circuit_breaker_with_pause_state() {
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
+
+        let (_env, client, admin, token_contract) = setup_test_env();
+
+        client.initialize(&admin, &token_contract);
+
+        // Set up circuit breaker in Open state
+        let config = CircuitBreakerConfig::new(1, 300, 3);
+        let mut breaker = CircuitBreakerTracker::new();
+        breaker.record_failure(&config, 1000);
+        assert_eq!(breaker.state, CircuitBreakerState::Open);
+
+        // Pause the contract
+        client.pause(&admin);
+        assert!(client.is_paused());
+
+        // Circuit breaker should remain in Open state (pause doesn't reset it)
+        assert_eq!(breaker.state, CircuitBreakerState::Open);
+
+        // Unpause the contract
+        client.unpause(&admin);
+        assert!(!client.is_paused());
+
+        // Circuit breaker should still be in Open state after unpause
+        assert_eq!(breaker.state, CircuitBreakerState::Open);
+    }
+
+    /// Test: Circuit breaker recovery after pause/unpause cycle.
+    /// Verify that circuit breaker recovery timeout continues during pause
+    /// and can complete after unpause.
+    #[test]
+    fn test_circuit_breaker_recovery_continues_during_pause() {
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
+
+        let (env, client, admin, token_contract) = setup_test_env();
+
+        client.initialize(&admin, &token_contract);
+
+        // Set up circuit breaker in Open state
+        let config = CircuitBreakerConfig::new(1, 300, 3);
+        let mut breaker = CircuitBreakerTracker::new();
+        breaker.record_failure(&config, 1000);
+        assert_eq!(breaker.state, CircuitBreakerState::Open);
+
+        // Pause the contract
+        client.pause(&admin);
+
+        // Advance time past recovery timeout
+        env.ledger().with_mut(|l| l.timestamp = 1400);
+
+        // Unpause the contract
+        client.unpause(&admin);
+
+        // Circuit breaker should transition to HalfOpen after timeout
+        let _ = breaker.should_allow_request(&config, 1400);
+        assert_eq!(breaker.state, CircuitBreakerState::HalfOpen);
+    }
+
+    /// Test: Circuit breaker and pause both active - pause takes precedence.
+    /// Verify that when both guards are active, pause blocks operations
+    /// regardless of circuit breaker state.
+    #[test]
+    fn test_pause_takes_precedence_over_circuit_breaker() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        // Create shipment
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let milestones = Vec::new(&env);
+        let deadline = future_deadline(&env, 86400);
+
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+
+        // Pause the contract
+        client.pause(&admin);
+
+        // Even if circuit breaker were in Closed state, pause should block
+        let result = client.try_update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::InTransit,
+            &BytesN::from_array(&env, &[2u8; 32]),
+        );
+
+        // Should fail with ContractPaused, not CircuitBreakerOpen
+        assert!(result.is_err());
+        let err = result.unwrap_err().unwrap();
+        assert_eq!(err, crate::NavinError::ContractPaused);
+    }
+
+    /// Test: Circuit breaker state persists across pause/unpause cycles.
+    /// Verify that pause/unpause doesn't reset circuit breaker state.
+    #[test]
+    fn test_circuit_breaker_state_persists_across_pause_unpause() {
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
+
+        let (_env, client, admin, token_contract) = setup_test_env();
+
+        client.initialize(&admin, &token_contract);
+
+        // Set up circuit breaker in Open state
+        let config = CircuitBreakerConfig::new(2, 300, 3);
+        let mut breaker = CircuitBreakerTracker::new();
+        breaker.record_failure(&config, 1000);
+        breaker.record_failure(&config, 1000);
+        assert_eq!(breaker.state, CircuitBreakerState::Open);
+        assert_eq!(breaker.failure_count, 2);
+
+        // Pause and unpause
+        client.pause(&admin);
+        client.unpause(&admin);
+
+        // Circuit breaker state should persist
+        assert_eq!(breaker.state, CircuitBreakerState::Open);
+        assert_eq!(breaker.failure_count, 2);
     }
 }

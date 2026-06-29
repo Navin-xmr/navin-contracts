@@ -83,6 +83,22 @@ pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
     Ok(())
 }
 
+/// Validate a milestone checkpoint symbol for bounded usage and non-emptiness.
+pub fn validate_checkpoint_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
+    let symbol_bytes = symbol.to_xdr(env);
+    let len = symbol_bytes.len();
+
+    if len <= 8 {
+        return Err(NavinError::InvalidSymbol);
+    }
+
+    if !(12..=20).contains(&len) {
+        return Err(NavinError::InvalidSymbol);
+    }
+
+    Ok(())
+}
+
 /// Validate a collection of milestone symbols for bounded usage.
 ///
 /// This validator ensures that all milestone checkpoint names conform to length
@@ -192,7 +208,10 @@ pub fn validate_amount(amount: i128) -> Result<(), NavinError> {
 /// * `Ok(())` if `amount > 0`.
 /// * `Err(NavinError::InvalidAmount)` otherwise.
 pub fn validate_positive_amount(amount: i128) -> Result<(), NavinError> {
-    if amount <= 0 || amount > MAX_AMOUNT {
+    if amount <= 0 {
+        return Err(NavinError::InsufficientFunds);
+    }
+    if amount > MAX_AMOUNT {
         return Err(NavinError::InvalidAmount);
     }
     Ok(())
