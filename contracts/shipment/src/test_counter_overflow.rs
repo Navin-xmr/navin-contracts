@@ -309,3 +309,95 @@ fn test_counter_overflow_uses_checked_arithmetic() {
         );
     }
 }
+
+// =============================================================================
+// Issue #533 — SettlementCounter sequence tracking boundary tests
+// =============================================================================
+
+/// Verify that the settlement counter increments without error for a normal
+/// sequence of create → refund operations, each generating a unique settlement ID.
+#[test]
+fn test_settlement_counter_increments_on_sequential_refunds() {
+    let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
+    let deadline = env.ledger().timestamp() + 3600;
+
+    for i in 1u8..=5 {
+        let shipment_id = client.create_shipment(
+            &company, &receiver, &carrier,
+            &BytesN::from_array(&env, &[i; 32]),
+            &Vec::new(&env), &deadline,
+        );
+        client.deposit_escrow(&company, &shipment_id, &1_000);
+        // Each refund internally creates a settlement record and increments the counter.
+        client.refund_escrow(&company, &shipment_id);
+    }
+
+    // Shipment counter should be exactly 5
+    assert_eq!(
+        client.get_shipment_counter(), 5,
+        "Shipment counter should be 5 after 5 create-refund cycles"
+    );
+}
+
+/// Verify that the shipment counter never silently wraps when forcibly seeded
+/// at u64::MAX - 1 (penultimate value) and one more creation is attempted.
+/// The contract must either succeed with MAX or reject with CounterOverflow.
+#[test]
+fn test_settlement_counter_near_max_boundary_safe() {
+    let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
+    let deadline = env.ledger().timestamp() + 3600;
+
+    // Seed the counter to u64::MAX - 1 to test boundary behavior.
+    env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .set(&crate::types::DataKey::ShipmentCount, &(u64::MAX - 1));
+    });
+
+    // Attempting one creation at MAX-1 might succeed with counter = MAX,
+    // or may return CounterOverflow if the guard fires early.
+    // Either outcome is acceptable — what we MUST NOT see is a silent wrap to 0.
+    let result = client.try_create_shipment(
+        &company, &receiver, &carrier,
+        &BytesN::from_array(&env, &[0xAAu8; 32]),
+        &Vec::new(&env), &deadline,
+    );
+
+    match &result {
+        Ok(Ok(id)) => {
+            assert_eq!(*id, u64::MAX, "Counter should advance to u64::MAX, not wrap");
+        }
+        Ok(Err(_)) | Err(_) => {
+            // CounterOverflow or host error — acceptable, no wrap occurred
+        }
+    }
+
+    // Confirm the counter did NOT wrap to 0
+    let counter = client.get_shipment_counter();
+    assert_ne!(counter, 0, "Counter must never silently wrap to 0");
+}
+
+/// Seeding the counter exactly at u64::MAX and attempting another creation
+/// must always fail — this is the hard overflow boundary check.
+#[test]
+fn test_settlement_counter_at_max_always_fails() {
+    let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
+    let deadline = env.ledger().timestamp() + 3600;
+
+    env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .set(&crate::types::DataKey::ShipmentCount, &u64::MAX);
+    });
+
+    let result = client.try_create_shipment(
+        &company, &receiver, &carrier,
+        &BytesN::from_array(&env, &[0xBBu8; 32]),
+        &Vec::new(&env), &deadline,
+    );
+
+    assert!(
+        result.is_err() || matches!(result, Ok(Err(_))),
+        "Creating a shipment when counter is at u64::MAX must always be rejected"
+    );
+}

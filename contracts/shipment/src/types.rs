@@ -276,6 +276,13 @@ impl ShipmentStatus {
             (Self::InTransit, Self::Delivered) => true,
             (Self::InTransit, Self::Disputed) => true,
             (Self::InTransit, Self::Cancelled) => true,
+            // Issue #542 — a shipment must return to `InTransit` before
+            // entering another checkpoint, so direct `AtCheckpoint ->
+            // AtCheckpoint` hops are explicitly rejected here rather than
+            // falling through to the catch-all `_ => false` arm. This
+            // protects against off-by-one workflow code that would
+            // otherwise silently record duplicate checkpoint entries.
+            (Self::AtCheckpoint, Self::AtCheckpoint) => false,
             (Self::AtCheckpoint, Self::InTransit) => true,
             (Self::AtCheckpoint, Self::PartiallyDelivered) => true,
             (Self::AtCheckpoint, Self::Delivered) => true,
