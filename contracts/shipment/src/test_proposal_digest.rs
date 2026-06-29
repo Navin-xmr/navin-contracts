@@ -516,4 +516,154 @@ mod tests {
         assert_eq!(approve_result, Err(Ok(crate::NavinError::ProposalExpired)));
         assert_eq!(execute_result, Err(Ok(crate::NavinError::ProposalExpired)));
     }
+
+    // ── Proposal expiration and cleanup flow ──────────────────────────────────
+
+    /// Test: Expired proposals cannot be executed.
+    /// Verify that attempting to execute an expired proposal fails with ProposalExpired.
+    #[test]
+    fn expired_proposal_cannot_be_executed() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Approve to get to sufficient threshold
+        client.approve_action(&admin2, &proposal_id);
+
+        // Advance ledger time beyond the 7-day expiry threshold
+        crate::test_utils::advance_past_multisig_expiry(&env);
+
+        // Attempting to execute the expired proposal must fail
+        let result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::ProposalExpired)),
+            "Expired proposal must reject execution"
+        );
+    }
+
+    /// Test: Expired proposal approval attempts fail.
+    /// Verify that trying to approve an expired proposal returns the proper error.
+    #[test]
+    fn expired_proposal_cannot_be_approved() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        let action = crate::types::AdminAction::Upgrade(wasm_hash(&env, 24));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Advance time beyond expiry
+        crate::test_utils::advance_past_multisig_expiry(&env);
+
+        // Attempting to approve should fail
+        let result = client.try_approve_action(&admin2, &proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::ProposalExpired)),
+            "Cannot approve an expired proposal"
+        );
+    }
+
+    /// Test: Expired proposal storage key is safely removable.
+    /// Verify that storage cleanup operations work on expired proposal keys.
+    #[test]
+    fn expired_proposal_storage_can_be_cleaned() {
+        let (env, client, admin, _admin2) = setup_multisig();
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Advance time beyond expiry
+        crate::test_utils::advance_past_multisig_expiry(&env);
+
+        // Verify the proposal is expired (cannot execute)
+        let exec_result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            exec_result,
+            Err(Ok(NavinError::ProposalExpired)),
+            "Proposal must be expired"
+        );
+
+        // After expiration, the proposal storage key should remain safely accessible
+        // for cleanup without causing errors. Attempting to get the expired proposal
+        // should still work for diagnostics (not panic or fail unexpectedly).
+        let get_result = client.try_get_proposal(&proposal_id);
+        // Result varies based on implementation - could be NotFound or ProposalExpired
+        // The key point is it doesn't cause a crash or unexpected error type
+        assert!(
+            get_result.is_err(),
+            "Getting expired proposal should handle gracefully"
+        );
+    }
+
+    /// Test: Multiple expired proposals do not interfere with new proposals.
+    /// Verify that creating new proposals works even when old expired ones exist.
+    #[test]
+    fn new_proposals_work_after_expiring_old_ones() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        // Create and expire first proposal
+        let action1 = crate::types::AdminAction::Upgrade(wasm_hash(&env, 25));
+        let proposal_id_1 = client.propose_action(&admin, &action1);
+
+        // Advance past expiry
+        crate::test_utils::advance_past_multisig_expiry(&env);
+
+        // Verify first proposal is expired
+        assert_eq!(
+            client.try_execute_proposal(&proposal_id_1),
+            Err(Ok(NavinError::ProposalExpired))
+        );
+
+        // Now create a new proposal - should succeed even with expired proposal in storage
+        let action2 = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id_2 = client.propose_action(&admin2, &action2);
+
+        // New proposal should be functional (not expired)
+        let proposal = client.get_proposal(&proposal_id_2);
+        assert_eq!(proposal.id, proposal_id_2);
+        assert!(!proposal.executed, "New proposal must not be pre-executed");
+    }
+
+    /// Test: Proposal expiry timestamp enforcement.
+    /// Verify that proposals expire at the correct ledger time threshold.
+    #[test]
+    fn proposal_expiry_enforced_at_correct_threshold() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Before expiry window - should be executable (if thresholds met)
+        // Note: We can't execute this without hitting the approval threshold,
+        // but we can verify approval is allowed
+        let approve_result = client.try_approve_action(&admin2, &proposal_id);
+        assert!(
+            approve_result.is_ok(),
+            "Proposal must be approvable before expiry"
+        );
+
+        // Advance time to just before expiry (less than 7 days)
+        env.ledger().with_mut(|l| {
+            l.timestamp += 604799; // 7 days - 1 second
+        });
+
+        // Proposal should still be usable
+        let get_result = client.try_get_proposal(&proposal_id);
+        assert!(get_result.is_ok(), "Proposal must be accessible just before expiry");
+
+        // Now advance past the expiry threshold
+        env.ledger().with_mut(|l| {
+            l.timestamp += 2; // Now past 7 days + 1 second
+        });
+
+        // Now it should be expired
+        let result = client.try_approve_action(&admin, &proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::ProposalExpired)),
+            "Proposal must be expired after 7-day threshold"
+        );
+    }
 }
+

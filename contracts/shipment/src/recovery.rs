@@ -339,18 +339,25 @@ mod tests {
 
     #[test]
     fn test_valid_recovery_transitions() {
+        // Created can transition to Cancelled
         assert!(is_valid_recovery_transition(
             &ShipmentStatus::Created,
             &ShipmentStatus::Cancelled
         ));
+
+        // InTransit can transition to Cancelled
         assert!(is_valid_recovery_transition(
             &ShipmentStatus::InTransit,
             &ShipmentStatus::Cancelled
         ));
+
+        // InTransit can transition to Disputed
         assert!(is_valid_recovery_transition(
             &ShipmentStatus::InTransit,
             &ShipmentStatus::Disputed
         ));
+
+        // Disputed can transition to Delivered
         assert!(is_valid_recovery_transition(
             &ShipmentStatus::Disputed,
             &ShipmentStatus::Delivered
@@ -359,14 +366,19 @@ mod tests {
 
     #[test]
     fn test_invalid_recovery_transitions() {
+        // Cancelled cannot transition to anything
         assert!(!is_valid_recovery_transition(
             &ShipmentStatus::Cancelled,
             &ShipmentStatus::Delivered
         ));
+
+        // AtCheckpoint cannot transition to Created
         assert!(!is_valid_recovery_transition(
             &ShipmentStatus::AtCheckpoint,
             &ShipmentStatus::Created
         ));
+
+        // Created cannot transition to Delivered directly
         assert!(!is_valid_recovery_transition(
             &ShipmentStatus::Created,
             &ShipmentStatus::Delivered

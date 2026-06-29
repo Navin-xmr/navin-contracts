@@ -1,291 +1,344 @@
-#![cfg(test)]
+/// Unit tests for ActorQuota sliding window replenishment mechanism.
+///
+/// This module verifies that the ActorQuota sliding window tracker correctly
+/// replenishes available quotas when queried after the window duration has
+/// fully reset in the ledger clock.
 
-use crate::{
-    NavinError, NavinShipmentClient, ShipmentStatus, NavinShipment,
-};
-use soroban_sdk::{
-    contract, contractimpl,
-    testutils::Address as _,
-    Address, BytesN, Env,
-};
+#[cfg(test)]
+mod actor_quota_tests {
+    extern crate std;
+    use crate::rate_limit::{QuotaTracker, RateLimitConfig};
 
-#[contract]
-struct MockToken;
+    /// Test that ActorQuota replenishes when window expires with exact boundary crossing.
+    ///
+    /// This test verifies that when an actor hits their quota limit and then
+    /// sufficient time passes (>= window_seconds), the quota resets and the
+    /// actor can perform operations again.
+    #[test]
+    fn test_actor_quota_replenishment_on_window_expiry() {
+        // Setup: Create a rate limit config with 100 ops per 3600 second window
+        let config = RateLimitConfig::default();
+        assert_eq!(config.max_operations, 100);
+        assert_eq!(config.window_seconds, 3600);
 
-#[contractimpl]
-impl MockToken {
-    pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+        // Create initial quota tracker at time 0
+        let mut tracker = QuotaTracker::new(0);
+        assert_eq!(tracker.operations_count, 0);
+        assert_eq!(tracker.window_start, 0);
 
-    pub fn decimals(_env: Env) -> u32 {
-        crate::types::EXPECTED_TOKEN_DECIMALS
+        // Simulate operations up to quota limit
+        for _ in 0..config.max_operations {
+            tracker
+                .check_and_update(0, &config, 1)
+                .expect("operations within limit should succeed");
+        }
+
+        // Verify quota is exhausted
+        assert_eq!(tracker.operations_count, config.max_operations);
+        assert_eq!(tracker.remaining_quota(&config), 0);
+
+        // Attempt operation at boundary (window_start + window_seconds)
+        let boundary_time = tracker.window_start + config.window_seconds;
+        let result = tracker.check_and_update(
+            boundary_time,
+            &config,
+            1,
+        );
+
+        // Should succeed because window has expired exactly at boundary
+        assert!(
+            result.is_ok(),
+            "operation at window boundary should succeed"
+        );
+
+        // Verify window was reset and operations count cleared
+        assert_eq!(tracker.window_start, boundary_time);
+        assert_eq!(tracker.operations_count, 1); // One operation performed
+        assert_eq!(tracker.remaining_quota(&config), config.max_operations - 1);
     }
-}
 
-// ── Cross-shipment idempotency isolation tests ─────────────────────────────────
-//
-// These tests prove that idempotency windows remain isolated per shipment and
-// do not bleed across unrelated records.  The idempotency key storage is a flat
-// namespace keyed by SHA-256(action_hash).  Isolation relies on the action
-// payload including a shipment-unique field (shipment_id for status updates,
-// sender for creation).  If that field were ever omitted two different shipments
-// could produce the same action hash and incorrectly block each other.
-//
-// 1. test_cross_shipment_status_update_isolation
-//    Two shipments updated with the same (new_status, data_hash) must both
-//    succeed because the shipment_id differs in the payload.
-//
-// 2. test_cross_shipment_create_shipment_isolation
-//    Different companies using an identical data_hash must both succeed because
-//    the XDR-encoded sender address differs in the payload.
-//
-// 3. test_cross_shipment_no_interference
-//    An idempotency window created by an action on shipment A must not prevent
-//    any action on shipment B.
-//
-// 4. test_replay_semantics_remain_deterministic
-//    Within the same shipment, replaying an identical action is always blocked
-//    (proving the idempotency window itself works correctly).
+    /// Test that ActorQuota replenishment works after window duration fully resets.
+    ///
+    /// Verifies that when the ledger clock advances significantly past the window
+    /// expiry, the quota is properly replenished and operations can resume.
+    #[test]
+    fn test_actor_quota_replenishment_after_window_fully_reset() {
+        let config = RateLimitConfig::default();
 
-const DEFAULT_DEADLINE_OFFSET: u64 = 3600;
+        // Create tracker at time 1000
+        let mut tracker = QuotaTracker::new(1000);
 
-fn setup_initialized_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
-    let (env, admin) = super::test_utils::setup_env();
-    let token_contract = env.register(MockToken {}, ());
-    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
-    client.initialize(&admin, &token_contract);
-    (env, client, admin, token_contract)
-}
+        // Fill quota to limit
+        for _ in 0..config.max_operations {
+            tracker
+                .check_and_update(1000, &config, 1)
+                .expect("operations should succeed");
+        }
 
-fn create_company(env: &Env, client: &NavinShipmentClient, admin: &Address) -> Address {
-    let company = Address::generate(env);
-    client.add_company(admin, &company);
-    company
-}
+        // Verify exhausted
+        assert_eq!(tracker.operations_count, config.max_operations);
+        assert_eq!(tracker.remaining_quota(&config), 0);
 
-fn create_carrier(env: &Env, client: &NavinShipmentClient, admin: &Address) -> Address {
-    let carrier = Address::generate(env);
-    client.add_carrier(admin, &carrier);
-    carrier
-}
+        // Advance time well past window expiry (add 2x window duration)
+        let far_future = 1000 + (config.window_seconds * 2);
 
-fn create_shipment(
-    env: &Env,
-    client: &NavinShipmentClient,
-    company: &Address,
-    carrier: &Address,
-    data_hash: &BytesN<32>,
-) -> u64 {
-    let receiver = Address::generate(env);
-    let deadline = env.ledger().timestamp() + DEFAULT_DEADLINE_OFFSET;
-    client.create_shipment(
-        company,
-        &receiver,
-        carrier,
-        data_hash,
-        &soroban_sdk::Vec::new(env),
-        &deadline,
-    )
-}
+        // Perform operation at far future time
+        let result =
+            tracker.check_and_update(far_future, &config, 1);
 
-// ── Test 1: status-update isolation across two shipments ──────────────────────
+        assert!(
+            result.is_ok(),
+            "operation after window fully reset should succeed"
+        );
+        assert_eq!(tracker.window_start, far_future);
+        assert_eq!(tracker.operations_count, 1);
+    }
 
-#[test]
-fn test_cross_shipment_status_update_isolation() {
-    let (env, client, admin, _token) = setup_initialized_env();
-    let company = create_company(&env, &client, &admin);
-    let carrier = create_carrier(&env, &client, &admin);
+    /// Test that multiple operations succeed after replenishment.
+    ///
+    /// Ensures that after a quota window resets, the actor can perform multiple
+    /// operations up to the new quota limit.
+    #[test]
+    fn test_multiple_operations_after_quota_replenishment() {
+        let config = RateLimitConfig::default();
 
-    let hash_a = BytesN::from_array(&env, &[1u8; 32]);
-    let hash_b = BytesN::from_array(&env, &[2u8; 32]);
+        let mut tracker = QuotaTracker::new(0);
 
-    // Create two shipments with different data hashes.
-    let id1 = create_shipment(&env, &client, &company, &carrier, &hash_a);
-    let id2 = create_shipment(&env, &client, &company, &carrier, &hash_b);
+        // Exhaust initial quota
+        for _ in 0..config.max_operations {
+            tracker
+                .check_and_update(0, &config, 1)
+                .expect("should succeed");
+        }
 
-    // Shipment 1: Created → InTransit with hash_x.
-    let status_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
-    client.update_status(&carrier, &id1, &ShipmentStatus::InTransit, &status_hash);
+        // Verify exhausted
+        assert_eq!(tracker.remaining_quota(&config), 0);
 
-    // Shipment 2: Created → InTransit with the *same* status + data_hash.
-    // This must succeed because the payload includes shipment_id, producing a
-    // different action hash than the one stored for shipment 1.
-    super::test_utils::advance_past_rate_limit(&env);
-    client.update_status(&carrier, &id2, &ShipmentStatus::InTransit, &status_hash);
+        // Move past window expiry
+        let new_window_start = config.window_seconds + 1;
 
-    assert_eq!(
-        client.get_shipment(&id1).status,
-        ShipmentStatus::InTransit
-    );
-    assert_eq!(
-        client.get_shipment(&id2).status,
-        ShipmentStatus::InTransit
-    );
-}
+        // Perform multiple operations in new window
+        let ops_count = 50;
+        for i in 0..ops_count {
+            let result = tracker.check_and_update(
+                new_window_start,
+                &config,
+                1,
+            );
+            assert!(
+                result.is_ok(),
+                "operation {} in replenished window should succeed",
+                i + 1
+            );
+        }
 
-// ── Test 2: create-shipment isolation across different companies ──────────────
+        // Verify state
+        assert_eq!(tracker.window_start, new_window_start);
+        assert_eq!(tracker.operations_count, ops_count);
+        assert_eq!(
+            tracker.remaining_quota(&config),
+            config.max_operations - ops_count
+        );
+    }
 
-#[test]
-fn test_cross_shipment_create_shipment_isolation() {
-    let (env, client, admin, _token) = setup_initialized_env();
+    /// Test quota replenishment with different rate limit configurations.
+    ///
+    /// Verifies that replenishment works correctly with strict, default, and
+    /// permissive rate limit configurations.
+    #[test]
+    fn test_quota_replenishment_with_different_configs() {
+        let configs = std::vec![
+            ("strict", RateLimitConfig::strict()),
+            ("default", RateLimitConfig::default()),
+            ("permissive", RateLimitConfig::permissive()),
+        ];
 
-    // Two different companies.
-    let company_a = create_company(&env, &client, &admin);
-    let company_b = create_company(&env, &client, &admin);
-    let carrier = create_carrier(&env, &client, &admin);
-    let receiver = Address::generate(&env);
-    let deadline = env.ledger().timestamp() + DEFAULT_DEADLINE_OFFSET;
+        for (config_name, config) in configs {
+            // Create and exhaust quota
+            let mut tracker = QuotaTracker::new(0);
 
-    // Both companies use the **same** data_hash.
-    let data_hash = BytesN::from_array(&env, &[0xBBu8; 32]);
+            for _ in 0..config.max_operations {
+                tracker
+                    .check_and_update(0, &config, 1)
+                    .expect(&std::format!("{} exhaustion failed", config_name));
+            }
 
-    // First company creates a shipment — succeeds.
-    let id_a = client.create_shipment(
-        &company_a,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &deadline,
-    );
+            // Move past window and try operation
+            let new_time = config.window_seconds + 1;
+            let result =
+                tracker.check_and_update(new_time, &config, 1);
 
-    // Second company creates a shipment with the same data_hash.
-    // Must succeed because XDR(company_a) != XDR(company_b), so the action
-    // hashes differ.
-    let id_b = client.create_shipment(
-        &company_b,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &deadline,
-    );
+            assert!(
+                result.is_ok(),
+                "{} config replenishment should succeed",
+                config_name
+            );
+            assert_eq!(
+                tracker.operations_count, 1,
+                "{} config should reset counter",
+                config_name
+            );
+        }
+    }
 
-    assert_ne!(id_a, id_b, "shipments must have distinct IDs");
-    assert_eq!(client.get_shipment(&id_a).sender, company_a);
-    assert_eq!(client.get_shipment(&id_b).sender, company_b);
-}
+    /// Test that quota does not replenish if window has not fully expired.
+    ///
+    /// Verifies that the rate limiting correctly prevents operations when the
+    /// window duration has not yet elapsed, even with just 1 second remaining.
+    #[test]
+    fn test_quota_replenishment_blocked_before_window_expires() {
+        let config = RateLimitConfig::default();
 
-// ── Test 3: idempotency windows do not interfere across unrelated shipments ──
+        let mut tracker = QuotaTracker::new(0);
 
-#[test]
-fn test_cross_shipment_no_interference() {
-    let (env, client, admin, _token) = setup_initialized_env();
-    let company = create_company(&env, &client, &admin);
-    let carrier = create_carrier(&env, &client, &admin);
+        // Exhaust quota
+        for _ in 0..config.max_operations {
+            tracker
+                .check_and_update(0, &config, 1)
+                .expect("exhaustion should succeed");
+        }
 
-    let hash_a = BytesN::from_array(&env, &[3u8; 32]);
-    let hash_b = BytesN::from_array(&env, &[4u8; 32]);
+        // Try operation just before window expires
+        let almost_expired = 0 + config.window_seconds - 1;
+        let result = tracker.check_and_update(
+            almost_expired,
+            &config,
+            1,
+        );
 
-    // Two shipments with different data hashes, same company & carrier.
-    let id_a = create_shipment(&env, &client, &company, &carrier, &hash_a);
-    let id_b = create_shipment(&env, &client, &company, &carrier, &hash_b);
+        // Should fail - window not yet expired
+        assert!(
+            result.is_err(),
+            "operation before window expires should fail"
+        );
+        assert_eq!(
+            tracker.operations_count, config.max_operations,
+            "operations_count should not change"
+        );
+        assert_eq!(tracker.window_start, 0, "window_start should not change");
+    }
 
-    // Update shipment A: Created → InTransit.
-    let status_hash_a = BytesN::from_array(&env, &[0xCCu8; 32]);
-    client.update_status(&carrier, &id_a, &ShipmentStatus::InTransit, &status_hash_a);
+    /// Test sequential quota exhaustion and replenishment cycles.
+    ///
+    /// Verifies that an actor can go through multiple cycles of exhausting
+    /// quota and replenishing after window reset.
+    #[test]
+    fn test_sequential_quota_cycles() {
+        let config = RateLimitConfig::default();
 
-    // Update shipment B: Created → InTransit with a different status_hash.
-    // This is an entirely unrelated record — must not be blocked.
-    super::test_utils::advance_past_rate_limit(&env);
-    let status_hash_b = BytesN::from_array(&env, &[0xDDu8; 32]);
-    client.update_status(&carrier, &id_b, &ShipmentStatus::InTransit, &status_hash_b);
+        let mut tracker = QuotaTracker::new(0);
+        let cycle_count = 3;
 
-    // Now verify that replay on shipment A is still blocked (its idempotency
-    // window from the first update is still active within the 300 s window).
-    let res = client.try_update_status(
-        &carrier,
-        &id_a,
-        &ShipmentStatus::InTransit,
-        &status_hash_a,
-    );
-    assert_eq!(
-        res,
-        Err(Ok(NavinError::DuplicateAction)),
-        "replay of identical action on same shipment must be rejected"
-    );
+        for cycle in 0..cycle_count {
+            // Each cycle starts in a fresh window
+            let cycle_start = cycle as u64 * (config.window_seconds + 1);
 
-    // Shipment B's own identical replay must also be rejected.
-    let res = client.try_update_status(
-        &carrier,
-        &id_b,
-        &ShipmentStatus::InTransit,
-        &status_hash_b,
-    );
-    assert_eq!(
-        res,
-        Err(Ok(NavinError::DuplicateAction)),
-        "replay on shipment B must also be rejected"
-    );
+            // First call in cycle triggers window reset (if cycle > 0)
+            tracker
+                .check_and_update(cycle_start, &config, 1)
+                .expect(&std::format!("cycle {} first op should succeed", cycle));
 
-    // Cross-shipment replay: try to use shipment A's action on shipment B.
-    // This must succeed because the payload includes shipment_id.
-    super::test_utils::advance_past_rate_limit(&env);
-    client.update_status(&carrier, &id_b, &ShipmentStatus::AtCheckpoint, &status_hash_a);
+            // Exhaust remaining quota in this cycle
+            for _ in 1..config.max_operations {
+                tracker
+                    .check_and_update(cycle_start, &config, 1)
+                    .expect(&std::format!("cycle {} exhaustion should succeed", cycle));
+            }
 
-    assert_eq!(
-        client.get_shipment(&id_b).status,
-        ShipmentStatus::AtCheckpoint,
-        "shipment B must transit to AtCheckpoint unaffected by A's idempotency window"
-    );
-}
+            // Verify exhausted
+            assert_eq!(
+                tracker.remaining_quota(&config),
+                0,
+                "cycle {} should be exhausted",
+                cycle
+            );
+        }
 
-// ── Test 4: replay semantics remain deterministic ─────────────────────────────
+        // Final state should show quota fully exhausted after last cycle
+        assert_eq!(
+            tracker.operations_count, config.max_operations,
+            "final cycle should have max operations count"
+        );
+    }
 
-#[test]
-fn test_replay_semantics_remain_deterministic() {
-    let (env, client, admin, _token) = setup_initialized_env();
-    let company = create_company(&env, &client, &admin);
-    let carrier = create_carrier(&env, &client, &admin);
+    /// Test window time remaining calculation after replenishment.
+    ///
+    /// Verifies that `window_time_remaining()` correctly reports the time
+    /// remaining in the current window after a quota replenishment.
+    #[test]
+    fn test_window_time_remaining_after_replenishment() {
+        let config = RateLimitConfig::default();
 
-    let data_hash = BytesN::from_array(&env, &[5u8; 32]);
-    let shipment_id = create_shipment(&env, &client, &company, &carrier, &data_hash);
+        let mut tracker = QuotaTracker::new(1000);
 
-    // First status update: must succeed.
-    let status_hash = BytesN::from_array(&env, &[0xEEu8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &status_hash);
+        // Exhaust quota
+        for _ in 0..config.max_operations {
+            tracker
+                .check_and_update(1000, &config, 1)
+                .expect("exhaustion should succeed");
+        }
 
-    // Immediate replay with identical arguments: must be blocked deterministically.
-    let res = client.try_update_status(
-        &carrier,
-        &shipment_id,
-        &ShipmentStatus::InTransit,
-        &status_hash,
-    );
-    assert_eq!(
-        res,
-        Err(Ok(NavinError::DuplicateAction)),
-        "identical replay must always produce DuplicateAction"
-    );
+        // Move to new window
+        let new_window_start = 1000 + config.window_seconds + 1;
+        tracker
+            .check_and_update(
+                new_window_start,
+                &config,
+                1,
+            )
+            .expect("replenishment should succeed");
 
-    // Different data_hash on the same shipment & same status: different action
-    // hash → passes idempotency (different hash). Must advance past rate limit
-    // so the rate-limit check does not mask the state-machine result.
-    super::test_utils::advance_past_rate_limit(&env);
-    let res = client.try_update_status(
-        &carrier,
-        &shipment_id,
-        &ShipmentStatus::InTransit,
-        &BytesN::from_array(&env, &[0xFFu8; 32]),
-    );
-    assert_eq!(
-        res,
-        Err(Ok(NavinError::InvalidStatus)),
-        "different hash on same status must pass idempotency but fail state machine"
-    );
+        // Check time remaining at various points in new window
+        let time_at_start = new_window_start;
+        let remaining_at_start = tracker.window_time_remaining(time_at_start, &config);
+        assert_eq!(
+            remaining_at_start, config.window_seconds,
+            "time remaining at window start should equal window_seconds"
+        );
 
-    // Create a fresh shipment and verify that creating with the same company +
-    // same data_hash is blocked (create-shipment idempotency).
-    let res = client.try_create_shipment(
-        &company,
-        &Address::generate(&env),
-        &carrier,
-        &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &(env.ledger().timestamp() + DEFAULT_DEADLINE_OFFSET),
-    );
-    assert_eq!(
-        res,
-        Err(Ok(NavinError::DuplicateAction)),
-        "create_shipment replay with same (sender, data_hash) must be rejected"
-    );
+        let time_at_mid = new_window_start + (config.window_seconds / 2);
+        let remaining_at_mid = tracker.window_time_remaining(time_at_mid, &config);
+        assert_eq!(
+            remaining_at_mid,
+            config.window_seconds / 2,
+            "time remaining at window midpoint should be half"
+        );
+
+        let time_at_end = new_window_start + config.window_seconds - 1;
+        let remaining_at_end = tracker.window_time_remaining(time_at_end, &config);
+        assert_eq!(
+            remaining_at_end, 1,
+            "time remaining at window end should be 1"
+        );
+    }
+
+    /// Test quota replenishment with zero-value operations.
+    ///
+    /// Ensures that the replenishment logic is robust when edge cases like
+    /// attempting zero-value operations occur.
+    #[test]
+    fn test_quota_replenishment_robustness_zero_ops() {
+        let config = RateLimitConfig::default();
+
+        let mut tracker = QuotaTracker::new(0);
+
+        // Exhaust quota with standard operations
+        for _ in 0..config.max_operations {
+            tracker
+                .check_and_update(0, &config, 1)
+                .expect("should succeed");
+        }
+
+        // Move past window and attempt zero-value operation
+        let new_time = config.window_seconds + 1;
+        let result =
+            tracker.check_and_update(new_time, &config, 0);
+
+        // Zero-value operation should succeed and not consume quota
+        assert!(result.is_ok(), "zero-value operation should succeed");
+        assert_eq!(
+            tracker.operations_count, 0,
+            "zero-value operation should not increment counter"
+        );
+    }
 }

@@ -219,6 +219,55 @@ mod tests {
         assert!(page.next_cursor.is_none());
     }
 
+    // ── is_carrier_whitelisted — unassigned role queries (issue #518) ───────────
+
+    /// Query is_carrier_whitelisted for an unassigned carrier under a registered
+    /// company. The function must return false gracefully without a storage panic.
+    #[test]
+    fn whitelist_returns_false_for_unassigned_carrier_under_registered_company() {
+        let (env, client, admin) = setup();
+        let (company, _) = add_company_and_carrier(&env, &client, &admin);
+
+        // This address was never registered with any role.
+        let unassigned = Address::generate(&env);
+
+        assert!(
+            !client.is_carrier_whitelisted(&company, &unassigned),
+            "unassigned carrier must not appear whitelisted under a registered company"
+        );
+    }
+
+    /// Query is_carrier_whitelisted for a registered carrier under an address
+    /// that has no company role. Must return false without erroring.
+    #[test]
+    fn whitelist_returns_false_for_registered_carrier_under_unassigned_company() {
+        let (env, client, admin) = setup();
+        let (_company, carrier) = add_company_and_carrier(&env, &client, &admin);
+
+        // An address that was never given the Company role.
+        let unassigned_company = Address::generate(&env);
+
+        assert!(
+            !client.is_carrier_whitelisted(&unassigned_company, &carrier),
+            "carrier must not appear whitelisted under an address with no company role"
+        );
+    }
+
+    /// Query is_carrier_whitelisted when both addresses have no role assigned.
+    /// Must return false without panicking or producing an invalid-key error.
+    #[test]
+    fn whitelist_returns_false_when_both_addresses_are_unassigned() {
+        let (env, client, _admin) = setup();
+
+        let unassigned_company = Address::generate(&env);
+        let unassigned_carrier = Address::generate(&env);
+
+        assert!(
+            !client.is_carrier_whitelisted(&unassigned_company, &unassigned_carrier),
+            "two fully unassigned addresses must yield false from is_carrier_whitelisted"
+        );
+    }
+
     #[test]
     fn list_deterministic_order_matches_candidates_order() {
         let (env, client, admin) = setup();

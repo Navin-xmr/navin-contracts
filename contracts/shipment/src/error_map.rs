@@ -624,5 +624,3 @@ mod tests {
         assert_eq!(c.message, d.message);
     }
 }
-
-
