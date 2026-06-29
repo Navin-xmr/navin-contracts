@@ -11524,3 +11524,116 @@ fn test_clear_finalization_emits_audit_trail() {
     let shipment = client.get_shipment(&shipment_id);
     assert!(!shipment.finalized);
 }
+
+#[test]
+fn test_get_shipment_created_at_matches_creation_timestamp() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let created_at = env.ledger().timestamp();
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    assert_eq!(client.get_shipment_created_at(&shipment_id), created_at);
+}
+
+#[test]
+fn test_get_shipment_created_at_immutable_after_operations() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let new_hash = BytesN::from_array(&env, &[3u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let created_at = client.get_shipment_created_at(&shipment_id);
+
+    env.ledger().set_timestamp(env.ledger().timestamp() + 7200);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &new_hash);
+
+    assert_eq!(client.get_shipment_created_at(&shipment_id), created_at);
+}
+
+#[test]
+fn test_get_shipment_created_at_distinct_for_multiple_shipments() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash_1 = BytesN::from_array(&env, &[4u8; 32]);
+    let data_hash_2 = BytesN::from_array(&env, &[5u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let ts1 = env.ledger().timestamp();
+    let shipment_id_1 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash_1,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    env.ledger().set_timestamp(ts1 + 1000);
+    let ts2 = env.ledger().timestamp();
+    let shipment_id_2 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash_2,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    assert_eq!(client.get_shipment_created_at(&shipment_id_1), ts1);
+    assert_eq!(client.get_shipment_created_at(&shipment_id_2), ts2);
+    assert!(ts1 < ts2, "timestamps should advance between shipments");
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")]
+fn test_get_shipment_created_at_fails_for_invalid_id() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+
+    client.initialize(&admin, &token_contract);
+
+    client.get_shipment_created_at(&999);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_get_shipment_created_at_fails_before_initialization() {
+    let (_env, client, _admin, _token_contract) = setup_shipment_env();
+
+    client.get_shipment_created_at(&1);
+}
