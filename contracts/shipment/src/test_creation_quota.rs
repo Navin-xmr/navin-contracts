@@ -235,6 +235,142 @@ mod tests {
         assert_eq!(result, Err(Ok(NavinError::CreationQuotaExceeded)));
     }
 
+    #[test]
+    fn batch_exceeds_remaining_quota_exactly_is_rejected() {
+        use crate::types::ShipmentInput;
+        let (env, client, admin, company, carrier, _token) = setup();
+
+        client.set_creation_quota(&admin, &5, &3600);
+
+        // Consume 3 of 5 quota slots individually.
+        for seed in 1u8..=3 {
+            assert!(create_one(&env, &client, &company, &carrier, seed).is_ok());
+            env.ledger().with_mut(|l| l.timestamp += 400);
+        }
+
+        let (used, remaining) = client.get_creation_quota_status(&company);
+        assert_eq!(used, 3);
+        assert_eq!(remaining, 2);
+
+        // Batch of 3 exceeds the 2 remaining slots by exactly one.
+        let deadline = future_deadline(&env);
+        let mut inputs = soroban_sdk::Vec::new(&env);
+        for seed in 10u8..=12 {
+            inputs.push_back(ShipmentInput {
+                receiver: Address::generate(&env),
+                carrier: carrier.clone(),
+                data_hash: make_hash(&env, seed),
+                payment_milestones: soroban_sdk::Vec::new(&env),
+                deadline,
+            });
+        }
+
+        let counter_before = client.get_shipment_counter();
+        let result = client.try_create_shipments_batch(&company, &inputs);
+        assert_eq!(result, Err(Ok(NavinError::CreationQuotaExceeded)));
+
+        let (used_after, remaining_after) = client.get_creation_quota_status(&company);
+        assert_eq!(used_after, used, "quota usage must not change on rejection");
+        assert_eq!(
+            remaining_after, remaining,
+            "remaining quota must not change on rejection"
+        );
+        assert_eq!(
+            client.get_shipment_counter(),
+            counter_before,
+            "shipment counter must not advance when batch is rejected"
+        );
+    }
+
+    #[test]
+    fn batch_over_quota_writes_no_partial_shipments() {
+        use crate::types::ShipmentInput;
+        let (env, client, admin, company, carrier, _token) = setup();
+
+        client.set_creation_quota(&admin, &4, &3600);
+
+        assert!(create_one(&env, &client, &company, &carrier, 1).is_ok());
+        env.ledger().with_mut(|l| l.timestamp += 400);
+        let id2 = create_one(&env, &client, &company, &carrier, 2).unwrap();
+        env.ledger().with_mut(|l| l.timestamp += 400);
+
+        let counter_before = client.get_shipment_counter();
+        let (used_before, _) = client.get_creation_quota_status(&company);
+        assert_eq!(used_before, 2);
+
+        let deadline = future_deadline(&env);
+        let mut inputs = soroban_sdk::Vec::new(&env);
+        for seed in 20u8..=23 {
+            inputs.push_back(ShipmentInput {
+                receiver: Address::generate(&env),
+                carrier: carrier.clone(),
+                data_hash: make_hash(&env, seed),
+                payment_milestones: soroban_sdk::Vec::new(&env),
+                deadline,
+            });
+        }
+
+        // Batch of 4 would push total from 2 to 6, exceeding max of 4.
+        let result = client.try_create_shipments_batch(&company, &inputs);
+        assert_eq!(result, Err(Ok(NavinError::CreationQuotaExceeded)));
+
+        assert_eq!(
+            client.get_shipment_counter(),
+            counter_before,
+            "no partial shipments must be persisted when batch exceeds quota"
+        );
+        let (used_after, remaining_after) = client.get_creation_quota_status(&company);
+        assert_eq!(used_after, used_before);
+        assert_eq!(remaining_after, 2);
+
+        // Confirm existing shipments remain accessible and no new ID was minted.
+        let _ = client.get_shipment(&1);
+        let _ = client.get_shipment(&id2);
+        let missing_id = counter_before + 1;
+        assert!(
+            matches!(
+                client.try_get_shipment(&missing_id),
+                Err(Ok(NavinError::ShipmentNotFound))
+            ),
+            "shipment {missing_id} must not exist after rejected batch"
+        );
+    }
+
+    #[test]
+    fn batch_within_remaining_quota_succeeds_atomically() {
+        use crate::types::ShipmentInput;
+        let (env, client, admin, company, carrier, _token) = setup();
+
+        client.set_creation_quota(&admin, &5, &3600);
+
+        for seed in 1u8..=3 {
+            assert!(create_one(&env, &client, &company, &carrier, seed).is_ok());
+            env.ledger().with_mut(|l| l.timestamp += 400);
+        }
+
+        let counter_before = client.get_shipment_counter();
+        let deadline = future_deadline(&env);
+        let mut inputs = soroban_sdk::Vec::new(&env);
+        for seed in 30u8..=31 {
+            inputs.push_back(ShipmentInput {
+                receiver: Address::generate(&env),
+                carrier: carrier.clone(),
+                data_hash: make_hash(&env, seed),
+                payment_milestones: soroban_sdk::Vec::new(&env),
+                deadline,
+            });
+        }
+
+        // Exactly 2 remaining slots — batch of 2 should succeed.
+        let ids = client.create_shipments_batch(&company, &inputs);
+        assert_eq!(ids.len(), 2);
+        assert_eq!(client.get_shipment_counter(), counter_before + 2);
+
+        let (used, remaining) = client.get_creation_quota_status(&company);
+        assert_eq!(used, 5);
+        assert_eq!(remaining, 0);
+    }
+
     // ── multiple companies have independent quotas ───────────────────────────
 
     #[test]
