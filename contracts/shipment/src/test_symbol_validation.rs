@@ -1031,6 +1031,7 @@ fn test_validate_checkpoint_symbol_valid_passes() {
 fn test_record_milestone_empty_checkpoint_fails() {
     use crate::{test_utils, NavinShipment, NavinShipmentClient, ShipmentStatus};
     use soroban_sdk::{testutils::Address as _, Address, Vec as SorobanVec, BytesN};
+    use crate::ShipmentStatus;
 
     let (env, admin) = test_utils::setup_env();
     let contract_id = env.register(NavinShipment, ());

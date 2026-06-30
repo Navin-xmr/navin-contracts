@@ -31,8 +31,10 @@ mod test_mixed_token_shipments;
 #[cfg(test)]
 mod test_reentrancy_guard;
 #[cfg(test)]
-mod test_token_compatibility;
+mod test_replay_protection;
 
+#[cfg(test)]
+mod test_token_compatibility;
 #[cfg(test)]
 mod test_event_fixtures;
 #[cfg(test)]
