@@ -691,6 +691,111 @@ fn test_get_dispute_evidence_hash_out_of_bounds() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Notes maximum limit boundary checks (issue #524)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_append_note_hash_blocked_when_limit_reached() {
+    let (env, client, admin, _token) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    // Lower the notes limit to 3 so the boundary is reachable in a unit test.
+    let config = crate::ContractConfig {
+        max_notes_per_shipment: 3,
+        ..crate::ContractConfig::default()
+    };
+    client.update_config(&admin, &config);
+
+    // Append up to the limit — all must succeed.
+    client.append_note_hash(&company, &shipment_id, &BytesN::from_array(&env, &[0x01u8; 32]));
+    client.append_note_hash(&carrier, &shipment_id, &BytesN::from_array(&env, &[0x02u8; 32]));
+    client.append_note_hash(&admin, &shipment_id, &BytesN::from_array(&env, &[0x03u8; 32]));
+
+    assert_eq!(client.get_note_count(&shipment_id), 3);
+
+    // The next append must be rejected with NoteLimitExceeded.
+    let result = client.try_append_note_hash(
+        &company,
+        &shipment_id,
+        &BytesN::from_array(&env, &[0x04u8; 32]),
+    );
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::NoteLimitExceeded)),
+        "appending beyond max_notes_per_shipment must return NoteLimitExceeded"
+    );
+}
+
+#[test]
+fn test_append_note_hash_exactly_at_limit_fails() {
+    let (env, client, admin, _token) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    // Set limit to 1.
+    let config = crate::ContractConfig {
+        max_notes_per_shipment: 1,
+        ..crate::ContractConfig::default()
+    };
+    client.update_config(&admin, &config);
+
+    // First append: within limit.
+    client.append_note_hash(&company, &shipment_id, &BytesN::from_array(&env, &[0xAAu8; 32]));
+    assert_eq!(client.get_note_count(&shipment_id), 1);
+
+    // Second append: exceeds limit of 1.
+    let result = client.try_append_note_hash(
+        &company,
+        &shipment_id,
+        &BytesN::from_array(&env, &[0xBBu8; 32]),
+    );
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::NoteLimitExceeded)),
+        "second append when limit is 1 must return NoteLimitExceeded"
+    );
+
+    // Count must remain at 1 — the failed append must not increment it.
+    assert_eq!(
+        client.get_note_count(&shipment_id),
+        1,
+        "note count must not change after a rejected append"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Summary: All tests verify panic-free error handling
 // ─────────────────────────────────────────────────────────────────────────────
 // Each test ensures that invalid inputs return Err instead of panicking.
