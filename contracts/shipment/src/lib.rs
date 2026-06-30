@@ -167,9 +167,9 @@ fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(),
 
     let mut total_percentage = 0;
     for milestone in milestones.iter() {
-        // Reject negative percentages (cast to i32 and check sign)
+        // Reject invalid percentages (handled upstream, but guard here too).
         if milestone.1 > 100 {
-            return Err(NavinError::InvalidConfig);
+            return Err(NavinError::InvalidPaymentMilestones);
         }
         total_percentage += milestone.1;
     }
@@ -973,6 +973,12 @@ impl NavinShipment {
     pub fn initialize(env: Env, admin: Address, token_contract: Address) -> Result<(), NavinError> {
         if storage::is_initialized(&env) {
             return Err(NavinError::AlreadyInitialized);
+        }
+
+        // Reject obviously invalid token addresses: the token contract must not be
+        // the admin account or the shipment contract itself.
+        if token_contract == admin || token_contract == env.current_contract_address() {
+            return Err(NavinError::InvalidTokenAddress);
         }
 
         storage::set_admin(&env, &admin);
