@@ -1014,3 +1014,84 @@ fn test_non_terminal_count_decrements_for_one_of_many_on_refund() {
         "Only the refunded shipment should reduce the non-terminal count"
     );
 }
+
+// ── get_shipment_receiver — non-existent shipment tests (issue #528) ─────────
+
+/// Querying the receiver of a shipment ID that was never created must return
+/// ShipmentNotFound without panicking or crashing the node.
+#[test]
+fn test_get_shipment_receiver_returns_not_found_for_nonexistent_id() {
+    use crate::NavinError;
+    let (_, client, _, _) = prepare_test();
+
+    let result = client.try_get_shipment_receiver(&9999u64);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::ShipmentNotFound)),
+        "get_shipment_receiver must return ShipmentNotFound for an ID that was never created"
+    );
+}
+
+/// ID 0 is never assigned by the counter (counter starts at 1); querying the
+/// receiver for it must return ShipmentNotFound gracefully.
+#[test]
+fn test_get_shipment_receiver_returns_not_found_for_zero_id() {
+    use crate::NavinError;
+    let (_, client, _, _) = prepare_test();
+
+    let result = client.try_get_shipment_receiver(&0u64);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::ShipmentNotFound)),
+        "get_shipment_receiver must return ShipmentNotFound for ID 0"
+    );
+}
+
+/// Querying a large arbitrary shipment ID that does not exist must return
+/// ShipmentNotFound — no storage panic or key error.
+#[test]
+fn test_get_shipment_receiver_returns_not_found_for_large_invalid_id() {
+    use crate::NavinError;
+    let (_, client, _, _) = prepare_test();
+
+    let result = client.try_get_shipment_receiver(&u64::MAX);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::ShipmentNotFound)),
+        "get_shipment_receiver must return ShipmentNotFound for u64::MAX ID"
+    );
+}
+
+/// Confirm that a real shipment returns the correct receiver address.
+#[test]
+fn test_get_shipment_receiver_returns_receiver_for_valid_shipment() {
+    let (env, client, admin, _token) = prepare_test();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[30u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    let result = client.try_get_shipment_receiver(&shipment_id);
+    assert_eq!(
+        result,
+        Ok(receiver.clone()),
+        "get_shipment_receiver must return the original receiver address"
+    );
+    assert_eq!(
+        client.get_shipment_receiver(&shipment_id),
+        receiver,
+        "get_shipment_receiver must return the receiver address for a valid shipment"
+    );
+}

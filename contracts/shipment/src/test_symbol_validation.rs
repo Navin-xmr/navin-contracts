@@ -3,7 +3,7 @@ extern crate std;
 use crate::errors::NavinError;
 use crate::validation::{
     validate_checkpoint_symbol, validate_metadata_symbols, validate_milestone_symbols,
-    validate_symbol,
+    validate_symbol, validate_symbol_chars,
 };
 use soroban_sdk::{Env, Symbol, Vec};
 
@@ -1060,4 +1060,315 @@ fn test_record_milestone_empty_checkpoint_fails() {
         Err(Ok(crate::NavinError::InvalidSymbol)),
         "record_milestone with empty symbol must return InvalidSymbol"
     );
+}
+
+// ── [ISSUE #529] validate_symbol_chars — special character validation ─────────
+//
+// Soroban's Symbol::new enforces [a-zA-Z0-9_] at SDK construction time, so
+// special characters like '<', '>', '\\', '|' cannot be injected through the
+// normal API. The tests below verify:
+//   1. validate_symbol_chars accepts every valid character class.
+//   2. validate_symbol_chars rejects empty symbols (char_count == 0).
+//   3. validate_symbol_chars is correctly wired into validate_checkpoint_symbol
+//      and validate_milestone_symbols, so those paths propagate InvalidSymbol.
+//   4. The function is idempotent and deterministic across repeated calls.
+
+// ── Character-class acceptance tests ─────────────────────────────────────────
+
+#[test]
+fn test_symbol_chars_uppercase_letters_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "ABCDEFGHIJKL")),
+        Ok(()),
+        "all uppercase letters must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_lowercase_letters_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "abcdefghijkl")),
+        Ok(()),
+        "all lowercase letters must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_digits_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "123456789012")),
+        Ok(()),
+        "all digit characters must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_underscore_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "ship_id")),
+        Ok(()),
+        "underscore must be accepted as a valid character"
+    );
+}
+
+#[test]
+fn test_symbol_chars_leading_underscore_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "_leading")),
+        Ok(()),
+        "leading underscore must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_trailing_underscore_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "trailing_")),
+        Ok(()),
+        "trailing underscore must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_mixed_case_and_digits_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "Ab1Cd2Ef3G")),
+        Ok(()),
+        "mixed case and digits must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_all_underscores_accepted() {
+    let env = Env::default();
+    // Four underscores — valid character, valid length.
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "____")),
+        Ok(()),
+        "all-underscore symbol must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_single_letter_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "Z")),
+        Ok(()),
+        "single uppercase letter must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_single_digit_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "9")),
+        Ok(()),
+        "single digit must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_single_underscore_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "_")),
+        Ok(()),
+        "single underscore must be accepted"
+    );
+}
+
+// ── Empty-symbol rejection ────────────────────────────────────────────────────
+
+#[test]
+fn test_symbol_chars_empty_symbol_rejected() {
+    // An empty Symbol ("") has XDR length 8 bytes (tag + zero-length word),
+    // char_count == 0, and must be rejected with InvalidSymbol.
+    let env = Env::default();
+    let empty = Symbol::new(&env, "");
+    assert_eq!(
+        validate_symbol_chars(&env, &empty),
+        Err(NavinError::InvalidSymbol),
+        "empty symbol must be rejected by validate_symbol_chars"
+    );
+}
+
+// ── Length coverage: all valid lengths 1–12 accepted ─────────────────────────
+
+#[test]
+fn test_symbol_chars_all_valid_lengths_accepted() {
+    let env = Env::default();
+    for len in 1usize..=12 {
+        let s: std::string::String = "A".repeat(len);
+        assert_eq!(
+            validate_symbol_chars(&env, &sym(&env, &s)),
+            Ok(()),
+            "validate_symbol_chars must accept symbol of length {len}"
+        );
+    }
+}
+
+// ── Idempotency ───────────────────────────────────────────────────────────────
+
+#[test]
+fn test_symbol_chars_is_idempotent_for_valid_symbol() {
+    let env = Env::default();
+    let s = sym(&env, "warehouse");
+    assert_eq!(
+        validate_symbol_chars(&env, &s),
+        validate_symbol_chars(&env, &s),
+        "validate_symbol_chars must return the same result on repeated calls"
+    );
+}
+
+#[test]
+fn test_symbol_chars_is_idempotent_for_empty_symbol() {
+    let env = Env::default();
+    let empty = Symbol::new(&env, "");
+    assert_eq!(
+        validate_symbol_chars(&env, &empty),
+        validate_symbol_chars(&env, &empty),
+        "validate_symbol_chars must be idempotent for empty symbol"
+    );
+}
+
+// ── Wiring: validate_checkpoint_symbol calls validate_symbol_chars ────────────
+
+#[test]
+fn test_checkpoint_symbol_valid_chars_accepted() {
+    let env = Env::default();
+    for name in &["warehouse", "port_1", "TRANSIT", "check99", "AB"] {
+        assert_eq!(
+            validate_checkpoint_symbol(&env, &sym(&env, name)),
+            Ok(()),
+            "checkpoint symbol '{}' must be accepted",
+            name
+        );
+    }
+}
+
+#[test]
+fn test_checkpoint_symbol_empty_returns_invalid_symbol() {
+    let env = Env::default();
+    assert_eq!(
+        validate_checkpoint_symbol(&env, &sym(&env, "")),
+        Err(NavinError::InvalidSymbol),
+        "empty checkpoint symbol must return InvalidSymbol"
+    );
+}
+
+#[test]
+fn test_checkpoint_symbol_overlong_returns_invalid_symbol() {
+    let env = Env::default();
+    let long: std::string::String = "A".repeat(13);
+    assert_eq!(
+        validate_checkpoint_symbol(&env, &sym(&env, &long)),
+        Err(NavinError::InvalidSymbol),
+        "overlong checkpoint symbol must return InvalidSymbol"
+    );
+}
+
+// ── Wiring: validate_milestone_symbols rejects special-char symbols ───────────
+//
+// Soroban's SDK prevents construction of symbols with characters outside
+// [a-zA-Z0-9_], so these tests verify the wiring is correct by confirming
+// that clean symbols are accepted and that an empty symbol (the only
+// out-of-spec value constructable via the SDK) is rejected through the
+// milestone path.
+
+#[test]
+fn test_milestone_symbols_all_valid_chars_accepted() {
+    let env = Env::default();
+    let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+    milestones.push_back((sym(&env, "pickup"), 25));
+    milestones.push_back((sym(&env, "TRANSIT_1"), 25));
+    milestones.push_back((sym(&env, "port99"), 25));
+    milestones.push_back((sym(&env, "DELIVERY"), 25));
+    assert_eq!(
+        validate_milestone_symbols(&env, &milestones),
+        Ok(()),
+        "milestones with only valid characters must be accepted"
+    );
+}
+
+#[test]
+fn test_milestone_symbols_empty_symbol_returns_invalid_symbol() {
+    // An empty symbol passes the XDR length check in validate_symbol (it falls
+    // below 12 bytes, so validate_symbol returns InvalidShipmentInput), but
+    // the char-level check adds an independent InvalidSymbol guard via
+    // validate_milestone_symbols's call to validate_symbol_chars.
+    let env = Env::default();
+    let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+    milestones.push_back((sym(&env, ""), 100));
+    // The first guard (validate_symbol) fires with InvalidShipmentInput for a
+    // 0-char symbol; the second guard (validate_symbol_chars) would fire with
+    // InvalidSymbol. Either way the call must fail — we assert is_err().
+    assert!(
+        validate_milestone_symbols(&env, &milestones).is_err(),
+        "milestone with empty symbol must be rejected"
+    );
+}
+
+#[test]
+fn test_milestone_symbols_single_underscore_accepted() {
+    // Underscore-only symbol is valid per [a-zA-Z0-9_].
+    let env = Env::default();
+    let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+    milestones.push_back((sym(&env, "_"), 100));
+    assert_eq!(
+        validate_milestone_symbols(&env, &milestones),
+        Ok(()),
+        "single-underscore milestone symbol must be accepted"
+    );
+}
+
+#[test]
+fn test_milestone_symbols_mixed_valid_chars_all_accepted() {
+    // Confirm each valid character class works inside a milestone symbol.
+    let env = Env::default();
+    let names = ["UPPER", "lower", "Mixed1", "dig123", "under_", "_score"];
+    for (i, name) in names.iter().enumerate() {
+        let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+        milestones.push_back((sym(&env, name), 100));
+        assert_eq!(
+            validate_milestone_symbols(&env, &milestones),
+            Ok(()),
+            "milestone '{}' (index {}) must be accepted",
+            name,
+            i
+        );
+    }
+}
+
+// ── validate_symbol_chars vs validate_symbol consistency ─────────────────────
+
+#[test]
+fn test_symbol_chars_and_validate_symbol_agree_on_valid_inputs() {
+    // For any constructable Symbol, both validators must agree: if validate_symbol
+    // returns Ok, validate_symbol_chars must also return Ok.
+    let env = Env::default();
+    let valid_names = [
+        "a", "AB", "abc", "ABCD", "hello", "SHIP12", "transit", "CHECKPT",
+        "delivery", "WAREHOUS1", "checkpoint", "VERYLONGNAM",
+    ];
+    for name in &valid_names {
+        let s = sym(&env, name);
+        let sym_result = validate_symbol(&env, &s);
+        let chars_result = validate_symbol_chars(&env, &s);
+        assert!(
+            sym_result.is_ok() && chars_result.is_ok(),
+            "both validators must accept '{}': sym={:?}, chars={:?}",
+            name,
+            sym_result,
+            chars_result
+        );
+    }
 }

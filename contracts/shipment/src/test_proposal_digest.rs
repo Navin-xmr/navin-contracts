@@ -709,5 +709,326 @@ mod tests {
             "positive-duration expiry must be accepted"
         );
     }
+
+    // ── [ISSUE #527] ProposalDigest execution validation checks ──────────────
+
+    /// Altering the target address in a TransferAdmin action after proposal creation
+    /// produces a digest that does not match the stored digest.
+    /// This verifies that compute_proposal_digest detects tampered action parameters.
+    #[test]
+    fn altered_transfer_admin_action_produces_digest_mismatch() {
+        let (env, client, admin, _admin2) = setup_multisig();
+
+        let original_target = Address::generate(&env);
+        let tampered_target = Address::generate(&env);
+
+        let original_action = crate::types::AdminAction::TransferAdmin(original_target);
+        let tampered_action = crate::types::AdminAction::TransferAdmin(tampered_target);
+
+        let proposal_id = client.propose_action(&admin, &original_action);
+
+        let stored_digest = client.get_proposal_action_digest(&proposal_id);
+
+        // Re-compute with the original action — must match.
+        let digest_original = client.compute_proposal_digest(&proposal_id, &original_action);
+        assert_eq!(
+            stored_digest.digest, digest_original,
+            "digest computed from original action must match the stored digest"
+        );
+
+        // Re-compute with the tampered action — must NOT match.
+        let digest_tampered = client.compute_proposal_digest(&proposal_id, &tampered_action);
+        assert_ne!(
+            stored_digest.digest, digest_tampered,
+            "digest computed from tampered TransferAdmin target must differ from stored digest"
+        );
+    }
+
+    /// Altering the WASM hash in an Upgrade action after proposal creation
+    /// produces a digest that does not match the stored digest.
+    #[test]
+    fn altered_upgrade_wasm_hash_produces_digest_mismatch() {
+        let (env, client, admin, _admin2) = setup_multisig();
+
+        let original_hash = wasm_hash(&env, 0xAA);
+        let tampered_hash = wasm_hash(&env, 0xBB);
+
+        let original_action = crate::types::AdminAction::Upgrade(original_hash);
+        let tampered_action = crate::types::AdminAction::Upgrade(tampered_hash);
+
+        let proposal_id = client.propose_action(&admin, &original_action);
+
+        let stored_digest = client.get_proposal_action_digest(&proposal_id);
+
+        let digest_original = client.compute_proposal_digest(&proposal_id, &original_action);
+        assert_eq!(
+            stored_digest.digest, digest_original,
+            "digest computed from original Upgrade hash must match the stored digest"
+        );
+
+        let digest_tampered = client.compute_proposal_digest(&proposal_id, &tampered_action);
+        assert_ne!(
+            stored_digest.digest, digest_tampered,
+            "digest computed from tampered Upgrade WASM hash must differ from stored digest"
+        );
+    }
+
+    /// Altering the shipment_id in a ForceRelease action after proposal creation
+    /// produces a digest that does not match the stored digest.
+    #[test]
+    fn altered_force_release_shipment_id_produces_digest_mismatch() {
+        let (_env, client, admin, _admin2) = setup_multisig();
+
+        let original_id: u64 = 1;
+        let tampered_id: u64 = 999;
+
+        let original_action = crate::types::AdminAction::ForceRelease(original_id);
+        let tampered_action = crate::types::AdminAction::ForceRelease(tampered_id);
+
+        let proposal_id = client.propose_action(&admin, &original_action);
+
+        let stored_digest = client.get_proposal_action_digest(&proposal_id);
+
+        let digest_original = client.compute_proposal_digest(&proposal_id, &original_action);
+        assert_eq!(
+            stored_digest.digest, digest_original,
+            "digest computed from original ForceRelease shipment_id must match the stored digest"
+        );
+
+        let digest_tampered = client.compute_proposal_digest(&proposal_id, &tampered_action);
+        assert_ne!(
+            stored_digest.digest, digest_tampered,
+            "digest computed from tampered ForceRelease shipment_id must differ from stored digest"
+        );
+    }
+
+    /// Altering the shipment_id in a ForceRefund action after proposal creation
+    /// produces a digest that does not match the stored digest.
+    #[test]
+    fn altered_force_refund_shipment_id_produces_digest_mismatch() {
+        let (_env, client, admin, _admin2) = setup_multisig();
+
+        let original_id: u64 = 42;
+        let tampered_id: u64 = 1;
+
+        let original_action = crate::types::AdminAction::ForceRefund(original_id);
+        let tampered_action = crate::types::AdminAction::ForceRefund(tampered_id);
+
+        let proposal_id = client.propose_action(&admin, &original_action);
+
+        let stored_digest = client.get_proposal_action_digest(&proposal_id);
+
+        let digest_original = client.compute_proposal_digest(&proposal_id, &original_action);
+        assert_eq!(
+            stored_digest.digest, digest_original,
+            "digest computed from original ForceRefund shipment_id must match the stored digest"
+        );
+
+        let digest_tampered = client.compute_proposal_digest(&proposal_id, &tampered_action);
+        assert_ne!(
+            stored_digest.digest, digest_tampered,
+            "digest computed from tampered ForceRefund shipment_id must differ from stored digest"
+        );
+    }
+
+    /// Swapping action variant (ForceRelease → ForceRefund) for the same shipment_id
+    /// produces a digest that does not match the stored digest.
+    /// This covers cross-variant substitution attacks.
+    #[test]
+    fn swapped_action_variant_produces_digest_mismatch() {
+        let (_env, client, admin, _admin2) = setup_multisig();
+
+        let shipment_id: u64 = 7;
+        let original_action = crate::types::AdminAction::ForceRelease(shipment_id);
+        let swapped_action = crate::types::AdminAction::ForceRefund(shipment_id);
+
+        let proposal_id = client.propose_action(&admin, &original_action);
+
+        let stored_digest = client.get_proposal_action_digest(&proposal_id);
+        let digest_swapped = client.compute_proposal_digest(&proposal_id, &swapped_action);
+
+        assert_ne!(
+            stored_digest.digest, digest_swapped,
+            "swapping ForceRelease to ForceRefund with the same shipment_id must produce a different digest"
+        );
+    }
+
+    /// Even a single-byte difference in the WASM hash produces a different digest.
+    /// This validates that the hash function is sensitive to all input bits.
+    #[test]
+    fn single_byte_change_in_wasm_hash_produces_digest_mismatch() {
+        let (env, client, admin, _admin2) = setup_multisig();
+
+        let original_bytes = [0xFFu8; 32];
+        let mut tampered_bytes = [0xFFu8; 32];
+        tampered_bytes[31] = 0xFE; // flip the last byte only
+
+        let original_action =
+            crate::types::AdminAction::Upgrade(BytesN::from_array(&env, &original_bytes));
+        let tampered_action =
+            crate::types::AdminAction::Upgrade(BytesN::from_array(&env, &tampered_bytes));
+
+        let proposal_id = client.propose_action(&admin, &original_action);
+
+        let stored_digest = client.get_proposal_action_digest(&proposal_id);
+        let digest_tampered = client.compute_proposal_digest(&proposal_id, &tampered_action);
+
+        assert_ne!(
+            stored_digest.digest, digest_tampered,
+            "a single-byte change in the Upgrade WASM hash must produce a different digest"
+        );
+    }
+
+    /// The proposal stores the original action immutably. Approving and executing
+    /// always uses the originally proposed action — a tampered action cannot be
+    /// substituted at execution time because execute_proposal takes only proposal_id.
+    /// This test verifies that the executed action matches the original digest.
+    #[test]
+    fn execution_always_applies_original_action_not_tampered_params() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        let original_target = Address::generate(&env);
+        let original_action = crate::types::AdminAction::TransferAdmin(original_target.clone());
+
+        let proposal_id = client.propose_action(&admin, &original_action);
+        let stored_digest = client.get_proposal_action_digest(&proposal_id);
+
+        // Approve — crosses threshold of 2, auto-executes with the original action.
+        client.approve_action(&admin2, &proposal_id);
+
+        // The contract admin must now be the original target, not any tampered address.
+        let actual_admin = client.get_admin();
+        assert_eq!(
+            actual_admin, original_target,
+            "executed action must transfer admin to the originally proposed target"
+        );
+
+        // The stored digest is unchanged after execution — it reflects the original action.
+        let post_execute_digest = client.get_proposal_action_digest(&proposal_id);
+        assert_eq!(
+            stored_digest.digest, post_execute_digest.digest,
+            "stored digest must not change after execution"
+        );
+
+        // Verify a hypothetical tampered action would NOT match the stored digest.
+        let tampered_target = Address::generate(&env);
+        let tampered_action = crate::types::AdminAction::TransferAdmin(tampered_target);
+        let tampered_digest = client.compute_proposal_digest(&proposal_id, &tampered_action);
+        assert_ne!(
+            stored_digest.digest, tampered_digest,
+            "tampered action would have produced a different digest — proving the original was enforced"
+        );
+    }
+
+    /// Digest binding includes the proposal_id. The same action proposed under
+    /// two different IDs produces two different digests, preventing a replay
+    /// where an attacker reuses an approved digest from one proposal for another.
+    #[test]
+    fn same_action_different_proposal_id_produces_different_digest() {
+        let (env, client, admin, _admin2) = setup_multisig();
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+
+        let id1 = client.propose_action(&admin, &action);
+        crate::test_utils::advance_ledger_time(&env, 400);
+        let id2 = client.propose_action(&admin, &action);
+
+        let d1 = client.get_proposal_action_digest(&id1);
+        let d2 = client.get_proposal_action_digest(&id2);
+
+        assert_ne!(id1, id2, "proposal IDs must be distinct");
+        assert_ne!(
+            d1.digest, d2.digest,
+            "the same action under different proposal IDs must produce different digests — ID is bound into the hash"
+        );
+    }
+
+    /// Digest mismatch is detectable for ForceRelease targeting shipment_id 0.
+    /// Edge case: ensure the digest serialization handles zero-valued IDs correctly.
+    #[test]
+    fn digest_mismatch_detectable_for_zero_shipment_id_substitution() {
+        let (_env, client, admin, _admin2) = setup_multisig();
+
+        let original_action = crate::types::AdminAction::ForceRelease(0);
+        let tampered_action = crate::types::AdminAction::ForceRelease(1);
+
+        let proposal_id = client.propose_action(&admin, &original_action);
+        let stored = client.get_proposal_action_digest(&proposal_id);
+        let tampered = client.compute_proposal_digest(&proposal_id, &tampered_action);
+
+        assert_ne!(
+            stored.digest, tampered,
+            "ForceRelease(0) and ForceRelease(1) must produce different digests"
+        );
+    }
+
+    /// Digest mismatch is detectable for u64::MAX shipment_id substitution.
+    /// Edge case: ensure the digest serialization handles maximum-valued IDs correctly.
+    #[test]
+    fn digest_mismatch_detectable_for_max_shipment_id_substitution() {
+        let (_env, client, admin, _admin2) = setup_multisig();
+
+        let original_action = crate::types::AdminAction::ForceRefund(u64::MAX);
+        let tampered_action = crate::types::AdminAction::ForceRefund(u64::MAX - 1);
+
+        let proposal_id = client.propose_action(&admin, &original_action);
+        let stored = client.get_proposal_action_digest(&proposal_id);
+        let tampered = client.compute_proposal_digest(&proposal_id, &tampered_action);
+
+        assert_ne!(
+            stored.digest, tampered,
+            "ForceRefund(u64::MAX) and ForceRefund(u64::MAX - 1) must produce different digests"
+        );
+    }
+
+    /// Executing a proposal with insufficient approvals is blocked regardless
+    /// of whether the digest matches. The threshold guard fires before execution.
+    #[test]
+    fn execution_blocked_on_insufficient_approvals_before_digest_check() {
+        let (env, client, admin, _admin2) = setup_multisig();
+
+        // Re-init with threshold 3 so a single proposer cannot auto-execute.
+        let admin3 = Address::generate(&env);
+        let mut admins = Vec::new(&env);
+        admins.push_back(admin.clone());
+        admins.push_back(Address::generate(&env));
+        admins.push_back(admin3.clone());
+        client.init_multisig(&admin, &admins, &3);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Only 1 approval (the proposer). Threshold is 3.
+        let result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(crate::NavinError::InsufficientApprovals)),
+            "execution must be blocked by InsufficientApprovals when threshold is not met"
+        );
+    }
+
+    /// Digest stored_at timestamp matches the ledger timestamp at proposal creation.
+    /// This ensures the digest record is correctly stamped for audit purposes.
+    #[test]
+    fn digest_computed_at_matches_proposal_created_at() {
+        let (env, client, admin, _admin2) = setup_multisig();
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+
+        let creation_time = env.ledger().timestamp();
+        let proposal_id = client.propose_action(&admin, &action);
+
+        let stored_digest = client.get_proposal_action_digest(&proposal_id);
+        let proposal = client.get_proposal(&proposal_id);
+
+        assert_eq!(
+            stored_digest.computed_at, creation_time,
+            "digest computed_at must match the ledger timestamp at proposal creation"
+        );
+        assert_eq!(
+            stored_digest.computed_at, proposal.created_at,
+            "digest computed_at must match the proposal created_at field"
+        );
+    }
 }
 
