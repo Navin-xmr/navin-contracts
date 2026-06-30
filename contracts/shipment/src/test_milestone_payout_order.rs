@@ -347,5 +347,5 @@ fn test_validation_rejects_zero_percentage_milestone() {
         &deadline,
     );
 
-    assert_eq!(result, Err(Ok(crate::errors::NavinError::InvalidConfig)));
+    assert_eq!(result, Err(Ok(crate::errors::NavinError::InvalidPaymentMilestones)));
 }
