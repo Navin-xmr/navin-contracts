@@ -10,7 +10,7 @@
 extern crate std;
 
 use crate::{BreachType, NavinShipment, NavinShipmentClient, Severity, ShipmentStatus};
-use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env};
+use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Symbol};
 
 // ── Minimal mock token ────────────────────────────────────────────────────────
 
@@ -309,5 +309,43 @@ fn test_auto_dispute_increments_total_disputes() {
         client.get_analytics().total_disputes,
         before + 1,
         "total_disputes must be incremented by exactly 1"
+    );
+}
+
+/// Milestone recording on a cancelled shipment must return InvalidStatus.
+///
+/// We force the shipment into `Cancelled` state via direct storage manipulation
+/// while keeping `finalized = false` so that `record_milestone` is still
+/// callable. This isolates the status guard from the finalization check.
+#[test]
+fn test_record_milestone_blocked_on_cancelled_shipment() {
+    let (env, client, admin, token) = setup();
+    let (id, _company, _receiver, carrier) = create_test_shipment(&env, &client, &admin, &token);
+
+    // Force shipment to Cancelled without going through cancel_shipment
+    // (which would finalize the shipment and block milestone recording entirely)
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, id).unwrap();
+        let old_status = shipment.status.clone();
+        shipment.status = crate::ShipmentStatus::Cancelled;
+        shipment.finalized = false; // keep non-finalized so record_milestone still works
+        crate::storage::set_shipment(&env, &shipment);
+        crate::storage::decrement_status_count(&env, &old_status);
+        crate::storage::increment_status_count(&env, &crate::ShipmentStatus::Cancelled);
+    });
+    assert_eq!(client.get_shipment(&id).status, ShipmentStatus::Cancelled);
+
+    let checkpoint = Symbol::new(&env, "warehouse");
+    let data_hash = BytesN::from_array(&env, &[70u8; 32]);
+    let result = client.try_record_milestone(&carrier, &id, &checkpoint, &data_hash);
+
+    assert!(
+        result.is_err(),
+        "record_milestone on a Cancelled shipment must fail"
+    );
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::InvalidStatus)),
+        "Expected InvalidStatus for milestone on cancelled shipment"
     );
 }

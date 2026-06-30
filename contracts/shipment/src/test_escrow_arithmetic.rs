@@ -270,8 +270,7 @@ mod total_escrow_volume_overflow {
                 .set(&crate::DataKey::TotalEscrowVolume, &i128::MAX);
         });
 
-        let result =
-            env.as_contract(&cid, || storage::add_total_escrow_volume(&env, i128::MAX));
+        let result = env.as_contract(&cid, || storage::add_total_escrow_volume(&env, i128::MAX));
 
         assert_eq!(
             result,
@@ -298,13 +297,11 @@ mod total_escrow_volume_overflow {
         assert_eq!(ok, Ok(()), "filling to i128::MAX must succeed");
 
         // Verify the stored value.
-        let volume =
-            env.as_contract(&cid, || storage::get_total_escrow_volume(&env));
+        let volume = env.as_contract(&cid, || storage::get_total_escrow_volume(&env));
         assert_eq!(volume, i128::MAX);
 
         // One more unit overflows.
-        let overflow =
-            env.as_contract(&cid, || storage::add_total_escrow_volume(&env, 1));
+        let overflow = env.as_contract(&cid, || storage::add_total_escrow_volume(&env, 1));
         assert_eq!(
             overflow,
             Err(NavinError::ArithmeticError),
@@ -323,5 +320,96 @@ mod total_escrow_volume_overflow {
 
         let volume = env.as_contract(&cid, || storage::get_total_escrow_volume(&env));
         assert_eq!(volume, 5_000);
+    }
+
+    // ── Issue #550: negative-value rejection for TotalEscrowVolume ───────────
+
+    /// Passing a negative amount directly to `add_total_escrow_volume` must
+    /// return `ArithmeticError` — negative volume deltas are never valid.
+    #[test]
+    fn test_negative_amount_rejected_by_volume_tracker() {
+        let (env, client, _admin) = setup();
+        let cid = client.address.clone();
+
+        let result = env.as_contract(&cid, || storage::add_total_escrow_volume(&env, -1));
+        assert_eq!(
+            result,
+            Err(NavinError::ArithmeticError),
+            "negative amount must return ArithmeticError"
+        );
+    }
+
+    /// Large negative amount must also be rejected cleanly without panicking.
+    #[test]
+    fn test_large_negative_amount_rejected_by_volume_tracker() {
+        let (env, client, _admin) = setup();
+        let cid = client.address.clone();
+
+        let result = env.as_contract(&cid, || storage::add_total_escrow_volume(&env, i128::MIN));
+        assert_eq!(
+            result,
+            Err(NavinError::ArithmeticError),
+            "i128::MIN must return ArithmeticError"
+        );
+    }
+
+    /// Volume tracker must remain unchanged after a rejected negative-amount
+    /// call — the guard must be a pure check with no side-effects.
+    #[test]
+    fn test_volume_unchanged_after_negative_rejection() {
+        let (env, client, _admin) = setup();
+        let cid = client.address.clone();
+
+        // Seed the tracker to a known value.
+        let _ = env.as_contract(&cid, || storage::add_total_escrow_volume(&env, 1_000));
+        let before = env.as_contract(&cid, || storage::get_total_escrow_volume(&env));
+        assert_eq!(before, 1_000);
+
+        // Attempt a negative-amount update — must fail.
+        let rejected = env.as_contract(&cid, || storage::add_total_escrow_volume(&env, -500));
+        assert_eq!(rejected, Err(NavinError::ArithmeticError));
+
+        // The stored value must be unchanged.
+        let after = env.as_contract(&cid, || storage::get_total_escrow_volume(&env));
+        assert_eq!(
+            after, 1_000,
+            "volume must not change after a rejected negative-amount call"
+        );
+    }
+
+    /// Zero is the boundary: passing 0 must succeed (it is a no-op addition,
+    /// not a negative value).
+    #[test]
+    fn test_zero_amount_accepted_by_volume_tracker() {
+        let (env, client, _admin) = setup();
+        let cid = client.address.clone();
+
+        let result = env.as_contract(&cid, || storage::add_total_escrow_volume(&env, 0));
+        assert_eq!(
+            result,
+            Ok(()),
+            "zero amount must be accepted (it is not negative)"
+        );
+    }
+
+    /// Verify the tracker correctly rejects negative amounts regardless of the
+    /// current accumulated value — even when the tracker is at i128::MAX.
+    #[test]
+    fn test_negative_amount_rejected_when_volume_at_max() {
+        let (env, client, _admin) = setup();
+        let cid = client.address.clone();
+
+        env.as_contract(&cid, || {
+            env.storage()
+                .instance()
+                .set(&crate::DataKey::TotalEscrowVolume, &i128::MAX);
+        });
+
+        let result = env.as_contract(&cid, || storage::add_total_escrow_volume(&env, -1));
+        assert_eq!(
+            result,
+            Err(NavinError::ArithmeticError),
+            "negative amount must be rejected even when volume is at i128::MAX"
+        );
     }
 }

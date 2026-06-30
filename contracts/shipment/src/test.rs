@@ -10042,6 +10042,127 @@ fn test_shipment_notes_unauthorized() {
     client.append_note_hash(&outsider, &shipment_id, &note_hash);
 }
 
+// ============= Note Count Zero Tests (#547) =============
+
+#[test]
+fn test_get_note_count_returns_zero_on_fresh_shipment() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    assert_eq!(
+        client.get_note_count(&shipment_id),
+        0,
+        "fresh shipment must report zero notes"
+    );
+}
+
+#[test]
+fn test_get_note_count_zero_across_multiple_shipments() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let shipment_a = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0xAAu8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    let shipment_b = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0xBBu8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    assert_eq!(
+        client.get_note_count(&shipment_a),
+        0,
+        "shipment_a must have zero notes before any are appended"
+    );
+    assert_eq!(
+        client.get_note_count(&shipment_b),
+        0,
+        "shipment_b must have zero notes before any are appended"
+    );
+}
+
+#[test]
+fn test_get_note_count_increments_independently_per_shipment() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let shipment_a = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0x01u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    let shipment_b = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0x02u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Both start at zero
+    assert_eq!(client.get_note_count(&shipment_a), 0);
+    assert_eq!(client.get_note_count(&shipment_b), 0);
+
+    // Append one note to shipment_a only
+    client.append_note_hash(
+        &company,
+        &shipment_a,
+        &BytesN::from_array(&env, &[0xFFu8; 32]),
+    );
+
+    // shipment_a incremented; shipment_b remains zero
+    assert_eq!(client.get_note_count(&shipment_a), 1);
+    assert_eq!(
+        client.get_note_count(&shipment_b),
+        0,
+        "shipment_b note count must remain zero when only shipment_a received a note"
+    );
+}
+
 // ============= Note Append-Order Immutability Tests =============
 
 #[test]
@@ -10236,6 +10357,104 @@ fn test_reorder_notes_fails() {
         Some(note_c),
         "new note must go to index 2, preserving existing order"
     );
+}
+
+// ============= Note Hash Retrieval Sequence Tests (issue #523) =============
+
+/// Verify that note hashes retrieved by index exactly match the sequence in
+/// which they were appended — index 0 is the first append, index N-1 is the last.
+#[test]
+fn test_note_hash_retrieval_matches_append_sequence() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0xABu8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Append 5 unique note hashes with distinct byte patterns.
+    let note_hashes = [
+        BytesN::from_array(&env, &[0x11u8; 32]),
+        BytesN::from_array(&env, &[0x22u8; 32]),
+        BytesN::from_array(&env, &[0x33u8; 32]),
+        BytesN::from_array(&env, &[0x44u8; 32]),
+        BytesN::from_array(&env, &[0x55u8; 32]),
+    ];
+
+    client.append_note_hash(&company, &shipment_id, &note_hashes[0]);
+    client.append_note_hash(&carrier, &shipment_id, &note_hashes[1]);
+    client.append_note_hash(&admin, &shipment_id, &note_hashes[2]);
+    client.append_note_hash(&company, &shipment_id, &note_hashes[3]);
+    client.append_note_hash(&carrier, &shipment_id, &note_hashes[4]);
+
+    assert_eq!(client.get_note_count(&shipment_id), 5);
+
+    for i in 0u32..5 {
+        assert_eq!(
+            client.get_note_hash(&shipment_id, &i),
+            Some(note_hashes[i as usize].clone()),
+            "index {i} must return the hash appended at position {i}"
+        );
+    }
+}
+
+/// Verify that each sequential append lands at the next available index and
+/// the count increments by exactly 1 after every append.
+#[test]
+fn test_note_hash_indices_are_strictly_sequential() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0xFEu8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    for i in 0u8..5 {
+        let expected_count = i as u32;
+        assert_eq!(
+            client.get_note_count(&shipment_id),
+            expected_count,
+            "count before append must be {expected_count}"
+        );
+
+        let hash = BytesN::from_array(&env, &[i + 1; 32]);
+        client.append_note_hash(&company, &shipment_id, &hash);
+
+        assert_eq!(
+            client.get_note_count(&shipment_id),
+            expected_count + 1,
+            "count must increment by 1 after each append"
+        );
+        assert_eq!(
+            client.get_note_hash(&shipment_id, &expected_count),
+            Some(hash),
+            "newly appended note must be retrievable at the next sequential index"
+        );
+    }
 }
 
 // ============= Idempotency Window Tests =============
@@ -11636,4 +11855,68 @@ fn test_get_shipment_created_at_fails_before_initialization() {
     let (_env, client, _admin, _token_contract) = setup_shipment_env();
 
     client.get_shipment_created_at(&1);
+
+
+// ── [ISSUE #506] get_admin in multi-admin configurations ─────────────────────
+
+#[test]
+fn test_get_admin_returns_primary_admin_after_multisig_init() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let admin2 = Address::generate(&env);
+    let admin3 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    assert_eq!(
+        client.get_admin(),
+        admin,
+        "get_admin must return the primary admin set during initialize"
+    );
+}
+
+#[test]
+fn test_get_admin_consistent_across_queries_in_multisig_mode() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let admin2 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    let first = client.get_admin();
+    let second = client.get_admin();
+    assert_eq!(
+        first, second,
+        "repeated get_admin calls must return the same address"
+    );
+    assert_eq!(first, admin);
+}
+
+#[test]
+fn test_get_admin_unaffected_by_additional_multisig_admins() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let before = client.get_admin();
+
+    let admin2 = Address::generate(&env);
+    let admin3 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3.clone());
+    client.init_multisig(&admin, &admins, &3);
+
+    let after = client.get_admin();
+    assert_eq!(
+        before, after,
+        "get_admin must not change after init_multisig"
+    );
 }

@@ -480,7 +480,7 @@ fn test_snapshot_milestone_recorded_payload_shape() {
     assert_eq!(
         payload.len(),
         7,
-        "milestone_recorded payload must have exactly 8 fields; got {}",
+        "milestone_recorded payload must have exactly 7 fields; got {}",
         payload.len()
     );
 
@@ -579,6 +579,7 @@ fn test_snapshot_multiple_milestone_recorded_payloads() {
         assert_eq!(payload.len(), 7, "milestone payload must have 7 fields");
         let event_shipment_id: u64 = payload.get(0).unwrap().try_into_val(&env).unwrap();
         let event_checkpoint: Symbol = payload.get(1).unwrap().try_into_val(&env).unwrap();
+        let event_data_hash: BytesN<32> = payload.get(2).unwrap().try_into_val(&env).unwrap();
         let event_reporter: Address = payload.get(3).unwrap().try_into_val(&env).unwrap();
         let event_idempotency_key: BytesN<32> = payload.get(6).unwrap().try_into_val(&env).unwrap();
 
@@ -586,8 +587,10 @@ fn test_snapshot_multiple_milestone_recorded_payloads() {
         // checkpoints emitted should match our two recorded symbols
         if i == 0 {
             assert_eq!(event_checkpoint, soroban_sdk::symbol_short!("m1"));
+            assert_eq!(event_data_hash, BytesN::from_array(&env, &[22u8; 32]));
         } else {
             assert_eq!(event_checkpoint, soroban_sdk::symbol_short!("m2"));
+            assert_eq!(event_data_hash, BytesN::from_array(&env, &[23u8; 32]));
         }
         assert_eq!(event_reporter, carrier, "reporter must be the carrier");
         assert_eq!(
