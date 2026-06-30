@@ -11807,3 +11807,261 @@ fn test_get_admin_unaffected_by_additional_multisig_admins() {
         "get_admin must not change after init_multisig"
     );
 }
+
+// ── Issue #581 – InvalidPaymentMilestones (code 59) ─────────────────────────
+
+#[test]
+#[should_panic(expected = "Error(Contract, #59)")]
+fn test_create_shipment_zero_percentage_milestone_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    // A zero percentage is an invalid milestone weight.
+    milestones.push_back((Symbol::new(&env, "pickup"), 0_u32));
+    milestones.push_back((Symbol::new(&env, "delivery"), 100_u32));
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #59)")]
+fn test_create_shipment_over_100_percentage_milestone_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    // 150 % is out of bounds for a single milestone weight.
+    milestones.push_back((Symbol::new(&env, "pickup"), 150_u32));
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+}
+
+#[test]
+fn test_create_shipment_valid_milestones_accepted() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[3u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "pickup"), 50_u32));
+    milestones.push_back((Symbol::new(&env, "delivery"), 50_u32));
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+    assert!(id > 0);
+}
+
+// ── Issue #582 – DuplicatePaymentMilestone (code 60) ────────────────────────
+
+#[test]
+#[should_panic(expected = "Error(Contract, #60)")]
+fn test_create_shipment_duplicate_milestone_names_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[4u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "pickup"), 50_u32));
+    milestones.push_back((Symbol::new(&env, "pickup"), 50_u32)); // duplicate
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+}
+
+#[test]
+fn test_create_shipment_unique_milestone_names_accepted() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[5u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "pickup"), 40_u32));
+    milestones.push_back((Symbol::new(&env, "transit"), 30_u32));
+    milestones.push_back((Symbol::new(&env, "delivery"), 30_u32));
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+    assert!(id > 0);
+}
+
+// ── Issue #583 – InvalidTokenAddress (code 61) ──────────────────────────────
+
+#[test]
+#[should_panic(expected = "Error(Contract, #61)")]
+fn test_initialize_with_admin_as_token_address_rejected() {
+    let (env, client, admin, _) = setup_shipment_env();
+    // Passing the admin's own address as the token contract is invalid.
+    client.initialize(&admin, &admin);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #61)")]
+fn test_initialize_with_contract_address_as_token_rejected() {
+    let (env, client, admin, _) = setup_shipment_env();
+    // Passing the shipment contract's own address as the token is invalid.
+    let contract_addr = client.address.clone();
+    client.initialize(&admin, &contract_addr);
+}
+
+#[test]
+fn test_initialize_with_valid_token_address_succeeds() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    // A real distinct token contract should be accepted.
+    client.initialize(&admin, &token_contract);
+    assert_eq!(client.get_admin(), admin);
+}
+
+// ── Issue #584 – InvalidPaymentMilestoneName (code 62) ──────────────────────
+
+#[test]
+#[should_panic(expected = "Error(Contract, #62)")]
+fn test_create_shipment_empty_milestone_name_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[6u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    // An empty symbol name is an invalid milestone checkpoint name.
+    milestones.push_back((Symbol::new(&env, ""), 100_u32));
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #62)")]
+fn test_create_shipment_too_long_milestone_name_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    // A 13-character name exceeds the Stellar Symbol 12-char maximum.
+    milestones.push_back((Symbol::new(&env, "toolongname_x"), 100_u32));
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+}
+
+#[test]
+fn test_create_shipment_valid_milestone_name_accepted() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[8u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "warehouse"), 100_u32));
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+    assert!(id > 0);
+}
