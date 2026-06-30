@@ -13,6 +13,14 @@ fn sym(env: &Env, s: &str) -> Symbol {
     Symbol::new(env, s)
 }
 
+// ── Empty Symbol ───────────────────────────────────────────────────────────────
+
+#[test]
+fn test_empty_symbol_invalid() {
+    let env = Env::default();
+    assert_eq!(validate_symbol(&env, &sym(&env, "")), Err(NavinError::InvalidSymbol));
+}
+
 // ── Valid symbols: boundary lengths ──────────────────────────────────────────
 
 #[test]
@@ -1051,7 +1059,7 @@ fn test_record_milestone_empty_checkpoint_fails() {
     );
 
     let status_hash = BytesN::from_array(&env, &[1u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &status_hash);
+    client.update_status(&carrier, &shipment_id, &crate::types::ShipmentStatus::InTransit, &status_hash);
 
     let empty_symbol = Symbol::new(&env, "");
     let data_hash = BytesN::from_array(&env, &[4u8; 32]);

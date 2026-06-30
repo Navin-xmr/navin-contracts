@@ -76,6 +76,9 @@ pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
     let symbol_bytes = symbol.to_xdr(env);
     let len = symbol_bytes.len();
 
+    if len == 8 {
+        return Err(NavinError::InvalidSymbol);
+    }
     if !(12..=20).contains(&len) {
         return Err(NavinError::InvalidShipmentInput);
     }
