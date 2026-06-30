@@ -25,6 +25,7 @@
 //! | proposal_expiry_seconds      | 604,800 | Proposal expiry time (7 days)                  |
 //! | deadline_grace_seconds       | 0       | Grace window after deadline before expiry fires |
 
+use crate::errors::NavinError;
 use crate::types::DataKey;
 use soroban_sdk::{contracttype, BytesN, Env};
 
@@ -203,22 +204,31 @@ pub fn get_config(env: &Env) -> ContractConfig {
 /// * `config` - The configuration to store.
 ///
 /// # Returns
-/// No return value.
+/// * `Result<(), NavinError>` - Ok on success, Err(NavinError::InvalidConfig) if the
+///   computed checksum is a zero-filled hash (indicating empty or invalid input).
 ///
 /// # Examples
 /// ```rust
 /// let mut config = ContractConfig::default();
 /// config.batch_operation_limit = 20;
-/// config::set_config(&env, &config);
+/// config::set_config(&env, &config).map_err(|_| ...)?;
 /// ```
-pub fn set_config(env: &Env, config: &ContractConfig) {
+pub fn set_config(env: &Env, config: &ContractConfig) -> Result<(), NavinError> {
     env.storage()
         .instance()
         .set(&DataKey::ContractConfig, config);
 
     // Automatically compute and store checksum for drift detection
     let checksum = compute_config_checksum(config, env);
+
+    // Reject zero checksums to prevent config validation failures
+    let checksum_bytes: [u8; 32] = checksum.to_array();
+    if checksum_bytes.iter().all(|&b| b == 0) {
+        return Err(NavinError::InvalidConfig);
+    }
+
     set_config_checksum(env, &checksum);
+    Ok(())
 }
 
 /// Validate configuration parameters to ensure they are within acceptable ranges.

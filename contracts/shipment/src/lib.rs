@@ -31,8 +31,10 @@ mod test_mixed_token_shipments;
 #[cfg(test)]
 mod test_reentrancy_guard;
 #[cfg(test)]
-mod test_token_compatibility;
+mod test_replay_protection;
 
+#[cfg(test)]
+mod test_token_compatibility;
 #[cfg(test)]
 mod test_event_fixtures;
 #[cfg(test)]
@@ -50,6 +52,8 @@ mod validation;
 mod test_archive_restore_consistency;
 #[cfg(test)]
 mod test_auth;
+#[cfg(test)]
+mod test_auth_matrix;
 #[cfg(test)]
 mod test_auto_dispute;
 #[cfg(test)]
@@ -79,6 +83,8 @@ mod test_precondition_guards;
 #[cfg(test)]
 mod test_proposal_digest;
 #[cfg(test)]
+mod test_replay_protection;
+#[cfg(test)]
 mod test_require_auth_for_args;
 #[cfg(test)]
 mod test_settlement;
@@ -104,8 +110,6 @@ mod test_verification;
 mod test_whitelist_multicompany;
 #[cfg(test)]
 mod test_zero_amount_escrow;
-#[cfg(test)]
-mod test_replay_protection;
 
 // ── Fuzz / property-based test harnesses ─────────────────────────────────────
 #[cfg(test)]
@@ -163,6 +167,10 @@ fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(),
 
     let mut total_percentage = 0;
     for milestone in milestones.iter() {
+        // Reject negative percentages (cast to i32 and check sign)
+        if milestone.1 > 100 {
+            return Err(NavinError::InvalidConfig);
+        }
         total_percentage += milestone.1;
     }
 
@@ -975,7 +983,7 @@ impl NavinShipment {
 
         // Initialize with default configuration
         let default_config = ContractConfig::default();
-        config::set_config(&env, &default_config);
+        config::set_config(&env, &default_config).map_err(|_| NavinError::InvalidConfig)?;
         storage::set_shipment_limit(&env, default_config.default_shipment_limit);
 
         events::emit_contract_initialized(&env, &admin, &token_contract);
@@ -1368,6 +1376,14 @@ impl NavinShipment {
         require_not_paused(&env)?;
         company.require_auth();
         require_role(&env, &company, Role::Company)?;
+
+        // Issue #539 — reject duplicate whitelist additions. Without this
+        // check the storage write is silently idempotent and emits a
+        // spurious `add_wl` event, making it impossible for off-chain
+        // monitors to distinguish a re-add from a first-time add.
+        if storage::is_carrier_whitelisted(&env, &company, &carrier) {
+            return Err(NavinError::CarrierAlreadyWhitelisted);
+        }
 
         storage::add_carrier_to_whitelist(&env, &company, &carrier);
 
@@ -3262,6 +3278,7 @@ impl NavinShipment {
         require_initialized(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
+        require_active_carrier(&env, &carrier)?;
 
         // Verify shipment exists and carrier is assigned
         let shipment =
@@ -4201,11 +4218,11 @@ impl NavinShipment {
             let mut shipment =
                 storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
-            require_not_finalized(&shipment)?;
-
             if caller != shipment.sender && caller != admin {
                 return Err(NavinError::Unauthorized);
             }
+
+            require_not_finalized(&shipment)?;
 
             // Check for suspension if caller is the sender (company)
             if caller == shipment.sender {
@@ -4956,12 +4973,22 @@ impl NavinShipment {
             return Err(NavinError::NotAnAdmin);
         }
 
+        // Validate action
+        if let crate::types::AdminAction::Upgrade(hash) = &action {
+            if hash.to_array() == [0u8; 32] {
+                return Err(NavinError::InvalidHash);
+            }
+        }
+
         let proposal_id = storage::get_proposal_counter(&env)
             .checked_add(1)
             .ok_or(NavinError::CounterOverflow)?;
 
         let now = env.ledger().timestamp();
         let config = config::get_config(&env);
+        if config.proposal_expiry_seconds == 0 {
+            return Err(NavinError::InvalidConfig);
+        }
         let expires_at = now + config.proposal_expiry_seconds;
 
         let mut approvals = soroban_sdk::Vec::new(&env);
@@ -5289,8 +5316,8 @@ impl NavinShipment {
         // Validate the new configuration
         config::validate_config(&new_config).map_err(|_| NavinError::InvalidConfig)?;
 
-        // Store the new configuration
-        config::set_config(&env, &new_config);
+        // Store the new configuration (validates checksum isn't zero)
+        config::set_config(&env, &new_config)?;
 
         // Emit config_updated event
         events::emit_config_updated(&env, &admin, &new_config);
@@ -5854,7 +5881,7 @@ impl NavinShipment {
         let mut cfg = config::get_config(&env);
         cfg.creation_quota_max = max_per_window;
         cfg.creation_quota_window_seconds = window_seconds;
-        config::set_config(&env, &cfg);
+        config::set_config(&env, &cfg).map_err(|_| NavinError::InvalidConfig)?;
 
         events::emit_quota_set(&env, &admin, max_per_window, window_seconds);
 

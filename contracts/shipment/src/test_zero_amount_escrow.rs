@@ -248,3 +248,129 @@ fn test_refund_escrow_zero_escrow_rejected() {
     let result = client.try_refund_escrow(&company, &shipment_id);
     assert!(result.is_err(), "Refund should reject zero escrow amount");
 }
+
+// ── Issue #549: duplicate refund rejection ───────────────────────────────────
+
+/// Trigger a successful refund then immediately attempt a second refund on the
+/// same shipment. The second call must be blocked because the escrow balance
+/// was zeroed out by the first refund.
+#[test]
+fn test_refund_escrow_already_refunded_is_blocked() {
+    let (env, client, _admin, company, receiver, carrier) = setup_escrow_env();
+    let data_hash = BytesN::from_array(&env, &[0x10u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    // Deposit a positive escrow amount so the first refund succeeds.
+    client.deposit_escrow(&company, &shipment_id, &1_000i128);
+
+    let shipment_before = client.get_shipment(&shipment_id);
+    assert_eq!(shipment_before.escrow_amount, 1_000i128);
+
+    // First refund — must succeed.
+    let first = client.try_refund_escrow(&company, &shipment_id);
+    assert!(
+        first.is_ok(),
+        "first refund on a shipment with positive escrow must succeed"
+    );
+
+    // After refund the escrow balance is zero.
+    let shipment_after = client.get_shipment(&shipment_id);
+    assert_eq!(
+        shipment_after.escrow_amount, 0,
+        "escrow_amount must be zero after a successful refund"
+    );
+
+    // Second refund on the same shipment — must be blocked.
+    // After a successful refund the shipment is finalized (Cancelled + escrow=0),
+    // so the guard returns ShipmentFinalized before the balance check.
+    let second = client.try_refund_escrow(&company, &shipment_id);
+    assert!(
+        second.is_err(),
+        "second refund on an already-refunded shipment must be rejected"
+    );
+    assert_eq!(
+        second,
+        Err(Ok(NavinError::ShipmentFinalized)),
+        "already-refunded shipment must be blocked by the finalized guard"
+    );
+}
+
+/// Admin-triggered duplicate refund must also be blocked.
+#[test]
+fn test_admin_refund_already_refunded_is_blocked() {
+    let (env, client, admin, company, receiver, carrier) = setup_escrow_env();
+    let data_hash = BytesN::from_array(&env, &[0x11u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    client.deposit_escrow(&company, &shipment_id, &500i128);
+
+    // Admin performs the first refund.
+    let first = client.try_refund_escrow(&admin, &shipment_id);
+    assert!(
+        first.is_ok(),
+        "admin first refund must succeed when escrow is positive"
+    );
+
+    // Admin attempts a second refund — must fail.
+    let second = client.try_refund_escrow(&admin, &shipment_id);
+    assert!(
+        second.is_err(),
+        "admin second refund on already-refunded shipment must be rejected"
+    );
+    assert_eq!(
+        second,
+        Err(Ok(NavinError::ShipmentFinalized)),
+        "repeat admin refund must be blocked by the finalized guard"
+    );
+}
+
+/// Three consecutive refund attempts must all fail after the first succeeds —
+/// verifying the guard holds across multiple repeated calls.
+#[test]
+fn test_repeated_refund_attempts_all_blocked_after_first() {
+    let (env, client, _admin, company, receiver, carrier) = setup_escrow_env();
+    let data_hash = BytesN::from_array(&env, &[0x12u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    client.deposit_escrow(&company, &shipment_id, &2_000i128);
+
+    // First call succeeds.
+    assert!(client.try_refund_escrow(&company, &shipment_id).is_ok());
+
+    // Subsequent calls must all fail.
+    for _ in 0..3 {
+        let result = client.try_refund_escrow(&company, &shipment_id);
+        assert!(
+            result.is_err(),
+            "every repeat refund attempt must be rejected"
+        );
+        assert_eq!(result, Err(Ok(NavinError::ShipmentFinalized)));
+    }
+}

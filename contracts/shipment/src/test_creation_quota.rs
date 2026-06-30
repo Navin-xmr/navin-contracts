@@ -1055,4 +1055,95 @@ mod tests {
         assert_eq!(used, 3);
         assert_eq!(remaining, 0);
     }
+
+    // ── active shipment count after cancellation (issue #525) ───────────────
+
+    /// Cancelling a shipment must decrement the company's active shipment count.
+    #[test]
+    fn test_active_shipment_count_decrements_on_cancel() {
+        let (env, client, _admin, company, carrier, _token) = setup();
+
+        let count_before = client.get_active_shipment_count(&company);
+        assert_eq!(count_before, 0);
+
+        let id = create_one(&env, &client, &company, &carrier, 1)
+            .expect("shipment creation must succeed");
+        env.ledger().with_mut(|l| l.timestamp += 400);
+
+        let count_after_create = client.get_active_shipment_count(&company);
+        assert_eq!(count_after_create, 1, "active count must be 1 after creating a shipment");
+
+        let reason_hash = make_hash(&env, 0xFF);
+        client.cancel_shipment(&company, &id, &reason_hash);
+
+        let count_after_cancel = client.get_active_shipment_count(&company);
+        assert_eq!(
+            count_after_cancel, 0,
+            "active count must return to 0 after cancellation"
+        );
+    }
+
+    /// Cancelling multiple shipments must decrement the count for each one,
+    /// leaving the quota availability correct after all cancellations.
+    #[test]
+    fn test_active_shipment_count_decrements_for_each_cancellation() {
+        let (env, client, _admin, company, carrier, _token) = setup();
+
+        // Create 3 shipments.
+        let id1 = create_one(&env, &client, &company, &carrier, 1).unwrap();
+        env.ledger().with_mut(|l| l.timestamp += 400);
+        let id2 = create_one(&env, &client, &company, &carrier, 2).unwrap();
+        env.ledger().with_mut(|l| l.timestamp += 400);
+        let id3 = create_one(&env, &client, &company, &carrier, 3).unwrap();
+        env.ledger().with_mut(|l| l.timestamp += 400);
+
+        assert_eq!(client.get_active_shipment_count(&company), 3);
+
+        let reason_hash = make_hash(&env, 0xFE);
+
+        client.cancel_shipment(&company, &id1, &reason_hash);
+        assert_eq!(client.get_active_shipment_count(&company), 2);
+
+        client.cancel_shipment(&company, &id2, &reason_hash);
+        assert_eq!(client.get_active_shipment_count(&company), 1);
+
+        client.cancel_shipment(&company, &id3, &reason_hash);
+        assert_eq!(
+            client.get_active_shipment_count(&company),
+            0,
+            "active count must reach 0 after all shipments are cancelled"
+        );
+    }
+
+    /// After a cancellation, the company should be able to create a new shipment
+    /// that was previously blocked by the active shipment limit.
+    #[test]
+    fn test_quota_availability_restored_after_cancellation() {
+        let (env, client, admin, company, carrier, _token) = setup();
+
+        // Set limit to 1 active shipment.
+        client.set_shipment_limit(&admin, &1);
+
+        // Create the only allowed shipment.
+        let id = create_one(&env, &client, &company, &carrier, 1).unwrap();
+        env.ledger().with_mut(|l| l.timestamp += 400);
+
+        // Attempting to create a second shipment must fail.
+        let result = create_one(&env, &client, &company, &carrier, 2);
+        assert_eq!(result, Err(NavinError::ShipmentLimitReached));
+
+        // Cancel the first shipment.
+        let reason_hash = make_hash(&env, 0xFD);
+        client.cancel_shipment(&company, &id, &reason_hash);
+
+        assert_eq!(client.get_active_shipment_count(&company), 0);
+
+        // After cancellation, creating a new shipment must succeed.
+        env.ledger().with_mut(|l| l.timestamp += 400);
+        let result = create_one(&env, &client, &company, &carrier, 3);
+        assert!(
+            result.is_ok(),
+            "creating a shipment after cancellation must succeed when quota is restored"
+        );
+    }
 }

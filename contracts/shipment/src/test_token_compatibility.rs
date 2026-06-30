@@ -464,3 +464,76 @@ fn test_get_expected_token_decimals_matches_setting() {
         "get_expected_token_decimals must return 7 decimals"
     );
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// ISSUE #540 — `get_expected_token_decimals` query unit tests
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Querying the expected token decimals before the contract has been
+/// initialized must return `NotInitialized`, not a default value. This
+/// protects callers from acting on a stale / unconfigured contract.
+#[test]
+fn issue_540_get_expected_token_decimals_rejected_before_init() {
+    let env = Env::default();
+    let contract_id = env.register(NavinShipment, ());
+    let client = NavinShipmentClient::new(&env, &contract_id);
+
+    let result = client.try_get_expected_token_decimals();
+    assert!(
+        result.is_err(),
+        "get_expected_token_decimals must fail before initialize is called"
+    );
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::NotInitialized)),
+        "pre-init query must return NavinError::NotInitialized"
+    );
+}
+
+/// After initialization, the query must return exactly 7 — the value
+/// hard-coded in `EXPECTED_TOKEN_DECIMALS` and enforced everywhere escrow
+/// math normalizes token amounts.
+#[test]
+fn issue_540_get_expected_token_decimals_returns_seven_after_init() {
+    let ctx = setup_test(TokenVariant::StellarAsset);
+    assert_eq!(
+        ctx.shipment_client.get_expected_token_decimals(),
+        7,
+        "configured expected decimals must equal the EXPECTED_TOKEN_DECIMALS constant (7)"
+    );
+}
+
+/// The query is read-only — it must return the same value across multiple
+/// invocations and is independent of the underlying token variant (SAC vs.
+/// custom NavinToken) since it reports the *expected* decimals policy, not
+/// the actual decimals of any specific token.
+#[test]
+fn issue_540_get_expected_token_decimals_is_stable_across_calls_and_variants() {
+    let sac = setup_test(TokenVariant::StellarAsset);
+    let d1 = sac.shipment_client.get_expected_token_decimals();
+    let d2 = sac.shipment_client.get_expected_token_decimals();
+    let d3 = sac.shipment_client.get_expected_token_decimals();
+    assert_eq!(d1, d2);
+    assert_eq!(d2, d3);
+    assert_eq!(d1, 7);
+
+    let custom = setup_test(TokenVariant::Custom);
+    assert_eq!(
+        custom.shipment_client.get_expected_token_decimals(),
+        7,
+        "expected decimals policy must not depend on the token variant under test"
+    );
+}
+
+/// The query exposes the on-chain `EXPECTED_TOKEN_DECIMALS` constant
+/// itself. A direct constant comparison guards against accidental drift
+/// between the public query and the value enforced by `deposit_escrow`.
+#[test]
+fn issue_540_get_expected_token_decimals_matches_internal_constant() {
+    let ctx = setup_test(TokenVariant::StellarAsset);
+    assert_eq!(
+        ctx.shipment_client.get_expected_token_decimals(),
+        crate::types::EXPECTED_TOKEN_DECIMALS,
+        "the public query must always return the same value the contract enforces internally"
+    );
+}
