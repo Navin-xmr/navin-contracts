@@ -123,10 +123,12 @@ pub fn validate_milestone_symbols(
     env: &Env,
     milestones: &soroban_sdk::Vec<(Symbol, u32)>,
 ) -> Result<(), NavinError> {
-    // Check each milestone symbol for validity
+    // Check each milestone symbol for validity and percentage bounds
     for milestone in milestones.iter() {
         validate_symbol(env, &milestone.0)?;
-        if milestone.1 == 0 {
+        // Reject zero or out-of-bounds percentages (negative values cannot appear
+        // in u32, but values > 100 are equally invalid as percentage weights).
+        if milestone.1 == 0 || milestone.1 > 100 {
             return Err(NavinError::InvalidConfig);
         }
     }
@@ -211,7 +213,10 @@ pub fn validate_amount(amount: i128) -> Result<(), NavinError> {
 /// * `Ok(())` if `amount > 0`.
 /// * `Err(NavinError::InvalidAmount)` otherwise.
 pub fn validate_positive_amount(amount: i128) -> Result<(), NavinError> {
-    if amount <= 0 || amount > MAX_AMOUNT {
+    if amount <= 0 {
+        return Err(NavinError::InsufficientFunds);
+    }
+    if amount > MAX_AMOUNT {
         return Err(NavinError::InvalidAmount);
     }
     Ok(())

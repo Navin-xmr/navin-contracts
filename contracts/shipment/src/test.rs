@@ -1471,7 +1471,8 @@ fn test_update_eta_valid_emits_event() {
     let topic = Symbol::try_from_val(&env, &last.1.get(0).unwrap()).unwrap();
     assert_eq!(topic, Symbol::new(&env, "eta_updated"));
 
-    let event_data = <(u64, u64, BytesN<32>, u32, u32, BytesN<32>)>::try_from_val(&env, &last.2).unwrap();
+    let event_data =
+        <(u64, u64, BytesN<32>, u32, u32, BytesN<32>)>::try_from_val(&env, &last.2).unwrap();
     assert_eq!(event_data.0, shipment_id);
     assert_eq!(event_data.1, eta_timestamp);
     assert_eq!(event_data.2, eta_hash);
@@ -2455,7 +2456,7 @@ fn test_record_milestone_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
+#[should_panic(expected = "Error(Contract, #8)")]
 fn test_deposit_escrow_invalid_amount() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -4761,7 +4762,7 @@ fn test_init_multisig_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #28)")]
+#[should_panic(expected = "Error(Contract, #31)")]
 fn test_init_multisig_invalid_threshold_too_high() {
     let (env, client, admin, token_contract) = setup_shipment_env();
 
@@ -7102,7 +7103,7 @@ fn test_create_shipment_returns_counter_overflow() {
 // ============= Error #14: InvalidAmount Tests =============
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
+#[should_panic(expected = "Error(Contract, #8)")]
 fn test_deposit_escrow_returns_invalid_amount_zero() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -7127,7 +7128,7 @@ fn test_deposit_escrow_returns_invalid_amount_zero() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
+#[should_panic(expected = "Error(Contract, #8)")]
 fn test_deposit_escrow_returns_invalid_amount_negative() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -7604,8 +7605,8 @@ fn test_approve_action_returns_not_an_admin() {
 // ============= Error #28: InvalidMultiSigConfig Tests =============
 
 #[test]
-#[should_panic(expected = "Error(Contract, #28)")]
-fn test_init_multisig_returns_invalid_multisig_config_threshold_too_high() {
+#[should_panic(expected = "Error(Contract, #31)")]
+fn test_init_multisig_returns_invalid_config_threshold_too_high() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let admin2 = Address::generate(&env);
 
@@ -7662,6 +7663,40 @@ fn test_init_multisig_duplicate_admins() {
     client.initialize(&admin, &token_contract);
 
     client.init_multisig(&admin, &admins, &2);
+}
+
+#[test]
+fn test_init_multisig_invalid_config_threshold_exceeds_admin_count() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &token_contract);
+
+    let result = client.try_init_multisig(&admin, &admins, &3);
+
+    assert_eq!(result, Err(Ok(NavinError::InvalidConfig)));
+}
+
+#[test]
+fn test_init_multisig_invalid_multisig_config_threshold_zero() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &token_contract);
+
+    let result = client.try_init_multisig(&admin, &admins, &0);
+
+    assert_eq!(result, Err(Ok(NavinError::InvalidMultiSigConfig)));
 }
 
 // ============= Error #29: NotExpired Tests =============
@@ -11368,11 +11403,10 @@ fn test_recover_shipment_emits_audit_trail() {
 
     client.add_company(&admin, &admin);
 
-    let res = crate::recovery::recover_shipment(
-        &env,
+    let res = client.try_recover_shipment(
         &admin,
-        shipment_id,
-        crate::types::ShipmentStatus::Cancelled,
+        &shipment_id,
+        &crate::types::ShipmentStatus::Cancelled,
         &reason_hash,
     );
     assert!(res.is_ok());
@@ -11389,7 +11423,7 @@ fn test_recover_shipment_emits_audit_trail() {
         }
     }
     assert!(found, "recovery_event was not emitted");
-    
+
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, crate::types::ShipmentStatus::Cancelled);
 }
@@ -11421,7 +11455,7 @@ fn test_unlock_escrow_emits_audit_trail() {
 
     client.add_company(&admin, &admin);
 
-    let res = crate::recovery::unlock_escrow(&env, &admin, shipment_id, &reason_hash);
+    let res = client.try_unlock_escrow(&admin, &shipment_id, &reason_hash);
     assert!(res.is_ok());
 
     let events = env.events().all();
@@ -11436,7 +11470,7 @@ fn test_unlock_escrow_emits_audit_trail() {
         }
     }
     assert!(found, "escrow_unlock_event was not emitted");
-    
+
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.escrow_amount, 0);
 }
@@ -11463,7 +11497,7 @@ fn test_clear_finalization_emits_audit_trail() {
     );
 
     client.cancel_shipment(&company, &shipment_id, &data_hash);
-    
+
     let shipment_pre = client.get_shipment(&shipment_id);
     assert!(shipment_pre.finalized);
 
@@ -11471,7 +11505,7 @@ fn test_clear_finalization_emits_audit_trail() {
 
     client.add_company(&admin, &admin);
 
-    let res = crate::recovery::clear_finalization(&env, &admin, shipment_id, &reason_hash);
+    let res = client.try_clear_finalization(&admin, &shipment_id, &reason_hash);
     assert!(res.is_ok());
 
     let events = env.events().all();
@@ -11486,8 +11520,68 @@ fn test_clear_finalization_emits_audit_trail() {
         }
     }
     assert!(found, "finalization_clear_event was not emitted");
-    
+
     let shipment = client.get_shipment(&shipment_id);
     assert!(!shipment.finalized);
 }
 
+// ── [ISSUE #506] get_admin in multi-admin configurations ─────────────────────
+
+#[test]
+fn test_get_admin_returns_primary_admin_after_multisig_init() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let admin2 = Address::generate(&env);
+    let admin3 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    assert_eq!(
+        client.get_admin(),
+        admin,
+        "get_admin must return the primary admin set during initialize"
+    );
+}
+
+#[test]
+fn test_get_admin_consistent_across_queries_in_multisig_mode() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let admin2 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    let first = client.get_admin();
+    let second = client.get_admin();
+    assert_eq!(first, second, "repeated get_admin calls must return the same address");
+    assert_eq!(first, admin);
+}
+
+#[test]
+fn test_get_admin_unaffected_by_additional_multisig_admins() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let before = client.get_admin();
+
+    let admin2 = Address::generate(&env);
+    let admin3 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3.clone());
+    client.init_multisig(&admin, &admins, &3);
+
+    let after = client.get_admin();
+    assert_eq!(
+        before, after,
+        "get_admin must not change after init_multisig"
+    );
+}

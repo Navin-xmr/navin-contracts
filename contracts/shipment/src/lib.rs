@@ -51,6 +51,8 @@ mod test_archive_restore_consistency;
 #[cfg(test)]
 mod test_auth;
 #[cfg(test)]
+mod test_auth_matrix;
+#[cfg(test)]
 mod test_auto_dispute;
 #[cfg(test)]
 mod test_carrier_relationship;
@@ -104,6 +106,8 @@ mod test_verification;
 mod test_whitelist_multicompany;
 #[cfg(test)]
 mod test_zero_amount_escrow;
+#[cfg(test)]
+mod test_replay_protection;
 
 // ── Fuzz / property-based test harnesses ─────────────────────────────────────
 #[cfg(test)]
@@ -161,6 +165,10 @@ fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(),
 
     let mut total_percentage = 0;
     for milestone in milestones.iter() {
+        // Reject negative percentages (cast to i32 and check sign)
+        if milestone.1 > 100 {
+            return Err(NavinError::InvalidConfig);
+        }
         total_percentage += milestone.1;
     }
 
@@ -175,6 +183,31 @@ fn persist_shipment(env: &Env, shipment: &Shipment) -> Result<(), NavinError> {
     validation::validate_shipment_invariants(shipment)?;
     storage::set_shipment(env, shipment);
     storage::set_escrow(env, shipment.id, shipment.escrow_amount);
+    Ok(())
+}
+
+/// Reject a Symbol that is empty or whitespace-only (Soroban equivalent).
+///
+/// In the Soroban SDK, `Symbol` permits only `[a-zA-Z0-9_]` characters, so
+/// literal whitespace cannot be constructed at all. The closest equivalent of
+/// a "whitespace-only" identifier is an empty Symbol, whose XDR encoding is
+/// exactly 8 bytes (4-byte type tag + 4-byte empty-length word). This helper
+/// returns `NavinError::InvalidSymbol` for such inputs and for Symbols that
+/// exceed the 12-character Stellar maximum, giving registration-adjacent paths
+/// a single canonical guard for malformed symbol inputs.
+pub(crate) fn validate_symbol_not_whitespace_only(
+    env: &Env,
+    sym: &Symbol,
+) -> Result<(), NavinError> {
+    let xdr = sym.to_xdr(env);
+    // 8 bytes → 0-character symbol (empty / whitespace-only equivalent).
+    if xdr.len() <= 8 {
+        return Err(NavinError::InvalidSymbol);
+    }
+    // > 20 bytes → more than 12 characters (exceeds Stellar Symbol limit).
+    if xdr.len() > 20 {
+        return Err(NavinError::InvalidSymbol);
+    }
     Ok(())
 }
 
@@ -359,7 +392,10 @@ fn require_not_finalized(shipment: &Shipment) -> Result<(), NavinError> {
 }
 
 /// Centralized state machine guardrail for all shipment lifecycle transitions.
-pub(crate) fn validate_shipment_transition(from: &ShipmentStatus, to: &ShipmentStatus) -> Result<(), NavinError> {
+pub(crate) fn validate_shipment_transition(
+    from: &ShipmentStatus,
+    to: &ShipmentStatus,
+) -> Result<(), NavinError> {
     if !from.is_valid_transition(to) {
         return Err(NavinError::InvalidStatus);
     }
@@ -652,6 +688,10 @@ impl NavinShipment {
         require_not_paused(&env)?;
         caller.require_auth();
 
+        // Guard against empty / whitespace-only Symbol inputs before the
+        // length-and-collision validation that follows.
+        validate_symbol_not_whitespace_only(&env, &key)?;
+        validate_symbol_not_whitespace_only(&env, &value)?;
         // Validate metadata symbols for bounded usage before storage
         validation::validate_metadata_symbols(&env, &key, &value)?;
 
@@ -941,7 +981,7 @@ impl NavinShipment {
 
         // Initialize with default configuration
         let default_config = ContractConfig::default();
-        config::set_config(&env, &default_config);
+        config::set_config(&env, &default_config).map_err(|_| NavinError::InvalidConfig)?;
         storage::set_shipment_limit(&env, default_config.default_shipment_limit);
 
         events::emit_contract_initialized(&env, &admin, &token_contract);
@@ -1334,6 +1374,14 @@ impl NavinShipment {
         require_not_paused(&env)?;
         company.require_auth();
         require_role(&env, &company, Role::Company)?;
+
+        // Issue #539 — reject duplicate whitelist additions. Without this
+        // check the storage write is silently idempotent and emits a
+        // spurious `add_wl` event, making it impossible for off-chain
+        // monitors to distinguish a re-add from a first-time add.
+        if storage::is_carrier_whitelisted(&env, &company, &carrier) {
+            return Err(NavinError::CarrierAlreadyWhitelisted);
+        }
 
         storage::add_carrier_to_whitelist(&env, &company, &carrier);
 
@@ -4167,11 +4215,11 @@ impl NavinShipment {
             let mut shipment =
                 storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
-            require_not_finalized(&shipment)?;
-
             if caller != shipment.sender && caller != admin {
                 return Err(NavinError::Unauthorized);
             }
+
+            require_not_finalized(&shipment)?;
 
             // Check for suspension if caller is the sender (company)
             if caller == shipment.sender {
@@ -4872,8 +4920,11 @@ impl NavinShipment {
             seen.push_back(admin_addr);
         }
 
-        if threshold == 0 || threshold > admin_count {
+        if threshold == 0 {
             return Err(NavinError::InvalidMultiSigConfig);
+        }
+        if threshold > admin_count {
+            return Err(NavinError::InvalidConfig);
         }
 
         storage::set_admin_list(&env, &admins);
@@ -4932,6 +4983,9 @@ impl NavinShipment {
 
         let now = env.ledger().timestamp();
         let config = config::get_config(&env);
+        if config.proposal_expiry_seconds == 0 {
+            return Err(NavinError::InvalidConfig);
+        }
         let expires_at = now + config.proposal_expiry_seconds;
 
         let mut approvals = soroban_sdk::Vec::new(&env);
@@ -5259,8 +5313,8 @@ impl NavinShipment {
         // Validate the new configuration
         config::validate_config(&new_config).map_err(|_| NavinError::InvalidConfig)?;
 
-        // Store the new configuration
-        config::set_config(&env, &new_config);
+        // Store the new configuration (validates checksum isn't zero)
+        config::set_config(&env, &new_config)?;
 
         // Emit config_updated event
         events::emit_config_updated(&env, &admin, &new_config);
@@ -5824,7 +5878,7 @@ impl NavinShipment {
         let mut cfg = config::get_config(&env);
         cfg.creation_quota_max = max_per_window;
         cfg.creation_quota_window_seconds = window_seconds;
-        config::set_config(&env, &cfg);
+        config::set_config(&env, &cfg).map_err(|_| NavinError::InvalidConfig)?;
 
         events::emit_quota_set(&env, &admin, max_per_window, window_seconds);
 
@@ -5965,7 +6019,13 @@ impl NavinShipment {
         previous_status: ShipmentStatus,
         reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
-        recovery::rollback_on_external_failure(&env, &admin, shipment_id, previous_status, &reason_hash)
+        recovery::rollback_on_external_failure(
+            &env,
+            &admin,
+            shipment_id,
+            previous_status,
+            &reason_hash,
+        )
     }
 }
 

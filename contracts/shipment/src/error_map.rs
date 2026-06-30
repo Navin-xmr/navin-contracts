@@ -432,7 +432,7 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             65,
             InvalidInput,
             NoRetry,
-            "Symbol metadata cannot be empty.",
+            "The provided symbol is empty or invalid.",
         ),
         NavinError::NoteNotFound => (
             66,
@@ -445,6 +445,12 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NotFound,
             NoRetry,
             "Evidence not found or index out of bounds.",
+        ),
+        NavinError::CarrierAlreadyWhitelisted => (
+            68,
+            InvalidState,
+            NoRetry,
+            "Carrier is already on the company's whitelist; duplicate addition is not allowed.",
         ),
     };
 
@@ -624,5 +630,3 @@ mod tests {
         assert_eq!(c.message, d.message);
     }
 }
-
-
