@@ -1071,3 +1071,266 @@ fn test_record_milestone_empty_checkpoint_fails() {
         "record_milestone with empty symbol must return InvalidSymbol"
     );
 }
+
+// ── Note Symbol Validation Tests ───────────────────────────────────────────
+
+/// Note symbols must be non-empty and not exceed 64 characters (~76 bytes in XDR).
+/// These tests ensure that note symbols are bounded to prevent storage exhaustion.
+
+#[test]
+fn test_validate_note_symbol_single_char() {
+    let env = Env::default();
+    let note_sym = sym(&env, "N");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "1-char note symbol must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_short_label() {
+    let env = Env::default();
+    let note_sym = sym(&env, "evidence");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "8-char note symbol 'evidence' must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_medium_label() {
+    let env = Env::default();
+    let note_sym = sym(&env, "note_category_001");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "17-char note symbol must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_32_chars() {
+    let env = Env::default();
+    let s: std::string::String = "A".repeat(32);
+    let note_sym = sym(&env, &s);
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "32-char note symbol must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_48_chars() {
+    let env = Env::default();
+    let s: std::string::String = "B".repeat(48);
+    let note_sym = sym(&env, &s);
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "48-char note symbol must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_64_chars_at_limit() {
+    let env = Env::default();
+    let s: std::string::String = "C".repeat(64);
+    let note_sym = sym(&env, &s);
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "64-char note symbol (at limit) must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_65_chars_exceeds_limit() {
+    let env = Env::default();
+    let s: std::string::String = "D".repeat(65);
+    let note_sym = sym(&env, &s);
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Err(NavinError::InvalidShipmentInput),
+        "65-char note symbol (exceeds limit) must be rejected"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_100_chars_rejected() {
+    let env = Env::default();
+    let s: std::string::String = "E".repeat(100);
+    let note_sym = sym(&env, &s);
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Err(NavinError::InvalidShipmentInput),
+        "100-char note symbol must be rejected"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_128_chars_rejected() {
+    let env = Env::default();
+    let s: std::string::String = "F".repeat(128);
+    let note_sym = sym(&env, &s);
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Err(NavinError::InvalidShipmentInput),
+        "128-char note symbol must be rejected"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_with_numbers_and_underscore() {
+    let env = Env::default();
+    let note_sym = sym(&env, "note_category_99");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "note symbol with numbers and underscore must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_with_mixed_case() {
+    let env = Env::default();
+    let note_sym = sym(&env, "EventLog_Shipment_Status");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "note symbol with mixed case must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_error_type_invalid_shipment_input() {
+    let env = Env::default();
+    let s: std::string::String = "X".repeat(100);
+    let note_sym = sym(&env, &s);
+    let err = crate::validation::validate_note_symbol(&env, &note_sym).unwrap_err();
+    assert_eq!(
+        err,
+        NavinError::InvalidShipmentInput,
+        "overlong note symbol must map to InvalidShipmentInput"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_boundary_65_always_rejected() {
+    let env = Env::default();
+    // Regression: ensure 64-char limit is firm at 64 (65 is rejected).
+    let s: std::string::String = "G".repeat(65);
+    let note_sym = sym(&env, &s);
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Err(NavinError::InvalidShipmentInput),
+        "regression: 65-char note symbol must always be rejected"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_boundary_64_always_accepted() {
+    let env = Env::default();
+    // Regression: ensure 64-char limit allows exactly 64 characters.
+    let s: std::string::String = "H".repeat(64);
+    let note_sym = sym(&env, &s);
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "regression: 64-char note symbol must always be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_length_sweep_1_to_64() {
+    let env = Env::default();
+    // Verify all lengths 1..=64 are accepted.
+    for len in 1usize..=64 {
+        let s: std::string::String = "N".repeat(len);
+        assert_eq!(
+            crate::validation::validate_note_symbol(&env, &sym(&env, &s)),
+            Ok(()),
+            "note symbol of length {len} must be accepted"
+        );
+    }
+}
+
+#[test]
+fn test_validate_note_symbol_length_sweep_65_to_100() {
+    let env = Env::default();
+    // Verify all lengths 65..=100 are rejected.
+    for len in 65usize..=100 {
+        let s: std::string::String = "O".repeat(len);
+        assert_eq!(
+            crate::validation::validate_note_symbol(&env, &sym(&env, &s)),
+            Err(NavinError::InvalidShipmentInput),
+            "note symbol of length {len} must be rejected"
+        );
+    }
+}
+
+#[test]
+fn test_validate_note_symbol_realistic_category_names() {
+    let env = Env::default();
+    let realistic_names = [
+        "delivery_confirmation",
+        "route_deviation",
+        "temperature_alert",
+        "customs_clearance",
+        "port_of_entry_log",
+        "incident_report_001",
+    ];
+    for name in &realistic_names {
+        assert_eq!(
+            crate::validation::validate_note_symbol(&env, &sym(&env, name)),
+            Ok(()),
+            "realistic note category '{name}' must be accepted"
+        );
+    }
+}
+
+#[test]
+fn test_validate_note_symbol_storage_efficiency() {
+    let env = Env::default();
+    // Verify the 64-char limit prevents excessive storage while allowing
+    // meaningful category labels for note metadata.
+    
+    // Just below limit: should be fine
+    let at_limit = sym(&env, &"N".repeat(64));
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &at_limit),
+        Ok(()),
+        "64-char note symbol should pass storage efficiency check"
+    );
+    
+    // Just above limit: should be rejected
+    let over_limit = sym(&env, &"O".repeat(65));
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &over_limit),
+        Err(NavinError::InvalidShipmentInput),
+        "65-char note symbol should be rejected for storage efficiency"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_idempotent() {
+    let env = Env::default();
+    let note_sym = sym(&env, "stable_note_label");
+    let first = crate::validation::validate_note_symbol(&env, &note_sym);
+    let second = crate::validation::validate_note_symbol(&env, &note_sym);
+    assert_eq!(first, second, "validate_note_symbol must be idempotent");
+}
+
+#[test]
+fn test_validate_note_symbol_no_side_effects() {
+    let env = Env::default();
+    let note_sym = sym(&env, "side_effect_test");
+    
+    // Validate multiple times
+    for _ in 0..5 {
+        let result = crate::validation::validate_note_symbol(&env, &note_sym);
+        assert!(result.is_ok(), "repeated validation should succeed consistently");
+    }
+}

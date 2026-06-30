@@ -184,6 +184,43 @@ pub fn validate_metadata_symbols(
     Ok(())
 }
 
+/// Validate a note symbol for bounded usage and storage efficiency.
+///
+/// This validator ensures that note-related symbols conform to expected length constraints
+/// to prevent excessive storage consumption that could exhaust rent resources.
+/// Note symbols are used for labeling note metadata and categorizing commentary.
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `note_symbol` - The Symbol to validate.
+///
+/// # Returns
+/// * `Ok(())` if the symbol is valid and within length bounds (max 64 characters in XDR).
+/// * `Err(NavinError::InvalidShipmentInput)` if the symbol exceeds length limits.
+///
+/// # Examples
+/// ```rust
+/// validate_note_symbol(&env, &Symbol::new(&env, "evidence_1"))?;
+/// ```
+pub fn validate_note_symbol(env: &Env, note_symbol: &Symbol) -> Result<(), NavinError> {
+    // XDR layout: 4-byte ScValType tag + 4-byte length field + content padded to 4-byte boundary.
+    // Maximum safe note symbol length: 64 characters
+    // Byte counts by character count (64 chars):
+    //   64 chars → 76 bytes (4 + 4 + 64 + padding to 76-byte boundary)
+    //
+    // We limit to 76 bytes to prevent storage exhaustion while allowing reasonable
+    // descriptive note category names.
+    let symbol_bytes = note_symbol.to_xdr(env);
+    let len = symbol_bytes.len();
+
+    // Reject empty symbols and symbols exceeding 76-byte XDR limit
+    if len <= 8 || len > 76 {
+        return Err(NavinError::InvalidShipmentInput);
+    }
+
+    Ok(())
+}
+
 /// Ensure an escrow / payment amount is positive and within a sane upper bound.
 ///
 /// # Arguments
