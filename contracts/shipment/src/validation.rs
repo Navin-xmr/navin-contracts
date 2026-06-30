@@ -122,11 +122,11 @@ pub fn validate_milestone_symbols(
 ) -> Result<(), NavinError> {
     // Check each milestone symbol for validity and percentage bounds
     for milestone in milestones.iter() {
-        validate_symbol(env, &milestone.0)?;
-        // Reject zero or out-of-bounds percentages (negative values cannot appear
-        // in u32, but values > 100 are equally invalid as percentage weights).
+        // Reject invalid milestone name format with a dedicated error code.
+        validate_symbol(env, &milestone.0).map_err(|_| NavinError::InvalidPaymentMilestoneName)?;
+        // Reject zero or out-of-bounds percentages with a dedicated error code.
         if milestone.1 == 0 || milestone.1 > 100 {
-            return Err(NavinError::InvalidConfig);
+            return Err(NavinError::InvalidPaymentMilestones);
         }
     }
 
