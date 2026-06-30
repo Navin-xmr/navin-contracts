@@ -86,7 +86,69 @@ pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
     Ok(())
 }
 
-/// Validate a milestone checkpoint symbol for bounded usage and non-emptiness.
+/// Validate that every character in a Symbol is alphanumeric or underscore.
+///
+/// Soroban's `Symbol::new` enforces `[a-zA-Z0-9_]` at SDK level, but this
+/// function provides an explicit on-chain character-level check for the
+/// milestone and checkpoint paths. It is the canonical guard against any
+/// symbol that bypasses SDK construction with non-standard characters
+/// (e.g., HTML sequences, backslashes, pipes) that could compromise
+/// indexer storage parsing.
+///
+/// # Arguments
+/// * `env`    - Execution environment (used for XDR serialisation).
+/// * `symbol` - The Symbol whose character content to inspect.
+///
+/// # Returns
+/// * `Ok(())` if every character is in `[A-Za-z0-9_]`.
+/// * `Err(NavinError::InvalidSymbol)` if any character falls outside that set,
+///   or if the symbol is empty.
+///
+/// # Implementation note
+/// XDR layout for a `ScSymbol`: `[4-byte tag][4-byte length field][content bytes
+/// padded to next 4-byte boundary]`.  The raw content starts at byte offset 8.
+/// Padding bytes are `\0` and are skipped (they fall outside `[A-Za-z0-9_]` but
+/// must not trigger rejection).  The actual character count is taken from the
+/// 4-byte big-endian length field stored in bytes 4–7.
+pub fn validate_symbol_chars(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
+    let xdr = symbol.to_xdr(env);
+    let raw: [u8; 32] = {
+        // xdr may be 8–20 bytes for valid symbols; zero-extend to 32 for uniform handling.
+        let mut buf = [0u8; 32];
+        let src_len = (xdr.len() as usize).min(32);
+        for i in 0..src_len {
+            buf[i] = xdr.get(i as u32).unwrap_or(0);
+        }
+        buf
+    };
+
+    // Extract the 4-byte big-endian content length from bytes 4–7.
+    let char_count = u32::from_be_bytes([raw[4], raw[5], raw[6], raw[7]]) as usize;
+
+    // Empty symbol — treated the same as InvalidSymbol.
+    if char_count == 0 {
+        return Err(NavinError::InvalidSymbol);
+    }
+
+    // Content bytes start at offset 8.
+    for i in 0..char_count {
+        let byte = raw[8 + i];
+        let valid = byte.is_ascii_alphanumeric() || byte == b'_';
+        if !valid {
+            return Err(NavinError::InvalidSymbol);
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate a milestone checkpoint symbol for bounded usage, non-emptiness,
+/// and valid character content.
+///
+/// This is the single call-site guard for all checkpoint symbols on the
+/// `record_milestone` and `record_milestones_batch` paths.  It combines:
+/// 1. Length check (1–12 characters).
+/// 2. Character-set check (alphanumeric + underscore only).
 pub fn validate_checkpoint_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
     let symbol_bytes = symbol.to_xdr(env);
     let len = symbol_bytes.len();
@@ -98,6 +160,9 @@ pub fn validate_checkpoint_symbol(env: &Env, symbol: &Symbol) -> Result<(), Navi
     if !(12..=20).contains(&len) {
         return Err(NavinError::InvalidSymbol);
     }
+
+    // Character-level validation: only [A-Za-z0-9_] allowed.
+    validate_symbol_chars(env, symbol)?;
 
     Ok(())
 }
@@ -125,6 +190,12 @@ pub fn validate_milestone_symbols(
 ) -> Result<(), NavinError> {
     // Check each milestone symbol for validity and percentage bounds
     for milestone in milestones.iter() {
+        validate_symbol(env, &milestone.0)?;
+        // Character-level guard: only [A-Za-z0-9_] allowed in milestone symbols.
+        // Returns InvalidSymbol for any special-character content.
+        validate_symbol_chars(env, &milestone.0).map_err(|_| NavinError::InvalidSymbol)?;
+        // Reject zero or out-of-bounds percentages (negative values cannot appear
+        // in u32, but values > 100 are equally invalid as percentage weights).
         // Reject invalid milestone name format with a dedicated error code.
         validate_symbol(env, &milestone.0).map_err(|_| NavinError::InvalidPaymentMilestoneName)?;
         // Reject zero or out-of-bounds percentages with a dedicated error code.
