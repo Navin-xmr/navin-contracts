@@ -446,6 +446,12 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "Evidence not found or index out of bounds.",
         ),
+        NavinError::CarrierAlreadyWhitelisted => (
+            68,
+            InvalidState,
+            NoRetry,
+            "Carrier is already on the company's whitelist; duplicate addition is not allowed.",
+        ),
     };
 
     ContractErrorInfo {

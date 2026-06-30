@@ -718,6 +718,21 @@ fn test_config_checksum_raw_compute_matches_saved() {
     assert_eq!(saved, recomputed, "saved checksum must match recomputed");
 }
 
+/// The checksum of the default configuration is a non-zero, deterministic value.
+///
+/// This guards against `compute_config_checksum` returning an all-zero hash
+/// for any realistic config — a zero checksum would defeat drift detection.
+#[test]
+fn test_config_checksum_never_zero_for_defaults() {
+    let (env, client, _admin, _) = setup();
+    let checksum = client.get_config_checksum();
+    let bytes: [u8; 32] = checksum.to_array();
+    assert!(
+        bytes.iter().any(|&b| b != 0),
+        "Config checksum for default ContractConfig must not be all zeros"
+    );
+}
+
 // ── [ISSUE #453] Carrier reverse-lookup consistency tests ───────────────────
 
 /// Test: Add forward whitelist entries and verify they can be read back.
@@ -1104,8 +1119,14 @@ fn test_carrier_whitelist_parameter_order_matters() {
     );
 }
 
-/// Test: Repeated add operations are idempotent.
-/// This ensures adding the same carrier multiple times has no adverse effects.
+/// Test: Repeated add operations are now rejected (issue #539).
+///
+/// Originally this contract treated duplicate whitelist adds as silently
+/// idempotent. Issue #539 hardened that path: the first add succeeds, and
+/// subsequent adds for the same (company, carrier) pair return
+/// `CarrierAlreadyWhitelisted`. The underlying state remains consistent
+/// after the rejection — exactly one entry persists, and a single remove
+/// clears it as before.
 #[test]
 fn test_carrier_whitelist_add_idempotent() {
     let (env, client, admin, _) = setup();
@@ -1115,22 +1136,35 @@ fn test_carrier_whitelist_add_idempotent() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    // Add carrier multiple times
-    client.add_carrier_to_whitelist(&company, &carrier);
-    client.add_carrier_to_whitelist(&company, &carrier);
+    // First add succeeds.
     client.add_carrier_to_whitelist(&company, &carrier);
 
-    // Should still be whitelisted (no error, state is correct)
-    assert!(
-        client.is_carrier_whitelisted(&company, &carrier),
-        "carrier should be whitelisted after multiple adds"
+    // Subsequent adds for the same pair are now rejected with a typed error.
+    let dup = client.try_add_carrier_to_whitelist(&company, &carrier);
+    assert_eq!(
+        dup,
+        Err(Ok(crate::NavinError::CarrierAlreadyWhitelisted)),
+        "duplicate whitelist add must surface CarrierAlreadyWhitelisted (issue #539)"
+    );
+    let dup2 = client.try_add_carrier_to_whitelist(&company, &carrier);
+    assert_eq!(
+        dup2,
+        Err(Ok(crate::NavinError::CarrierAlreadyWhitelisted)),
+        "rejection must be stable across multiple duplicate attempts"
     );
 
-    // Remove once should clear it
+    // State is unchanged — the original entry persists.
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "carrier must remain whitelisted after rejected duplicate adds"
+    );
+
+    // Single remove still clears it (no phantom extra entries from the
+    // rejected adds).
     client.remove_carrier_from_whitelist(&company, &carrier);
     assert!(
         !client.is_carrier_whitelisted(&company, &carrier),
-        "carrier should not be whitelisted after single remove"
+        "single remove must clear the carrier after rejected duplicates"
     );
 }
 
@@ -1216,4 +1250,75 @@ fn test_upgrade_preserves_analytics_counters() {
         let escrow2 = crate::storage::get_escrow(&env, id2);
         assert_eq!(escrow2, 500);
     });
+}
+
+// ── [ISSUE #530] get_version read-only method update tests ──────────────────
+
+#[test]
+fn test_get_version_returns_initial_version_one() {
+    let (_env, client, _admin, _token) = setup();
+    assert_eq!(
+        client.get_version(),
+        1,
+        "get_version must return 1 immediately after initialize"
+    );
+}
+
+#[test]
+fn test_get_version_reflects_simulated_upgrade() {
+    let (env, client, _admin, _token) = setup();
+
+    let initial = client.get_version();
+
+    env.as_contract(&client.address, || {
+        crate::storage::set_version(&env, initial + 1);
+    });
+
+    let after = client.get_version();
+    assert_eq!(
+        after,
+        initial + 1,
+        "get_version must reflect the incremented value after simulated upgrade"
+    );
+}
+
+#[test]
+fn test_get_version_increments_match_target_after_upgrade() {
+    let (env, client, admin, _token) = setup();
+
+    let initial = client.get_version();
+    let target = initial + 1;
+
+    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
+    let contract_id = client.address.clone();
+    client.upgrade(&admin, &new_wasm_hash, &target);
+
+    env.as_contract(&contract_id, || {
+        let post = crate::storage::get_version(&env);
+        assert_eq!(
+            post, target,
+            "version must equal the target_version passed to upgrade"
+        );
+    });
+}
+
+#[test]
+fn test_get_version_is_stable_across_repeated_reads() {
+    let (env, client, _admin, _token) = setup();
+
+    let v1 = client.get_version();
+
+    env.as_contract(&client.address, || {
+        crate::storage::set_version(&env, 5);
+    });
+
+    let v2 = client.get_version();
+    let v3 = client.get_version();
+    let v4 = client.get_version();
+
+    assert_eq!(v2, v3, "repeated get_version must return the same value");
+    assert_eq!(v3, v4, "repeated get_version must return the same value");
+    assert_eq!(v2, 5);
+    let _ = v1;
 }

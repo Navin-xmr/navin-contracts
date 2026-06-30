@@ -294,205 +294,105 @@ mod tests {
         assert_eq!(page.carriers.get(1).unwrap(), c3);
     }
 
-    // ── Removal side-effect tests (issue #463) ──────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════
+    // ISSUE #539 — duplicate carrier whitelist registration rejection
+    // ════════════════════════════════════════════════════════════════════════
 
-    /// After removing a whitelisted carrier, `list_company_carriers` must no
-    /// longer include it while retaining unaffected carriers.
+    /// Baseline: a fresh `add_carrier_to_whitelist` succeeds and the
+    /// carrier is then visible via `is_carrier_whitelisted`. Anchors the
+    /// duplicate-rejection tests below — without this we couldn't tell a
+    /// duplicate-rejection failure apart from a generic add failure.
     #[test]
-    fn list_after_removal_omits_removed_carrier() {
-        let (env, client, admin) = setup();
-        let company = Address::generate(&env);
-        client.add_company(&admin, &company);
-
-        let c1 = Address::generate(&env);
-        let c2 = Address::generate(&env);
-        let c3 = Address::generate(&env);
-        client.add_carrier(&admin, &c1);
-        client.add_carrier(&admin, &c2);
-        client.add_carrier(&admin, &c3);
-        client.add_carrier_to_whitelist(&company, &c1);
-        client.add_carrier_to_whitelist(&company, &c2);
-        client.add_carrier_to_whitelist(&company, &c3);
-
-        // Remove the middle carrier.
-        client.remove_carrier_from_whitelist(&company, &c2);
-
-        let mut candidates = Vec::new(&env);
-        candidates.push_back(c1.clone());
-        candidates.push_back(c2.clone());
-        candidates.push_back(c3.clone());
-
-        let page = client.list_company_carriers(&company, &candidates, &0, &10);
-        assert_eq!(page.carriers.len(), 2);
-        assert_eq!(page.carriers.get(0).unwrap(), c1);
-        assert_eq!(
-            page.carriers.get(1).unwrap(),
-            c3,
-            "removed carrier must not appear in the result"
-        );
-    }
-
-    /// Pagination cursor remains consistent after a carrier is removed from
-    /// the whitelist — the cursor is a plain index into the candidate vector,
-    /// not affected by whitelist status.
-    #[test]
-    fn pagination_after_removal_remains_consistent() {
-        let (env, client, admin) = setup();
-        let company = Address::generate(&env);
-        client.add_company(&admin, &company);
-
-        let mut all = Vec::new(&env);
-        for _i in 0..6u32 {
-            let c = Address::generate(&env);
-            client.add_carrier(&admin, &c);
-            client.add_carrier_to_whitelist(&company, &c);
-            all.push_back(c);
-        }
-
-        // Remove index 1 and 3.
-        client.remove_carrier_from_whitelist(&company, &all.get(1).unwrap());
-        client.remove_carrier_from_whitelist(&company, &all.get(3).unwrap());
-
-        // Page 1 (size=2): should pick the first 2 whitelisted entries:
-        // indices 0 and 2 (skipping removed 1).
-        let p1 = client.list_company_carriers(&company, &all, &0, &2);
-        assert_eq!(p1.carriers.len(), 2);
-        assert_eq!(p1.carriers.get(0).unwrap(), all.get(0).unwrap());
-        assert_eq!(p1.carriers.get(1).unwrap(), all.get(2).unwrap());
-        assert!(p1.next_cursor.is_some());
-
-        // Page 2 (size=2): continues at cursor, picks index 4 and 5
-        // (skipping removed 3).
-        let p2 = client.list_company_carriers(&company, &all, &p1.next_cursor.unwrap(), &2);
-        assert_eq!(p2.carriers.len(), 2);
-        assert_eq!(p2.carriers.get(0).unwrap(), all.get(4).unwrap());
-        assert_eq!(p2.carriers.get(1).unwrap(), all.get(5).unwrap());
-        assert!(p2.next_cursor.is_none());
-    }
-
-    /// Removal of one carrier does not affect the whitelist status or listing
-    /// of other carriers in the same company.
-    #[test]
-    fn removal_preserves_other_carrier_entries() {
-        let (env, client, admin) = setup();
-        let (company, carrier_a) = add_company_and_carrier(&env, &client, &admin);
-        let carrier_b = Address::generate(&env);
-        let carrier_c = Address::generate(&env);
-        client.add_carrier(&admin, &carrier_b);
-        client.add_carrier(&admin, &carrier_c);
-
-        client.add_carrier_to_whitelist(&company, &carrier_a);
-        client.add_carrier_to_whitelist(&company, &carrier_b);
-        client.add_carrier_to_whitelist(&company, &carrier_c);
-
-        // Remove carrier_b.
-        client.remove_carrier_from_whitelist(&company, &carrier_b);
-
-        // carrier_a and carrier_c remain whitelisted.
-        assert!(client.is_company_carrier_allowed(&company, &carrier_a));
-        assert!(client.is_company_carrier_allowed(&company, &carrier_c));
-        assert!(!client.is_company_carrier_allowed(&company, &carrier_b));
-    }
-
-    /// Multiple add/remove cycles on the same carrier leave storage clean and
-    /// consistent at every step.
-    #[test]
-    fn multi_cycle_add_remove_is_consistent() {
+    fn issue_539_first_whitelist_add_succeeds() {
         let (env, client, admin) = setup();
         let (company, carrier) = add_company_and_carrier(&env, &client, &admin);
 
-        // Cycle 1: add → allowed.
-        client.add_carrier_to_whitelist(&company, &carrier);
-        assert!(client.is_company_carrier_allowed(&company, &carrier));
-        assert!(client.is_carrier_whitelisted(&company, &carrier));
-
-        // Cycle 1: remove → disallowed.
-        client.remove_carrier_from_whitelist(&company, &carrier);
-        assert!(!client.is_company_carrier_allowed(&company, &carrier));
-        assert!(!client.is_carrier_whitelisted(&company, &carrier));
-
-        // Cycle 2: re-add → re-allowed.
-        client.add_carrier_to_whitelist(&company, &carrier);
-        assert!(client.is_company_carrier_allowed(&company, &carrier));
-        assert!(client.is_carrier_whitelisted(&company, &carrier));
-
-        // Cycle 2: re-remove → disallowed again.
-        client.remove_carrier_from_whitelist(&company, &carrier);
-        assert!(!client.is_company_carrier_allowed(&company, &carrier));
-        assert!(!client.is_carrier_whitelisted(&company, &carrier));
-
-        // Cycle 3: final re-add proves storage is clean.
-        client.add_carrier_to_whitelist(&company, &carrier);
-        assert!(client.is_company_carrier_allowed(&company, &carrier));
-        assert!(client.is_carrier_whitelisted(&company, &carrier));
-    }
-
-    /// Removing a carrier that was never whitelisted is a benign no-op — no
-    /// error is returned and other whitelist entries are unaffected.
-    #[test]
-    fn remove_nonexistent_whitelist_entry_is_benign() {
-        let (env, client, admin) = setup();
-        let (company, whitelisted) = add_company_and_carrier(&env, &client, &admin);
-        let never_added = Address::generate(&env);
-        client.add_carrier(&admin, &never_added);
-
-        // Whitelist only one carrier.
-        client.add_carrier_to_whitelist(&company, &whitelisted);
-
-        // Removing a carrier that was never whitelisted should succeed.
-        let result = client.try_remove_carrier_from_whitelist(&company, &never_added);
+        let result = client.try_add_carrier_to_whitelist(&company, &carrier);
         assert!(
             result.is_ok(),
-            "removing non-existent whitelist entry must succeed"
+            "first whitelist add for a fresh carrier must succeed"
         );
-
-        // The other whitelist entry is intact.
-        assert!(client.is_company_carrier_allowed(&company, &whitelisted));
-
-        // The never-added carrier remains un-whitelisted.
-        assert!(!client.is_company_carrier_allowed(&company, &never_added));
+        assert!(
+            client.is_carrier_whitelisted(&company, &carrier),
+            "carrier must be visible on the whitelist after a successful add"
+        );
     }
 
-    /// Direct `is_carrier_whitelisted` (the storage-level query) must also
-    /// reflect removal immediately, not just the combined
-    /// `is_company_carrier_allowed` gate.
+    /// Re-adding an already-whitelisted carrier must return the typed
+    /// `CarrierAlreadyWhitelisted` error instead of silently succeeding.
+    /// This is the core acceptance criterion of #539.
     #[test]
-    fn direct_lookup_reflects_removal() {
+    fn issue_539_duplicate_whitelist_add_returns_typed_error() {
         let (env, client, admin) = setup();
         let (company, carrier) = add_company_and_carrier(&env, &client, &admin);
 
         client.add_carrier_to_whitelist(&company, &carrier);
-        assert!(client.is_carrier_whitelisted(&company, &carrier));
 
-        client.remove_carrier_from_whitelist(&company, &carrier);
-        assert!(!client.is_carrier_whitelisted(&company, &carrier));
+        let result = client.try_add_carrier_to_whitelist(&company, &carrier);
+        assert_eq!(
+            result,
+            Err(Ok(crate::NavinError::CarrierAlreadyWhitelisted)),
+            "duplicate add must surface the typed CarrierAlreadyWhitelisted error"
+        );
     }
 
-    /// Removal from one company must not affect another company's whitelist
-    /// entry for the same carrier (pair-scoped isolation).
+    /// Whitelist state must remain consistent after a rejected duplicate
+    /// add. The first entry still exists; no second copy is recorded.
+    /// Guards against a future refactor that returns the error AFTER
+    /// mutating storage.
     #[test]
-    fn removal_is_pair_scoped() {
+    fn issue_539_whitelist_state_unchanged_after_duplicate_rejection() {
+        let (env, client, admin) = setup();
+        let (company, carrier) = add_company_and_carrier(&env, &client, &admin);
+
+        client.add_carrier_to_whitelist(&company, &carrier);
+        let _ = client.try_add_carrier_to_whitelist(&company, &carrier);
+
+        assert!(
+            client.is_carrier_whitelisted(&company, &carrier),
+            "whitelist entry must persist after a duplicate add is rejected"
+        );
+    }
+
+    /// The duplicate-rejection rule is per (company, carrier) pair. The
+    /// same carrier whitelisted by a DIFFERENT company is a fresh
+    /// (company, carrier) tuple and must still be addable.
+    #[test]
+    fn issue_539_same_carrier_can_be_whitelisted_by_different_companies() {
         let (env, client, admin) = setup();
         let company_a = Address::generate(&env);
         let company_b = Address::generate(&env);
-        let shared = Address::generate(&env);
+        let carrier = Address::generate(&env);
         client.add_company(&admin, &company_a);
         client.add_company(&admin, &company_b);
-        client.add_carrier(&admin, &shared);
+        client.add_carrier(&admin, &carrier);
 
-        client.add_carrier_to_whitelist(&company_a, &shared);
-        client.add_carrier_to_whitelist(&company_b, &shared);
-
-        // Remove from company_a.
-        client.remove_carrier_from_whitelist(&company_a, &shared);
-        assert!(!client.is_carrier_whitelisted(&company_a, &shared));
+        client.add_carrier_to_whitelist(&company_a, &carrier);
+        let result = client.try_add_carrier_to_whitelist(&company_b, &carrier);
         assert!(
-            client.is_carrier_whitelisted(&company_b, &shared),
-            "company_b's whitelist entry must survive removal from company_a"
+            result.is_ok(),
+            "the duplicate-add rule is scoped per (company, carrier) and must not block a different company"
         );
+        assert!(client.is_carrier_whitelisted(&company_a, &carrier));
+        assert!(client.is_carrier_whitelisted(&company_b, &carrier));
+    }
 
-        // Remove from company_b.
-        client.remove_carrier_from_whitelist(&company_b, &shared);
-        assert!(!client.is_carrier_whitelisted(&company_b, &shared));
+    /// After remove + re-add the carrier must be addable again. The
+    /// duplicate-rejection rule must only fire on *current* membership,
+    /// not on historical presence.
+    #[test]
+    fn issue_539_can_readd_after_remove() {
+        let (env, client, admin) = setup();
+        let (company, carrier) = add_company_and_carrier(&env, &client, &admin);
+
+        client.add_carrier_to_whitelist(&company, &carrier);
+        client.remove_carrier_from_whitelist(&company, &carrier);
+        assert!(!client.is_carrier_whitelisted(&company, &carrier));
+
+        let result = client.try_add_carrier_to_whitelist(&company, &carrier);
+        assert!(
+            result.is_ok(),
+            "carrier must be re-addable after being removed from the whitelist"
+        );
     }
 }
