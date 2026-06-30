@@ -31,8 +31,10 @@ mod test_mixed_token_shipments;
 #[cfg(test)]
 mod test_reentrancy_guard;
 #[cfg(test)]
-mod test_token_compatibility;
+mod test_replay_protection;
 
+#[cfg(test)]
+mod test_token_compatibility;
 #[cfg(test)]
 mod test_event_fixtures;
 #[cfg(test)]
@@ -3302,6 +3304,7 @@ impl NavinShipment {
         require_initialized(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
+        require_active_carrier(&env, &carrier)?;
 
         // Verify shipment exists and carrier is assigned
         let shipment =
@@ -4241,11 +4244,11 @@ impl NavinShipment {
             let mut shipment =
                 storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
-            require_not_finalized(&shipment)?;
-
             if caller != shipment.sender && caller != admin {
                 return Err(NavinError::Unauthorized);
             }
+
+            require_not_finalized(&shipment)?;
 
             // Check for suspension if caller is the sender (company)
             if caller == shipment.sender {
@@ -4994,6 +4997,13 @@ impl NavinShipment {
         // Check if proposer is in admin list
         if !storage::is_admin(&env, &proposer) {
             return Err(NavinError::NotAnAdmin);
+        }
+
+        // Validate action
+        if let crate::types::AdminAction::Upgrade(hash) = &action {
+            if hash.to_array() == [0u8; 32] {
+                return Err(NavinError::InvalidHash);
+            }
         }
 
         let proposal_id = storage::get_proposal_counter(&env)

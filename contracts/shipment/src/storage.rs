@@ -1152,10 +1152,16 @@ pub fn get_total_escrow_volume(env: &Env) -> i128 {
 
 /// Add an amount to the total escrow volume.
 pub fn add_total_escrow_volume(env: &Env, amount: i128) -> Result<(), NavinError> {
+    if amount < 0 {
+        return Err(NavinError::ArithmeticError);
+    }
     let current = get_total_escrow_volume(env);
     let updated = current
         .checked_add(amount)
         .ok_or(NavinError::ArithmeticError)?;
+    if updated < 0 {
+        return Err(NavinError::ArithmeticError);
+    }
     env.storage()
         .instance()
         .set(&DataKey::TotalEscrowVolume, &updated);
