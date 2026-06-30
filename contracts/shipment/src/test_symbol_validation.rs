@@ -1040,11 +1040,12 @@ fn test_record_milestone_empty_checkpoint_fails() {
     client.add_carrier_to_whitelist(&company, &carrier);
 
     let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[3u8; 32]);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
         &carrier,
-        &BytesN::from_array(&env, &[3u8; 32]),
+        &data_hash,
         &SorobanVec::new(&env),
         &deadline,
     );

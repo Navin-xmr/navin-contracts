@@ -24,7 +24,7 @@ use crate::{NavinShipment, NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::{
     contract, contractimpl,
     testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation, Ledger as _},
-    Address, BytesN, Env, IntoVal, Symbol,
+    Address, BytesN, Env, IntoVal, Symbol, Vec,
 };
 
 // ── Minimal token stub (no-op transfer) ──────────────────────────────────────
@@ -841,6 +841,105 @@ fn test_wrong_role_suspend_company_returns_error() {
     assert!(
         result.is_err(),
         "non-admin must not be able to suspend a company"
+    );
+}
+
+// =============================================================================
+// Multi-sig path — positive auth-tree assertions (issue #464)
+// =============================================================================
+
+/// `init_multisig` must record an auth invocation for the admin with the
+/// correct admin list and threshold.
+#[test]
+fn test_auth_tree_init_multisig() {
+    let (env, client, admin, _token) = setup_env();
+    let cid = contract_id(&client);
+    let admin2 = Address::generate(&env);
+    let mut admins = Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    client.init_multisig(&admin, &admins, &2);
+
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    cid,
+                    Symbol::new(&env, "init_multisig"),
+                    (admin.clone(), admins.clone(), 2_u32).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            }
+        )]
+    );
+}
+
+/// `propose_action` must record an auth invocation for the proposer with
+/// the correct action argument.
+#[test]
+fn test_auth_tree_propose_action() {
+    let (env, client, admin, _token) = setup_env();
+    let cid = contract_id(&client);
+    let admin2 = Address::generate(&env);
+    let mut admins = Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+    client.init_multisig(&admin, &admins, &2);
+
+    let new_admin = Address::generate(&env);
+    let action = crate::types::AdminAction::TransferAdmin(new_admin.clone());
+    client.propose_action(&admin, &action);
+
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    cid,
+                    Symbol::new(&env, "propose_action"),
+                    (admin.clone(), action).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            }
+        )]
+    );
+}
+
+/// `approve_action` must record an auth invocation for the approver with
+/// the correct proposal ID.
+#[test]
+fn test_auth_tree_approve_action() {
+    let (env, client, admin, _token) = setup_env();
+    let cid = contract_id(&client);
+    let admin2 = Address::generate(&env);
+    let mut admins = Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    let new_admin = Address::generate(&env);
+    let action = crate::types::AdminAction::TransferAdmin(new_admin);
+    let proposal_id = client.propose_action(&admin, &action);
+
+    client.approve_action(&admin2, &proposal_id);
+
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin2.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    cid,
+                    Symbol::new(&env, "approve_action"),
+                    (admin2.clone(), proposal_id).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            }
+        )]
     );
 }
 
