@@ -235,6 +235,142 @@ mod tests {
         assert_eq!(result, Err(Ok(NavinError::CreationQuotaExceeded)));
     }
 
+    #[test]
+    fn batch_exceeds_remaining_quota_exactly_is_rejected() {
+        use crate::types::ShipmentInput;
+        let (env, client, admin, company, carrier, _token) = setup();
+
+        client.set_creation_quota(&admin, &5, &3600);
+
+        // Consume 3 of 5 quota slots individually.
+        for seed in 1u8..=3 {
+            assert!(create_one(&env, &client, &company, &carrier, seed).is_ok());
+            env.ledger().with_mut(|l| l.timestamp += 400);
+        }
+
+        let (used, remaining) = client.get_creation_quota_status(&company);
+        assert_eq!(used, 3);
+        assert_eq!(remaining, 2);
+
+        // Batch of 3 exceeds the 2 remaining slots by exactly one.
+        let deadline = future_deadline(&env);
+        let mut inputs = soroban_sdk::Vec::new(&env);
+        for seed in 10u8..=12 {
+            inputs.push_back(ShipmentInput {
+                receiver: Address::generate(&env),
+                carrier: carrier.clone(),
+                data_hash: make_hash(&env, seed),
+                payment_milestones: soroban_sdk::Vec::new(&env),
+                deadline,
+            });
+        }
+
+        let counter_before = client.get_shipment_counter();
+        let result = client.try_create_shipments_batch(&company, &inputs);
+        assert_eq!(result, Err(Ok(NavinError::CreationQuotaExceeded)));
+
+        let (used_after, remaining_after) = client.get_creation_quota_status(&company);
+        assert_eq!(used_after, used, "quota usage must not change on rejection");
+        assert_eq!(
+            remaining_after, remaining,
+            "remaining quota must not change on rejection"
+        );
+        assert_eq!(
+            client.get_shipment_counter(),
+            counter_before,
+            "shipment counter must not advance when batch is rejected"
+        );
+    }
+
+    #[test]
+    fn batch_over_quota_writes_no_partial_shipments() {
+        use crate::types::ShipmentInput;
+        let (env, client, admin, company, carrier, _token) = setup();
+
+        client.set_creation_quota(&admin, &4, &3600);
+
+        assert!(create_one(&env, &client, &company, &carrier, 1).is_ok());
+        env.ledger().with_mut(|l| l.timestamp += 400);
+        let id2 = create_one(&env, &client, &company, &carrier, 2).unwrap();
+        env.ledger().with_mut(|l| l.timestamp += 400);
+
+        let counter_before = client.get_shipment_counter();
+        let (used_before, _) = client.get_creation_quota_status(&company);
+        assert_eq!(used_before, 2);
+
+        let deadline = future_deadline(&env);
+        let mut inputs = soroban_sdk::Vec::new(&env);
+        for seed in 20u8..=23 {
+            inputs.push_back(ShipmentInput {
+                receiver: Address::generate(&env),
+                carrier: carrier.clone(),
+                data_hash: make_hash(&env, seed),
+                payment_milestones: soroban_sdk::Vec::new(&env),
+                deadline,
+            });
+        }
+
+        // Batch of 4 would push total from 2 to 6, exceeding max of 4.
+        let result = client.try_create_shipments_batch(&company, &inputs);
+        assert_eq!(result, Err(Ok(NavinError::CreationQuotaExceeded)));
+
+        assert_eq!(
+            client.get_shipment_counter(),
+            counter_before,
+            "no partial shipments must be persisted when batch exceeds quota"
+        );
+        let (used_after, remaining_after) = client.get_creation_quota_status(&company);
+        assert_eq!(used_after, used_before);
+        assert_eq!(remaining_after, 2);
+
+        // Confirm existing shipments remain accessible and no new ID was minted.
+        let _ = client.get_shipment(&1);
+        let _ = client.get_shipment(&id2);
+        let missing_id = counter_before + 1;
+        assert!(
+            matches!(
+                client.try_get_shipment(&missing_id),
+                Err(Ok(NavinError::ShipmentNotFound))
+            ),
+            "shipment {missing_id} must not exist after rejected batch"
+        );
+    }
+
+    #[test]
+    fn batch_within_remaining_quota_succeeds_atomically() {
+        use crate::types::ShipmentInput;
+        let (env, client, admin, company, carrier, _token) = setup();
+
+        client.set_creation_quota(&admin, &5, &3600);
+
+        for seed in 1u8..=3 {
+            assert!(create_one(&env, &client, &company, &carrier, seed).is_ok());
+            env.ledger().with_mut(|l| l.timestamp += 400);
+        }
+
+        let counter_before = client.get_shipment_counter();
+        let deadline = future_deadline(&env);
+        let mut inputs = soroban_sdk::Vec::new(&env);
+        for seed in 30u8..=31 {
+            inputs.push_back(ShipmentInput {
+                receiver: Address::generate(&env),
+                carrier: carrier.clone(),
+                data_hash: make_hash(&env, seed),
+                payment_milestones: soroban_sdk::Vec::new(&env),
+                deadline,
+            });
+        }
+
+        // Exactly 2 remaining slots — batch of 2 should succeed.
+        let ids = client.create_shipments_batch(&company, &inputs);
+        assert_eq!(ids.len(), 2);
+        assert_eq!(client.get_shipment_counter(), counter_before + 2);
+
+        let (used, remaining) = client.get_creation_quota_status(&company);
+        assert_eq!(used, 5);
+        assert_eq!(remaining, 0);
+    }
+
     // ── multiple companies have independent quotas ───────────────────────────
 
     #[test]
@@ -918,5 +1054,96 @@ mod tests {
         let (used, remaining) = client.get_creation_quota_status(&company);
         assert_eq!(used, 3);
         assert_eq!(remaining, 0);
+    }
+
+    // ── active shipment count after cancellation (issue #525) ───────────────
+
+    /// Cancelling a shipment must decrement the company's active shipment count.
+    #[test]
+    fn test_active_shipment_count_decrements_on_cancel() {
+        let (env, client, _admin, company, carrier, _token) = setup();
+
+        let count_before = client.get_active_shipment_count(&company);
+        assert_eq!(count_before, 0);
+
+        let id = create_one(&env, &client, &company, &carrier, 1)
+            .expect("shipment creation must succeed");
+        env.ledger().with_mut(|l| l.timestamp += 400);
+
+        let count_after_create = client.get_active_shipment_count(&company);
+        assert_eq!(count_after_create, 1, "active count must be 1 after creating a shipment");
+
+        let reason_hash = make_hash(&env, 0xFF);
+        client.cancel_shipment(&company, &id, &reason_hash);
+
+        let count_after_cancel = client.get_active_shipment_count(&company);
+        assert_eq!(
+            count_after_cancel, 0,
+            "active count must return to 0 after cancellation"
+        );
+    }
+
+    /// Cancelling multiple shipments must decrement the count for each one,
+    /// leaving the quota availability correct after all cancellations.
+    #[test]
+    fn test_active_shipment_count_decrements_for_each_cancellation() {
+        let (env, client, _admin, company, carrier, _token) = setup();
+
+        // Create 3 shipments.
+        let id1 = create_one(&env, &client, &company, &carrier, 1).unwrap();
+        env.ledger().with_mut(|l| l.timestamp += 400);
+        let id2 = create_one(&env, &client, &company, &carrier, 2).unwrap();
+        env.ledger().with_mut(|l| l.timestamp += 400);
+        let id3 = create_one(&env, &client, &company, &carrier, 3).unwrap();
+        env.ledger().with_mut(|l| l.timestamp += 400);
+
+        assert_eq!(client.get_active_shipment_count(&company), 3);
+
+        let reason_hash = make_hash(&env, 0xFE);
+
+        client.cancel_shipment(&company, &id1, &reason_hash);
+        assert_eq!(client.get_active_shipment_count(&company), 2);
+
+        client.cancel_shipment(&company, &id2, &reason_hash);
+        assert_eq!(client.get_active_shipment_count(&company), 1);
+
+        client.cancel_shipment(&company, &id3, &reason_hash);
+        assert_eq!(
+            client.get_active_shipment_count(&company),
+            0,
+            "active count must reach 0 after all shipments are cancelled"
+        );
+    }
+
+    /// After a cancellation, the company should be able to create a new shipment
+    /// that was previously blocked by the active shipment limit.
+    #[test]
+    fn test_quota_availability_restored_after_cancellation() {
+        let (env, client, admin, company, carrier, _token) = setup();
+
+        // Set limit to 1 active shipment.
+        client.set_shipment_limit(&admin, &1);
+
+        // Create the only allowed shipment.
+        let id = create_one(&env, &client, &company, &carrier, 1).unwrap();
+        env.ledger().with_mut(|l| l.timestamp += 400);
+
+        // Attempting to create a second shipment must fail.
+        let result = create_one(&env, &client, &company, &carrier, 2);
+        assert_eq!(result, Err(NavinError::ShipmentLimitReached));
+
+        // Cancel the first shipment.
+        let reason_hash = make_hash(&env, 0xFD);
+        client.cancel_shipment(&company, &id, &reason_hash);
+
+        assert_eq!(client.get_active_shipment_count(&company), 0);
+
+        // After cancellation, creating a new shipment must succeed.
+        env.ledger().with_mut(|l| l.timestamp += 400);
+        let result = create_one(&env, &client, &company, &carrier, 3);
+        assert!(
+            result.is_ok(),
+            "creating a shipment after cancellation must succeed when quota is restored"
+        );
     }
 }
