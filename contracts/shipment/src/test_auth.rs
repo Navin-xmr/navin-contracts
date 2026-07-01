@@ -24,7 +24,7 @@ use crate::{NavinShipment, NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::{
     contract, contractimpl,
     testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation, Ledger as _},
-    Address, BytesN, Env, IntoVal, Symbol,
+    Address, BytesN, Env, IntoVal, Symbol, Vec,
 };
 
 // ── Minimal token stub (no-op transfer) ──────────────────────────────────────
@@ -208,6 +208,65 @@ fn test_auth_tree_revoke_role() {
                     cid,
                     Symbol::new(&env, "revoke_role"),
                     (admin.clone(), company.clone()).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            }
+        )]
+    );
+}
+
+/// `add_carrier_to_whitelist` must record an auth invocation for the company
+/// address with the correct function name and argument list.
+#[test]
+fn test_auth_tree_add_carrier_to_whitelist() {
+    let (env, client, admin, _token) = setup_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let cid = contract_id(&client);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            company.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    cid,
+                    Symbol::new(&env, "add_carrier_to_whitelist"),
+                    (company.clone(), carrier.clone()).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            }
+        )]
+    );
+}
+
+/// `remove_carrier_from_whitelist` must record an auth invocation for the
+/// company address with the correct function name and argument list.
+#[test]
+fn test_auth_tree_remove_carrier_from_whitelist() {
+    let (env, client, admin, _token) = setup_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let cid = contract_id(&client);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    client.remove_carrier_from_whitelist(&company, &carrier);
+
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            company.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    cid,
+                    Symbol::new(&env, "remove_carrier_from_whitelist"),
+                    (company.clone(), carrier.clone()).into_val(&env),
                 )),
                 sub_invocations: std::vec![],
             }
@@ -820,6 +879,59 @@ fn test_auth_add_operator_fails_without_auth() {
     );
 }
 
+/// `add_carrier_to_whitelist` must fail when the company provides no auth.
+/// The `company.require_auth()` gate fires before the role check.
+#[test]
+fn test_auth_add_carrier_to_whitelist_fails_without_auth() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| {
+        li.protocol_version = crate::test_utils::DEFAULT_PROTOCOL_VERSION;
+    });
+    env.ledger()
+        .set_timestamp(crate::test_utils::DEFAULT_TIMESTAMP);
+
+    let admin = Address::generate(&env);
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let token = env.register(MockToken {}, ());
+    let cid = env.register(NavinShipment, ());
+    let client = NavinShipmentClient::new(&env, &cid);
+
+    client.initialize(&admin, &token);
+
+    let result = client.try_add_carrier_to_whitelist(&company, &carrier);
+    assert!(
+        result.is_err(),
+        "add_carrier_to_whitelist must fail when company auth is not provided"
+    );
+}
+
+/// `remove_carrier_from_whitelist` must fail when the company provides no auth.
+#[test]
+fn test_auth_remove_carrier_from_whitelist_fails_without_auth() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| {
+        li.protocol_version = crate::test_utils::DEFAULT_PROTOCOL_VERSION;
+    });
+    env.ledger()
+        .set_timestamp(crate::test_utils::DEFAULT_TIMESTAMP);
+
+    let admin = Address::generate(&env);
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let token = env.register(MockToken {}, ());
+    let cid = env.register(NavinShipment, ());
+    let client = NavinShipmentClient::new(&env, &cid);
+
+    client.initialize(&admin, &token);
+
+    let result = client.try_remove_carrier_from_whitelist(&company, &carrier);
+    assert!(
+        result.is_err(),
+        "remove_carrier_from_whitelist must fail when company auth is not provided"
+    );
+}
+
 // =============================================================================
 // #456 — Auth mismatch: wrong role produces the correct domain error
 // =============================================================================
@@ -886,6 +998,105 @@ fn test_wrong_role_suspend_company_returns_error() {
     );
 }
 
+// =============================================================================
+// Multi-sig path — positive auth-tree assertions (issue #464)
+// =============================================================================
+
+/// `init_multisig` must record an auth invocation for the admin with the
+/// correct admin list and threshold.
+#[test]
+fn test_auth_tree_init_multisig() {
+    let (env, client, admin, _token) = setup_env();
+    let cid = contract_id(&client);
+    let admin2 = Address::generate(&env);
+    let mut admins = Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    client.init_multisig(&admin, &admins, &2);
+
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    cid,
+                    Symbol::new(&env, "init_multisig"),
+                    (admin.clone(), admins.clone(), 2_u32).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            }
+        )]
+    );
+}
+
+/// `propose_action` must record an auth invocation for the proposer with
+/// the correct action argument.
+#[test]
+fn test_auth_tree_propose_action() {
+    let (env, client, admin, _token) = setup_env();
+    let cid = contract_id(&client);
+    let admin2 = Address::generate(&env);
+    let mut admins = Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+    client.init_multisig(&admin, &admins, &2);
+
+    let new_admin = Address::generate(&env);
+    let action = crate::types::AdminAction::TransferAdmin(new_admin.clone());
+    client.propose_action(&admin, &action);
+
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    cid,
+                    Symbol::new(&env, "propose_action"),
+                    (admin.clone(), action).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            }
+        )]
+    );
+}
+
+/// `approve_action` must record an auth invocation for the approver with
+/// the correct proposal ID.
+#[test]
+fn test_auth_tree_approve_action() {
+    let (env, client, admin, _token) = setup_env();
+    let cid = contract_id(&client);
+    let admin2 = Address::generate(&env);
+    let mut admins = Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    let new_admin = Address::generate(&env);
+    let action = crate::types::AdminAction::TransferAdmin(new_admin);
+    let proposal_id = client.propose_action(&admin, &action);
+
+    client.approve_action(&admin2, &proposal_id);
+
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin2.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    cid,
+                    Symbol::new(&env, "approve_action"),
+                    (admin2.clone(), proposal_id).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            }
+        )]
+    );
+}
+
 /// Error mapping consistency: the `Unauthorized` domain error returned by
 /// wrong-role callers must map to `ErrorCategory::Unauthorized` with
 /// `NoRetry` guidance via `error_info`.
@@ -908,6 +1119,21 @@ fn test_wrong_role_error_maps_to_unauthorized_category() {
     assert_eq!(info.code, 3);
 }
 
+#[test]
+fn test_role_revocation_query() {
+    let (env, client, admin, _token) = setup_env();
+    let target = Address::generate(&env);
+    
+    // Grant role
+    client.add_company(&admin, &target);
+    assert_eq!(client.get_role(&target), crate::Role::Company);
+    
+    // Revoke role
+    client.revoke_role(&admin, &target);
+    
+    // Query again
+    assert_eq!(client.get_role(&target), crate::Role::Unassigned);
+}
 // =============================================================================
 // #521 — Whitespace-only symbol rejection in role-registration context
 // =============================================================================
