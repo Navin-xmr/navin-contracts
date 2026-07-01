@@ -149,6 +149,8 @@ pub enum NavinError {
     NoteNotFound = 66,
     /// Evidence not found or index out of bounds.
     EvidenceNotFound = 67,
+    /// Address already holds the requested role.
+    RoleAlreadyAssigned = 68,
     /// Issue #539 — caller attempted to add a carrier to a company's
     /// whitelist that is already present. The whitelist is set-like;
     /// duplicate additions are rejected with this dedicated error so

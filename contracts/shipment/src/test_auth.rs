@@ -121,6 +121,48 @@ fn test_auth_tree_add_carrier() {
     );
 }
 
+/// Re-registering an address that already holds the Carrier role must fail.
+#[test]
+fn test_add_carrier_rejects_duplicate_registration() {
+    let (env, client, admin, _token) = setup_env();
+    let carrier = Address::generate(&env);
+
+    client.add_carrier(&admin, &carrier);
+    let result = client.try_add_carrier(&admin, &carrier);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::RoleAlreadyAssigned)),
+        "duplicate carrier registration must return RoleAlreadyAssigned"
+    );
+}
+
+/// A failed duplicate carrier registration must not alter carrier state.
+#[test]
+fn test_add_carrier_duplicate_leaves_state_unchanged() {
+    let (env, client, admin, _token) = setup_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let _ = client.try_add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert!(shipment_id > 0, "carrier role must remain active after duplicate add");
+}
+
 /// `suspend_carrier` must record admin auth with the target carrier address.
 #[test]
 fn test_auth_tree_suspend_carrier() {
