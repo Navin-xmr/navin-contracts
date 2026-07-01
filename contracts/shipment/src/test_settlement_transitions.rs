@@ -4,7 +4,7 @@ use crate::test::*;
 use crate::test_utils::dummy_hash;
 use crate::types::*;
 use soroban_sdk::testutils::Address as _;
-use soroban_sdk::Address;
+use soroban_sdk::{Address, BytesN, Env};
 
 /// Test that settlement state transitions are validated correctly.
 #[test]

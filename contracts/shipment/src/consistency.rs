@@ -43,6 +43,10 @@ pub enum ConsistencyViolation {
     BatchSenderMismatch(u64),
     /// Batch member has a different `created_at` than the first shipment in the batch.
     BatchTimestampMismatch(u64),
+    /// Global per-status counter does not match the actual count of shipments
+    /// found in that status during a full scan. The counter may have drifted
+    /// due to missed increments or decrements during status transitions.
+    StatusCountMismatch,
 }
 
 /// Check all per-shipment invariants for a single shipment.
@@ -159,6 +163,53 @@ pub fn check_batch_consistency(env: &Env, ids: &Vec<u64>) -> Vec<ConsistencyViol
     violations
 }
 
+/// Reconcile the global per-status counters against the actual count of
+/// shipments in each status. Returns `StatusCountMismatch` if any counter
+/// has drifted.
+///
+/// This is an O(n) scan and is intended only for admin/operator use.
+///
+/// # Arguments
+/// * `env` - Execution environment.
+pub fn check_status_count_consistency(env: &Env) -> Vec<ConsistencyViolation> {
+    let mut violations: Vec<ConsistencyViolation> = Vec::new(env);
+    let total = storage::get_shipment_count(env);
+
+    // Scan all shipments and count actual statuses.
+    use crate::types::ShipmentStatus::*;
+    let mut actual = [
+        (Created, 0u64),
+        (InTransit, 0),
+        (AtCheckpoint, 0),
+        (PartiallyDelivered, 0),
+        (Delivered, 0),
+        (Disputed, 0),
+        (Cancelled, 0),
+        (PartiallyRefunded, 0),
+    ];
+
+    for id in 1..=total {
+        if let Some(shipment) = storage::get_shipment(env, id) {
+            for (status, count) in actual.iter_mut() {
+                if shipment.status == *status {
+                    *count += 1;
+                }
+            }
+        }
+    }
+
+    // Compare with stored counters.
+    for (status, actual_count) in &actual {
+        let stored = storage::get_status_count(env, status);
+        if stored != *actual_count {
+            violations.push_back(ConsistencyViolation::StatusCountMismatch);
+            break;
+        }
+    }
+
+    violations
+}
+
 /// Scan all shipments (IDs 1 through the global counter) and return every
 /// consistency violation found.
 ///
@@ -176,6 +227,12 @@ pub fn check_all_consistency(env: &Env) -> Vec<ConsistencyViolation> {
         for v in per_ship.iter() {
             violations.push_back(v);
         }
+    }
+
+    // Global invariant: per-status counters must match actual counts.
+    let counter_violations = check_status_count_consistency(env);
+    for v in counter_violations.iter() {
+        violations.push_back(v);
     }
 
     violations
