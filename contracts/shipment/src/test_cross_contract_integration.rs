@@ -743,3 +743,165 @@ fn test_batch_creation_does_not_call_token_contract() {
 
 #[test]
 fn test_recovery_behavior_deterministic_across_reruns() {}
+
+// ── confirm_delivery token transfer failure (issue #522) ─────────────────────
+
+fn advance_to_in_transit(ctx: &Ctx, id: u64) {
+    test_utils::advance_past_rate_limit(&ctx.env);
+    ctx.client.update_status(
+        &ctx.carrier,
+        &id,
+        &ShipmentStatus::InTransit,
+        &dummy_hash(&ctx.env, 90),
+    );
+}
+
+/// confirm_delivery must return an error when the escrow token transfer fails.
+#[test]
+fn test_confirm_delivery_fails_when_token_transfer_fails() {
+    let ctx = setup_fail();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x70),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+    inject_escrow(&ctx, id, 1000);
+    advance_to_in_transit(&ctx, id);
+
+    let result = ctx
+        .client
+        .try_confirm_delivery(&receiver, &id, &dummy_hash(&ctx.env, 0x71));
+    assert!(
+        result.is_err(),
+        "confirm_delivery must return an error when the token transfer fails"
+    );
+}
+
+/// After a failed confirm_delivery, the shipment status must revert to its
+/// pre-call value — the contract must not partially advance state.
+#[test]
+fn test_confirm_delivery_status_reverts_on_token_failure() {
+    let ctx = setup_fail();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x72),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+    inject_escrow(&ctx, id, 1000);
+    advance_to_in_transit(&ctx, id);
+
+    let status_before = ctx.client.get_shipment(&id).status;
+
+    let _ = ctx
+        .client
+        .try_confirm_delivery(&receiver, &id, &dummy_hash(&ctx.env, 0x73));
+
+    let status_after = ctx.client.get_shipment(&id).status;
+    assert_eq!(
+        status_before, status_after,
+        "shipment status must revert to pre-call value when confirm_delivery fails"
+    );
+    assert_ne!(
+        status_after,
+        ShipmentStatus::Delivered,
+        "status must not advance to Delivered after a failed confirm_delivery"
+    );
+}
+
+/// After a failed confirm_delivery, the escrow balance must remain unchanged —
+/// no tokens are transferred and the escrow is not cleared.
+#[test]
+fn test_confirm_delivery_escrow_not_cleared_on_token_failure() {
+    let ctx = setup_fail();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x74),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+    inject_escrow(&ctx, id, 500);
+    advance_to_in_transit(&ctx, id);
+
+    let escrow_before = ctx.client.get_escrow_balance(&id);
+
+    let _ = ctx
+        .client
+        .try_confirm_delivery(&receiver, &id, &dummy_hash(&ctx.env, 0x75));
+
+    let escrow_after = ctx.client.get_escrow_balance(&id);
+    assert_eq!(
+        escrow_before, escrow_after,
+        "escrow must not be cleared when confirm_delivery token transfer fails"
+    );
+}
+
+/// A token transfer failure inside confirm_delivery must surface as
+/// TokenTransferFailed (error #39).
+#[test]
+fn test_confirm_delivery_error_is_token_transfer_failed() {
+    let ctx = setup_fail();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x76),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+    inject_escrow(&ctx, id, 750);
+    advance_to_in_transit(&ctx, id);
+
+    let err = ctx
+        .client
+        .try_confirm_delivery(&receiver, &id, &dummy_hash(&ctx.env, 0x77))
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(
+        err,
+        NavinError::TokenTransferFailed,
+        "confirm_delivery with failing token must return TokenTransferFailed"
+    );
+}
+
+/// confirm_delivery with zero escrow must succeed even when the token contract
+/// is broken — no token transfer is attempted when escrow is zero.
+#[test]
+fn test_confirm_delivery_without_escrow_succeeds_with_failing_token() {
+    let ctx = setup_fail();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x78),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+    // No escrow injected — confirm_delivery skips the token transfer entirely.
+    advance_to_in_transit(&ctx, id);
+
+    ctx.client
+        .confirm_delivery(&receiver, &id, &dummy_hash(&ctx.env, 0x79));
+    assert_eq!(
+        ctx.client.get_shipment(&id).status,
+        ShipmentStatus::Delivered,
+        "confirm_delivery without escrow must succeed even with a failing token"
+    );
+}

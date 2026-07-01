@@ -451,6 +451,11 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             InvalidInput,
             NoRetry,
             "Address already holds the requested role.",
+        NavinError::CarrierAlreadyWhitelisted => (
+            68,
+            InvalidState,
+            NoRetry,
+            "Carrier is already on the company's whitelist; duplicate addition is not allowed.",
         ),
     };
 
