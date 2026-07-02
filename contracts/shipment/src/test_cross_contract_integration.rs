@@ -749,10 +749,11 @@ fn test_recovery_behavior_deterministic_across_reruns() {}
 #[test]
 fn test_set_platform_fee_rejects_zero_treasury() {
     let ctx = setup_ok();
-    // Generate a sentinel zero-address by using all-zero-XDR key bytes.
+    // Generate a sentinel zero-address with all-zero ed25519 key bytes.
+    // The strkey for all-zero key with valid CRC-16 checksum.
     let zero_addr = Address::from_str(
         &ctx.env,
-        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
     );
     let result = ctx
         .client
@@ -930,5 +931,4 @@ fn test_confirm_delivery_without_escrow_succeeds_with_failing_token() {
         ShipmentStatus::Delivered,
         "confirm_delivery without escrow must succeed even with a failing token"
     );
-}
 }

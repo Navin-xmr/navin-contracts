@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn effective_limit_falls_back_to_global_when_no_company_override() {
-        let (env, client, admin, company, _carrier, _token) = setup();
+        let (_env, client, admin, company, _carrier, _token) = setup();
 
         // Set global limit to 7
         client.set_shipment_limit(&admin, &7);
@@ -197,7 +197,7 @@ mod tests {
 
     #[test]
     fn effective_limit_returns_company_override_when_set() {
-        let (env, client, admin, company, _carrier, _token) = setup();
+        let (_env, client, admin, company, _carrier, _token) = setup();
 
         client.set_shipment_limit(&admin, &50);
         client.set_company_shipment_limit(&admin, &company, &10);
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn effective_limit_reverts_to_global_after_override_removed() {
-        let (env, client, admin, company, _carrier, _token) = setup();
+        let (_env, client, admin, company, _carrier, _token) = setup();
 
         client.set_shipment_limit(&admin, &25);
         client.set_company_shipment_limit(&admin, &company, &5);

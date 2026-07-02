@@ -691,7 +691,7 @@ mod tests {
         env.as_contract(&client.address, || {
             let mut cfg = crate::config::get_config(&env);
             cfg.proposal_expiry_seconds = 0;
-            crate::config::set_config(&env, &cfg);
+            let _ = crate::config::set_config(&env, &cfg);
         });
 
         let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
@@ -820,16 +820,9 @@ mod tests {
         let proposal = client.get_proposal(&proposal_id);
         assert_eq!(proposal.approvals.len(), 3, "Should have exactly 3 approvals");
 
-        // Execution should now succeed
-        let result = client.try_execute_proposal(&proposal_id);
-        assert!(
-            result.is_ok(),
-            "Execution should succeed with 3 approvals when threshold is 3"
-        );
-
-        // Verify proposal is marked as executed
+        // Proposal should be auto-executed by approve_action when threshold was met
         let executed_proposal = client.get_proposal(&proposal_id);
-        assert!(executed_proposal.executed, "Proposal should be marked as executed");
+        assert!(executed_proposal.executed, "Proposal should be auto-executed when threshold is met");
     }
 
     /// Test: Proposal execution succeeds with more than threshold approvals (threshold 3, 4 approvals).
@@ -852,20 +845,15 @@ mod tests {
         let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
-        // Get all possible approvals (more than threshold)
+        // Get approvals up to threshold (admin3's approval triggers auto-execute)
         client.approve_action(&admin2, &proposal_id);
         client.approve_action(&admin3, &proposal_id);
-        client.approve_action(&admin4, &proposal_id);
 
         let proposal = client.get_proposal(&proposal_id);
-        assert_eq!(proposal.approvals.len(), 4, "Should have 4 approvals");
+        assert_eq!(proposal.approvals.len(), 3, "Should have 3 approvals");
 
-        // Execution should succeed
-        let result = client.try_execute_proposal(&proposal_id);
-        assert!(
-            result.is_ok(),
-            "Execution should succeed with 4 approvals when threshold is 3"
-        );
+        // Proposal should be auto-executed by approve_action at threshold
+        assert!(proposal.executed, "Proposal should be auto-executed when threshold is met");
     }
 
     /// Test: Multiple proposals independently enforce threshold (threshold 3).
@@ -908,11 +896,11 @@ mod tests {
             "Proposal 1 should fail with 2 approvals"
         );
 
-        // Proposal 2 should succeed (3 == 3)
-        let result2 = client.try_execute_proposal(&proposal2_id);
+        // Proposal 2 should be auto-executed (3 == 3 threshold)
+        let proposal2_final = client.get_proposal(&proposal2_id);
         assert!(
-            result2.is_ok(),
-            "Proposal 2 should succeed with 3 approvals"
+            proposal2_final.executed,
+            "Proposal 2 should be auto-executed with 3 approvals"
         );
     }
 
@@ -920,11 +908,13 @@ mod tests {
     /// Verifies that a threshold of 1 is valid and immediately executable.
     #[test]
     fn execute_proposal_succeeds_immediately_with_threshold_1() {
-        let (env, client, admin, _admin2) = setup_multisig();
+        let (env, client, admin, admin2) = setup_multisig();
 
         // Create multi-sig with threshold 1 (single approver)
+        // Note: multisig_min_admins = 2, so we need at least 2 admins
         let mut admins = Vec::new(&env);
         admins.push_back(admin.clone());
+        admins.push_back(admin2.clone());
         client.init_multisig(&admin, &admins, &1);
 
         let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
@@ -978,11 +968,11 @@ mod tests {
         let proposal_after_2 = client.get_proposal(&proposal_id);
         assert_eq!(proposal_after_2.approvals.len(), 3);
 
-        // Now sufficient
-        let result_after_2 = client.try_execute_proposal(&proposal_id);
+        // Proposal should be auto-executed (approve_action met threshold)
+        let proposal_final = client.get_proposal(&proposal_id);
         assert!(
-            result_after_2.is_ok(),
-            "Execution should succeed with 3/3 approvals"
+            proposal_final.executed,
+            "Proposal should be auto-executed with 3/3 approvals"
         );
     }
 

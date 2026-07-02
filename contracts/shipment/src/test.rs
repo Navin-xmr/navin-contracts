@@ -11855,7 +11855,7 @@ fn test_get_shipment_created_at_fails_before_initialization() {
     let (_env, client, _admin, _token_contract) = setup_shipment_env();
 
     client.get_shipment_created_at(&1);
-
+}
 
 // ── [ISSUE #506] get_admin in multi-admin configurations ─────────────────────
 
@@ -12072,7 +12072,7 @@ fn test_create_shipment_unique_milestone_names_accepted() {
 #[test]
 #[should_panic(expected = "Error(Contract, #61)")]
 fn test_initialize_with_admin_as_token_address_rejected() {
-    let (env, client, admin, _) = setup_shipment_env();
+    let (_env, client, admin, _) = setup_shipment_env();
     // Passing the admin's own address as the token contract is invalid.
     client.initialize(&admin, &admin);
 }
@@ -12080,7 +12080,7 @@ fn test_initialize_with_admin_as_token_address_rejected() {
 #[test]
 #[should_panic(expected = "Error(Contract, #61)")]
 fn test_initialize_with_contract_address_as_token_rejected() {
-    let (env, client, admin, _) = setup_shipment_env();
+    let (_env, client, admin, _) = setup_shipment_env();
     // Passing the shipment contract's own address as the token is invalid.
     let contract_addr = client.address.clone();
     client.initialize(&admin, &contract_addr);
@@ -12088,7 +12088,7 @@ fn test_initialize_with_contract_address_as_token_rejected() {
 
 #[test]
 fn test_initialize_with_valid_token_address_succeeds() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
+    let (_env, client, admin, token_contract) = setup_shipment_env();
     // A real distinct token contract should be accepted.
     client.initialize(&admin, &token_contract);
     assert_eq!(client.get_admin(), admin);
