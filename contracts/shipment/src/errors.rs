@@ -156,7 +156,7 @@ pub enum NavinError {
     /// duplicate additions are rejected with this dedicated error so
     /// off-chain monitors can distinguish a no-op from a real failure
     /// without falling back on the generic `AlreadyInitialized` code.
-    CarrierAlreadyWhitelisted = 68,
+    CarrierAlreadyWhitelisted = 69,
     /// Address is invalid (e.g., zero-address sentinel).
-    InvalidAddress = 69,
+    InvalidAddress = 70,
 }
