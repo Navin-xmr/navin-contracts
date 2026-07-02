@@ -772,8 +772,8 @@ impl NavinShipment {
         require_not_paused(&env)?;
         reporter.require_auth();
 
-        // Validate hash before storage
-        validation::validate_hash(&note_hash)?;
+        // Validate note hash length (32 bytes) and reject malformed sentinels.
+        validation::validate_note_hash(&note_hash)?;
 
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
@@ -1537,6 +1537,10 @@ impl NavinShipment {
 
         require_admin_or_operator(&env, &admin)?;
 
+        if storage::has_role(&env, &company, &Role::Company) {
+            return Err(NavinError::RoleAlreadyAssigned);
+        }
+
         storage::set_company_role(&env, &company);
 
         // Emit role history event
@@ -1575,6 +1579,10 @@ impl NavinShipment {
         admin.require_auth();
 
         require_admin_or_operator(&env, &admin)?;
+
+        if storage::has_role(&env, &carrier, &Role::Carrier) {
+            return Err(NavinError::RoleAlreadyAssigned);
+        }
 
         storage::set_carrier_role(&env, &carrier);
 
