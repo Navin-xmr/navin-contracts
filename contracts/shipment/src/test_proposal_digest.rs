@@ -596,21 +596,13 @@ mod tests {
         );
 
         // After expiration, the proposal storage key should remain safely accessible
-        // for cleanup without causing errors. Attempting to get the expired proposal
-        // should still work for diagnostics (not panic or fail unexpectedly).
+        // for cleanup without causing errors. The expired proposal still exists in
+        // storage (it was never removed), so get_proposal returns it successfully.
         let get_result = client.try_get_proposal(&proposal_id);
-        // Expired proposals remain readable for diagnostics and cleanup.
         assert!(
             get_result.is_ok(),
-            "Getting expired proposal should remain accessible without panicking"
+            "Expired proposal should still be accessible via get_proposal for diagnostics"
         );
-
-        // Result varies based on implementation - could be NotFound or ProposalExpired
-        // The key point is it doesn't cause a crash or unexpected error type.
-        // In the current implementation it returns the expired proposal successfully.
-        assert!(
-            get_result.is_ok() || get_result.is_err(),
-            "Getting expired proposal should handle gracefully"
         );
     }
 
@@ -668,7 +660,10 @@ mod tests {
 
         // Proposal should still be usable
         let get_result = client.try_get_proposal(&proposal_id);
-        assert!(get_result.is_ok(), "Proposal must be accessible just before expiry");
+        assert!(
+            get_result.is_ok(),
+            "Proposal must be accessible just before expiry"
+        );
 
         // Now advance past the expiry threshold
         env.ledger().with_mut(|l| {
@@ -1450,4 +1445,3 @@ mod tests {
         );
     }
 }
-

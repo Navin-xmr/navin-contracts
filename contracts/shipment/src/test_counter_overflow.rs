@@ -323,9 +323,12 @@ fn test_settlement_counter_increments_on_sequential_refunds() {
 
     for i in 1u8..=5 {
         let shipment_id = client.create_shipment(
-            &company, &receiver, &carrier,
+            &company,
+            &receiver,
+            &carrier,
             &BytesN::from_array(&env, &[i; 32]),
-            &Vec::new(&env), &deadline,
+            &Vec::new(&env),
+            &deadline,
         );
         client.deposit_escrow(&company, &shipment_id, &1_000);
         // Each refund internally creates a settlement record and increments the counter.
@@ -334,7 +337,8 @@ fn test_settlement_counter_increments_on_sequential_refunds() {
 
     // Shipment counter should be exactly 5
     assert_eq!(
-        client.get_shipment_counter(), 5,
+        client.get_shipment_counter(),
+        5,
         "Shipment counter should be 5 after 5 create-refund cycles"
     );
 }
@@ -358,14 +362,21 @@ fn test_settlement_counter_near_max_boundary_safe() {
     // or may return CounterOverflow if the guard fires early.
     // Either outcome is acceptable — what we MUST NOT see is a silent wrap to 0.
     let result = client.try_create_shipment(
-        &company, &receiver, &carrier,
+        &company,
+        &receiver,
+        &carrier,
         &BytesN::from_array(&env, &[0xAAu8; 32]),
-        &Vec::new(&env), &deadline,
+        &Vec::new(&env),
+        &deadline,
     );
 
     match &result {
         Ok(Ok(id)) => {
-            assert_eq!(*id, u64::MAX, "Counter should advance to u64::MAX, not wrap");
+            assert_eq!(
+                *id,
+                u64::MAX,
+                "Counter should advance to u64::MAX, not wrap"
+            );
         }
         Ok(Err(_)) | Err(_) => {
             // CounterOverflow or host error — acceptable, no wrap occurred
@@ -391,9 +402,12 @@ fn test_settlement_counter_at_max_always_fails() {
     });
 
     let result = client.try_create_shipment(
-        &company, &receiver, &carrier,
+        &company,
+        &receiver,
+        &carrier,
         &BytesN::from_array(&env, &[0xBBu8; 32]),
-        &Vec::new(&env), &deadline,
+        &Vec::new(&env),
+        &deadline,
     );
 
     assert!(

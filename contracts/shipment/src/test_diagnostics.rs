@@ -1033,12 +1033,19 @@ fn test_non_terminal_count_decrements_on_refund() {
     let data_hash = BytesN::from_array(&env, &[10u8; 32]);
 
     let shipment_id = client.create_shipment(
-        &company, &receiver, &carrier,
-        &data_hash, &Vec::new(&env), &deadline,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
     );
 
     let count_before = client.get_non_terminal_count();
-    assert_eq!(count_before, 1, "Non-terminal count should be 1 after creation");
+    assert_eq!(
+        count_before, 1,
+        "Non-terminal count should be 1 after creation"
+    );
 
     // Deposit escrow so refund can proceed
     client.deposit_escrow(&company, &shipment_id, &1_000);
@@ -1047,7 +1054,10 @@ fn test_non_terminal_count_decrements_on_refund() {
     client.refund_escrow(&company, &shipment_id);
 
     let count_after = client.get_non_terminal_count();
-    assert_eq!(count_after, 0, "Non-terminal count must decrement to 0 after refund_escrow");
+    assert_eq!(
+        count_after, 0,
+        "Non-terminal count must decrement to 0 after refund_escrow"
+    );
 }
 
 /// Verify count decrements correctly when only one of many shipments is refunded.
@@ -1064,19 +1074,28 @@ fn test_non_terminal_count_decrements_for_one_of_many_on_refund() {
     let deadline = env.ledger().timestamp() + 3600;
 
     let id1 = client.create_shipment(
-        &company, &receiver, &carrier,
+        &company,
+        &receiver,
+        &carrier,
         &BytesN::from_array(&env, &[20u8; 32]),
-        &Vec::new(&env), &deadline,
+        &Vec::new(&env),
+        &deadline,
     );
     let _id2 = client.create_shipment(
-        &company, &receiver, &carrier,
+        &company,
+        &receiver,
+        &carrier,
         &BytesN::from_array(&env, &[21u8; 32]),
-        &Vec::new(&env), &deadline,
+        &Vec::new(&env),
+        &deadline,
     );
     let _id3 = client.create_shipment(
-        &company, &receiver, &carrier,
+        &company,
+        &receiver,
+        &carrier,
         &BytesN::from_array(&env, &[22u8; 32]),
-        &Vec::new(&env), &deadline,
+        &Vec::new(&env),
+        &deadline,
     );
 
     assert_eq!(client.get_non_terminal_count(), 3);
@@ -1085,7 +1104,8 @@ fn test_non_terminal_count_decrements_for_one_of_many_on_refund() {
     client.refund_escrow(&company, &id1);
 
     assert_eq!(
-        client.get_non_terminal_count(), 2,
+        client.get_non_terminal_count(),
+        2,
         "Only the refunded shipment should reduce the non-terminal count"
     );
 }

@@ -83,6 +83,8 @@ mod test_precondition_guards;
 #[cfg(test)]
 mod test_proposal_digest;
 #[cfg(test)]
+mod test_replay_protection;
+#[cfg(test)]
 mod test_require_auth_for_args;
 #[cfg(test)]
 mod test_settlement;
