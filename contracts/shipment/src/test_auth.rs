@@ -1271,8 +1271,7 @@ fn test_set_shipment_metadata_rejects_empty_key_symbol() {
 
     let empty_key = Symbol::new(&env, "");
     let valid_value = Symbol::new(&env, "value");
-    let result =
-        client.try_set_shipment_metadata(&company, &shipment_id, &empty_key, &valid_value);
+    let result = client.try_set_shipment_metadata(&company, &shipment_id, &empty_key, &valid_value);
 
     assert_eq!(
         result,
@@ -1307,8 +1306,7 @@ fn test_set_shipment_metadata_rejects_empty_value_symbol() {
 
     let valid_key = Symbol::new(&env, "weight");
     let empty_value = Symbol::new(&env, "");
-    let result =
-        client.try_set_shipment_metadata(&company, &shipment_id, &valid_key, &empty_value);
+    let result = client.try_set_shipment_metadata(&company, &shipment_id, &valid_key, &empty_value);
 
     assert_eq!(
         result,

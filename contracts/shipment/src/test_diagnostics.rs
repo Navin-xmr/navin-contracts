@@ -1161,7 +1161,7 @@ fn test_get_shipment_receiver_returns_receiver_for_valid_shipment() {
     let result = client.try_get_shipment_receiver(&shipment_id);
     assert_eq!(
         result,
-        Ok(receiver.clone()),
+        Ok(Ok(receiver.clone())),
         "get_shipment_receiver must return the original receiver address"
     );
     assert_eq!(

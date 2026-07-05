@@ -213,7 +213,7 @@ fn test_checked_mul_div_truncates_remainder() {
 mod total_escrow_volume_overflow {
     use crate::errors::NavinError;
     use crate::{storage, NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env};
+    use soroban_sdk::{contract, contractimpl, Address, Env};
 
     #[contract]
     struct MockToken;

@@ -1029,9 +1029,8 @@ fn test_validate_checkpoint_symbol_valid_passes() {
 
 #[test]
 fn test_record_milestone_empty_checkpoint_fails() {
-    use crate::{test_utils, NavinShipment, NavinShipmentClient, ShipmentStatus};
+    use crate::{test_utils, NavinShipment, NavinShipmentClient};
     use soroban_sdk::{testutils::Address as _, Address, Vec as SorobanVec, BytesN};
-    use crate::ShipmentStatus;
 
     let (env, admin) = test_utils::setup_env();
     let contract_id = env.register(NavinShipment, ());
@@ -1092,6 +1091,110 @@ fn test_symbol_chars_uppercase_letters_accepted() {
         validate_symbol_chars(&env, &sym(&env, "ABCDEFGHIJKL")),
         Ok(()),
         "all uppercase letters must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_lowercase_letters_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "abcdefghijkl")),
+        Ok(()),
+        "all lowercase letters must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_digits_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "123456789012")),
+        Ok(()),
+        "all digit characters must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_underscore_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "ship_id")),
+        Ok(()),
+        "underscore must be accepted as a valid character"
+    );
+}
+
+#[test]
+fn test_symbol_chars_leading_underscore_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "_leading")),
+        Ok(()),
+        "leading underscore must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_trailing_underscore_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "trailing_")),
+        Ok(()),
+        "trailing underscore must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_mixed_case_and_digits_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "Ab1Cd2Ef3G")),
+        Ok(()),
+        "mixed case and digits must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_all_underscores_accepted() {
+    let env = Env::default();
+    // Four underscores — valid character, valid length.
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "____")),
+        Ok(()),
+        "all-underscore symbol must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_single_letter_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "Z")),
+        Ok(()),
+        "single uppercase letter must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_single_digit_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "9")),
+        Ok(()),
+        "single digit must be accepted"
+    );
+}
+
+#[test]
+fn test_symbol_chars_single_underscore_accepted() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol_chars(&env, &sym(&env, "_")),
+        Ok(()),
+        "single underscore must be accepted"
+    );
+}
+
 // ── Note Symbol Validation Tests ───────────────────────────────────────────
 
 /// Note symbols must be non-empty and not exceed 64 characters (~76 bytes in XDR).
@@ -1109,12 +1212,6 @@ fn test_validate_note_symbol_single_char() {
 }
 
 #[test]
-fn test_symbol_chars_lowercase_letters_accepted() {
-    let env = Env::default();
-    assert_eq!(
-        validate_symbol_chars(&env, &sym(&env, "abcdefghijkl")),
-        Ok(()),
-        "all lowercase letters must be accepted"
 fn test_validate_note_symbol_short_label() {
     let env = Env::default();
     let note_sym = sym(&env, "evidence");
@@ -1126,12 +1223,6 @@ fn test_validate_note_symbol_short_label() {
 }
 
 #[test]
-fn test_symbol_chars_digits_accepted() {
-    let env = Env::default();
-    assert_eq!(
-        validate_symbol_chars(&env, &sym(&env, "123456789012")),
-        Ok(()),
-        "all digit characters must be accepted"
 fn test_validate_note_symbol_medium_label() {
     let env = Env::default();
     let note_sym = sym(&env, "note_category_001");
@@ -1143,12 +1234,6 @@ fn test_validate_note_symbol_medium_label() {
 }
 
 #[test]
-fn test_symbol_chars_underscore_accepted() {
-    let env = Env::default();
-    assert_eq!(
-        validate_symbol_chars(&env, &sym(&env, "ship_id")),
-        Ok(()),
-        "underscore must be accepted as a valid character"
 fn test_validate_note_symbol_32_chars() {
     let env = Env::default();
     let s: std::string::String = "A".repeat(32);
@@ -1161,12 +1246,6 @@ fn test_validate_note_symbol_32_chars() {
 }
 
 #[test]
-fn test_symbol_chars_leading_underscore_accepted() {
-    let env = Env::default();
-    assert_eq!(
-        validate_symbol_chars(&env, &sym(&env, "_leading")),
-        Ok(()),
-        "leading underscore must be accepted"
 fn test_validate_note_symbol_48_chars() {
     let env = Env::default();
     let s: std::string::String = "B".repeat(48);
@@ -1179,12 +1258,6 @@ fn test_validate_note_symbol_48_chars() {
 }
 
 #[test]
-fn test_symbol_chars_trailing_underscore_accepted() {
-    let env = Env::default();
-    assert_eq!(
-        validate_symbol_chars(&env, &sym(&env, "trailing_")),
-        Ok(()),
-        "trailing underscore must be accepted"
 fn test_validate_note_symbol_64_chars_at_limit() {
     let env = Env::default();
     let s: std::string::String = "C".repeat(64);
@@ -1197,12 +1270,6 @@ fn test_validate_note_symbol_64_chars_at_limit() {
 }
 
 #[test]
-fn test_symbol_chars_mixed_case_and_digits_accepted() {
-    let env = Env::default();
-    assert_eq!(
-        validate_symbol_chars(&env, &sym(&env, "Ab1Cd2Ef3G")),
-        Ok(()),
-        "mixed case and digits must be accepted"
 fn test_validate_note_symbol_65_chars_exceeds_limit() {
     let env = Env::default();
     let s: std::string::String = "D".repeat(65);
@@ -1215,13 +1282,6 @@ fn test_validate_note_symbol_65_chars_exceeds_limit() {
 }
 
 #[test]
-fn test_symbol_chars_all_underscores_accepted() {
-    let env = Env::default();
-    // Four underscores — valid character, valid length.
-    assert_eq!(
-        validate_symbol_chars(&env, &sym(&env, "____")),
-        Ok(()),
-        "all-underscore symbol must be accepted"
 fn test_validate_note_symbol_100_chars_rejected() {
     let env = Env::default();
     let s: std::string::String = "E".repeat(100);
@@ -1234,12 +1294,6 @@ fn test_validate_note_symbol_100_chars_rejected() {
 }
 
 #[test]
-fn test_symbol_chars_single_letter_accepted() {
-    let env = Env::default();
-    assert_eq!(
-        validate_symbol_chars(&env, &sym(&env, "Z")),
-        Ok(()),
-        "single uppercase letter must be accepted"
 fn test_validate_note_symbol_128_chars_rejected() {
     let env = Env::default();
     let s: std::string::String = "F".repeat(128);
@@ -1252,12 +1306,6 @@ fn test_validate_note_symbol_128_chars_rejected() {
 }
 
 #[test]
-fn test_symbol_chars_single_digit_accepted() {
-    let env = Env::default();
-    assert_eq!(
-        validate_symbol_chars(&env, &sym(&env, "9")),
-        Ok(()),
-        "single digit must be accepted"
 fn test_validate_note_symbol_with_numbers_and_underscore() {
     let env = Env::default();
     let note_sym = sym(&env, "note_category_99");
@@ -1265,16 +1313,6 @@ fn test_validate_note_symbol_with_numbers_and_underscore() {
         crate::validation::validate_note_symbol(&env, &note_sym),
         Ok(()),
         "note symbol with numbers and underscore must be accepted"
-    );
-}
-
-#[test]
-fn test_symbol_chars_single_underscore_accepted() {
-    let env = Env::default();
-    assert_eq!(
-        validate_symbol_chars(&env, &sym(&env, "_")),
-        Ok(()),
-        "single underscore must be accepted"
     );
 }
 
@@ -1318,6 +1356,10 @@ fn test_symbol_chars_is_idempotent_for_valid_symbol() {
         validate_symbol_chars(&env, &s),
         validate_symbol_chars(&env, &s),
         "validate_symbol_chars must return the same result on repeated calls"
+    );
+}
+
+#[test]
 fn test_validate_note_symbol_with_mixed_case() {
     let env = Env::default();
     let note_sym = sym(&env, "EventLog_Shipment_Status");
@@ -1375,7 +1417,12 @@ fn test_checkpoint_symbol_valid_chars_accepted() {
             validate_checkpoint_symbol(&env, &sym(&env, name)),
             Ok(()),
             "checkpoint symbol '{}' must be accepted",
-            name
+            name,
+        );
+    }
+}
+
+#[test]
 fn test_validate_note_symbol_boundary_64_always_accepted() {
     let env = Env::default();
     // Regression: ensure 64-char limit allows exactly 64 characters.
@@ -1474,6 +1521,10 @@ fn test_milestone_symbols_single_underscore_accepted() {
         validate_milestone_symbols(&env, &milestones),
         Ok(()),
         "single-underscore milestone symbol must be accepted"
+    );
+}
+
+#[test]
 fn test_validate_note_symbol_length_sweep_65_to_100() {
     let env = Env::default();
     // Verify all lengths 65..=100 are rejected.
@@ -1570,6 +1621,10 @@ fn test_symbol_chars_and_validate_symbol_agree_on_valid_inputs() {
             sym_result,
             chars_result
         );
+    }
+}
+
+#[test]
 fn test_validate_note_symbol_idempotent() {
     let env = Env::default();
     let note_sym = sym(&env, "stable_note_label");

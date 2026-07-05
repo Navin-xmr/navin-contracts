@@ -603,6 +603,8 @@ mod tests {
         assert!(
             get_result.is_ok(),
             "Getting expired proposal should remain accessible without panicking"
+        );
+
         // Result varies based on implementation - could be NotFound or ProposalExpired
         // The key point is it doesn't cause a crash or unexpected error type.
         // In the current implementation it returns the expired proposal successfully.
@@ -695,7 +697,7 @@ mod tests {
         env.as_contract(&client.address, || {
             let mut cfg = crate::config::get_config(&env);
             cfg.proposal_expiry_seconds = 0;
-            crate::config::set_config(&env, &cfg);
+            let _ = crate::config::set_config(&env, &cfg);
         });
 
         let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
@@ -1044,6 +1046,9 @@ mod tests {
         assert_eq!(
             stored_digest.computed_at, proposal.created_at,
             "digest computed_at must match the proposal created_at field"
+        );
+    }
+
     // ── [ISSUE #XXX] Multi-sig threshold enforcement tests ─────────────────────
 
     /// Test: Proposal execution rejected with insufficient approvals (threshold 3, 1 approval).
