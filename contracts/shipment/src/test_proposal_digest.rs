@@ -603,7 +603,6 @@ mod tests {
             get_result.is_ok(),
             "Expired proposal should still be accessible via get_proposal for diagnostics"
         );
-        );
     }
 
     /// Test: Multiple expired proposals do not interfere with new proposals.
@@ -717,10 +716,7 @@ mod tests {
 
         let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let result = client.try_propose_action(&admin, &action);
-        assert!(
-            result.is_ok(),
-            "positive-duration expiry must be accepted"
-        );
+        assert!(result.is_ok(), "positive-duration expiry must be accepted");
     }
 
     // ── [ISSUE #527] ProposalDigest execution validation checks ──────────────
@@ -1069,7 +1065,11 @@ mod tests {
 
         // Only 1 approval (proposer's auto-approval)
         let proposal = client.get_proposal(&proposal_id);
-        assert_eq!(proposal.approvals.len(), 1, "Proposer should be auto-approved");
+        assert_eq!(
+            proposal.approvals.len(),
+            1,
+            "Proposer should be auto-approved"
+        );
 
         // Attempt to execute with only 1 approval (need 3)
         let result = client.try_execute_proposal(&proposal_id);
@@ -1140,18 +1140,26 @@ mod tests {
         client.approve_action(&admin3, &proposal_id);
 
         let proposal = client.get_proposal(&proposal_id);
-        assert_eq!(proposal.approvals.len(), 3, "Should have exactly 3 approvals");
+        assert_eq!(
+            proposal.approvals.len(),
+            3,
+            "Should have exactly 3 approvals"
+        );
 
-        // Execution should now succeed
+        // Approval 3 auto-executes the proposal, so explicit execute returns AlreadyExecuted
         let result = client.try_execute_proposal(&proposal_id);
-        assert!(
-            result.is_ok(),
-            "Execution should succeed with 3 approvals when threshold is 3"
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::ProposalAlreadyExecuted)),
+            "Proposal already executed via auto-execute when threshold was reached"
         );
 
         // Verify proposal is marked as executed
         let executed_proposal = client.get_proposal(&proposal_id);
-        assert!(executed_proposal.executed, "Proposal should be marked as executed");
+        assert!(
+            executed_proposal.executed,
+            "Proposal should be marked as executed"
+        );
     }
 
     /// Test: Proposal execution succeeds with more than threshold approvals (threshold 3, 4 approvals).
@@ -1174,19 +1182,28 @@ mod tests {
         let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
-        // Get all possible approvals (more than threshold)
+        // Approve twice more to reach threshold (3 total → auto-execute)
         client.approve_action(&admin2, &proposal_id);
         client.approve_action(&admin3, &proposal_id);
-        client.approve_action(&admin4, &proposal_id);
 
+        // Third approval triggered auto-execute; verify executed state
         let proposal = client.get_proposal(&proposal_id);
-        assert_eq!(proposal.approvals.len(), 4, "Should have 4 approvals");
-
-        // Execution should succeed
-        let result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            proposal.approvals.len(),
+            3,
+            "Should have 3 approvals at threshold"
+        );
         assert!(
-            result.is_ok(),
-            "Execution should succeed with 4 approvals when threshold is 3"
+            proposal.executed,
+            "Proposal should be marked as executed after auto-execute"
+        );
+
+        // Explicit execute returns AlreadyExecuted
+        let result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::ProposalAlreadyExecuted)),
+            "Proposal already executed via auto-execute"
         );
     }
 
@@ -1230,11 +1247,12 @@ mod tests {
             "Proposal 1 should fail with 2 approvals"
         );
 
-        // Proposal 2 should succeed (3 == 3)
+        // Proposal 2 auto-executed when 3rd approval reached; explicit execute returns AlreadyExecuted
         let result2 = client.try_execute_proposal(&proposal2_id);
-        assert!(
-            result2.is_ok(),
-            "Proposal 2 should succeed with 3 approvals"
+        assert_eq!(
+            result2,
+            Err(Ok(NavinError::ProposalAlreadyExecuted)),
+            "Proposal 2 already executed via auto-execute"
         );
     }
 
@@ -1242,24 +1260,33 @@ mod tests {
     /// Verifies that a threshold of 1 is valid and immediately executable.
     #[test]
     fn execute_proposal_succeeds_immediately_with_threshold_1() {
-        let (env, client, admin, _admin2) = setup_multisig();
+        let (env, client, admin, admin2) = setup_multisig();
 
-        // Create multi-sig with threshold 1 (single approver)
+        // Multi-sig requires at least 2 admins; set threshold to 1
         let mut admins = Vec::new(&env);
         admins.push_back(admin.clone());
+        admins.push_back(admin2.clone());
         client.init_multisig(&admin, &admins, &1);
 
         let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         let proposal = client.get_proposal(&proposal_id);
-        assert_eq!(proposal.approvals.len(), 1, "Proposer should be auto-approved");
+        assert_eq!(
+            proposal.approvals.len(),
+            1,
+            "Proposer should be auto-approved"
+        );
 
-        // Should be immediately executable
+        // Threshold 1: proposer auto-approval meets threshold → executable.
         let result = client.try_execute_proposal(&proposal_id);
+        assert!(result.is_ok(), "Execution should succeed with threshold 1");
+
+        // Verify proposal is marked as executed
+        let executed_proposal = client.get_proposal(&proposal_id);
         assert!(
-            result.is_ok(),
-            "Execution should succeed immediately with threshold 1"
+            executed_proposal.executed,
+            "Proposal should be marked as executed"
         );
     }
 
@@ -1300,11 +1327,12 @@ mod tests {
         let proposal_after_2 = client.get_proposal(&proposal_id);
         assert_eq!(proposal_after_2.approvals.len(), 3);
 
-        // Now sufficient
+        // Third approval auto-executes the proposal; explicit execute returns AlreadyExecuted
         let result_after_2 = client.try_execute_proposal(&proposal_id);
-        assert!(
-            result_after_2.is_ok(),
-            "Execution should succeed with 3/3 approvals"
+        assert_eq!(
+            result_after_2,
+            Err(Ok(NavinError::ProposalAlreadyExecuted)),
+            "Proposal already executed via auto-execute when threshold was met"
         );
     }
 
@@ -1337,7 +1365,10 @@ mod tests {
 
         // Verify proposal state unchanged
         let proposal_after = client.get_proposal(&proposal_id);
-        assert!(!proposal_after.executed, "Still not executed after failed attempt");
+        assert!(
+            !proposal_after.executed,
+            "Still not executed after failed attempt"
+        );
         assert_eq!(proposal_after.approvals.len(), 1, "Approvals unchanged");
         assert_eq!(
             proposal_after.created_at, proposal_before.created_at,

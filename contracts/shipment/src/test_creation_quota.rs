@@ -1123,7 +1123,10 @@ mod tests {
         env.ledger().with_mut(|l| l.timestamp += 400);
 
         let count_after_create = client.get_active_shipment_count(&company);
-        assert_eq!(count_after_create, 1, "active count must be 1 after creating a shipment");
+        assert_eq!(
+            count_after_create, 1,
+            "active count must be 1 after creating a shipment"
+        );
 
         let reason_hash = make_hash(&env, 0xFF);
         client.cancel_shipment(&company, &id, &reason_hash);

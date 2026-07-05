@@ -34,8 +34,6 @@ mod test_reentrancy_guard;
 mod test_replay_protection;
 
 #[cfg(test)]
-mod test_token_compatibility;
-#[cfg(test)]
 mod test_event_fixtures;
 #[cfg(test)]
 mod test_finalization;
@@ -45,6 +43,8 @@ mod test_hash_emit_vectors;
 mod test_performance;
 #[cfg(test)]
 mod test_rollback;
+#[cfg(test)]
+mod test_token_compatibility;
 mod types;
 mod validation;
 
@@ -82,8 +82,6 @@ mod test_pause;
 mod test_precondition_guards;
 #[cfg(test)]
 mod test_proposal_digest;
-#[cfg(test)]
-mod test_replay_protection;
 #[cfg(test)]
 mod test_require_auth_for_args;
 #[cfg(test)]

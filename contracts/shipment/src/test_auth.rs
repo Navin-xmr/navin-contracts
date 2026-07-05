@@ -135,7 +135,10 @@ fn test_add_company_duplicate_leaves_state_unchanged() {
         &soroban_sdk::Vec::new(&env),
         &deadline,
     );
-    assert!(shipment_id > 0, "company role must remain active after duplicate add");
+    assert!(
+        shipment_id > 0,
+        "company role must remain active after duplicate add"
+    );
 }
 
 /// `add_carrier` must record an auth invocation for admin with correct args.
@@ -202,7 +205,10 @@ fn test_add_carrier_duplicate_leaves_state_unchanged() {
         &soroban_sdk::Vec::new(&env),
         &deadline,
     );
-    assert!(shipment_id > 0, "carrier role must remain active after duplicate add");
+    assert!(
+        shipment_id > 0,
+        "carrier role must remain active after duplicate add"
+    );
 }
 
 /// `suspend_carrier` must record admin auth with the target carrier address.
@@ -1165,14 +1171,14 @@ fn test_wrong_role_error_maps_to_unauthorized_category() {
 fn test_role_revocation_query() {
     let (env, client, admin, _token) = setup_env();
     let target = Address::generate(&env);
-    
+
     // Grant role
     client.add_company(&admin, &target);
     assert_eq!(client.get_role(&target), crate::Role::Company);
-    
+
     // Revoke role
     client.revoke_role(&admin, &target);
-    
+
     // Query again
     assert_eq!(client.get_role(&target), crate::Role::Unassigned);
 }

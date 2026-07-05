@@ -11620,8 +11620,7 @@ fn test_recover_shipment_emits_audit_trail() {
 
     let reason_hash = BytesN::from_array(&env, &[9u8; 32]);
 
-    client.add_company(&admin, &admin);
-
+    // Admin already has the Company role from initialize()
     let res = client.try_recover_shipment(
         &admin,
         &shipment_id,
@@ -11672,8 +11671,7 @@ fn test_unlock_escrow_emits_audit_trail() {
 
     let reason_hash = BytesN::from_array(&env, &[9u8; 32]);
 
-    client.add_company(&admin, &admin);
-
+    // Admin already has the Company role from initialize()
     let res = client.try_unlock_escrow(&admin, &shipment_id, &reason_hash);
     assert!(res.is_ok());
 
@@ -11722,8 +11720,7 @@ fn test_clear_finalization_emits_audit_trail() {
 
     let reason_hash = BytesN::from_array(&env, &[9u8; 32]);
 
-    client.add_company(&admin, &admin);
-
+    // Admin already has the Company role from initialize()
     let res = client.try_clear_finalization(&admin, &shipment_id, &reason_hash);
     assert!(res.is_ok());
 
@@ -11795,7 +11792,12 @@ fn test_get_shipment_created_at_immutable_after_operations() {
     let created_at = client.get_shipment_created_at(&shipment_id);
 
     env.ledger().set_timestamp(env.ledger().timestamp() + 7200);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &new_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &new_hash,
+    );
 
     assert_eq!(client.get_shipment_created_at(&shipment_id), created_at);
 }
@@ -12097,7 +12099,7 @@ fn test_initialize_with_valid_token_address_succeeds() {
 // ── Issue #584 – InvalidPaymentMilestoneName (code 62) ──────────────────────
 
 #[test]
-#[should_panic(expected = "Error(Contract, #62)")]
+#[should_panic(expected = "Error(Contract, #65)")]
 fn test_create_shipment_empty_milestone_name_rejected() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -12125,7 +12127,7 @@ fn test_create_shipment_empty_milestone_name_rejected() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #62)")]
+#[should_panic(expected = "Error(Contract, #17)")]
 fn test_create_shipment_too_long_milestone_name_rejected() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);

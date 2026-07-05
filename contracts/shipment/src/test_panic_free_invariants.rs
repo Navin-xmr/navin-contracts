@@ -729,9 +729,21 @@ fn test_append_note_hash_blocked_when_limit_reached() {
     client.update_config(&admin, &config);
 
     // Append up to the limit — all must succeed.
-    client.append_note_hash(&company, &shipment_id, &BytesN::from_array(&env, &[0x01u8; 32]));
-    client.append_note_hash(&carrier, &shipment_id, &BytesN::from_array(&env, &[0x02u8; 32]));
-    client.append_note_hash(&admin, &shipment_id, &BytesN::from_array(&env, &[0x03u8; 32]));
+    client.append_note_hash(
+        &company,
+        &shipment_id,
+        &BytesN::from_array(&env, &[0x01u8; 32]),
+    );
+    client.append_note_hash(
+        &carrier,
+        &shipment_id,
+        &BytesN::from_array(&env, &[0x02u8; 32]),
+    );
+    client.append_note_hash(
+        &admin,
+        &shipment_id,
+        &BytesN::from_array(&env, &[0x03u8; 32]),
+    );
 
     assert_eq!(client.get_note_count(&shipment_id), 3);
 
@@ -777,7 +789,11 @@ fn test_append_note_hash_exactly_at_limit_fails() {
     client.update_config(&admin, &config);
 
     // First append: within limit.
-    client.append_note_hash(&company, &shipment_id, &BytesN::from_array(&env, &[0xAAu8; 32]));
+    client.append_note_hash(
+        &company,
+        &shipment_id,
+        &BytesN::from_array(&env, &[0xAAu8; 32]),
+    );
     assert_eq!(client.get_note_count(&shipment_id), 1);
 
     // Second append: exceeds limit of 1.
@@ -856,10 +872,7 @@ fn test_append_note_hash_valid_32_byte_hash() {
         .try_append_note_hash(&company, &shipment_id, &note_hash)
         .is_ok());
     assert_eq!(client.get_note_count(&shipment_id), 1);
-    assert_eq!(
-        client.get_note_hash(&shipment_id, &0),
-        Some(note_hash)
-    );
+    assert_eq!(client.get_note_hash(&shipment_id, &0), Some(note_hash));
 }
 
 #[test]
