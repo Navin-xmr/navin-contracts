@@ -914,7 +914,10 @@ fn test_append_note_hash_exceeds_note_limit() {
     let (company, _receiver, _carrier, shipment_id) =
         setup_shipment_for_notes(&env, &client, &admin);
 
-    let config = ContractConfig { max_notes_per_shipment: 2, ..Default::default() };
+    let config = ContractConfig {
+        max_notes_per_shipment: 2,
+        ..Default::default()
+    };
     client.update_config(&admin, &config);
 
     let note_a = BytesN::from_array(&env, &[10u8; 32]);
