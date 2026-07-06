@@ -128,26 +128,21 @@ pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
 pub fn validate_symbol_chars(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
     let xdr = symbol.to_xdr(env);
     let raw: [u8; 32] = {
-        // xdr may be 8–20 bytes for valid symbols; zero-extend to 32 for uniform handling.
         let mut buf = [0u8; 32];
         let src_len = (xdr.len() as usize).min(32);
-        for i in 0..src_len {
-            buf[i] = xdr.get(i as u32).unwrap_or(0);
+        for (i, byte) in xdr.iter().take(src_len).enumerate() {
+            buf[i] = byte;
         }
         buf
     };
 
-    // Extract the 4-byte big-endian content length from bytes 4–7.
     let char_count = u32::from_be_bytes([raw[4], raw[5], raw[6], raw[7]]) as usize;
 
-    // Empty symbol — treated the same as InvalidSymbol.
     if char_count == 0 {
         return Err(NavinError::InvalidSymbol);
     }
 
-    // Content bytes start at offset 8.
-    for i in 0..char_count {
-        let byte = raw[8 + i];
+    for &byte in raw[8..8 + char_count].iter() {
         let valid = byte.is_ascii_alphanumeric() || byte == b'_';
         if !valid {
             return Err(NavinError::InvalidSymbol);

@@ -772,11 +772,12 @@ fn test_append_note_hash_exactly_at_limit_fails() {
     client.add_carrier_to_whitelist(&company, &carrier);
 
     let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
         &carrier,
-        &BytesN::from_array(&env, &[2u8; 32]),
+        &data_hash,
         &Vec::new(&env),
         &deadline,
     );
@@ -838,7 +839,7 @@ fn setup_shipment_for_notes(
         &receiver,
         &carrier,
         &data_hash,
-        &Vec::new(&env),
+        &Vec::new(env),
         &deadline,
     );
 
@@ -913,8 +914,7 @@ fn test_append_note_hash_exceeds_note_limit() {
     let (company, _receiver, _carrier, shipment_id) =
         setup_shipment_for_notes(&env, &client, &admin);
 
-    let mut config = ContractConfig::default();
-    config.max_notes_per_shipment = 2;
+    let config = ContractConfig { max_notes_per_shipment: 2, ..Default::default() };
     client.update_config(&admin, &config);
 
     let note_a = BytesN::from_array(&env, &[10u8; 32]);
