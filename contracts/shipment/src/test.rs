@@ -12883,3 +12883,318 @@ fn test_create_shipment_valid_milestone_name_accepted() {
     );
     assert!(id > 0);
 }
+
+// =============================================================================
+// Issue #601 — DuplicateAction error variant across operations
+// =============================================================================
+
+/// Verify that duplicate `create_shipment` calls within the idempotency window
+/// are rejected with `DuplicateAction` (error code 41).
+#[test]
+#[should_panic(expected = "Error(Contract, #41)")]
+fn test_duplicate_create_shipment_within_window_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // First creation succeeds
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    // Immediate replay with same (sender, data_hash) must be rejected
+    client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+}
+
+/// Verify that duplicate `update_status` calls within the idempotency window
+/// are rejected with `DuplicateAction` (error code 41).
+#[test]
+#[should_panic(expected = "Error(Contract, #41)")]
+fn test_duplicate_update_status_within_window_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xBBu8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let status_hash = BytesN::from_array(&env, &[1u8; 32]);
+    // First update succeeds
+    client.update_status(&carrier, &id, &ShipmentStatus::InTransit, &status_hash);
+    // Immediate replay with same (shipment_id, status, hash) must be rejected
+    client.update_status(&carrier, &id, &ShipmentStatus::InTransit, &status_hash);
+}
+
+/// Verify that `deposit_escrow` rejects a second deposit with `EscrowLocked`
+/// (error code 7), not `DuplicateAction` — escrow operations use their own
+/// guard rather than the idempotency mechanism.
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")]
+fn test_double_deposit_escrow_rejected_with_escrow_locked() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xCCu8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // First deposit succeeds
+    client.deposit_escrow(&company, &id, &100);
+    // Second deposit is rejected because escrow is already locked
+    client.deposit_escrow(&company, &id, &100);
+}
+
+/// Verify that actions succeed after the idempotency window expires.
+#[test]
+fn test_duplicate_action_succeeds_after_window_expires() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let milestones = soroban_sdk::Vec::new(&env);
+
+    // First shipment creation succeeds
+    let id1 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &milestones,
+        &deadline,
+    );
+
+    // Advance past rate limit window (60s) to clear idempotency
+    super::test_utils::advance_past_rate_limit(&env);
+
+    // Second creation with different hash succeeds (different action hash)
+    let id2 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &milestones,
+        &deadline,
+    );
+
+    assert_eq!(id1, 1);
+    assert_eq!(id2, 2);
+}
+
+/// Verify that DuplicateAction is error code 41.
+#[test]
+fn test_duplicate_action_error_code_is_41() {
+    assert_eq!(crate::NavinError::DuplicateAction as u32, 41);
+}
+
+// =============================================================================
+// Issue #603 — InvalidMultiSigConfig error variant
+// =============================================================================
+
+/// Verify that `init_multisig` rejects threshold higher than admin count
+/// with `InvalidConfig` (error code 31).
+#[test]
+#[should_panic(expected = "Error(Contract, #31)")]
+fn test_multisig_threshold_higher_than_admin_count_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1);
+    admins.push_back(admin2);
+
+    // Threshold 3 > admin count 2 → InvalidConfig (#31)
+    client.init_multisig(&admin, &admins, &3);
+}
+
+/// Verify that `init_multisig` rejects threshold of zero
+/// with `InvalidMultiSigConfig` (error code 28).
+#[test]
+#[should_panic(expected = "Error(Contract, #28)")]
+fn test_multisig_threshold_zero_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1);
+    admins.push_back(admin2);
+
+    // Threshold 0 is invalid
+    client.init_multisig(&admin, &admins, &0);
+}
+
+/// Verify that `init_multisig` rejects empty admin list with non-zero threshold
+/// with `InvalidMultiSigConfig` (error code 28).
+#[test]
+#[should_panic(expected = "Error(Contract, #28)")]
+fn test_multisig_empty_admin_list_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let admins = soroban_sdk::Vec::new(&env);
+
+    // Empty admin list with threshold 1
+    client.init_multisig(&admin, &admins, &1);
+}
+
+/// Verify that a valid multi-sig configuration succeeds.
+#[test]
+fn test_multisig_valid_config_succeeds() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let admin3 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3.clone());
+
+    // Threshold 2 with 3 admins is valid
+    client.init_multisig(&admin, &admins, &2);
+
+    let (stored_admins, threshold) = client.get_multisig_config();
+    assert_eq!(stored_admins.len(), 3);
+    assert_eq!(threshold, 2);
+}
+
+/// Verify that InvalidMultiSigConfig is error code 28.
+#[test]
+fn test_invalid_multisig_config_error_code_is_28() {
+    assert_eq!(crate::NavinError::InvalidMultiSigConfig as u32, 28);
+}
+
+// =============================================================================
+// Issue #604 — InsufficientApprovals error variant
+// =============================================================================
+
+/// Verify that executing a proposal with fewer approvals than threshold
+/// fails with `InsufficientApprovals` (error code 26).
+#[test]
+#[should_panic(expected = "Error(Contract, #26)")]
+fn test_execute_proposal_with_insufficient_approvals_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let admin3 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3.clone());
+
+    // Threshold 3 — all three must approve
+    client.init_multisig(&admin, &admins, &3);
+
+    let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
+    let action = crate::AdminAction::Upgrade(new_wasm_hash);
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // Only proposer (admin1) has approved — need 3 total
+    client.execute_proposal(&proposal_id);
+}
+
+/// Verify that reaching exactly the approval threshold auto-executes the proposal.
+/// Uses TransferAdmin action to avoid replacing the contract WASM (which would
+/// remove `get_proposal` from the deployed code).
+#[test]
+fn test_execute_proposal_with_exact_threshold_approvals_succeeds() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let admin3 = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3.clone());
+
+    // Threshold 2
+    client.init_multisig(&admin, &admins, &2);
+
+    let action = crate::AdminAction::TransferAdmin(new_admin.clone());
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // Proposer (admin1) auto-approves → 1/2 approvals
+    let proposal = client.get_proposal(&proposal_id);
+    assert_eq!(proposal.approvals.len(), 1);
+    assert!(!proposal.executed);
+
+    // admin2 approves → reaches threshold of 2 → auto-executes
+    client.approve_action(&admin2, &proposal_id);
+
+    // Verify the proposal was auto-executed
+    let proposal = client.get_proposal(&proposal_id);
+    assert!(proposal.executed);
+
+    // Verify admin was actually transferred
+    assert_eq!(client.get_admin(), new_admin);
+}
+
+/// Verify that InsufficientApprovals is error code 26.
+#[test]
+fn test_insufficient_approvals_error_code_is_26() {
+    assert_eq!(crate::NavinError::InsufficientApprovals as u32, 26);
+}

@@ -108,6 +108,8 @@ mod test_verification;
 mod test_whitelist_multicompany;
 #[cfg(test)]
 mod test_zero_amount_escrow;
+#[cfg(test)]
+mod test_invalid_config;
 
 // ── Fuzz / property-based test harnesses ─────────────────────────────────────
 #[cfg(test)]
