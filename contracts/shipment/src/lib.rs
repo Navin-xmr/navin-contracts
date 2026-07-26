@@ -31,7 +31,7 @@ mod test_mixed_token_shipments;
 #[cfg(test)]
 mod test_reentrancy_guard;
 #[cfg(test)]
-mod test_token_compatibility;
+mod test_replay_protection;
 
 #[cfg(test)]
 mod test_event_fixtures;
@@ -43,6 +43,8 @@ mod test_hash_emit_vectors;
 mod test_performance;
 #[cfg(test)]
 mod test_rollback;
+#[cfg(test)]
+mod test_token_compatibility;
 mod types;
 mod validation;
 
@@ -106,8 +108,6 @@ mod test_verification;
 mod test_whitelist_multicompany;
 #[cfg(test)]
 mod test_zero_amount_escrow;
-#[cfg(test)]
-mod test_replay_protection;
 
 // ── Fuzz / property-based test harnesses ─────────────────────────────────────
 #[cfg(test)]
@@ -165,9 +165,9 @@ fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(),
 
     let mut total_percentage = 0;
     for milestone in milestones.iter() {
-        // Reject negative percentages (cast to i32 and check sign)
+        // Reject invalid percentages (handled upstream, but guard here too).
         if milestone.1 > 100 {
-            return Err(NavinError::InvalidConfig);
+            return Err(NavinError::InvalidPaymentMilestones);
         }
         total_percentage += milestone.1;
     }
@@ -213,6 +213,30 @@ pub(crate) fn validate_symbol_not_whitespace_only(
 
 pub(crate) fn checked_add_i128(a: i128, b: i128) -> Result<i128, NavinError> {
     a.checked_add(b).ok_or(NavinError::ArithmeticError)
+}
+
+/// Check if an `Address` is the zero-address sentinel (all-zero XDR key bytes).
+///
+/// In Soroban, an `Address` wraps either an `Account` (Ed25519 public key) or a
+/// `Contract` (SHA-256 hash).  This function checks whether the 32-byte key
+/// portion of the XDR encoding is entirely zero, which is the Soroban equivalent
+/// of an uninitialised / null address.
+pub(crate) fn is_zero_address(env: &Env, addr: &Address) -> bool {
+    let xdr = addr.to_xdr(env);
+    let len = xdr.len();
+    // An Account/Contract Address XDR is 40 bytes:
+    //   bytes 0-3:  ScVal type tag (0x0A = ScAddress)
+    //   bytes 4-7:  ScAddress discriminant (0 = Account, 1 = Contract)
+    //   bytes 8-39: 32-byte key
+    if len < 40 {
+        return true;
+    }
+    for i in 8..40 {
+        if xdr.get(i).unwrap_or(1) != 0 {
+            return false;
+        }
+    }
+    true
 }
 
 pub(crate) fn checked_sub_i128(a: i128, b: i128) -> Result<i128, NavinError> {
@@ -748,8 +772,8 @@ impl NavinShipment {
         require_not_paused(&env)?;
         reporter.require_auth();
 
-        // Validate hash before storage
-        validation::validate_hash(&note_hash)?;
+        // Validate note hash length (32 bytes) and reject malformed sentinels.
+        validation::validate_note_hash(&note_hash)?;
 
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
@@ -973,6 +997,12 @@ impl NavinShipment {
             return Err(NavinError::AlreadyInitialized);
         }
 
+        // Reject obviously invalid token addresses: the token contract must not be
+        // the admin account or the shipment contract itself.
+        if token_contract == admin || token_contract == env.current_contract_address() {
+            return Err(NavinError::InvalidTokenAddress);
+        }
+
         storage::set_admin(&env, &admin);
         storage::set_token_contract(&env, &token_contract);
         storage::set_shipment_counter(&env, 0);
@@ -1004,6 +1034,7 @@ impl NavinShipment {
     /// * `limit` - The new active shipment limit.
     pub fn set_shipment_limit(env: Env, admin: Address, limit: u32) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -1031,6 +1062,7 @@ impl NavinShipment {
         limit: u32,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -1505,6 +1537,10 @@ impl NavinShipment {
 
         require_admin_or_operator(&env, &admin)?;
 
+        if storage::has_role(&env, &company, &Role::Company) {
+            return Err(NavinError::RoleAlreadyAssigned);
+        }
+
         storage::set_company_role(&env, &company);
 
         // Emit role history event
@@ -1543,6 +1579,10 @@ impl NavinShipment {
         admin.require_auth();
 
         require_admin_or_operator(&env, &admin)?;
+
+        if storage::has_role(&env, &carrier, &Role::Carrier) {
+            return Err(NavinError::RoleAlreadyAssigned);
+        }
 
         storage::set_carrier_role(&env, &carrier);
 
@@ -3276,6 +3316,7 @@ impl NavinShipment {
         require_initialized(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
+        require_active_carrier(&env, &carrier)?;
 
         // Verify shipment exists and carrier is assigned
         let shipment =
@@ -3430,6 +3471,10 @@ impl NavinShipment {
         // Do NOT store the milestone on-chain
         // Emit the milestone_recorded event (Hash-and-Emit pattern)
         events::emit_milestone_recorded(&env, shipment_id, &checkpoint, &data_hash, &carrier);
+
+        // Increment the milestone event count so the payload-size guard
+        // is actually enforced on subsequent calls.
+        storage::increment_milestone_event_count(&env, shipment_id);
 
         // Check for milestone-based payments
         let mut mut_shipment = shipment;
@@ -3599,6 +3644,10 @@ impl NavinShipment {
 
             // Emit one event per milestone (Hash-and-Emit pattern)
             events::emit_milestone_recorded(&env, shipment_id, &checkpoint, &data_hash, &carrier);
+
+            // Increment the milestone event count so the payload-size guard
+            // is actually enforced on subsequent calls.
+            storage::increment_milestone_event_count(&env, shipment_id);
 
             // Check for milestone-based payments
             let mut found_index = None;
@@ -4215,11 +4264,11 @@ impl NavinShipment {
             let mut shipment =
                 storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
-            require_not_finalized(&shipment)?;
-
             if caller != shipment.sender && caller != admin {
                 return Err(NavinError::Unauthorized);
             }
+
+            require_not_finalized(&shipment)?;
 
             // Check for suspension if caller is the sender (company)
             if caller == shipment.sender {
@@ -4970,6 +5019,13 @@ impl NavinShipment {
             return Err(NavinError::NotAnAdmin);
         }
 
+        // Validate action
+        if let crate::types::AdminAction::Upgrade(hash) = &action {
+            if hash.to_array() == [0u8; 32] {
+                return Err(NavinError::InvalidHash);
+            }
+        }
+
         let proposal_id = storage::get_proposal_counter(&env)
             .checked_add(1)
             .ok_or(NavinError::CounterOverflow)?;
@@ -5297,6 +5353,7 @@ impl NavinShipment {
         new_config: ContractConfig,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -5335,6 +5392,10 @@ impl NavinShipment {
 
         if fee_bps > 1000 {
             return Err(NavinError::InvalidAmount);
+        }
+
+        if is_zero_address(&env, &treasury) {
+            return Err(NavinError::InvalidAddress);
         }
 
         let config = FeeConfig {

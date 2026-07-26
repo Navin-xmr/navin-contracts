@@ -149,10 +149,14 @@ pub enum NavinError {
     NoteNotFound = 66,
     /// Evidence not found or index out of bounds.
     EvidenceNotFound = 67,
+    /// Address already holds the requested role.
+    RoleAlreadyAssigned = 68,
     /// Issue #539 — caller attempted to add a carrier to a company's
     /// whitelist that is already present. The whitelist is set-like;
     /// duplicate additions are rejected with this dedicated error so
     /// off-chain monitors can distinguish a no-op from a real failure
     /// without falling back on the generic `AlreadyInitialized` code.
-    CarrierAlreadyWhitelisted = 68,
+    CarrierAlreadyWhitelisted = 69,
+    /// Address is invalid (e.g., zero-address sentinel).
+    InvalidAddress = 70,
 }

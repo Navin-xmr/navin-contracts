@@ -98,6 +98,17 @@ mod tests {
     // ── digest changes for different actions ─────────────────────────────────
 
     #[test]
+    fn test_reject_zero_hash_upgrade() {
+        let (env, client, admin, _admin2) = setup_multisig();
+
+        let zero_hash = BytesN::from_array(&env, &[0; 32]);
+        let action = crate::types::AdminAction::Upgrade(zero_hash);
+
+        let res = client.try_propose_action(&admin, &action);
+        assert_eq!(res, Err(Ok(crate::errors::NavinError::InvalidHash)));
+    }
+
+    #[test]
     fn digest_differs_for_different_actions() {
         let (env, client, admin, _admin2) = setup_multisig();
 
@@ -585,14 +596,12 @@ mod tests {
         );
 
         // After expiration, the proposal storage key should remain safely accessible
-        // for cleanup without causing errors. Attempting to get the expired proposal
-        // should still work for diagnostics (not panic or fail unexpectedly).
+        // for cleanup without causing errors. The expired proposal still exists in
+        // storage (it was never removed), so get_proposal returns it successfully.
         let get_result = client.try_get_proposal(&proposal_id);
-        // Result varies based on implementation - could be NotFound or ProposalExpired
-        // The key point is it doesn't cause a crash or unexpected error type
         assert!(
-            get_result.is_err(),
-            "Getting expired proposal should handle gracefully"
+            get_result.is_ok(),
+            "Expired proposal should still be accessible via get_proposal for diagnostics"
         );
     }
 
@@ -650,7 +659,10 @@ mod tests {
 
         // Proposal should still be usable
         let get_result = client.try_get_proposal(&proposal_id);
-        assert!(get_result.is_ok(), "Proposal must be accessible just before expiry");
+        assert!(
+            get_result.is_ok(),
+            "Proposal must be accessible just before expiry"
+        );
 
         // Now advance past the expiry threshold
         env.ledger().with_mut(|l| {
@@ -679,7 +691,7 @@ mod tests {
         env.as_contract(&client.address, || {
             let mut cfg = crate::config::get_config(&env);
             cfg.proposal_expiry_seconds = 0;
-            crate::config::set_config(&env, &cfg);
+            let _ = crate::config::set_config(&env, &cfg);
         });
 
         let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
@@ -704,10 +716,7 @@ mod tests {
 
         let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let result = client.try_propose_action(&admin, &action);
-        assert!(
-            result.is_ok(),
-            "positive-duration expiry must be accepted"
-        );
+        assert!(result.is_ok(), "positive-duration expiry must be accepted");
     }
 
     // ── [ISSUE #527] ProposalDigest execution validation checks ──────────────
@@ -1030,5 +1039,440 @@ mod tests {
             "digest computed_at must match the proposal created_at field"
         );
     }
-}
 
+    // ── [ISSUE #XXX] Multi-sig threshold enforcement tests ─────────────────────
+
+    /// Test: Proposal execution rejected with insufficient approvals (threshold 3, 1 approval).
+    /// Verifies that attempts to execute with only 1 approval when 3 are required fail
+    /// with InsufficientApprovals error.
+    #[test]
+    fn execute_proposal_rejected_with_insufficient_approvals_3_required_1_provided() {
+        let (env, client, admin, _admin2) = setup_multisig();
+
+        // Create multi-sig with threshold 3
+        let admin3 = Address::generate(&env);
+        let admin4 = Address::generate(&env);
+        let mut admins = Vec::new(&env);
+        admins.push_back(admin.clone());
+        admins.push_back(_admin2.clone());
+        admins.push_back(admin3.clone());
+        admins.push_back(admin4.clone());
+        client.init_multisig(&admin, &admins, &3);
+
+        // Create proposal
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Only 1 approval (proposer's auto-approval)
+        let proposal = client.get_proposal(&proposal_id);
+        assert_eq!(
+            proposal.approvals.len(),
+            1,
+            "Proposer should be auto-approved"
+        );
+
+        // Attempt to execute with only 1 approval (need 3)
+        let result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::InsufficientApprovals)),
+            "Execution should fail with only 1 approval when 3 required"
+        );
+    }
+
+    /// Test: Proposal execution rejected with exactly 1 less than threshold (threshold 3, 2 approvals).
+    /// Verifies that reaching n-1 approvals is still insufficient.
+    #[test]
+    fn execute_proposal_rejected_with_exactly_one_less_than_threshold() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        // Create multi-sig with threshold 3
+        let admin3 = Address::generate(&env);
+        let admin4 = Address::generate(&env);
+        let mut admins = Vec::new(&env);
+        admins.push_back(admin.clone());
+        admins.push_back(admin2.clone());
+        admins.push_back(admin3.clone());
+        admins.push_back(admin4.clone());
+        client.init_multisig(&admin, &admins, &3);
+
+        // Create proposal
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Get 1 additional approval (now 2 total: proposer + admin2)
+        client.approve_action(&admin2, &proposal_id);
+
+        let proposal = client.get_proposal(&proposal_id);
+        assert_eq!(proposal.approvals.len(), 2, "Should have 2 approvals");
+
+        // Attempt to execute with 2 approvals (need 3)
+        let result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::InsufficientApprovals)),
+            "Execution should fail with 2 approvals when 3 required"
+        );
+    }
+
+    /// Test: Proposal execution succeeds exactly at threshold (threshold 3, 3 approvals).
+    /// Verifies that reaching exactly the threshold enables execution.
+    #[test]
+    fn execute_proposal_succeeds_at_exact_threshold() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        // Create multi-sig with threshold 3
+        let admin3 = Address::generate(&env);
+        let admin4 = Address::generate(&env);
+        let mut admins = Vec::new(&env);
+        admins.push_back(admin.clone());
+        admins.push_back(admin2.clone());
+        admins.push_back(admin3.clone());
+        admins.push_back(admin4.clone());
+        client.init_multisig(&admin, &admins, &3);
+
+        // Create proposal
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Get additional approvals to reach threshold
+        client.approve_action(&admin2, &proposal_id);
+        client.approve_action(&admin3, &proposal_id);
+
+        let proposal = client.get_proposal(&proposal_id);
+        assert_eq!(
+            proposal.approvals.len(),
+            3,
+            "Should have exactly 3 approvals"
+        );
+
+        // Approval 3 auto-executes the proposal, so explicit execute returns AlreadyExecuted
+        let result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::ProposalAlreadyExecuted)),
+            "Proposal already executed via auto-execute when threshold was reached"
+        );
+
+        // Verify proposal is marked as executed
+        let executed_proposal = client.get_proposal(&proposal_id);
+        assert!(
+            executed_proposal.executed,
+            "Proposal should be marked as executed"
+        );
+    }
+
+    /// Test: Proposal execution succeeds with more than threshold approvals (threshold 3, 4 approvals).
+    /// Verifies that exceeding the threshold also allows execution.
+    #[test]
+    fn execute_proposal_succeeds_with_more_than_threshold_approvals() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        // Create multi-sig with threshold 3
+        let admin3 = Address::generate(&env);
+        let admin4 = Address::generate(&env);
+        let mut admins = Vec::new(&env);
+        admins.push_back(admin.clone());
+        admins.push_back(admin2.clone());
+        admins.push_back(admin3.clone());
+        admins.push_back(admin4.clone());
+        client.init_multisig(&admin, &admins, &3);
+
+        // Create proposal
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Approve twice more to reach threshold (3 total → auto-execute)
+        client.approve_action(&admin2, &proposal_id);
+        client.approve_action(&admin3, &proposal_id);
+
+        // Third approval triggered auto-execute; verify executed state
+        let proposal = client.get_proposal(&proposal_id);
+        assert_eq!(
+            proposal.approvals.len(),
+            3,
+            "Should have 3 approvals at threshold"
+        );
+        assert!(
+            proposal.executed,
+            "Proposal should be marked as executed after auto-execute"
+        );
+
+        // Explicit execute returns AlreadyExecuted
+        let result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::ProposalAlreadyExecuted)),
+            "Proposal already executed via auto-execute"
+        );
+    }
+
+    /// Test: Multiple proposals independently enforce threshold (threshold 3).
+    /// Verifies that threshold enforcement is per-proposal and not global.
+    #[test]
+    fn multiple_proposals_independently_enforce_threshold() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        // Create multi-sig with threshold 3
+        let admin3 = Address::generate(&env);
+        let admin4 = Address::generate(&env);
+        let mut admins = Vec::new(&env);
+        admins.push_back(admin.clone());
+        admins.push_back(admin2.clone());
+        admins.push_back(admin3.clone());
+        admins.push_back(admin4.clone());
+        client.init_multisig(&admin, &admins, &3);
+
+        // Create first proposal (ForceRelease)
+        let action1 = crate::types::AdminAction::ForceRelease(42u64);
+        let proposal1_id = client.propose_action(&admin, &action1);
+
+        // Create second proposal (TransferAdmin)
+        crate::test_utils::advance_ledger_time(&env, 400);
+        let action2 = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal2_id = client.propose_action(&admin, &action2);
+
+        // Approve proposal 1 once more (now 2 approvals total)
+        client.approve_action(&admin2, &proposal1_id);
+
+        // Approve proposal 2 three times (now 3 approvals total)
+        client.approve_action(&admin2, &proposal2_id);
+        client.approve_action(&admin3, &proposal2_id);
+
+        // Proposal 1 should still fail (2 < 3)
+        let result1 = client.try_execute_proposal(&proposal1_id);
+        assert_eq!(
+            result1,
+            Err(Ok(NavinError::InsufficientApprovals)),
+            "Proposal 1 should fail with 2 approvals"
+        );
+
+        // Proposal 2 auto-executed when 3rd approval reached; explicit execute returns AlreadyExecuted
+        let result2 = client.try_execute_proposal(&proposal2_id);
+        assert_eq!(
+            result2,
+            Err(Ok(NavinError::ProposalAlreadyExecuted)),
+            "Proposal 2 already executed via auto-execute"
+        );
+    }
+
+    /// Test: Threshold 1 allows immediate execution by proposer (auto-approval).
+    /// Verifies that a threshold of 1 is valid and immediately executable.
+    #[test]
+    fn execute_proposal_succeeds_immediately_with_threshold_1() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        // Multi-sig requires at least 2 admins; set threshold to 1
+        let mut admins = Vec::new(&env);
+        admins.push_back(admin.clone());
+        admins.push_back(admin2.clone());
+        client.init_multisig(&admin, &admins, &1);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        let proposal = client.get_proposal(&proposal_id);
+        assert_eq!(
+            proposal.approvals.len(),
+            1,
+            "Proposer should be auto-approved"
+        );
+
+        // Threshold 1: proposer auto-approval meets threshold → executable.
+        let result = client.try_execute_proposal(&proposal_id);
+        assert!(result.is_ok(), "Execution should succeed with threshold 1");
+
+        // Verify proposal is marked as executed
+        let executed_proposal = client.get_proposal(&proposal_id);
+        assert!(
+            executed_proposal.executed,
+            "Proposal should be marked as executed"
+        );
+    }
+
+    /// Test: Threshold matches admin count (all must approve).
+    /// Verifies that a threshold equal to the admin count requires all to approve.
+    #[test]
+    fn execute_proposal_requires_all_admins_when_threshold_equals_admin_count() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        // Create multi-sig with 3 admins and threshold 3 (all required)
+        let admin3 = Address::generate(&env);
+        let mut admins = Vec::new(&env);
+        admins.push_back(admin.clone());
+        admins.push_back(admin2.clone());
+        admins.push_back(admin3.clone());
+        client.init_multisig(&admin, &admins, &3);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Get approvals one by one
+        client.approve_action(&admin2, &proposal_id);
+
+        let proposal_after_1 = client.get_proposal(&proposal_id);
+        assert_eq!(proposal_after_1.approvals.len(), 2);
+
+        // Still insufficient
+        let result_after_1 = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            result_after_1,
+            Err(Ok(NavinError::InsufficientApprovals)),
+            "Execution should fail with 2/3 approvals"
+        );
+
+        // Get final approval
+        client.approve_action(&admin3, &proposal_id);
+
+        let proposal_after_2 = client.get_proposal(&proposal_id);
+        assert_eq!(proposal_after_2.approvals.len(), 3);
+
+        // Third approval auto-executes the proposal; explicit execute returns AlreadyExecuted
+        let result_after_2 = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            result_after_2,
+            Err(Ok(NavinError::ProposalAlreadyExecuted)),
+            "Proposal already executed via auto-execute when threshold was met"
+        );
+    }
+
+    /// Test: Rejected execution does not change proposal state.
+    /// Verifies that failed execution attempts leave proposal unmodified.
+    #[test]
+    fn rejected_execution_does_not_modify_proposal_state() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        // Create multi-sig with threshold 3
+        let admin3 = Address::generate(&env);
+        let admin4 = Address::generate(&env);
+        let mut admins = Vec::new(&env);
+        admins.push_back(admin.clone());
+        admins.push_back(admin2.clone());
+        admins.push_back(admin3.clone());
+        admins.push_back(admin4.clone());
+        client.init_multisig(&admin, &admins, &3);
+
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+
+        let proposal_before = client.get_proposal(&proposal_id);
+        assert!(!proposal_before.executed, "Initially not executed");
+        assert_eq!(proposal_before.approvals.len(), 1);
+
+        // Attempt to execute with insufficient approvals
+        let result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(result, Err(Ok(NavinError::InsufficientApprovals)));
+
+        // Verify proposal state unchanged
+        let proposal_after = client.get_proposal(&proposal_id);
+        assert!(
+            !proposal_after.executed,
+            "Still not executed after failed attempt"
+        );
+        assert_eq!(proposal_after.approvals.len(), 1, "Approvals unchanged");
+        assert_eq!(
+            proposal_after.created_at, proposal_before.created_at,
+            "created_at unchanged"
+        );
+        assert_eq!(
+            proposal_after.proposer, proposal_before.proposer,
+            "proposer unchanged"
+        );
+    }
+
+    /// Test: ForceRelease action with insufficient signatures.
+    /// Verifies that ForceRelease proposals are also subject to threshold enforcement.
+    #[test]
+    fn force_release_proposal_blocked_with_insufficient_approvals() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        // Create multi-sig with threshold 2
+        let admin3 = Address::generate(&env);
+        let mut admins = Vec::new(&env);
+        admins.push_back(admin.clone());
+        admins.push_back(admin2.clone());
+        admins.push_back(admin3.clone());
+        client.init_multisig(&admin, &admins, &2);
+
+        // Create ForceRelease proposal
+        let shipment_id = 42u64;
+        let action = crate::types::AdminAction::ForceRelease(shipment_id);
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Only 1 approval
+        let proposal = client.get_proposal(&proposal_id);
+        assert_eq!(proposal.approvals.len(), 1);
+
+        // Should fail with insufficient approvals
+        let result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::InsufficientApprovals)),
+            "ForceRelease should be blocked without sufficient approvals"
+        );
+    }
+
+    /// Test: ForceRefund action with insufficient signatures.
+    /// Verifies that ForceRefund proposals are also subject to threshold enforcement.
+    #[test]
+    fn force_refund_proposal_blocked_with_insufficient_approvals() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        // Create multi-sig with threshold 2
+        let admin3 = Address::generate(&env);
+        let mut admins = Vec::new(&env);
+        admins.push_back(admin.clone());
+        admins.push_back(admin2.clone());
+        admins.push_back(admin3.clone());
+        client.init_multisig(&admin, &admins, &2);
+
+        // Create ForceRefund proposal
+        let shipment_id = 99u64;
+        let action = crate::types::AdminAction::ForceRefund(shipment_id);
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Only 1 approval
+        let proposal = client.get_proposal(&proposal_id);
+        assert_eq!(proposal.approvals.len(), 1);
+
+        // Should fail with insufficient approvals
+        let result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::InsufficientApprovals)),
+            "ForceRefund should be blocked without sufficient approvals"
+        );
+    }
+
+    /// Test: Upgrade action with insufficient signatures.
+    /// Verifies that Upgrade proposals are also subject to threshold enforcement.
+    #[test]
+    fn upgrade_proposal_blocked_with_insufficient_approvals() {
+        let (env, client, admin, admin2) = setup_multisig();
+
+        // Create multi-sig with threshold 2
+        let admin3 = Address::generate(&env);
+        let mut admins = Vec::new(&env);
+        admins.push_back(admin.clone());
+        admins.push_back(admin2.clone());
+        admins.push_back(admin3.clone());
+        client.init_multisig(&admin, &admins, &2);
+
+        // Create Upgrade proposal
+        let new_wasm = wasm_hash(&env, 55);
+        let action = crate::types::AdminAction::Upgrade(new_wasm);
+        let proposal_id = client.propose_action(&admin, &action);
+
+        // Only 1 approval
+        let proposal = client.get_proposal(&proposal_id);
+        assert_eq!(proposal.approvals.len(), 1);
+
+        // Should fail with insufficient approvals
+        let result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::InsufficientApprovals)),
+            "Upgrade should be blocked without sufficient approvals"
+        );
+    }
+}

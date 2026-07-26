@@ -724,7 +724,7 @@ fn test_config_checksum_raw_compute_matches_saved() {
 /// for any realistic config — a zero checksum would defeat drift detection.
 #[test]
 fn test_config_checksum_never_zero_for_defaults() {
-    let (env, client, _admin, _) = setup();
+    let (_env, client, _admin, _) = setup();
     let checksum = client.get_config_checksum();
     let bytes: [u8; 32] = checksum.to_array();
     assert!(

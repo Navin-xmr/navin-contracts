@@ -1,8 +1,8 @@
-/// Unit tests for ActorQuota sliding window replenishment mechanism.
-///
-/// This module verifies that the ActorQuota sliding window tracker correctly
-/// replenishes available quotas when queried after the window duration has
-/// fully reset in the ledger clock.
+//! Unit tests for ActorQuota sliding window replenishment mechanism.
+//!
+//! This module verifies that the ActorQuota sliding window tracker correctly
+//! replenishes available quotas when queried after the window duration has
+//! fully reset in the ledger clock.
 
 #[cfg(test)]
 mod actor_quota_tests {
@@ -39,11 +39,7 @@ mod actor_quota_tests {
 
         // Attempt operation at boundary (window_start + window_seconds)
         let boundary_time = tracker.window_start + config.window_seconds;
-        let result = tracker.check_and_update(
-            boundary_time,
-            &config,
-            1,
-        );
+        let result = tracker.check_and_update(boundary_time, &config, 1);
 
         // Should succeed because window has expired exactly at boundary
         assert!(
@@ -83,8 +79,7 @@ mod actor_quota_tests {
         let far_future = 1000 + (config.window_seconds * 2);
 
         // Perform operation at far future time
-        let result =
-            tracker.check_and_update(far_future, &config, 1);
+        let result = tracker.check_and_update(far_future, &config, 1);
 
         assert!(
             result.is_ok(),
@@ -120,11 +115,7 @@ mod actor_quota_tests {
         // Perform multiple operations in new window
         let ops_count = 50;
         for i in 0..ops_count {
-            let result = tracker.check_and_update(
-                new_window_start,
-                &config,
-                1,
-            );
+            let result = tracker.check_and_update(new_window_start, &config, 1);
             assert!(
                 result.is_ok(),
                 "operation {} in replenished window should succeed",
@@ -160,13 +151,12 @@ mod actor_quota_tests {
             for _ in 0..config.max_operations {
                 tracker
                     .check_and_update(0, &config, 1)
-                    .expect(&std::format!("{} exhaustion failed", config_name));
+                    .unwrap_or_else(|_| panic!("{} exhaustion failed", config_name));
             }
 
             // Move past window and try operation
             let new_time = config.window_seconds + 1;
-            let result =
-                tracker.check_and_update(new_time, &config, 1);
+            let result = tracker.check_and_update(new_time, &config, 1);
 
             assert!(
                 result.is_ok(),
@@ -199,12 +189,8 @@ mod actor_quota_tests {
         }
 
         // Try operation just before window expires
-        let almost_expired = 0 + config.window_seconds - 1;
-        let result = tracker.check_and_update(
-            almost_expired,
-            &config,
-            1,
-        );
+        let almost_expired = config.window_seconds - 1;
+        let result = tracker.check_and_update(almost_expired, &config, 1);
 
         // Should fail - window not yet expired
         assert!(
@@ -236,13 +222,13 @@ mod actor_quota_tests {
             // First call in cycle triggers window reset (if cycle > 0)
             tracker
                 .check_and_update(cycle_start, &config, 1)
-                .expect(&std::format!("cycle {} first op should succeed", cycle));
+                .unwrap_or_else(|_| panic!("cycle {} first op should succeed", cycle));
 
             // Exhaust remaining quota in this cycle
             for _ in 1..config.max_operations {
                 tracker
                     .check_and_update(cycle_start, &config, 1)
-                    .expect(&std::format!("cycle {} exhaustion should succeed", cycle));
+                    .unwrap_or_else(|_| panic!("cycle {} exhaustion should succeed", cycle));
             }
 
             // Verify exhausted
@@ -281,11 +267,7 @@ mod actor_quota_tests {
         // Move to new window
         let new_window_start = 1000 + config.window_seconds + 1;
         tracker
-            .check_and_update(
-                new_window_start,
-                &config,
-                1,
-            )
+            .check_and_update(new_window_start, &config, 1)
             .expect("replenishment should succeed");
 
         // Check time remaining at various points in new window
@@ -331,8 +313,7 @@ mod actor_quota_tests {
 
         // Move past window and attempt zero-value operation
         let new_time = config.window_seconds + 1;
-        let result =
-            tracker.check_and_update(new_time, &config, 0);
+        let result = tracker.check_and_update(new_time, &config, 0);
 
         // Zero-value operation should succeed and not consume quota
         assert!(result.is_ok(), "zero-value operation should succeed");

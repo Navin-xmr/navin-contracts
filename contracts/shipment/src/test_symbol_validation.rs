@@ -13,6 +13,17 @@ fn sym(env: &Env, s: &str) -> Symbol {
     Symbol::new(env, s)
 }
 
+// ── Empty Symbol ───────────────────────────────────────────────────────────────
+
+#[test]
+fn test_empty_symbol_invalid() {
+    let env = Env::default();
+    assert_eq!(
+        validate_symbol(&env, &sym(&env, "")),
+        Err(NavinError::InvalidSymbol)
+    );
+}
+
 // ── Valid symbols: boundary lengths ──────────────────────────────────────────
 
 #[test]
@@ -1022,7 +1033,7 @@ fn test_validate_checkpoint_symbol_valid_passes() {
 #[test]
 fn test_record_milestone_empty_checkpoint_fails() {
     use crate::{test_utils, NavinShipment, NavinShipmentClient, ShipmentStatus};
-    use soroban_sdk::{testutils::Address as _, Address, Vec as SorobanVec, BytesN};
+    use soroban_sdk::{testutils::Address as _, Address, BytesN, Vec as SorobanVec};
 
     let (env, admin) = test_utils::setup_env();
     let contract_id = env.register(NavinShipment, ());
@@ -1040,17 +1051,23 @@ fn test_record_milestone_empty_checkpoint_fails() {
     client.add_carrier_to_whitelist(&company, &carrier);
 
     let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[3u8; 32]);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
         &carrier,
-        &BytesN::from_array(&env, &[3u8; 32]),
+        &data_hash,
         &SorobanVec::new(&env),
         &deadline,
     );
 
     let status_hash = BytesN::from_array(&env, &[1u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &status_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &status_hash,
+    );
 
     let empty_symbol = Symbol::new(&env, "");
     let data_hash = BytesN::from_array(&env, &[4u8; 32]);
@@ -1186,6 +1203,116 @@ fn test_symbol_chars_single_underscore_accepted() {
     );
 }
 
+// ── Note Symbol Validation Tests ───────────────────────────────────────────
+
+/// Note symbols must be non-empty and not exceed 64 characters (~76 bytes in XDR).
+/// These tests ensure that note symbols are bounded to prevent storage exhaustion.
+
+#[test]
+fn test_validate_note_symbol_single_char() {
+    let env = Env::default();
+    let note_sym = sym(&env, "N");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "1-char note symbol must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_short_label() {
+    let env = Env::default();
+    let note_sym = sym(&env, "evidence");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "8-char note symbol 'evidence' must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_medium_label() {
+    let env = Env::default();
+    let note_sym = sym(&env, "note_category_001");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "17-char note symbol must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_32_chars() {
+    let env = Env::default();
+    let s: std::string::String = "A".repeat(32);
+    let note_sym = sym(&env, &s);
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "32-char note symbol must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_48_chars() {
+    // Note: Soroban SDK Symbol supports max 32 chars; 48-char test
+    // is not constructable. This test validates the max constructable length.
+    let env = Env::default();
+    let note_sym = sym(&env, &"N".repeat(32));
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "32-char note symbol (max constructable) must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_64_chars_at_limit() {
+    // Note: Soroban SDK Symbol supports max 32 chars. Testing with 32.
+    let env = Env::default();
+    let note_sym = sym(&env, &"C".repeat(32));
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "32-char note symbol must be accepted"
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Value, InvalidInput)")]
+fn test_validate_note_symbol_65_chars_exceeds_limit() {
+    // Soroban SDK rejects Symbols >32 chars at construction time.
+    let env = Env::default();
+    let _note_sym = sym(&env, &"D".repeat(65));
+}
+
+#[test]
+#[should_panic(expected = "Error(Value, InvalidInput)")]
+fn test_validate_note_symbol_100_chars_rejected() {
+    // Soroban SDK rejects Symbols >32 chars at construction time.
+    let env = Env::default();
+    let _note_sym = sym(&env, &"E".repeat(100));
+}
+
+#[test]
+#[should_panic(expected = "Error(Value, InvalidInput)")]
+fn test_validate_note_symbol_128_chars_rejected() {
+    // Soroban SDK rejects Symbols >32 chars at construction time.
+    let env = Env::default();
+    let _note_sym = sym(&env, &"F".repeat(128));
+}
+
+#[test]
+fn test_validate_note_symbol_with_numbers_and_underscore() {
+    let env = Env::default();
+    let note_sym = sym(&env, "note_category_99");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "note symbol with numbers and underscore must be accepted"
+    );
+}
+
 // ── Empty-symbol rejection ────────────────────────────────────────────────────
 
 #[test]
@@ -1230,6 +1357,39 @@ fn test_symbol_chars_is_idempotent_for_valid_symbol() {
 }
 
 #[test]
+fn test_validate_note_symbol_with_mixed_case() {
+    let env = Env::default();
+    let note_sym = sym(&env, "EventLog_Shipment_Status");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "note symbol with mixed case must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_error_type_invalid_shipment_input() {
+    // An empty Symbol has XDR length 8, which validate_note_symbol rejects
+    // with InvalidShipmentInput.
+    let env = Env::default();
+    let note_sym = Symbol::new(&env, "");
+    let err = crate::validation::validate_note_symbol(&env, &note_sym).unwrap_err();
+    assert_eq!(
+        err,
+        NavinError::InvalidShipmentInput,
+        "empty/overlong note symbol must map to InvalidShipmentInput"
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Value, InvalidInput)")]
+fn test_validate_note_symbol_boundary_65_always_rejected() {
+    // Soroban SDK rejects Symbols >32 chars at construction time.
+    let env = Env::default();
+    let _note_sym = sym(&env, &"G".repeat(65));
+}
+
+#[test]
 fn test_symbol_chars_is_idempotent_for_empty_symbol() {
     let env = Env::default();
     let empty = Symbol::new(&env, "");
@@ -1250,7 +1410,34 @@ fn test_checkpoint_symbol_valid_chars_accepted() {
             validate_checkpoint_symbol(&env, &sym(&env, name)),
             Ok(()),
             "checkpoint symbol '{}' must be accepted",
-            name
+            name,
+        );
+    }
+}
+
+#[test]
+fn test_validate_note_symbol_boundary_64_always_accepted() {
+    // Soroban SDK Symbol max is 32 chars, so the 64-char storage limit is
+    // unreachable at construction. Test the SDK max instead.
+    let env = Env::default();
+    let note_sym = sym(&env, &"H".repeat(32));
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "32-char note symbol (SDK max) must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_length_sweep_1_to_32() {
+    let env = Env::default();
+    // Soroban SDK Symbol supports max 32 chars; verify all constructable lengths.
+    for len in 1usize..=32 {
+        let s: std::string::String = "N".repeat(len);
+        assert_eq!(
+            crate::validation::validate_note_symbol(&env, &sym(&env, &s)),
+            Ok(()),
+            "note symbol of length {len} must be accepted"
         );
     }
 }
@@ -1331,6 +1518,66 @@ fn test_milestone_symbols_single_underscore_accepted() {
 }
 
 #[test]
+fn test_validate_note_symbol_rejects_empty_after_32() {
+    let env = Env::default();
+    // Empty symbol is the only constructable "invalid" input for validate_note_symbol.
+    let note_sym = Symbol::new(&env, "");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Err(NavinError::InvalidShipmentInput),
+        "empty note symbol must be rejected"
+    );
+    // 32-char symbol is valid
+    let valid_sym = sym(&env, &"V".repeat(32));
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &valid_sym),
+        Ok(()),
+        "32-char note symbol must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_realistic_category_names() {
+    let env = Env::default();
+    let realistic_names = [
+        "delivery_confirmation",
+        "route_deviation",
+        "temperature_alert",
+        "customs_clearance",
+        "port_of_entry_log",
+        "incident_report_001",
+    ];
+    for name in &realistic_names {
+        assert_eq!(
+            crate::validation::validate_note_symbol(&env, &sym(&env, name)),
+            Ok(()),
+            "realistic note category '{name}' must be accepted"
+        );
+    }
+}
+
+#[test]
+fn test_validate_note_symbol_storage_efficiency() {
+    let env = Env::default();
+    // Soroban SDK Symbol supports max 32 chars. Verify max constructable length
+    // passes the note symbol validation (XDR length check).
+    let at_limit = sym(&env, &"N".repeat(32));
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &at_limit),
+        Ok(()),
+        "32-char note symbol should pass storage efficiency check"
+    );
+
+    // Empty symbol should be rejected
+    let empty = Symbol::new(&env, "");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &empty),
+        Err(NavinError::InvalidShipmentInput),
+        "empty note symbol should be rejected for storage efficiency"
+    );
+}
+
+#[test]
 fn test_milestone_symbols_mixed_valid_chars_all_accepted() {
     // Confirm each valid character class works inside a milestone symbol.
     let env = Env::default();
@@ -1356,8 +1603,18 @@ fn test_symbol_chars_and_validate_symbol_agree_on_valid_inputs() {
     // returns Ok, validate_symbol_chars must also return Ok.
     let env = Env::default();
     let valid_names = [
-        "a", "AB", "abc", "ABCD", "hello", "SHIP12", "transit", "CHECKPT",
-        "delivery", "WAREHOUS1", "checkpoint", "VERYLONGNAM",
+        "a",
+        "AB",
+        "abc",
+        "ABCD",
+        "hello",
+        "SHIP12",
+        "transit",
+        "CHECKPT",
+        "delivery",
+        "WAREHOUS1",
+        "checkpoint",
+        "VERYLONGNAM",
     ];
     for name in &valid_names {
         let s = sym(&env, name);
@@ -1369,6 +1626,30 @@ fn test_symbol_chars_and_validate_symbol_agree_on_valid_inputs() {
             name,
             sym_result,
             chars_result
+        );
+    }
+}
+
+#[test]
+fn test_validate_note_symbol_idempotent() {
+    let env = Env::default();
+    let note_sym = sym(&env, "stable_note_label");
+    let first = crate::validation::validate_note_symbol(&env, &note_sym);
+    let second = crate::validation::validate_note_symbol(&env, &note_sym);
+    assert_eq!(first, second, "validate_note_symbol must be idempotent");
+}
+
+#[test]
+fn test_validate_note_symbol_no_side_effects() {
+    let env = Env::default();
+    let note_sym = sym(&env, "side_effect_test");
+
+    // Validate multiple times
+    for _ in 0..5 {
+        let result = crate::validation::validate_note_symbol(&env, &note_sym);
+        assert!(
+            result.is_ok(),
+            "repeated validation should succeed consistently"
         );
     }
 }

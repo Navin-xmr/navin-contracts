@@ -446,11 +446,23 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "Evidence not found or index out of bounds.",
         ),
-        NavinError::CarrierAlreadyWhitelisted => (
+        NavinError::RoleAlreadyAssigned => (
             68,
+            InvalidInput,
+            NoRetry,
+            "Address already holds the requested role.",
+        ),
+        NavinError::CarrierAlreadyWhitelisted => (
+            69,
             InvalidState,
             NoRetry,
             "Carrier is already on the company's whitelist; duplicate addition is not allowed.",
+        ),
+        NavinError::InvalidAddress => (
+            70,
+            InvalidInput,
+            NoRetry,
+            "Address is invalid (e.g., zero-address sentinel).",
         ),
     };
 
