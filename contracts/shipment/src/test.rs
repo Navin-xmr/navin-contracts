@@ -8963,6 +8963,259 @@ fn test_archive_disputed_shipment_fails() {
     client.archive_shipment(&admin, &shipment_id);
 }
 
+// ── [ISSUE #600] ShipmentUnavailable error variant tests ─────────────────────
+//
+// ShipmentUnavailable (#42) is returned by preflight_check_shipment_available
+// when a shipment exists only in temporary (archived) storage.
+// These tests verify the error code, the validation helper's behaviour, and
+// that mutating operations on archived shipments are correctly rejected.
+
+/// preflight_check_shipment_available must return ShipmentUnavailable for an
+/// archived (Delivered) shipment — error code must be 42.
+#[test]
+fn test_shipment_unavailable_for_archived_delivered_shipment() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xA0u8; 32]);
+    let deadline = env.ledger().timestamp() + 7200;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    super::test_utils::advance_past_rate_limit(&env);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    client.confirm_delivery(&receiver, &shipment_id, &data_hash);
+    client.archive_shipment(&admin, &shipment_id);
+
+    let result = env.as_contract(&client.address, || {
+        crate::validation::preflight_check_shipment_available(&env, shipment_id)
+    });
+
+    assert_eq!(
+        result,
+        Err(NavinError::ShipmentUnavailable),
+        "archived delivered shipment must return ShipmentUnavailable (#42)"
+    );
+}
+
+/// preflight_check_shipment_available must return ShipmentUnavailable for an
+/// archived (Cancelled) shipment.
+#[test]
+fn test_shipment_unavailable_for_archived_cancelled_shipment() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xA1u8; 32]);
+    let deadline = env.ledger().timestamp() + 7200;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    client.cancel_shipment(&company, &shipment_id, &data_hash);
+    client.archive_shipment(&admin, &shipment_id);
+
+    let result = env.as_contract(&client.address, || {
+        crate::validation::preflight_check_shipment_available(&env, shipment_id)
+    });
+
+    assert_eq!(
+        result,
+        Err(NavinError::ShipmentUnavailable),
+        "archived cancelled shipment must return ShipmentUnavailable (#42)"
+    );
+}
+
+/// preflight_check_shipment_available must return ShipmentNotFound (not
+/// ShipmentUnavailable) for a shipment ID that never existed.
+#[test]
+fn test_preflight_never_created_returns_shipment_not_found() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let result = env.as_contract(&client.address, || {
+        crate::validation::preflight_check_shipment_available(&env, 8888u64)
+    });
+
+    assert_eq!(
+        result,
+        Err(NavinError::ShipmentNotFound),
+        "non-existent shipment must return ShipmentNotFound, not ShipmentUnavailable"
+    );
+}
+
+/// preflight_check_shipment_available must return Ok for an active shipment,
+/// confirming it does not block normal operations.
+#[test]
+fn test_preflight_active_shipment_returns_ok() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xA2u8; 32]);
+    let deadline = env.ledger().timestamp() + 7200;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let result = env.as_contract(&client.address, || {
+        crate::validation::preflight_check_shipment_available(&env, shipment_id)
+    });
+
+    assert!(
+        result.is_ok(),
+        "active shipment must be returned successfully by preflight_check_shipment_available"
+    );
+}
+
+/// The ShipmentUnavailable error discriminant must be exactly 42.
+/// This pins the error code so it cannot drift across refactors.
+#[test]
+fn test_shipment_unavailable_error_code_is_42() {
+    assert_eq!(
+        NavinError::ShipmentUnavailable as u32,
+        42,
+        "ShipmentUnavailable discriminant must be 42"
+    );
+}
+
+/// Attempting update_status on an archived shipment must fail.
+/// The shipment is finalized, so require_not_finalized fires.
+#[test]
+#[should_panic(expected = "Error(Contract, #38)")]
+fn test_update_status_on_archived_shipment_fails_with_finalized() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xA3u8; 32]);
+    let deadline = env.ledger().timestamp() + 7200;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    super::test_utils::advance_past_rate_limit(&env);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    client.confirm_delivery(&receiver, &shipment_id, &data_hash);
+    client.archive_shipment(&admin, &shipment_id);
+
+    // Must fail — ShipmentFinalized (#38) from require_not_finalized.
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &data_hash);
+}
+
+/// Attempting cancel_shipment on an archived shipment must fail.
+#[test]
+#[should_panic(expected = "Error(Contract, #38)")]
+fn test_cancel_shipment_on_archived_shipment_fails_with_finalized() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xA4u8; 32]);
+    let deadline = env.ledger().timestamp() + 7200;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    super::test_utils::advance_past_rate_limit(&env);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    client.confirm_delivery(&receiver, &shipment_id, &data_hash);
+    client.archive_shipment(&admin, &shipment_id);
+
+    // Must fail — ShipmentFinalized (#38).
+    client.cancel_shipment(&company, &shipment_id, &data_hash);
+}
+
+/// An archived shipment remains readable via get_shipment even after archival
+/// (read-only fallback to temporary storage works correctly).
+#[test]
+fn test_archived_shipment_still_readable_after_archival() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xA5u8; 32]);
+    let deadline = env.ledger().timestamp() + 7200;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    super::test_utils::advance_past_rate_limit(&env);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    client.confirm_delivery(&receiver, &shipment_id, &data_hash);
+    client.archive_shipment(&admin, &shipment_id);
+
+    // Read path must succeed — get_shipment falls back to temporary storage.
+    let archived = client.get_shipment(&shipment_id);
+    assert_eq!(archived.id, shipment_id);
+    assert_eq!(archived.status, ShipmentStatus::Delivered);
+    assert!(archived.finalized, "archived shipment must be finalized");
+    assert_eq!(archived.sender, company);
+    assert_eq!(archived.carrier, carrier);
+}
+
 #[test]
 fn test_restore_diagnostics_missing_state() {
     let (_env, client, admin, token_contract) = setup_shipment_env();
@@ -11584,4 +11837,710 @@ fn test_get_admin_unaffected_by_additional_multisig_admins() {
         before, after,
         "get_admin must not change after init_multisig"
     );
+}
+
+// ── [ISSUE #599] StatusHashNotFound error variant tests ──────────────────────
+//
+// StatusHashNotFound (#44) is returned by get_status_hash / verify_data_hash when
+// a shipment exists but no hash was recorded for the requested status.
+// ShipmentNotFound (#4) is returned when the shipment itself doesn't exist.
+
+/// Error code pin: StatusHashNotFound discriminant must be 44.
+#[test]
+fn test_status_hash_not_found_error_code_is_44() {
+    assert_eq!(
+        NavinError::StatusHashNotFound as u32,
+        44,
+        "StatusHashNotFound discriminant must be 44"
+    );
+}
+
+/// get_status_hash on a non-existent shipment returns ShipmentNotFound (#4).
+#[test]
+fn test_get_status_hash_shipment_not_found() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let result = client.try_get_status_hash(&9999u64, &ShipmentStatus::InTransit);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::ShipmentNotFound)),
+        "get_status_hash for non-existent shipment must return ShipmentNotFound (#4)"
+    );
+}
+
+/// get_status_hash on a valid shipment for a status that was never recorded returns
+/// StatusHashNotFound (#44).
+#[test]
+fn test_get_status_hash_unset_returns_status_hash_not_found() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 86400;
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // No status updates have been made — Delivered hash must not exist yet.
+    let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::Delivered);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::StatusHashNotFound)),
+        "get_status_hash for unset status must return StatusHashNotFound (#44)"
+    );
+}
+
+/// get_status_hash for AtCheckpoint before the shipment ever reached that status
+/// returns StatusHashNotFound (#44).
+#[test]
+fn test_get_status_hash_checkpoint_not_reached_returns_not_found() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 86400;
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Move to InTransit only — AtCheckpoint was never set.
+    let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+
+    let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::AtCheckpoint);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::StatusHashNotFound)),
+        "get_status_hash for AtCheckpoint (never reached) must return StatusHashNotFound (#44)"
+    );
+}
+
+/// verify_data_hash on a non-existent shipment returns ShipmentNotFound (#4).
+#[test]
+fn test_verify_data_hash_shipment_not_found() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let hash = BytesN::from_array(&env, &[1u8; 32]);
+    let result = client.try_verify_data_hash(&9999u64, &ShipmentStatus::InTransit, &hash);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::ShipmentNotFound)),
+        "verify_data_hash for non-existent shipment must return ShipmentNotFound (#4)"
+    );
+}
+
+/// verify_data_hash on a valid shipment for a status with no stored hash returns
+/// StatusHashNotFound (#44).
+#[test]
+fn test_verify_data_hash_returns_status_hash_not_found_for_unset_status() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 86400;
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Delivered hash was never recorded.
+    let probe = BytesN::from_array(&env, &[5u8; 32]);
+    let result = client.try_verify_data_hash(&shipment_id, &ShipmentStatus::Delivered, &probe);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::StatusHashNotFound)),
+        "verify_data_hash for unset status must return StatusHashNotFound (#44)"
+    );
+}
+
+/// After update_status, get_status_hash succeeds and returns the exact recorded hash.
+#[test]
+fn test_get_status_hash_valid_returns_correct_hash() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 86400;
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let transit_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+
+    let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
+    assert_eq!(
+        result,
+        Ok(transit_hash),
+        "get_status_hash must return the recorded hash for a set status"
+    );
+}
+
+/// ShipmentNotFound (#4) and StatusHashNotFound (#44) must be distinct error codes —
+/// callers must be able to tell the difference.
+#[test]
+fn test_status_hash_not_found_is_distinct_from_shipment_not_found() {
+    assert_ne!(
+        NavinError::ShipmentNotFound as u32,
+        NavinError::StatusHashNotFound as u32,
+        "ShipmentNotFound and StatusHashNotFound must have different discriminants"
+    );
+    assert_eq!(NavinError::ShipmentNotFound as u32, 4);
+    assert_eq!(NavinError::StatusHashNotFound as u32, 44);
+}
+
+// ── [ISSUE #598] DataHashMismatch error variant tests ────────────────────────
+//
+// DataHashMismatch (#45) is returned by assert_delivery_hash / assert_data_hash
+// when the provided hash does not match the value stored on-chain.
+
+/// Error code pin: DataHashMismatch discriminant must be exactly 45.
+#[test]
+fn test_data_hash_mismatch_error_code_is_45() {
+    assert_eq!(
+        NavinError::DataHashMismatch as u32,
+        45,
+        "DataHashMismatch discriminant must be 45"
+    );
+}
+
+/// assert_delivery_hash returns DataHashMismatch (#45) for an incorrect hash.
+#[test]
+fn test_assert_delivery_hash_incorrect_hash_returns_mismatch() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 86400;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    super::test_utils::advance_past_rate_limit(&env);
+    let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+
+    let confirmation_hash = BytesN::from_array(&env, &[3u8; 32]);
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    let wrong_hash = BytesN::from_array(&env, &[0xFFu8; 32]);
+    let result = client.try_assert_delivery_hash(&shipment_id, &wrong_hash);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::DataHashMismatch)),
+        "assert_delivery_hash with wrong hash must return DataHashMismatch (#45)"
+    );
+}
+
+/// assert_delivery_hash returns Ok(()) when the correct hash is supplied.
+#[test]
+fn test_assert_delivery_hash_correct_hash_returns_ok() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 86400;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    super::test_utils::advance_past_rate_limit(&env);
+    let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+
+    let confirmation_hash = BytesN::from_array(&env, &[3u8; 32]);
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    let result = client.try_assert_delivery_hash(&shipment_id, &confirmation_hash);
+    assert_eq!(
+        result,
+        Ok(()),
+        "assert_delivery_hash with correct hash must return Ok(())"
+    );
+}
+
+/// assert_delivery_hash returns ShipmentNotFound for a non-existent shipment.
+#[test]
+fn test_assert_delivery_hash_nonexistent_shipment_returns_not_found() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let hash = BytesN::from_array(&env, &[1u8; 32]);
+    let result = client.try_assert_delivery_hash(&9999u64, &hash);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::ShipmentNotFound)),
+        "assert_delivery_hash for non-existent shipment must return ShipmentNotFound (#4)"
+    );
+}
+
+/// assert_data_hash returns DataHashMismatch (#45) for an incorrect status hash.
+#[test]
+fn test_assert_data_hash_incorrect_hash_returns_mismatch() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 86400;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let transit_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+
+    let wrong_hash = BytesN::from_array(&env, &[0xBBu8; 32]);
+    let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &wrong_hash);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::DataHashMismatch)),
+        "assert_data_hash with wrong hash must return DataHashMismatch (#45)"
+    );
+}
+
+/// assert_data_hash returns Ok(()) when the correct status hash is supplied.
+#[test]
+fn test_assert_data_hash_correct_hash_returns_ok() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 86400;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let transit_hash = BytesN::from_array(&env, &[0xCCu8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+
+    let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    assert_eq!(
+        result,
+        Ok(()),
+        "assert_data_hash with correct hash must return Ok(())"
+    );
+}
+
+/// assert_data_hash returns ShipmentNotFound for a non-existent shipment.
+#[test]
+fn test_assert_data_hash_nonexistent_shipment_returns_not_found() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let hash = BytesN::from_array(&env, &[1u8; 32]);
+    let result = client.try_assert_data_hash(&9999u64, &ShipmentStatus::InTransit, &hash);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::ShipmentNotFound)),
+        "assert_data_hash for non-existent shipment must return ShipmentNotFound (#4)"
+    );
+}
+
+/// assert_data_hash returns StatusHashNotFound for a status with no stored hash.
+#[test]
+fn test_assert_data_hash_unset_status_returns_status_hash_not_found() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 86400;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // AtCheckpoint was never set.
+    let probe = BytesN::from_array(&env, &[7u8; 32]);
+    let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::AtCheckpoint, &probe);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::StatusHashNotFound)),
+        "assert_data_hash for unset status must return StatusHashNotFound (#44)"
+    );
+}
+
+/// DataHashMismatch (#45), StatusHashNotFound (#44), and ShipmentNotFound (#4)
+/// must all be distinct error codes.
+#[test]
+fn test_data_hash_mismatch_is_distinct_from_other_hash_errors() {
+    assert_ne!(NavinError::DataHashMismatch as u32, NavinError::StatusHashNotFound as u32);
+    assert_ne!(NavinError::DataHashMismatch as u32, NavinError::ShipmentNotFound as u32);
+    assert_eq!(NavinError::DataHashMismatch as u32, 45);
+}
+
+// ── [ISSUE #597] CircuitBreakerOpen error variant tests ──────────────────────
+//
+// CircuitBreakerOpen (#46) is returned by invoke_token_transfer when the
+// circuit breaker is in Open state. The breaker is injected directly into
+// storage (env.as_contract) because Soroban rolls back all writes on Err,
+// preventing failure-count accumulation through normal contract calls.
+
+/// Error code pin: CircuitBreakerOpen discriminant must be exactly 46.
+#[test]
+fn test_circuit_breaker_open_error_code_is_46() {
+    assert_eq!(
+        NavinError::CircuitBreakerOpen as u32,
+        46,
+        "CircuitBreakerOpen discriminant must be 46"
+    );
+}
+
+/// With the circuit breaker injected into Open state, release_escrow must
+/// return CircuitBreakerOpen (#46) — the token transfer is blocked.
+#[test]
+fn test_release_escrow_blocked_when_circuit_breaker_open() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 7200;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Advance to Delivered so release_escrow is eligible.
+    super::test_utils::advance_past_rate_limit(&env);
+    let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    let confirm_hash = BytesN::from_array(&env, &[3u8; 32]);
+    client.confirm_delivery(&receiver, &shipment_id, &confirm_hash);
+
+    // Inject circuit-breaker Open state directly into storage.
+    env.as_contract(&client.address, || {
+        let tracker = crate::circuit_breaker::CircuitBreakerTracker {
+            state: crate::circuit_breaker::CircuitBreakerState::Open,
+            failure_count: 5,
+            opened_at: env.ledger().timestamp(),
+            half_open_requests: 0,
+        };
+        env.storage()
+            .persistent()
+            .set(&crate::types::DataKey::CircuitBreakerState, &tracker);
+    });
+
+    // release_escrow triggers invoke_token_transfer → circuit breaker check.
+    let result = client.try_release_escrow(&receiver, &shipment_id);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::CircuitBreakerOpen)),
+        "release_escrow must return CircuitBreakerOpen (#46) when breaker is Open"
+    );
+}
+
+/// With the circuit breaker closed (default state), token transfers succeed
+/// — no CircuitBreakerOpen error is raised.
+#[test]
+fn test_release_escrow_succeeds_when_circuit_breaker_closed() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[4u8; 32]);
+    let deadline = env.ledger().timestamp() + 7200;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    super::test_utils::advance_past_rate_limit(&env);
+    let transit_hash = BytesN::from_array(&env, &[5u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    let confirm_hash = BytesN::from_array(&env, &[6u8; 32]);
+    client.confirm_delivery(&receiver, &shipment_id, &confirm_hash);
+
+    // No circuit breaker injection — breaker is Closed by default.
+    // release_escrow with no escrow still returns Ok (nothing to transfer).
+    let result = client.try_release_escrow(&receiver, &shipment_id);
+    assert!(
+        result.is_ok(),
+        "release_escrow must succeed when circuit breaker is Closed"
+    );
+}
+
+/// refund_escrow is also blocked by an open circuit breaker.
+#[test]
+fn test_refund_escrow_blocked_when_circuit_breaker_open() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let deadline = env.ledger().timestamp() + 7200;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Deposit escrow so refund_escrow has something to transfer.
+    client.deposit_escrow(&company, &shipment_id, &1000i128);
+
+    // Inject Open state.
+    env.as_contract(&client.address, || {
+        let tracker = crate::circuit_breaker::CircuitBreakerTracker {
+            state: crate::circuit_breaker::CircuitBreakerState::Open,
+            failure_count: 5,
+            opened_at: env.ledger().timestamp(),
+            half_open_requests: 0,
+        };
+        env.storage()
+            .persistent()
+            .set(&crate::types::DataKey::CircuitBreakerState, &tracker);
+    });
+
+    let result = client.try_refund_escrow(&company, &shipment_id);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::CircuitBreakerOpen)),
+        "refund_escrow must return CircuitBreakerOpen (#46) when breaker is Open"
+    );
+}
+
+/// reset_circuit_breaker closes the breaker so subsequent transfers succeed.
+#[test]
+fn test_reset_circuit_breaker_allows_transfers_again() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[8u8; 32]);
+    let deadline = env.ledger().timestamp() + 7200;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    super::test_utils::advance_past_rate_limit(&env);
+    let transit_hash = BytesN::from_array(&env, &[9u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    let confirm_hash = BytesN::from_array(&env, &[0xAu8; 32]);
+    client.confirm_delivery(&receiver, &shipment_id, &confirm_hash);
+
+    // Open the breaker.
+    env.as_contract(&client.address, || {
+        let tracker = crate::circuit_breaker::CircuitBreakerTracker {
+            state: crate::circuit_breaker::CircuitBreakerState::Open,
+            failure_count: 5,
+            opened_at: env.ledger().timestamp(),
+            half_open_requests: 0,
+        };
+        env.storage()
+            .persistent()
+            .set(&crate::types::DataKey::CircuitBreakerState, &tracker);
+    });
+
+    // Confirm it is blocked.
+    let blocked = client.try_release_escrow(&receiver, &shipment_id);
+    assert_eq!(blocked, Err(Ok(NavinError::CircuitBreakerOpen)));
+
+    // Admin resets the circuit breaker.
+    client.reset_circuit_breaker(&admin);
+
+    // Transfer is now unblocked.
+    let unblocked = client.try_release_escrow(&receiver, &shipment_id);
+    assert!(
+        unblocked.is_ok(),
+        "release_escrow must succeed after reset_circuit_breaker closes the breaker"
+    );
+}
+
+/// After recovery timeout elapses, the circuit breaker transitions to HalfOpen
+/// and a token transfer is allowed through.
+#[test]
+fn test_transfer_allowed_after_circuit_breaker_recovery_timeout() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xBu8; 32]);
+    let deadline = env.ledger().timestamp() + 7200;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    super::test_utils::advance_past_rate_limit(&env);
+    let transit_hash = BytesN::from_array(&env, &[0xCu8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    let confirm_hash = BytesN::from_array(&env, &[0xDu8; 32]);
+    client.confirm_delivery(&receiver, &shipment_id, &confirm_hash);
+
+    // Open the breaker with opened_at far in the past so recovery timeout
+    // (default = 300 s) has already elapsed by the current ledger time.
+    let now = env.ledger().timestamp();
+    env.as_contract(&client.address, || {
+        let tracker = crate::circuit_breaker::CircuitBreakerTracker {
+            state: crate::circuit_breaker::CircuitBreakerState::Open,
+            failure_count: 5,
+            // Set opened_at 400 s in the past → recovery_timeout (300 s) elapsed.
+            opened_at: now.saturating_sub(400),
+            half_open_requests: 0,
+        };
+        env.storage()
+            .persistent()
+            .set(&crate::types::DataKey::CircuitBreakerState, &tracker);
+    });
+
+    // The transfer should be allowed (breaker transitions Open → HalfOpen).
+    let result = client.try_release_escrow(&receiver, &shipment_id);
+    assert!(
+        result.is_ok(),
+        "transfer must be allowed when circuit breaker recovery timeout has elapsed"
+    );
+}
+
+/// CircuitBreakerOpen (#46) is distinct from TokenTransferFailed (#39).
+#[test]
+fn test_circuit_breaker_open_error_is_distinct_from_token_transfer_failed() {
+    assert_ne!(
+        NavinError::CircuitBreakerOpen as u32,
+        NavinError::TokenTransferFailed as u32,
+    );
+    assert_eq!(NavinError::CircuitBreakerOpen as u32, 46);
+    assert_eq!(NavinError::TokenTransferFailed as u32, 39);
 }

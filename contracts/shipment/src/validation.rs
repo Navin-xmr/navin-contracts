@@ -383,14 +383,29 @@ pub fn preflight_check_shipment_available(
         .persistent()
         .get(&crate::types::DataKey::Shipment(shipment_id));
 
-    let shipment = shipment.ok_or(NavinError::ShipmentNotFound)?;
-
-    // Check if shipment is finalized (locked)
-    if shipment.finalized {
-        return Err(NavinError::ShipmentFinalized);
+    match shipment {
+        None => {
+            // Not in persistent storage. Check if it was archived (temporary storage).
+            // If it exists in temporary storage the shipment is archived and unavailable
+            // for mutations; surface ShipmentUnavailable so callers get a distinct,
+            // actionable error rather than the ambiguous ShipmentNotFound.
+            let archived: Option<Shipment> = env
+                .storage()
+                .temporary()
+                .get(&crate::types::DataKey::ArchivedShipment(shipment_id));
+            if archived.is_some() {
+                return Err(NavinError::ShipmentUnavailable);
+            }
+            Err(NavinError::ShipmentNotFound)
+        }
+        Some(shipment) => {
+            // Check if shipment is finalized (locked)
+            if shipment.finalized {
+                return Err(NavinError::ShipmentFinalized);
+            }
+            Ok(shipment)
+        }
     }
-
-    Ok(shipment)
 }
 
 /// Compute a canonical hash for an off-chain payload.
