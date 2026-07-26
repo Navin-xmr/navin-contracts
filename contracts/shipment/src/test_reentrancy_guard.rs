@@ -229,3 +229,93 @@ fn test_multiple_guard_operations_lock_stays_blocked() {
         "deposit on delivered should still fail for status reason"
     );
 }
+
+// ── Additional tests for issue #616 ──────────────────────────────────────────
+
+#[test]
+fn test_reentrancy_detected_error_code_is_15() {
+    let (env, client, _admin, company, _receiver, _carrier, shipment_id) = setup_single_shipment();
+
+    env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .set(&DataKey::ReentrancyLock, &true);
+    });
+
+    let result = client.try_deposit_escrow(&company, &shipment_id, &500);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::ReentrancyDetected)),
+        "ReentrancyDetected discriminant must be 15"
+    );
+    assert_eq!(NavinError::ReentrancyDetected as u32, 15);
+}
+
+#[test]
+fn test_normal_deposit_succeeds_without_lock() {
+    let (env, client, _admin, company, _receiver, _carrier, shipment_id) = setup_single_shipment();
+
+    // Confirm lock is NOT held before the call
+    env.as_contract(&client.address, || {
+        let locked = env
+            .storage()
+            .instance()
+            .get::<DataKey, bool>(&DataKey::ReentrancyLock)
+            .unwrap_or(false);
+        assert!(!locked, "lock must not be held before a normal operation");
+    });
+
+    let result = client.try_deposit_escrow(&company, &shipment_id, &1000);
+    assert!(
+        result.is_ok(),
+        "deposit without reentrancy lock must succeed"
+    );
+}
+
+#[test]
+fn test_normal_refund_succeeds_without_lock() {
+    let (env, client, _admin, company, _receiver, _carrier, shipment_id) = setup_single_shipment();
+
+    client.deposit_escrow(&company, &shipment_id, &500);
+
+    // Ensure lock is clear
+    env.as_contract(&client.address, || {
+        let locked = env
+            .storage()
+            .instance()
+            .get::<DataKey, bool>(&DataKey::ReentrancyLock)
+            .unwrap_or(false);
+        assert!(!locked, "lock must be released after successful deposit");
+    });
+
+    let result = client.try_refund_escrow(&company, &shipment_id);
+    assert!(
+        result.is_ok(),
+        "refund without reentrancy lock must succeed"
+    );
+}
+
+#[test]
+fn test_lock_preheld_blocks_all_three_escrow_ops() {
+    let (env, client, _admin, company, receiver, _carrier, shipment_id) = setup_single_shipment();
+
+    client.deposit_escrow(&company, &shipment_id, &1000);
+
+    // Pre-hold the lock to simulate mid-execution state
+    env.as_contract(&client.address, || {
+        let mut s = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        s.status = crate::ShipmentStatus::Delivered;
+        crate::storage::set_shipment(&env, &s);
+        env.storage()
+            .instance()
+            .set(&DataKey::ReentrancyLock, &true);
+    });
+
+    let dep = client.try_deposit_escrow(&company, &shipment_id, &100);
+    let rel = client.try_release_escrow(&receiver, &shipment_id);
+    let ref_ = client.try_refund_escrow(&company, &shipment_id);
+
+    assert_eq!(dep, Err(Ok(NavinError::ReentrancyDetected)), "deposit must be blocked");
+    assert_eq!(rel, Err(Ok(NavinError::ReentrancyDetected)), "release must be blocked");
+    assert_eq!(ref_, Err(Ok(NavinError::ReentrancyDetected)), "refund must be blocked");
+}
