@@ -3472,6 +3472,10 @@ impl NavinShipment {
         // Emit the milestone_recorded event (Hash-and-Emit pattern)
         events::emit_milestone_recorded(&env, shipment_id, &checkpoint, &data_hash, &carrier);
 
+        // Increment the milestone event count so the payload-size guard
+        // is actually enforced on subsequent calls.
+        storage::increment_milestone_event_count(&env, shipment_id);
+
         // Check for milestone-based payments
         let mut mut_shipment = shipment;
         let mut found_index = None;
@@ -3640,6 +3644,10 @@ impl NavinShipment {
 
             // Emit one event per milestone (Hash-and-Emit pattern)
             events::emit_milestone_recorded(&env, shipment_id, &checkpoint, &data_hash, &carrier);
+
+            // Increment the milestone event count so the payload-size guard
+            // is actually enforced on subsequent calls.
+            storage::increment_milestone_event_count(&env, shipment_id);
 
             // Check for milestone-based payments
             let mut found_index = None;
