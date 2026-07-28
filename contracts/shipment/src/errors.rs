@@ -159,4 +159,6 @@ pub enum NavinError {
     CarrierAlreadyWhitelisted = 69,
     /// Address is invalid (e.g., zero-address sentinel).
     InvalidAddress = 70,
+    /// Maximum allowed recovery action entries for a shipment has been reached.
+    RecoveryLimitExceeded = 71,
 }

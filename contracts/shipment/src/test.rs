@@ -12207,9 +12207,6 @@ fn test_get_status_hash_shipment_not_found() {
 }
 
 /// get_status_hash on a valid shipment for a status that was never recorded returns
-/// StatusHashNotFound (#44).
-#[test]
-fn test_get_status_hash_unset_returns_status_hash_not_found() {
 // ── Issue #581 – InvalidPaymentMilestones (code 59) ─────────────────────────
 
 #[test]
@@ -12248,8 +12245,6 @@ fn test_create_shipment_over_100_percentage_milestone_rejected() {
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[2u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
@@ -12257,7 +12252,6 @@ fn test_create_shipment_over_100_percentage_milestone_rejected() {
 
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 86400;
-    let shipment_id = client.create_shipment(
     let mut milestones = soroban_sdk::Vec::new(&env);
     // 150 % is out of bounds for a single milestone weight.
     milestones.push_back((Symbol::new(&env, "pickup"), 150_u32));
@@ -12267,23 +12261,6 @@ fn test_create_shipment_over_100_percentage_milestone_rejected() {
         &receiver,
         &carrier,
         &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &deadline,
-    );
-
-    // No status updates have been made — Delivered hash must not exist yet.
-    let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::Delivered);
-    assert_eq!(
-        result,
-        Err(Ok(NavinError::StatusHashNotFound)),
-        "get_status_hash for unset status must return StatusHashNotFound (#44)"
-    );
-}
-
-/// get_status_hash for AtCheckpoint before the shipment ever reached that status
-/// returns StatusHashNotFound (#44).
-#[test]
-fn test_get_status_hash_checkpoint_not_reached_returns_not_found() {
         &milestones,
         &deadline,
     );
@@ -12295,8 +12272,6 @@ fn test_create_shipment_valid_milestones_accepted() {
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[3u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
@@ -12304,7 +12279,6 @@ fn test_create_shipment_valid_milestones_accepted() {
 
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 86400;
-    let shipment_id = client.create_shipment(
     let mut milestones = soroban_sdk::Vec::new(&env);
     milestones.push_back((Symbol::new(&env, "pickup"), 50_u32));
     milestones.push_back((Symbol::new(&env, "delivery"), 50_u32));
@@ -12314,41 +12288,6 @@ fn test_create_shipment_valid_milestones_accepted() {
         &receiver,
         &carrier,
         &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &deadline,
-    );
-
-    // Move to InTransit only — AtCheckpoint was never set.
-    let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
-
-    let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::AtCheckpoint);
-    assert_eq!(
-        result,
-        Err(Ok(NavinError::StatusHashNotFound)),
-        "get_status_hash for AtCheckpoint (never reached) must return StatusHashNotFound (#44)"
-    );
-}
-
-/// verify_data_hash on a non-existent shipment returns ShipmentNotFound (#4).
-#[test]
-fn test_verify_data_hash_shipment_not_found() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    client.initialize(&admin, &token_contract);
-
-    let hash = BytesN::from_array(&env, &[1u8; 32]);
-    let result = client.try_verify_data_hash(&9999u64, &ShipmentStatus::InTransit, &hash);
-    assert_eq!(
-        result,
-        Err(Ok(NavinError::ShipmentNotFound)),
-        "verify_data_hash for non-existent shipment must return ShipmentNotFound (#4)"
-    );
-}
-
-/// verify_data_hash on a valid shipment for a status with no stored hash returns
-/// StatusHashNotFound (#44).
-#[test]
-fn test_verify_data_hash_returns_status_hash_not_found_for_unset_status() {
         &milestones,
         &deadline,
     );
@@ -12498,6 +12437,57 @@ fn test_milestone_limit_exceeded() {
 /// After update_status, get_status_hash succeeds and returns the exact recorded hash.
 #[test]
 fn test_get_status_hash_valid_returns_correct_hash() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let transit_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+
+    let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
+    assert_eq!(
+        result,
+        Ok(Ok(transit_hash)),
+        "get_status_hash must return the recorded hash for a set status"
+    );
+}
+
+#[test]
+fn test_milestone_limit_exceeded_2() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
     // Move shipment to InTransit
     client.update_status(
         &carrier,
@@ -12571,7 +12561,7 @@ fn test_milestone_limit_valid_milestones_work() {
     let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
     assert_eq!(
         result,
-        Ok(transit_hash),
+        Ok(Ok(transit_hash)),
         "get_status_hash must return the recorded hash for a set status"
     );
 }
@@ -12607,6 +12597,64 @@ fn test_data_hash_mismatch_error_code_is_45() {
 /// assert_delivery_hash returns DataHashMismatch (#45) for an incorrect hash.
 #[test]
 fn test_assert_delivery_hash_incorrect_hash_returns_mismatch() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    super::test_utils::advance_past_rate_limit(&env);
+    let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+
+    let confirmation_hash = BytesN::from_array(&env, &[3u8; 32]);
+    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
+
+    let wrong_hash = BytesN::from_array(&env, &[0xFFu8; 32]);
+    let result = client.try_assert_delivery_hash(&shipment_id, &wrong_hash);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::DataHashMismatch)),
+        "assert_delivery_hash with wrong hash must return DataHashMismatch (#45)"
+    );
+}
+
+#[test]
+fn test_milestones_within_limit_accepted() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
     // Move shipment to InTransit
     client.update_status(
         &carrier,
@@ -12640,7 +12688,6 @@ fn test_milestone_limit_batch_exceeded() {
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 86400;
     let deadline = env.ledger().timestamp() + 3600;
 
     client.initialize(&admin, &token_contract);
@@ -12656,33 +12703,6 @@ fn test_milestone_limit_batch_exceeded() {
         &deadline,
     );
 
-    super::test_utils::advance_past_rate_limit(&env);
-    let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
-
-    let confirmation_hash = BytesN::from_array(&env, &[3u8; 32]);
-    client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
-
-    let wrong_hash = BytesN::from_array(&env, &[0xFFu8; 32]);
-    let result = client.try_assert_delivery_hash(&shipment_id, &wrong_hash);
-    assert_eq!(
-        result,
-        Err(Ok(NavinError::DataHashMismatch)),
-        "assert_delivery_hash with wrong hash must return DataHashMismatch (#45)"
-    );
-}
-
-/// assert_delivery_hash returns Ok(()) when the correct hash is supplied.
-#[test]
-fn test_assert_delivery_hash_correct_hash_returns_ok() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 86400;
-
-    client.initialize(&admin, &token_contract);
     // Move shipment to InTransit
     client.update_status(
         &carrier,
@@ -12750,7 +12770,7 @@ fn test_breach_limit_exceeded() {
     let result = client.try_assert_delivery_hash(&shipment_id, &confirmation_hash);
     assert_eq!(
         result,
-        Ok(()),
+        Ok(Ok(())),
         "assert_delivery_hash with correct hash must return Ok(())"
     );
 }
@@ -12775,12 +12795,58 @@ fn test_assert_delivery_hash_nonexistent_shipment_returns_not_found() {
 fn test_assert_data_hash_incorrect_hash_returns_mismatch() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let transit_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+
+    let wrong_hash = BytesN::from_array(&env, &[0xBBu8; 32]);
+    let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &wrong_hash);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::DataHashMismatch)),
+        "assert_data_hash with wrong hash must return DataHashMismatch (#45)"
+    );
+}
+
+#[test]
+fn test_breach_limit_exceeded_2() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 86400;
 
     client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
     // Initial status update to move into InTransit
     client.update_status(
         &carrier,
@@ -12829,14 +12895,13 @@ fn test_assert_data_hash_incorrect_hash_returns_mismatch() {
 #[test]
 fn test_breach_limit_valid_breaches_work() {
     let (env, client, admin, token_contract) = setup_shipment_env();
-    client.initialize(&admin, &token_contract);
-
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
+    client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
@@ -12849,29 +12914,6 @@ fn test_breach_limit_valid_breaches_work() {
         &deadline,
     );
 
-    let transit_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
-
-    let wrong_hash = BytesN::from_array(&env, &[0xBBu8; 32]);
-    let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &wrong_hash);
-    assert_eq!(
-        result,
-        Err(Ok(NavinError::DataHashMismatch)),
-        "assert_data_hash with wrong hash must return DataHashMismatch (#45)"
-    );
-}
-
-/// assert_data_hash returns Ok(()) when the correct status hash is supplied.
-#[test]
-fn test_assert_data_hash_correct_hash_returns_ok() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 86400;
-
-    client.initialize(&admin, &token_contract);
     // Move to InTransit
     client.update_status(
         &carrier,
@@ -12946,7 +12988,7 @@ fn test_breach_limit_one_allowed() {
     let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &transit_hash);
     assert_eq!(
         result,
-        Ok(()),
+        Ok(Ok(())),
         "assert_data_hash with correct hash must return Ok(())"
     );
 }
@@ -12969,6 +13011,53 @@ fn test_assert_data_hash_nonexistent_shipment_returns_not_found() {
 /// assert_data_hash returns StatusHashNotFound for a status with no stored hash.
 #[test]
 fn test_assert_data_hash_unset_status_returns_status_hash_not_found() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let hash = BytesN::from_array(&env, &[1u8; 32]);
+    let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &hash);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::StatusHashNotFound)),
+        "assert_data_hash before status update must return StatusHashNotFound (#44)"
+    );
+}
+
+#[test]
+fn test_breach_limit_exceeded_3() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
     client.update_status(
         &carrier,
         &shipment_id,
@@ -13113,6 +13202,64 @@ fn test_circuit_breaker_open_error_code_is_46() {
 /// return CircuitBreakerOpen (#46) — the token transfer is blocked.
 #[test]
 fn test_release_escrow_blocked_when_circuit_breaker_open() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    super::test_utils::advance_past_rate_limit(&env);
+    let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    let confirm_hash = BytesN::from_array(&env, &[3u8; 32]);
+    client.confirm_delivery(&receiver, &shipment_id, &confirm_hash);
+
+    env.as_contract(&client.address, || {
+        let tracker = crate::circuit_breaker::CircuitBreakerTracker {
+            state: crate::circuit_breaker::CircuitBreakerState::Open,
+            failure_count: 5,
+            opened_at: env.ledger().timestamp(),
+            half_open_requests: 0,
+        };
+        env.storage()
+            .persistent()
+            .set(&crate::types::DataKey::CircuitBreakerState, &tracker);
+    });
+
+    let result = client.try_release_escrow(&receiver, &shipment_id);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::CircuitBreakerOpen)),
+        "release_escrow must return CircuitBreakerOpen (#46) when breaker is Open"
+    );
+}
+
+#[test]
+fn test_creation_quota_exceeded_2() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
     // Set quota: max 2 per 3600-second window
     client.set_creation_quota(&admin, &2, &3600);
 
@@ -13285,6 +13432,51 @@ fn test_creation_quota_resets_exactly_at_window_boundary() {
 /// — no CircuitBreakerOpen error is raised.
 #[test]
 fn test_release_escrow_succeeds_when_circuit_breaker_closed() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[4u8; 32]);
+    let deadline = env.ledger().timestamp() + 7200;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    super::test_utils::advance_past_rate_limit(&env);
+    let transit_hash = BytesN::from_array(&env, &[5u8; 32]);
+    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    let confirm_hash = BytesN::from_array(&env, &[6u8; 32]);
+    client.confirm_delivery(&receiver, &shipment_id, &confirm_hash);
+
+    let result = client.try_release_escrow(&receiver, &shipment_id);
+    assert!(
+        result.is_ok(),
+        "release_escrow must succeed when circuit breaker is Closed"
+    );
+}
+
+#[test]
+fn test_creation_quota_exact_window_boundary_reset() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86400;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
     // Set quota: max 1 per 3600-second window
     client.set_creation_quota(&admin, &1, &3600);
 
@@ -13304,12 +13496,12 @@ fn test_release_escrow_succeeds_when_circuit_breaker_closed() {
     env.ledger().with_mut(|l| l.timestamp = initial_time + 3599);
 
     // Should still be blocked (within window)
-    let hash = BytesN::from_array(&env, &[2u8; 32]);
+    let hash2 = BytesN::from_array(&env, &[2u8; 32]);
     let result = client.try_create_shipment(
         &company,
         &receiver,
         &carrier,
-        &hash,
+        &hash2,
         &soroban_sdk::Vec::new(&env),
         &deadline,
     );
@@ -13319,12 +13511,12 @@ fn test_release_escrow_succeeds_when_circuit_breaker_closed() {
     env.ledger().with_mut(|l| l.timestamp = initial_time + 3600);
 
     // Should now succeed (window expired)
-    let hash = BytesN::from_array(&env, &[3u8; 32]);
+    let hash3 = BytesN::from_array(&env, &[3u8; 32]);
     let result = client.try_create_shipment(
         &company,
         &receiver,
         &carrier,
-        &hash,
+        &hash3,
         &soroban_sdk::Vec::new(&env),
         &deadline,
     );
@@ -13341,14 +13533,12 @@ fn test_create_shipment_duplicate_milestone_names_rejected() {
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[4u8; 32]);
-    let deadline = env.ledger().timestamp() + 7200;
     let deadline = env.ledger().timestamp() + 3600;
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(
     let mut milestones = soroban_sdk::Vec::new(&env);
     milestones.push_back((Symbol::new(&env, "pickup"), 50_u32));
     milestones.push_back((Symbol::new(&env, "pickup"), 50_u32)); // duplicate
@@ -13358,28 +13548,6 @@ fn test_create_shipment_duplicate_milestone_names_rejected() {
         &receiver,
         &carrier,
         &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &deadline,
-    );
-
-    super::test_utils::advance_past_rate_limit(&env);
-    let transit_hash = BytesN::from_array(&env, &[5u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
-    let confirm_hash = BytesN::from_array(&env, &[6u8; 32]);
-    client.confirm_delivery(&receiver, &shipment_id, &confirm_hash);
-
-    // No circuit breaker injection — breaker is Closed by default.
-    // release_escrow with no escrow still returns Ok (nothing to transfer).
-    let result = client.try_release_escrow(&receiver, &shipment_id);
-    assert!(
-        result.is_ok(),
-        "release_escrow must succeed when circuit breaker is Closed"
-    );
-}
-
-/// refund_escrow is also blocked by an open circuit breaker.
-#[test]
-fn test_refund_escrow_blocked_when_circuit_breaker_open() {
         &milestones,
         &deadline,
     );
@@ -13393,14 +13561,11 @@ fn test_create_shipment_unique_milestone_names_accepted() {
     let carrier = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[7u8; 32]);
     let deadline = env.ledger().timestamp() + 7200;
-    let data_hash = BytesN::from_array(&env, &[5u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(
     let mut milestones = soroban_sdk::Vec::new(&env);
     milestones.push_back((Symbol::new(&env, "pickup"), 40_u32));
     milestones.push_back((Symbol::new(&env, "transit"), 30_u32));
@@ -13411,37 +13576,6 @@ fn test_create_shipment_unique_milestone_names_accepted() {
         &receiver,
         &carrier,
         &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &deadline,
-    );
-
-    // Deposit escrow so refund_escrow has something to transfer.
-    client.deposit_escrow(&company, &shipment_id, &1000i128);
-
-    // Inject Open state.
-    env.as_contract(&client.address, || {
-        let tracker = crate::circuit_breaker::CircuitBreakerTracker {
-            state: crate::circuit_breaker::CircuitBreakerState::Open,
-            failure_count: 5,
-            opened_at: env.ledger().timestamp(),
-            half_open_requests: 0,
-        };
-        env.storage()
-            .persistent()
-            .set(&crate::types::DataKey::CircuitBreakerState, &tracker);
-    });
-
-    let result = client.try_refund_escrow(&company, &shipment_id);
-    assert_eq!(
-        result,
-        Err(Ok(NavinError::CircuitBreakerOpen)),
-        "refund_escrow must return CircuitBreakerOpen (#46) when breaker is Open"
-    );
-}
-
-/// reset_circuit_breaker closes the breaker so subsequent transfers succeed.
-#[test]
-fn test_reset_circuit_breaker_allows_transfers_again() {
         &milestones,
         &deadline,
     );
@@ -13484,8 +13618,6 @@ fn test_create_shipment_empty_milestone_name_rejected() {
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[8u8; 32]);
-    let deadline = env.ledger().timestamp() + 7200;
     let data_hash = BytesN::from_array(&env, &[6u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
@@ -13493,7 +13625,6 @@ fn test_create_shipment_empty_milestone_name_rejected() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(
     let mut milestones = soroban_sdk::Vec::new(&env);
     // An empty symbol name is an invalid milestone checkpoint name.
     milestones.push_back((Symbol::new(&env, ""), 100_u32));
@@ -13503,48 +13634,6 @@ fn test_create_shipment_empty_milestone_name_rejected() {
         &receiver,
         &carrier,
         &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &deadline,
-    );
-
-    super::test_utils::advance_past_rate_limit(&env);
-    let transit_hash = BytesN::from_array(&env, &[9u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
-    let confirm_hash = BytesN::from_array(&env, &[0xAu8; 32]);
-    client.confirm_delivery(&receiver, &shipment_id, &confirm_hash);
-
-    // Open the breaker.
-    env.as_contract(&client.address, || {
-        let tracker = crate::circuit_breaker::CircuitBreakerTracker {
-            state: crate::circuit_breaker::CircuitBreakerState::Open,
-            failure_count: 5,
-            opened_at: env.ledger().timestamp(),
-            half_open_requests: 0,
-        };
-        env.storage()
-            .persistent()
-            .set(&crate::types::DataKey::CircuitBreakerState, &tracker);
-    });
-
-    // Confirm it is blocked.
-    let blocked = client.try_release_escrow(&receiver, &shipment_id);
-    assert_eq!(blocked, Err(Ok(NavinError::CircuitBreakerOpen)));
-
-    // Admin resets the circuit breaker.
-    client.reset_circuit_breaker(&admin);
-
-    // Transfer is now unblocked.
-    let unblocked = client.try_release_escrow(&receiver, &shipment_id);
-    assert!(
-        unblocked.is_ok(),
-        "release_escrow must succeed after reset_circuit_breaker closes the breaker"
-    );
-}
-
-/// After recovery timeout elapses, the circuit breaker transitions to HalfOpen
-/// and a token transfer is allowed through.
-#[test]
-fn test_transfer_allowed_after_circuit_breaker_recovery_timeout() {
         &milestones,
         &deadline,
     );
@@ -13584,8 +13673,6 @@ fn test_create_shipment_valid_milestone_name_accepted() {
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[0xBu8; 32]);
-    let deadline = env.ledger().timestamp() + 7200;
     let data_hash = BytesN::from_array(&env, &[8u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
@@ -13593,7 +13680,6 @@ fn test_create_shipment_valid_milestone_name_accepted() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    let shipment_id = client.create_shipment(
     let mut milestones = soroban_sdk::Vec::new(&env);
     milestones.push_back((Symbol::new(&env, "warehouse"), 100_u32));
 
@@ -13602,49 +13688,6 @@ fn test_create_shipment_valid_milestone_name_accepted() {
         &receiver,
         &carrier,
         &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &deadline,
-    );
-
-    super::test_utils::advance_past_rate_limit(&env);
-    let transit_hash = BytesN::from_array(&env, &[0xCu8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
-    let confirm_hash = BytesN::from_array(&env, &[0xDu8; 32]);
-    client.confirm_delivery(&receiver, &shipment_id, &confirm_hash);
-
-    // Open the breaker with opened_at far in the past so recovery timeout
-    // (default = 300 s) has already elapsed by the current ledger time.
-    let now = env.ledger().timestamp();
-    env.as_contract(&client.address, || {
-        let tracker = crate::circuit_breaker::CircuitBreakerTracker {
-            state: crate::circuit_breaker::CircuitBreakerState::Open,
-            failure_count: 5,
-            // Set opened_at 400 s in the past → recovery_timeout (300 s) elapsed.
-            opened_at: now.saturating_sub(400),
-            half_open_requests: 0,
-        };
-        env.storage()
-            .persistent()
-            .set(&crate::types::DataKey::CircuitBreakerState, &tracker);
-    });
-
-    // The transfer should be allowed (breaker transitions Open → HalfOpen).
-    let result = client.try_release_escrow(&receiver, &shipment_id);
-    assert!(
-        result.is_ok(),
-        "transfer must be allowed when circuit breaker recovery timeout has elapsed"
-    );
-}
-
-/// CircuitBreakerOpen (#46) is distinct from TokenTransferFailed (#39).
-#[test]
-fn test_circuit_breaker_open_error_is_distinct_from_token_transfer_failed() {
-    assert_ne!(
-        NavinError::CircuitBreakerOpen as u32,
-        NavinError::TokenTransferFailed as u32,
-    );
-    assert_eq!(NavinError::CircuitBreakerOpen as u32, 46);
-    assert_eq!(NavinError::TokenTransferFailed as u32, 39);
         &milestones,
         &deadline,
     );

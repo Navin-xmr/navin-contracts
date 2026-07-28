@@ -1965,6 +1965,61 @@ pub fn get_proposal_digest(
         .get(&DataKey::ProposalDigest(proposal_id))
 }
 
+// ============= Recovery Action History Storage Functions =============
+
+/// Get the number of recovery history records logged for a shipment.
+pub fn get_recovery_record_count(env: &Env, shipment_id: u64) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::RecoveryRecordCount(shipment_id))
+        .unwrap_or(0)
+}
+
+/// Append a recovery record for a shipment, bounded by `MAX_RECOVERY_RECORDS_PER_SHIPMENT`.
+pub fn append_recovery_record(
+    env: &Env,
+    shipment_id: u64,
+    record: &crate::types::RecoveryRecord,
+) -> Result<(), NavinError> {
+    let count = get_recovery_record_count(env, shipment_id);
+    if count >= crate::types::MAX_RECOVERY_RECORDS_PER_SHIPMENT {
+        return Err(NavinError::RecoveryLimitExceeded);
+    }
+    env.storage()
+        .persistent()
+        .set(&DataKey::RecoveryRecord(shipment_id, count), record);
+    env.storage()
+        .persistent()
+        .set(&DataKey::RecoveryRecordCount(shipment_id), &(count + 1));
+    Ok(())
+}
+
+/// Retrieve a recovery record for a shipment by index.
+pub fn get_recovery_record(
+    env: &Env,
+    shipment_id: u64,
+    index: u32,
+) -> Option<crate::types::RecoveryRecord> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::RecoveryRecord(shipment_id, index))
+}
+
+/// Retrieve all recovery history records for a shipment.
+pub fn get_recovery_history(
+    env: &Env,
+    shipment_id: u64,
+) -> soroban_sdk::Vec<crate::types::RecoveryRecord> {
+    let mut history = soroban_sdk::Vec::new(env);
+    let count = get_recovery_record_count(env, shipment_id);
+    for i in 0..count {
+        if let Some(record) = get_recovery_record(env, shipment_id, i) {
+            history.push_back(record);
+        }
+    }
+    history
+}
+
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod tests {

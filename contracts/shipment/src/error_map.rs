@@ -464,6 +464,12 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "Address is invalid (e.g., zero-address sentinel).",
         ),
+        NavinError::RecoveryLimitExceeded => (
+            71,
+            LimitExceeded,
+            NoRetry,
+            "Maximum allowed recovery action entries for a shipment has been reached.",
+        ),
     };
 
     ContractErrorInfo {

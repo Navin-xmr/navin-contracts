@@ -491,7 +491,7 @@ mod tests {
         let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
         assert_eq!(
             result,
-            Ok(transit_hash),
+            Ok(Ok(transit_hash)),
             "get_status_hash must return the correct hash after update"
         );
     }
@@ -539,7 +539,7 @@ mod tests {
         let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
         assert_eq!(
             result,
-            Ok(transit_hash),
+            Ok(Ok(transit_hash)),
             "historical InTransit hash must remain accessible after transition to AtCheckpoint"
         );
 
@@ -547,7 +547,7 @@ mod tests {
         let cp_result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::AtCheckpoint);
         assert_eq!(
             cp_result,
-            Ok(checkpoint_hash),
+            Ok(Ok(checkpoint_hash)),
             "AtCheckpoint hash must be correctly stored and retrieved"
         );
     }

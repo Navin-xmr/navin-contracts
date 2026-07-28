@@ -2884,6 +2884,53 @@ impl NavinShipment {
         Ok(matched)
     }
 
+    /// Filter shipments by receiver with optional offset pagination.
+    pub fn get_shipments_by_receiver(
+        env: Env,
+        receiver: Address,
+        limit: u32,
+    ) -> Result<Vec<Shipment>, NavinError> {
+        Self::get_shipments_by_receiver_page(env, receiver, 0, limit)
+    }
+
+    /// Filter shipments by receiver with offset pagination.
+    pub fn get_shipments_by_receiver_page(
+        env: Env,
+        receiver: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Result<Vec<Shipment>, NavinError> {
+        require_initialized(&env)?;
+        let max_batch = effective_batch_query_limit(&env);
+        if limit == 0 || limit > max_batch {
+            return Err(NavinError::InvalidConfig);
+        }
+
+        let mut matched = Vec::new(&env);
+        let mut skipped = 0_u32;
+        let mut collected = 0_u32;
+        let total_shipments = storage::get_shipment_counter(&env);
+
+        for shipment_id in 1..=total_shipments {
+            if let Some(shipment) = storage::get_shipment(&env, shipment_id) {
+                if shipment.receiver != receiver {
+                    continue;
+                }
+                if skipped < offset {
+                    skipped = skipped.saturating_add(1);
+                    continue;
+                }
+                matched.push_back(shipment);
+                collected = collected.saturating_add(1);
+                if collected >= limit {
+                    break;
+                }
+            }
+        }
+
+        Ok(matched)
+    }
+
     /// Filter shipments by status with optional offset pagination.
     pub fn get_shipments_by_status(
         env: Env,
@@ -2970,6 +3017,129 @@ impl NavinShipment {
         }
 
         Ok(ShipmentStatusCursorPage {
+            shipment_ids,
+            next_cursor,
+        })
+    }
+
+    /// Cursor-based search for shipment IDs by sender.
+    pub fn search_shipments_by_sender(
+        env: Env,
+        sender: Address,
+        cursor: Option<u64>,
+        page_size: u32,
+    ) -> Result<ShipmentCursorPage, NavinError> {
+        require_initialized(&env)?;
+
+        let config = config::get_config(&env);
+        if page_size == 0 || page_size > config.batch_operation_limit {
+            return Err(NavinError::InvalidConfig);
+        }
+
+        let mut shipment_ids = Vec::new(&env);
+        let mut current_id = cursor.unwrap_or(0);
+        let total_shipments = storage::get_shipment_counter(&env);
+        let mut next_cursor = None;
+
+        while current_id < total_shipments {
+            current_id = current_id.saturating_add(1);
+
+            if let Some(shipment) = storage::get_shipment(&env, current_id) {
+                if shipment.sender == sender {
+                    shipment_ids.push_back(current_id);
+                    if shipment_ids.len() == page_size {
+                        if current_id < total_shipments {
+                            next_cursor = Some(current_id);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(ShipmentCursorPage {
+            shipment_ids,
+            next_cursor,
+        })
+    }
+
+    /// Cursor-based search for shipment IDs by carrier.
+    pub fn search_shipments_by_carrier(
+        env: Env,
+        carrier: Address,
+        cursor: Option<u64>,
+        page_size: u32,
+    ) -> Result<ShipmentCursorPage, NavinError> {
+        require_initialized(&env)?;
+
+        let config = config::get_config(&env);
+        if page_size == 0 || page_size > config.batch_operation_limit {
+            return Err(NavinError::InvalidConfig);
+        }
+
+        let mut shipment_ids = Vec::new(&env);
+        let mut current_id = cursor.unwrap_or(0);
+        let total_shipments = storage::get_shipment_counter(&env);
+        let mut next_cursor = None;
+
+        while current_id < total_shipments {
+            current_id = current_id.saturating_add(1);
+
+            if let Some(shipment) = storage::get_shipment(&env, current_id) {
+                if shipment.carrier == carrier {
+                    shipment_ids.push_back(current_id);
+                    if shipment_ids.len() == page_size {
+                        if current_id < total_shipments {
+                            next_cursor = Some(current_id);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(ShipmentCursorPage {
+            shipment_ids,
+            next_cursor,
+        })
+    }
+
+    /// Cursor-based search for shipment IDs by receiver.
+    pub fn search_shipments_by_receiver(
+        env: Env,
+        receiver: Address,
+        cursor: Option<u64>,
+        page_size: u32,
+    ) -> Result<ShipmentCursorPage, NavinError> {
+        require_initialized(&env)?;
+
+        let config = config::get_config(&env);
+        if page_size == 0 || page_size > config.batch_operation_limit {
+            return Err(NavinError::InvalidConfig);
+        }
+
+        let mut shipment_ids = Vec::new(&env);
+        let mut current_id = cursor.unwrap_or(0);
+        let total_shipments = storage::get_shipment_counter(&env);
+        let mut next_cursor = None;
+
+        while current_id < total_shipments {
+            current_id = current_id.saturating_add(1);
+
+            if let Some(shipment) = storage::get_shipment(&env, current_id) {
+                if shipment.receiver == receiver {
+                    shipment_ids.push_back(current_id);
+                    if shipment_ids.len() == page_size {
+                        if current_id < total_shipments {
+                            next_cursor = Some(current_id);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(ShipmentCursorPage {
             shipment_ids,
             next_cursor,
         })
@@ -5717,6 +5887,29 @@ impl NavinShipment {
         Ok(diagnostics::run_system_health_check(&env))
     }
 
+    /// Check the health of the contract data over a specific shipment ID range.
+    pub fn check_contract_health_paginated(
+        env: Env,
+        admin: Address,
+        start_id: u64,
+        limit: u32,
+    ) -> Result<SystemHealthStatus, NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+        require_admin_or_operator(&env, &admin)?;
+
+        let max_batch = effective_batch_query_limit(&env);
+        if limit == 0 || limit > max_batch {
+            return Err(NavinError::InvalidConfig);
+        }
+
+        Ok(diagnostics::run_system_health_check_range(
+            &env,
+            start_id,
+            limit as u64,
+        ))
+    }
+
     /// Return a TTL health summary for all tracked shipments.
     ///
     /// Scans up to all shipments (or a capped sample for large sets) and
@@ -6089,6 +6282,30 @@ impl NavinShipment {
             previous_status,
             &reason_hash,
         )
+    }
+
+    /// Retrieve the recovery action history for a shipment.
+    pub fn get_recovery_history(
+        env: Env,
+        shipment_id: u64,
+    ) -> Result<Vec<RecoveryRecord>, NavinError> {
+        require_initialized(&env)?;
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+        Ok(storage::get_recovery_history(&env, shipment_id))
+    }
+
+    /// Get the count of logged recovery history records for a shipment.
+    pub fn get_recovery_record_count(
+        env: Env,
+        shipment_id: u64,
+    ) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+        Ok(storage::get_recovery_record_count(&env, shipment_id))
     }
 
     /// Strictly assert that a proof-of-delivery hash matches the on-chain confirmation hash.
