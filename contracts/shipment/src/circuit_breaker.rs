@@ -319,7 +319,6 @@ pub fn manual_reset(env: &Env, admin: &Address) -> Result<(), NavinError> {
 ///
 /// # Returns
 /// * `(state, failure_count, recovery_time_remaining)` tuple
-#[allow(dead_code)]
 pub fn get_breaker_status(
     env: &Env,
     config: &CircuitBreakerConfig,
