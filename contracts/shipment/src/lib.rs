@@ -6090,6 +6090,92 @@ impl NavinShipment {
             &reason_hash,
         )
     }
+
+    /// Strictly assert that a proof-of-delivery hash matches the on-chain confirmation hash.
+    ///
+    /// Unlike `verify_delivery_proof` (which returns a boolean), this function returns
+    /// `Err(DataHashMismatch)` when the provided hash does not match the stored value,
+    /// making it suitable for use in flows that must fail-fast on hash discrepancies.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - The ID of the shipment to verify.
+    /// * `proof_hash` - The hash to assert against the stored confirmation hash.
+    ///
+    /// # Returns
+    /// * `Ok(())` if the hash matches the stored confirmation hash.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::InvalidHash` - If proof_hash is all zeros.
+    /// * `NavinError::ShipmentNotFound` - If the shipment does not exist.
+    /// * `NavinError::StatusHashNotFound` - If no confirmation hash was recorded.
+    /// * `NavinError::DataHashMismatch` - If proof_hash does not match the stored hash.
+    pub fn assert_delivery_hash(
+        env: Env,
+        shipment_id: u64,
+        proof_hash: BytesN<32>,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        validation::validate_hash(&proof_hash)?;
+
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+
+        let stored = storage::get_confirmation_hash(&env, shipment_id)
+            .ok_or(NavinError::StatusHashNotFound)?;
+
+        if stored != proof_hash {
+            return Err(NavinError::DataHashMismatch);
+        }
+
+        Ok(())
+    }
+
+    /// Strictly assert that a data hash matches the on-chain hash recorded for a
+    /// specific shipment status transition.
+    ///
+    /// Unlike `verify_data_hash` (which returns a boolean), this function returns
+    /// `Err(DataHashMismatch)` when the provided hash does not match the stored value.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - The ID of the shipment.
+    /// * `status` - The status whose recorded hash is compared.
+    /// * `expected_hash` - The hash to assert against the stored value.
+    ///
+    /// # Returns
+    /// * `Ok(())` if the hash matches the stored status hash.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::InvalidHash` - If expected_hash is all zeros.
+    /// * `NavinError::ShipmentNotFound` - If the shipment does not exist.
+    /// * `NavinError::StatusHashNotFound` - If no hash was recorded for that status.
+    /// * `NavinError::DataHashMismatch` - If expected_hash does not match the stored hash.
+    pub fn assert_data_hash(
+        env: Env,
+        shipment_id: u64,
+        status: ShipmentStatus,
+        expected_hash: BytesN<32>,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        validation::validate_hash(&expected_hash)?;
+
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+
+        let stored = storage::get_status_hash(&env, shipment_id, &status)
+            .ok_or(NavinError::StatusHashNotFound)?;
+
+        if stored != expected_hash {
+            return Err(NavinError::DataHashMismatch);
+        }
+
+        Ok(())
+    }
 }
 
 /// Validates whether a version transition is permitted.
