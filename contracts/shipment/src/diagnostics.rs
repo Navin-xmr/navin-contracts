@@ -1,5 +1,5 @@
 use crate::storage;
-use crate::types::ShipmentStatus;
+use crate::types::{DataKey, ShipmentStatus};
 use soroban_sdk::{contracttype, Env, Vec};
 
 /// Reusable response object representing the state of the contract's health.
@@ -78,6 +78,15 @@ pub fn run_system_health_check_range(env: &Env, start_id: u64, limit: u64) -> Sy
                     if !is_terminal && !has_persist && !storage_inconsistencies.contains(id) {
                         storage_inconsistencies.push_back(id);
                     }
+
+                    // Archived (terminal) shipments must not have orphaned
+                    // per-shipment counter or index keys in persistent storage.
+                    // Any present key is a false-positive inconsistency that
+                    // inflates rent costs over time.
+                    let is_archived = !has_persist && is_terminal;
+                    if is_archived && has_orphaned_counters(env, id) && !storage_inconsistencies.contains(id) {
+                        storage_inconsistencies.push_back(id);
+                    }
                 }
                 None => {
                     // Tracking a shipment internally that does not map to any persistent or archived storage
@@ -95,3 +104,78 @@ pub fn run_system_health_check_range(env: &Env, start_id: u64, limit: u64) -> Sy
         storage_inconsistencies,
     }
 }
+
+/// Returns `true` if any per-shipment counter or index key still exists in
+/// persistent storage for a shipment that has already been archived.
+///
+/// Used by `run_system_health_check_range` to detect orphaned keys left
+/// behind by a prior (unfixed) `archive_shipment` call.
+fn has_orphaned_counters(env: &Env, shipment_id: u64) -> bool {
+    // Scalar counter/index keys
+    if storage::has_event_count_entry(env, shipment_id) {
+        return true;
+    }
+    if storage::has_confirmation_hash_entry(env, shipment_id) {
+        return true;
+    }
+    if storage::has_last_status_update_entry(env, shipment_id) {
+        return true;
+    }
+    if storage::has_escrow_entry(env, shipment_id) {
+        return true;
+    }
+    if env
+        .storage()
+        .persistent()
+        .has(&DataKey::MilestoneEventCount(shipment_id))
+    {
+        return true;
+    }
+    if env
+        .storage()
+        .persistent()
+        .has(&DataKey::BreachEventCount(shipment_id))
+    {
+        return true;
+    }
+    if env
+        .storage()
+        .persistent()
+        .has(&DataKey::ActiveSettlement(shipment_id))
+    {
+        return true;
+    }
+    if env
+        .storage()
+        .persistent()
+        .has(&storage::escrow_freeze_reason_key(shipment_id))
+    {
+        return true;
+    }
+    // Note count (implies note hashes also exist)
+    if env
+        .storage()
+        .persistent()
+        .has(&DataKey::ShipmentNoteCount(shipment_id))
+    {
+        return true;
+    }
+    // Evidence count (implies evidence hashes also exist)
+    if env
+        .storage()
+        .persistent()
+        .has(&DataKey::DisputeEvidenceCount(shipment_id))
+    {
+        return true;
+    }
+    // Recovery record count (implies record entries also exist)
+    if env
+        .storage()
+        .persistent()
+        .has(&DataKey::RecoveryRecordCount(shipment_id))
+    {
+        return true;
+    }
+    false
+}
+
