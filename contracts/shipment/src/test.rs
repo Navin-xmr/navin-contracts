@@ -6641,6 +6641,531 @@ fn test_add_dispute_evidence_unauthorized() {
 }
 
 #[test]
+fn test_get_dispute_evidence_hash_with_out_of_bounds_index() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let evidence_hash = BytesN::from_array(&env, &[77u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Raise dispute and add evidence
+    client.raise_dispute(&company, &shipment_id, &data_hash);
+    client.add_dispute_evidence_hash(&company, &shipment_id, &evidence_hash);
+
+    // Valid index 0 should work
+    assert_eq!(
+        client.get_dispute_evidence_hash(&shipment_id, &0),
+        Some(evidence_hash)
+    );
+
+    // Index 1 is out of bounds (only 1 evidence at index 0)
+    let result = client.try_get_dispute_evidence_hash(&shipment_id, &1);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::EvidenceNotFound)),
+        "out-of-bounds index should return EvidenceNotFound"
+    );
+
+    // Add another evidence
+    let second_evidence = BytesN::from_array(&env, &[88u8; 32]);
+    client.add_dispute_evidence_hash(&company, &shipment_id, &second_evidence);
+
+    // Now index 1 should work
+    assert_eq!(
+        client.get_dispute_evidence_hash(&shipment_id, &1),
+        Some(second_evidence)
+    );
+
+    // But index 2 should fail
+    let result = client.try_get_dispute_evidence_hash(&shipment_id, &2);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::EvidenceNotFound)),
+        "index equal to or beyond evidence count should return EvidenceNotFound"
+    );
+}
+
+#[test]
+fn test_get_dispute_evidence_hash_with_non_existent_shipment() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+
+    client.initialize(&admin, &token_contract);
+
+    // Try to get evidence for a shipment that doesn't exist
+    let result = client.try_get_dispute_evidence_hash(&999u64, &0);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ShipmentNotFound)),
+        "querying evidence on non-existent shipment should return ShipmentNotFound"
+    );
+}
+
+#[test]
+fn test_get_dispute_evidence_hash_validates_error_code_67() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Raise dispute but don't add any evidence
+    client.raise_dispute(&company, &shipment_id, &data_hash);
+
+    // Try to get evidence at index 0 from empty evidence list
+    let result = client.try_get_dispute_evidence_hash(&shipment_id, &0);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::EvidenceNotFound)),
+        "EvidenceNotFound error (code 67) should be returned for empty evidence list"
+    );
+
+    // Verify the error code is correct
+    let evidence_not_found_err = crate::NavinError::EvidenceNotFound;
+    assert_eq!(evidence_not_found_err as u32, 67);
+}
+
+// ============= Circular Dependency Tests =============
+
+#[test]
+fn test_circular_dependency_self_dependency() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Attempting to make a shipment depend on itself should fail with CircularDependency
+    let result = client.try_add_shipment_dependency(&company, &shipment_id, &shipment_id);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::CircularDependency)),
+        "self-dependency should be rejected with CircularDependency error"
+    );
+}
+
+#[test]
+fn test_circular_dependency_two_shipment_cycle() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    // Create two shipments
+    let shipment_a = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let shipment_b = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // A depends on B should work
+    let result = client.try_add_shipment_dependency(&company, &shipment_a, &shipment_b);
+    assert!(result.is_ok(), "adding dependency A->B should succeed");
+
+    // B depends on A creates a cycle and should fail
+    let result = client.try_add_shipment_dependency(&company, &shipment_b, &shipment_a);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::CircularDependency)),
+        "circular dependency A->B->A should be rejected"
+    );
+}
+
+#[test]
+fn test_circular_dependency_three_shipment_cycle() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    // Create three shipments
+    let shipment_a = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let shipment_b = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let shipment_c = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Build chain: A -> B -> C
+    let result = client.try_add_shipment_dependency(&company, &shipment_a, &shipment_b);
+    assert!(result.is_ok(), "A depends on B should succeed");
+
+    let result = client.try_add_shipment_dependency(&company, &shipment_b, &shipment_c);
+    assert!(result.is_ok(), "B depends on C should succeed");
+
+    // Attempting C -> A completes the cycle and should fail
+    let result = client.try_add_shipment_dependency(&company, &shipment_c, &shipment_a);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::CircularDependency)),
+        "circular dependency A->B->C->A should be detected and rejected"
+    );
+}
+
+#[test]
+fn test_circular_dependency_error_code_55() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_a = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let shipment_b = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Create initial dependency
+    client.add_shipment_dependency(&company, &shipment_a, &shipment_b);
+
+    // Try to create cycle
+    let result = client.try_add_shipment_dependency(&company, &shipment_b, &shipment_a);
+    
+    // Verify the error is CircularDependency with code 55
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::CircularDependency)),
+        "CircularDependency error should be returned"
+    );
+
+    let circular_dep_err = crate::NavinError::CircularDependency;
+    assert_eq!(circular_dep_err as u32, 55, "CircularDependency error code must be 55");
+}
+
+// ============= Dependencies Not Met Tests =============
+
+#[test]
+fn test_dependencies_not_met_transition_blocked() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    // Create two shipments
+    let shipment_prereq = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let shipment_dependent = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Make shipment_dependent depend on shipment_prereq
+    client.add_shipment_dependency(&company, &shipment_dependent, &shipment_prereq);
+
+    // Try to transition dependent shipment to InTransit before prerequisite is completed
+    let result = client.try_update_status(
+        &carrier,
+        &shipment_dependent,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::DependenciesNotMet)),
+        "transition should fail when prerequisite shipment is not completed"
+    );
+}
+
+#[test]
+fn test_dependencies_not_met_multiple_prerequisites() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    // Create three shipments
+    let prereq_a = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let prereq_b = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let dependent = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // dependent depends on both prereq_a and prereq_b
+    client.add_shipment_dependency(&company, &dependent, &prereq_a);
+    client.add_shipment_dependency(&company, &dependent, &prereq_b);
+
+    // Try to transition with only one prerequisite met
+    client.update_status(&carrier, &prereq_a, &ShipmentStatus::InTransit, &data_hash);
+    super::test_utils::advance_past_rate_limit(&env);
+    client.update_status(
+        &carrier,
+        &prereq_a,
+        &ShipmentStatus::Delivered,
+        &data_hash,
+    );
+
+    // Attempt transition with prereq_b still incomplete
+    let result = client.try_update_status(
+        &carrier,
+        &dependent,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::DependenciesNotMet)),
+        "transition should fail when any prerequisite is incomplete"
+    );
+}
+
+#[test]
+fn test_dependencies_met_transition_succeeds() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    // Create two shipments
+    let shipment_prereq = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let shipment_dependent = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Make shipment_dependent depend on shipment_prereq
+    client.add_shipment_dependency(&company, &shipment_dependent, &shipment_prereq);
+
+    // Complete the prerequisite shipment
+    client.update_status(&carrier, &shipment_prereq, &ShipmentStatus::InTransit, &data_hash);
+    super::test_utils::advance_past_rate_limit(&env);
+    client.update_status(
+        &carrier,
+        &shipment_prereq,
+        &ShipmentStatus::Delivered,
+        &data_hash,
+    );
+
+    // Now transitioning the dependent shipment should succeed
+    client.update_status(
+        &carrier,
+        &shipment_dependent,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    let dependent_status = client.get_shipment(&shipment_dependent).status;
+    assert_eq!(
+        dependent_status,
+        ShipmentStatus::InTransit,
+        "dependent shipment should successfully transition after prerequisite is completed"
+    );
+}
+
+#[test]
+fn test_dependencies_not_met_error_code_54() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_prereq = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let shipment_dependent = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Create dependency
+    client.add_shipment_dependency(&company, &shipment_dependent, &shipment_prereq);
+
+    // Try transition before prerequisite is complete
+    let result = client.try_update_status(
+        &carrier,
+        &shipment_dependent,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::DependenciesNotMet)),
+        "DependenciesNotMet error should be returned when prerequisites are incomplete"
+    );
+
+    let deps_not_met_err = crate::NavinError::DependenciesNotMet;
+    assert_eq!(
+        deps_not_met_err as u32,
+        54,
+        "DependenciesNotMet error code must be 54"
+    );
+}
+
+#[test]
 #[should_panic(expected = "Error(Contract, #30)")]
 fn test_shipment_limit_reached() {
     let (env, client, admin, token_contract) = setup_shipment_env();
@@ -6703,6 +7228,142 @@ fn test_batch_limit_reached() {
     }
 
     client.create_shipments_batch(&company, &shipments);
+}
+
+// ============= Proposal Salt Reuse Tests =============
+
+#[test]
+fn test_proposal_salt_reused_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+
+    // Set up multisig
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &1);
+
+    let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
+    let salt = BytesN::from_array(&env, &[1u8; 32]);
+    let action = crate::AdminAction::Upgrade(new_wasm_hash);
+
+    // First proposal with specific salt should succeed
+    let proposal_id_1 = client.propose_action_with_salt(&admin, &action, &salt);
+    assert_eq!(proposal_id_1, 1);
+
+    // Attempt second proposal with the same salt should fail with ProposalSaltReused
+    let result = client.try_propose_action_with_salt(&admin, &action, &salt);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalSaltReused)),
+        "reused salt should be rejected with ProposalSaltReused error"
+    );
+}
+
+#[test]
+fn test_proposal_unique_salts_accepted() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+
+    // Set up multisig
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &1);
+
+    let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
+    let salt_1 = BytesN::from_array(&env, &[1u8; 32]);
+    let salt_2 = BytesN::from_array(&env, &[2u8; 32]);
+    let action = crate::AdminAction::Upgrade(new_wasm_hash);
+
+    // First proposal with salt_1
+    let proposal_id_1 = client.propose_action_with_salt(&admin, &action, &salt_1);
+    assert_eq!(proposal_id_1, 1);
+
+    // Second proposal with different salt_2 should succeed
+    let proposal_id_2 = client.propose_action_with_salt(&admin, &action, &salt_2);
+    assert_eq!(proposal_id_2, 2);
+
+    // Both proposals should exist
+    let proposal_1 = client.get_proposal(&proposal_id_1);
+    let proposal_2 = client.get_proposal(&proposal_id_2);
+    assert_eq!(proposal_1.id, proposal_id_1);
+    assert_eq!(proposal_2.id, proposal_id_2);
+}
+
+#[test]
+fn test_proposal_salt_reuse_error_code_56() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+
+    // Set up multisig
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &1);
+
+    let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
+    let salt = BytesN::from_array(&env, &[99u8; 32]);
+    let action = crate::AdminAction::Upgrade(new_wasm_hash);
+
+    // Create first proposal
+    let _ = client.propose_action_with_salt(&admin, &action, &salt);
+
+    // Attempt to create second proposal with same salt
+    let result = client.try_propose_action_with_salt(&admin, &action, &salt);
+
+    // Verify the error is ProposalSaltReused with code 56
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalSaltReused)),
+        "ProposalSaltReused error should be returned"
+    );
+
+    let salt_reused_err = crate::NavinError::ProposalSaltReused;
+    assert_eq!(
+        salt_reused_err as u32,
+        56,
+        "ProposalSaltReused error code must be 56"
+    );
+}
+
+#[test]
+fn test_proposal_salt_different_actions_same_salt() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+
+    // Set up multisig
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &1);
+
+    let new_admin = Address::generate(&env);
+    let salt = BytesN::from_array(&env, &[77u8; 32]);
+
+    let action_1 = crate::AdminAction::Upgrade(BytesN::from_array(&env, &[42u8; 32]));
+    let action_2 = crate::AdminAction::TransferAdmin(new_admin);
+
+    // First proposal with salt
+    let proposal_id_1 = client.propose_action_with_salt(&admin, &action_1, &salt);
+    assert_eq!(proposal_id_1, 1);
+
+    // Attempt second proposal with same salt but different action should also fail
+    // Salt reuse is checked regardless of action content
+    let result = client.try_propose_action_with_salt(&admin, &action_2, &salt);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalSaltReused)),
+        "salt reuse should be rejected even with different actions"
+    );
 }
 
 #[test]
