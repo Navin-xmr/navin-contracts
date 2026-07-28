@@ -687,6 +687,15 @@ pub struct NavinShipment;
 
 #[contractimpl]
 impl NavinShipment {
+    /// Return the structured metadata for a contract error code.
+    ///
+    /// This is useful for wallets, indexers, and off-chain tooling that need to
+    /// classify an error without vendoring the crate source.
+    pub fn get_error_info(env: Env, code: u32) -> crate::error_map::ContractErrorInfo {
+        let _ = env;
+        crate::error_map::get_error_info(code)
+    }
+
     /// Set metadata key-value pair for a shipment. Only Company (sender) or Admin can set.
     /// Max 5 metadata entries allowed.
     ///
