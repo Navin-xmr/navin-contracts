@@ -108,6 +108,13 @@ mod test_verification;
 mod test_whitelist_multicompany;
 #[cfg(test)]
 mod test_zero_amount_escrow;
+// Error-variant test suites (issues #613–#616)
+#[cfg(test)]
+mod test_milestone_sum_invalid;
+#[cfg(test)]
+mod test_invalid_shipment_input;
+#[cfg(test)]
+mod test_batch_too_large;
 
 // ── Fuzz / property-based test harnesses ─────────────────────────────────────
 #[cfg(test)]
