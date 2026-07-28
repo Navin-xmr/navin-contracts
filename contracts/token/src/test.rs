@@ -165,6 +165,7 @@ fn test_remove_allowed_metadata_key_success() {
 
     client.remove_allowed_metadata_key(&admin, &key);
     assert!(!client.is_metadata_key_allowed(&key));
+    assert!(client.get_allowed_metadata_keys().is_empty());
 }
 
 #[test]
@@ -359,4 +360,46 @@ fn test_multiple_allowed_keys() {
     assert!(!client.is_metadata_key_allowed(&key2));
     assert!(client.is_metadata_key_allowed(&key1));
     assert!(client.is_metadata_key_allowed(&key3));
+
+    let allowed_keys = client.get_allowed_metadata_keys();
+    assert_eq!(allowed_keys.len(), 2);
+    assert_eq!(allowed_keys.get(0), Some(key1));
+    assert_eq!(allowed_keys.get(1), Some(key3));
+}
+
+#[test]
+fn test_allowed_metadata_keys_list_round_trip() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    assert!(client.get_allowed_metadata_keys().is_empty());
+
+    let key1 = Symbol::new(&env, "website");
+    let key2 = Symbol::new(&env, "twitter");
+    let key3 = Symbol::new(&env, "discord");
+
+    client.add_allowed_metadata_key(&admin, &key1);
+    client.add_allowed_metadata_key(&admin, &key2);
+    client.add_allowed_metadata_key(&admin, &key3);
+
+    let allowed_keys = client.get_allowed_metadata_keys();
+    assert_eq!(allowed_keys.len(), 3);
+    assert_eq!(allowed_keys.get(0), Some(key1.clone()));
+    assert_eq!(allowed_keys.get(1), Some(key2.clone()));
+    assert_eq!(allowed_keys.get(2), Some(key3.clone()));
+
+    client.remove_allowed_metadata_key(&admin, &key2);
+
+    let allowed_keys = client.get_allowed_metadata_keys();
+    assert_eq!(allowed_keys.len(), 2);
+    assert_eq!(allowed_keys.get(0), Some(key1.clone()));
+    assert_eq!(allowed_keys.get(1), Some(key3.clone()));
+    assert!(client.is_metadata_key_allowed(&key1));
+    assert!(!client.is_metadata_key_allowed(&key2));
+    assert!(client.is_metadata_key_allowed(&key3));
+
+    client.remove_allowed_metadata_key(&admin, &key1);
+    client.remove_allowed_metadata_key(&admin, &key3);
+
+    assert!(client.get_allowed_metadata_keys().is_empty());
 }

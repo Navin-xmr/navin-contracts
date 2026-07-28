@@ -177,6 +177,7 @@
     ],
     [],
     [],
+    [],
     []
   ],
   "ledger": {
@@ -483,6 +484,25 @@
                         },
                         "val": {
                           "bool": true
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "AllowedMetadataKeys"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "website"
+                            },
+                            {
+                              "symbol": "discord"
+                            }
+                          ]
                         }
                       },
                       {
