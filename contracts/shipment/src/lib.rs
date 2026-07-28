@@ -5960,17 +5960,21 @@ impl NavinShipment {
         circuit_breaker::manual_reset(&env, &admin)
     }
 
-    /// Scan all tracked shipments and return every consistency violation found.
+    /// Scan a capped sample of tracked shipments and return every consistency
+    /// violation found.
     ///
-    /// Checks per-shipment invariants across the full ledger:
+    /// Checks per-shipment invariants across the first
+    /// `DEFAULT_CONSISTENCY_SAMPLE_LIMIT` shipments:
     /// - Escrow amounts match storage
     /// - Finalized flag is only set on terminal shipments with zero escrow
     /// - Paid milestones are a subset of the payment schedule
     /// - Timestamps are non-decreasing
     /// - Deadlines are strictly after creation time
     ///
-    /// Intended for periodic admin audits; not safe to call on hot paths
-    /// due to the O(n) scan over all shipments.
+    /// The scan is capped at `DEFAULT_CONSISTENCY_SAMPLE_LIMIT` entries so that
+    /// compute cost stays within budget as the shipment set grows. For a full
+    /// audit over the entire ledger, use `check_consistency_violations_paginated`
+    /// to step through all pages.
     ///
     /// # Arguments
     /// * `env` - Execution environment.
@@ -5978,7 +5982,7 @@ impl NavinShipment {
     ///
     /// # Returns
     /// * `Result<Vec<ConsistencyViolation>, NavinError>` - List of detected violations.
-    ///   An empty vec means all invariants hold.
+    ///   An empty vec means all sampled invariants hold.
     ///
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
@@ -5991,6 +5995,55 @@ impl NavinShipment {
         admin.require_auth();
         require_admin_or_operator(&env, &admin)?;
         Ok(consistency::check_all_consistency(&env))
+    }
+
+    /// Scan a specific page of shipments and return every consistency violation
+    /// found in that window.
+    ///
+    /// This is the paginated variant for full-set audits. Callers advance
+    /// through the entire shipment space by incrementing `start_id` by `limit`
+    /// on each call until no more results are returned.
+    ///
+    /// Per-status counter drift (`StatusCountMismatch`) is only reported when
+    /// the requested window covers the complete shipment set (i.e. the final
+    /// page that reaches the last shipment ID).
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Admin or operator address (auth required).
+    /// * `start_id` - First shipment ID to scan (1-indexed, inclusive).
+    /// * `limit` - Number of shipments to inspect per page; must be in
+    ///   `[1, batch_operation_limit]`.
+    ///
+    /// # Returns
+    /// * `Result<Vec<ConsistencyViolation>, NavinError>` - Violations found in
+    ///   this page. An empty vec means all inspected invariants hold.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not admin or operator.
+    /// * `NavinError::InvalidConfig` - If `limit` is 0 or exceeds the
+    ///   configured `batch_operation_limit`.
+    pub fn check_consistency_violations_paginated(
+        env: Env,
+        admin: Address,
+        start_id: u64,
+        limit: u32,
+    ) -> Result<soroban_sdk::Vec<ConsistencyViolation>, NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+        require_admin_or_operator(&env, &admin)?;
+
+        let max_batch = effective_batch_query_limit(&env);
+        if limit == 0 || limit > max_batch {
+            return Err(NavinError::InvalidConfig);
+        }
+
+        Ok(consistency::check_all_consistency_range(
+            &env,
+            start_id,
+            limit as u64,
+        ))
     }
 
     // =========================================================================
