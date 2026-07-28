@@ -12883,3 +12883,147 @@ fn test_create_shipment_valid_milestone_name_accepted() {
     );
     assert!(id > 0);
 }
+
+// ── get_circuit_breaker_status tests (issue #640) ─────────────────────────────
+
+#[test]
+fn test_get_circuit_breaker_status_closed_by_default() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let (state, failure_count, recovery_remaining) = client.get_circuit_breaker_status();
+    assert_eq!(state, crate::CircuitBreakerState::Closed);
+    assert_eq!(failure_count, 0);
+    assert_eq!(recovery_remaining, 0);
+}
+
+#[test]
+fn test_get_circuit_breaker_status_open() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    // Inject Open state directly — Soroban rolls back storage on error so we
+    // cannot accumulate real failures through contract calls.
+    let opened_at = env.ledger().timestamp();
+    env.as_contract(&client.address, || {
+        let tracker = crate::circuit_breaker::CircuitBreakerTracker {
+            state: crate::circuit_breaker::CircuitBreakerState::Open,
+            failure_count: 5,
+            opened_at,
+            half_open_requests: 0,
+        };
+        env.storage()
+            .persistent()
+            .set(&crate::types::DataKey::CircuitBreakerState, &tracker);
+    });
+
+    let (state, failure_count, recovery_remaining) = client.get_circuit_breaker_status();
+    assert_eq!(state, crate::CircuitBreakerState::Open);
+    assert_eq!(failure_count, 5);
+    // Default recovery_timeout is 300 s; we just opened it so ~300 s remain.
+    assert!(recovery_remaining > 0 && recovery_remaining <= 300);
+}
+
+#[test]
+fn test_get_circuit_breaker_status_half_open() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    // Inject HalfOpen state.
+    env.as_contract(&client.address, || {
+        let tracker = crate::circuit_breaker::CircuitBreakerTracker {
+            state: crate::circuit_breaker::CircuitBreakerState::HalfOpen,
+            failure_count: 5,
+            opened_at: env.ledger().timestamp(),
+            half_open_requests: 1,
+        };
+        env.storage()
+            .persistent()
+            .set(&crate::types::DataKey::CircuitBreakerState, &tracker);
+    });
+
+    let (state, failure_count, recovery_remaining) = client.get_circuit_breaker_status();
+    assert_eq!(state, crate::CircuitBreakerState::HalfOpen);
+    assert_eq!(failure_count, 5);
+    // HalfOpen means recovery window has already passed — no time remaining.
+    assert_eq!(recovery_remaining, 0);
+}
+
+// ── is_company_suspended tests (issue #642) ───────────────────────────────────
+
+#[test]
+fn test_is_company_suspended_active_by_default() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    assert!(!client.is_company_suspended(&company));
+}
+
+#[test]
+fn test_is_company_suspended_returns_true_when_suspended() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    client.suspend_company(&admin, &company);
+    assert!(client.is_company_suspended(&company));
+}
+
+#[test]
+fn test_is_company_suspended_returns_false_after_reactivation() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    client.suspend_company(&admin, &company);
+    assert!(client.is_company_suspended(&company));
+
+    client.reactivate_company(&admin, &company);
+    assert!(!client.is_company_suspended(&company));
+}
+
+// ── get_platform_fee_config tests (issue #641) ────────────────────────────────
+
+#[test]
+fn test_get_platform_fee_config_none_before_set() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let config = client.get_platform_fee_config();
+    assert!(config.is_none());
+}
+
+#[test]
+fn test_get_platform_fee_config_reflects_set_platform_fee() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let treasury = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.set_platform_fee(&admin, &50_u32, &treasury);
+
+    let config = client.get_platform_fee_config().expect("fee config should be set");
+    assert_eq!(config.fee_bps, 50);
+    assert_eq!(config.treasury, treasury);
+}
+
+#[test]
+fn test_get_platform_fee_config_reflects_updated_value() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let treasury1 = Address::generate(&env);
+    let treasury2 = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.set_platform_fee(&admin, &100_u32, &treasury1);
+    client.set_platform_fee(&admin, &200_u32, &treasury2);
+
+    let config = client.get_platform_fee_config().expect("fee config should be set");
+    assert_eq!(config.fee_bps, 200);
+    assert_eq!(config.treasury, treasury2);
+}

@@ -129,6 +129,7 @@ mod fuzz_wallet_auth_integration;
 #[cfg(test)]
 mod preservation_property_tests;
 
+pub use circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState};
 pub use config::*;
 pub use consistency::*;
 pub use diagnostics::*;
@@ -1698,6 +1699,27 @@ impl NavinShipment {
     pub fn is_carrier_suspended(env: Env, carrier: Address) -> Result<bool, NavinError> {
         require_initialized(&env)?;
         Ok(storage::is_carrier_suspended(&env, &carrier))
+    }
+
+    /// Return whether a company is currently suspended.
+    ///
+    /// Mirrors `is_carrier_suspended` for the company side of the same
+    /// suspension model. A suspended company cannot create shipments or
+    /// deposit escrow.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `company` - The company address to query.
+    ///
+    /// # Returns
+    /// * `Ok(true)` if the company has an active suspension.
+    /// * `Ok(false)` if the company is active (or has never been added).
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn is_company_suspended(env: Env, company: Address) -> Result<bool, NavinError> {
+        require_initialized(&env)?;
+        Ok(storage::is_company_suspended(&env, &company))
     }
 
     /// Revoke a previously assigned role from an address.
@@ -5411,6 +5433,26 @@ impl NavinShipment {
         Ok(())
     }
 
+    /// Return the active platform fee configuration.
+    ///
+    /// Returns the `FeeConfig` last written by `set_platform_fee`, containing
+    /// the fee rate in basis points and the treasury address that collects fees.
+    /// Returns `None` if `set_platform_fee` has never been called.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    ///
+    /// # Returns
+    /// * `Ok(Some(FeeConfig))` if a fee config has been set.
+    /// * `Ok(None)` if no fee config has been set yet.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn get_platform_fee_config(env: Env) -> Result<Option<FeeConfig>, NavinError> {
+        require_initialized(&env)?;
+        Ok(storage::get_fee_config(&env))
+    }
+
     /// Add a new carrier to the contract.
     ///
     /// # Arguments
@@ -5756,6 +5798,32 @@ impl NavinShipment {
     pub fn reset_circuit_breaker(env: Env, admin: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
         circuit_breaker::manual_reset(&env, &admin)
+    }
+
+    /// Query the current circuit breaker status without modifying state.
+    ///
+    /// Returns the breaker state, accumulated failure count, and the number of
+    /// seconds remaining before the breaker transitions from Open to HalfOpen
+    /// (0 when the breaker is Closed or already in HalfOpen).
+    ///
+    /// Operators should call this before deciding whether to invoke
+    /// `reset_circuit_breaker`, to confirm the breaker is actually open and
+    /// how long until automatic recovery would occur.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    ///
+    /// # Returns
+    /// * `(CircuitBreakerState, u32, u64)` — `(state, failure_count, recovery_time_remaining_secs)`.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn get_circuit_breaker_status(
+        env: Env,
+    ) -> Result<(CircuitBreakerState, u32, u64), NavinError> {
+        require_initialized(&env)?;
+        let config = circuit_breaker::CircuitBreakerConfig::default();
+        Ok(circuit_breaker::get_breaker_status(&env, &config))
     }
 
     /// Scan all tracked shipments and return every consistency violation found.
