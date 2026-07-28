@@ -127,6 +127,22 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "AllowedMetadataKeys"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "website"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "Balance"
                             },
                             {
