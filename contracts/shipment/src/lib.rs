@@ -3493,6 +3493,7 @@ impl NavinShipment {
         data_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
         require_active_carrier(&env, &carrier)?;
