@@ -303,3 +303,89 @@ fn test_batch_all_present_matches_individual_reads_field_by_field() {
         assert_eq!(batch_item.finalized, single.finalized);
     }
 }
+
+// ── Receiver-side shipment lookup (issue #644) ────────────────────────────────
+
+#[test]
+fn test_get_shipments_by_receiver_with_pagination() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver_a = Address::generate(&env);
+    let receiver_b = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let r1 = create_shipment_for(&client, &env, &company, &receiver_a, &carrier, 41);
+    let _rb = create_shipment_for(&client, &env, &company, &receiver_b, &carrier, 42);
+    let r2 = create_shipment_for(&client, &env, &company, &receiver_a, &carrier, 43);
+
+    let all_receiver_a = client.get_shipments_by_receiver(&receiver_a, &10);
+    assert_eq!(all_receiver_a.len(), 2);
+    assert_eq!(all_receiver_a.get(0).unwrap().id, r1);
+    assert_eq!(all_receiver_a.get(1).unwrap().id, r2);
+
+    let page = client.get_shipments_by_receiver_page(&receiver_a, &1, &1);
+    assert_eq!(page.len(), 1);
+    assert_eq!(page.get(0).unwrap().id, r2);
+}
+
+// ── Cursor-based shipment pagination (issue #645) ─────────────────────────────
+
+#[test]
+fn test_search_shipments_by_sender_cursor_pagination() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company_a = Address::generate(&env);
+    let company_b = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company_a);
+    client.add_company(&admin, &company_b);
+
+    let a1 = create_shipment_for(&client, &env, &company_a, &receiver, &carrier, 51);
+    let _b1 = create_shipment_for(&client, &env, &company_b, &receiver, &carrier, 52);
+    let a2 = create_shipment_for(&client, &env, &company_a, &receiver, &carrier, 53);
+    let a3 = create_shipment_for(&client, &env, &company_a, &receiver, &carrier, 54);
+
+    // Page 1: page size 2
+    let page1 = client.search_shipments_by_sender(&company_a, &None, &2);
+    assert_eq!(page1.shipment_ids.len(), 2);
+    assert_eq!(page1.shipment_ids.get(0).unwrap(), a1);
+    assert_eq!(page1.shipment_ids.get(1).unwrap(), a2);
+    assert_eq!(page1.next_cursor, Some(a2));
+
+    // Page 2: pass cursor Some(a2)
+    let page2 = client.search_shipments_by_sender(&company_a, &page1.next_cursor, &2);
+    assert_eq!(page2.shipment_ids.len(), 1);
+    assert_eq!(page2.shipment_ids.get(0).unwrap(), a3);
+    assert_eq!(page2.next_cursor, None);
+}
+
+#[test]
+fn test_search_shipments_by_carrier_cursor_pagination() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier_a = Address::generate(&env);
+    let carrier_b = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let c1 = create_shipment_for(&client, &env, &company, &receiver, &carrier_a, 61);
+    let _cb = create_shipment_for(&client, &env, &company, &receiver, &carrier_b, 62);
+    let c2 = create_shipment_for(&client, &env, &company, &receiver, &carrier_a, 63);
+
+    let page1 = client.search_shipments_by_carrier(&carrier_a, &None, &1);
+    assert_eq!(page1.shipment_ids.len(), 1);
+    assert_eq!(page1.shipment_ids.get(0).unwrap(), c1);
+    assert_eq!(page1.next_cursor, Some(c1));
+
+    let page2 = client.search_shipments_by_carrier(&carrier_a, &page1.next_cursor, &1);
+    assert_eq!(page2.shipment_ids.len(), 1);
+    assert_eq!(page2.shipment_ids.get(0).unwrap(), c2);
+    assert_eq!(page2.next_cursor, None);
+}

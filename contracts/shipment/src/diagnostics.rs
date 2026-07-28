@@ -13,11 +13,16 @@ pub struct SystemHealthStatus {
     pub storage_inconsistencies: Vec<u64>,
 }
 
-/// Executes a health check over all stored shipments.
-/// This loops through all shipments up to the global counter, tallying
-/// actively held escrow and watching for missing records or abnormal shipment states
-/// (like lingering past a deadline).
+/// Default sample cap for system health checks (budget safety on large sets, matching `get_ttl_health_summary`).
+pub const DEFAULT_HEALTH_SAMPLE_LIMIT: u64 = 100;
+
+/// Executes a health check over stored shipments, capped at `DEFAULT_HEALTH_SAMPLE_LIMIT` for budget safety.
 pub fn run_system_health_check(env: &Env) -> SystemHealthStatus {
+    run_system_health_check_range(env, 1, DEFAULT_HEALTH_SAMPLE_LIMIT)
+}
+
+/// Executes a health check over a specific range of shipment IDs [start_id, start_id + limit - 1].
+pub fn run_system_health_check_range(env: &Env, start_id: u64, limit: u64) -> SystemHealthStatus {
     let total_shipments = storage::get_shipment_count(env);
 
     let mut sum_of_escrow_balances: i128 = 0;
@@ -27,50 +32,57 @@ pub fn run_system_health_check(env: &Env) -> SystemHealthStatus {
 
     let current_timestamp = env.ledger().timestamp();
 
-    for id in 1..=total_shipments {
-        let shipment_opt = storage::get_shipment(env, id);
+    if start_id > 0 && start_id <= total_shipments && limit > 0 {
+        let end_id = start_id
+            .saturating_add(limit)
+            .saturating_sub(1)
+            .min(total_shipments);
 
-        match shipment_opt {
-            Some(shipment) => {
-                let is_terminal = shipment.status == ShipmentStatus::Delivered
-                    || shipment.status == ShipmentStatus::Cancelled
-                    || shipment.status == ShipmentStatus::Disputed;
+        for id in start_id..=end_id {
+            let shipment_opt = storage::get_shipment(env, id);
 
-                if !is_terminal {
-                    active_shipments_counted += 1;
+            match shipment_opt {
+                Some(shipment) => {
+                    let is_terminal = shipment.status == ShipmentStatus::Delivered
+                        || shipment.status == ShipmentStatus::Cancelled
+                        || shipment.status == ShipmentStatus::Disputed;
 
-                    // Anomaly Check: Stuck InTransit past deadline
-                    if shipment.deadline < current_timestamp
-                        && shipment.status == ShipmentStatus::InTransit
-                        && !anomalous_shipment_ids.contains(id)
+                    if !is_terminal {
+                        active_shipments_counted += 1;
+
+                        // Anomaly Check: Stuck InTransit past deadline
+                        if shipment.deadline < current_timestamp
+                            && shipment.status == ShipmentStatus::InTransit
+                            && !anomalous_shipment_ids.contains(id)
+                        {
+                            anomalous_shipment_ids.push_back(id);
+                        }
+                    }
+
+                    // Escrow tally
+                    sum_of_escrow_balances =
+                        sum_of_escrow_balances.saturating_add(shipment.escrow_amount);
+
+                    // Consistency verification against storage structure
+                    let has_persist = storage::has_persistent_shipment(env, id);
+                    let escrow_in_storage = storage::get_escrow(env, id);
+
+                    // Consistency check: dual storage of escrow must match
+                    if shipment.escrow_amount != escrow_in_storage
+                        && !storage_inconsistencies.contains(id)
                     {
-                        anomalous_shipment_ids.push_back(id);
+                        storage_inconsistencies.push_back(id);
+                    }
+
+                    // Non-terminal shipments must be resiliently stored
+                    if !is_terminal && !has_persist && !storage_inconsistencies.contains(id) {
+                        storage_inconsistencies.push_back(id);
                     }
                 }
-
-                // Escrow tally
-                sum_of_escrow_balances =
-                    sum_of_escrow_balances.saturating_add(shipment.escrow_amount);
-
-                // Consistency verification against storage structure
-                let has_persist = storage::has_persistent_shipment(env, id);
-                let escrow_in_storage = storage::get_escrow(env, id);
-
-                // Consistency check: dual storage of escrow must match
-                if shipment.escrow_amount != escrow_in_storage
-                    && !storage_inconsistencies.contains(id)
-                {
+                None => {
+                    // Tracking a shipment internally that does not map to any persistent or archived storage
                     storage_inconsistencies.push_back(id);
                 }
-
-                // Non-terminal shipments must be resiliently stored
-                if !is_terminal && !has_persist && !storage_inconsistencies.contains(id) {
-                    storage_inconsistencies.push_back(id);
-                }
-            }
-            None => {
-                // Tracking a shipment internally that does not map to any persistent or archived storage
-                storage_inconsistencies.push_back(id);
             }
         }
     }

@@ -393,3 +393,63 @@ fn test_audit_sequence_continuity() {
     let count_again = env.as_contract(&contract_id, || audit::get_audit_entry_count(&env));
     assert_eq!(count_again, 3, "count must persist between reads");
 }
+
+#[test]
+fn test_recovery_history_logging() {
+    use crate::types::RecoveryActionType;
+
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    let reason1 = BytesN::from_array(&env, &[0xA1; 32]);
+    let reason2 = BytesN::from_array(&env, &[0xB2; 32]);
+
+    // Initial history is empty
+    assert_eq!(client.get_recovery_record_count(&shipment_id), 0);
+    assert_eq!(client.get_recovery_history(&shipment_id).len(), 0);
+
+    // Action 1: recover shipment status from Created to Cancelled
+    client.recover_shipment(&admin, &shipment_id, &ShipmentStatus::Cancelled, &reason1);
+
+    // Set finalized flag so clear_finalization can be invoked
+    env.as_contract(&client.address, || {
+        let mut s = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        s.finalized = true;
+        crate::storage::set_shipment(&env, &s);
+    });
+
+    // Action 2: clear finalization flag
+    client.clear_finalization(&admin, &shipment_id, &reason2);
+
+    // Verify history log
+    assert_eq!(client.get_recovery_record_count(&shipment_id), 2);
+    let history = client.get_recovery_history(&shipment_id);
+    assert_eq!(history.len(), 2);
+
+    let rec1 = history.get(0).unwrap();
+    assert_eq!(rec1.action_type, RecoveryActionType::RecoverShipment);
+    assert_eq!(rec1.admin, admin);
+    assert_eq!(rec1.reason_hash, reason1);
+
+    let rec2 = history.get(1).unwrap();
+    assert_eq!(rec2.action_type, RecoveryActionType::ClearFinalization);
+    assert_eq!(rec2.admin, admin);
+    assert_eq!(rec2.reason_hash, reason2);
+}

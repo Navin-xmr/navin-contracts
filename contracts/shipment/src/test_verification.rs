@@ -102,7 +102,7 @@ fn test_assert_delivery_hash_correct_hash_returns_ok() {
     let result = client.try_assert_delivery_hash(&shipment_id, &confirmation_hash);
     assert_eq!(
         result,
-        Ok(()),
+        Ok(Ok(())),
         "assert_delivery_hash with correct hash must return Ok(())"
     );
 }
@@ -228,7 +228,7 @@ fn test_assert_data_hash_correct_hash_returns_ok() {
     let result = client.try_assert_data_hash(&shipment_id, &crate::ShipmentStatus::InTransit, &transit_hash);
     assert_eq!(
         result,
-        Ok(()),
+        Ok(Ok(())),
         "assert_data_hash with correct hash must return Ok(())"
     );
 }

@@ -133,7 +133,7 @@ fn test_batch_multiple_valid_entries_all_succeed() {
 
     let ids = client.try_create_shipments_batch(&company, &shipments);
     assert!(ids.is_ok(), "all-valid batch must succeed");
-    assert_eq!(ids.unwrap().len(), 3);
+    assert_eq!(ids.unwrap().unwrap().len(), 3);
 }
 
 #[test]

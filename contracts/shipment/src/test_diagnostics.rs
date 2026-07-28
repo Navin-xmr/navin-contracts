@@ -1190,3 +1190,42 @@ fn test_get_shipment_receiver_returns_receiver_for_valid_shipment() {
         "get_shipment_receiver must return the receiver address for a valid shipment"
     );
 }
+
+#[test]
+fn test_health_check_capped_and_paginated() {
+    let (env, client, admin, _token) = prepare_test();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.set_shipment_limit(&admin, &1000);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    // Create 150 shipments (exceeding DEFAULT_HEALTH_SAMPLE_LIMIT = 100)
+    for i in 0..150 {
+        let hash_byte = ((i % 250) + 1) as u8;
+        let item_hash = BytesN::from_array(&env, &[hash_byte; 32]);
+        client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &item_hash,
+            &Vec::new(&env),
+            &deadline,
+        );
+    }
+
+    // Default check_contract_health should succeed and report 150 total shipments
+    let health = client.check_contract_health(&admin);
+    assert_eq!(health.total_shipments, 150);
+    // Standard sample loop caps scan at 100
+    assert_eq!(health.active_shipments_counted, 100);
+
+    // Paginated health check can scan the remaining shipments from 101 to 150
+    let page_health = client.check_contract_health_paginated(&admin, &101, &50);
+    assert_eq!(page_health.total_shipments, 150);
+    assert_eq!(page_health.active_shipments_counted, 50);
+}

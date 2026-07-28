@@ -113,6 +113,18 @@ pub fn recover_shipment(
         reason_hash,
     );
 
+    // Record recovery action history
+    storage::append_recovery_record(
+        env,
+        shipment_id,
+        &RecoveryRecord {
+            action_type: RecoveryActionType::RecoverShipment,
+            admin: admin.clone(),
+            reason_hash: reason_hash.clone(),
+            timestamp: env.ledger().timestamp(),
+        },
+    )?;
+
     Ok(())
 }
 
@@ -172,6 +184,18 @@ pub fn unlock_escrow(
     // Emit unlock event
     events::emit_escrow_unlock_event(env, shipment_id, admin, old_escrow, reason_hash);
 
+    // Record recovery action history
+    storage::append_recovery_record(
+        env,
+        shipment_id,
+        &RecoveryRecord {
+            action_type: RecoveryActionType::UnlockEscrow,
+            admin: admin.clone(),
+            reason_hash: reason_hash.clone(),
+            timestamp: env.ledger().timestamp(),
+        },
+    )?;
+
     Ok(())
 }
 
@@ -226,6 +250,18 @@ pub fn clear_finalization(
 
     // Emit clear finalization event
     events::emit_finalization_clear_event(env, shipment_id, admin, reason_hash);
+
+    // Record recovery action history
+    storage::append_recovery_record(
+        env,
+        shipment_id,
+        &RecoveryRecord {
+            action_type: RecoveryActionType::ClearFinalization,
+            admin: admin.clone(),
+            reason_hash: reason_hash.clone(),
+            timestamp: env.ledger().timestamp(),
+        },
+    )?;
 
     Ok(())
 }
@@ -329,6 +365,18 @@ pub fn rollback_on_external_failure(
         &previous_status,
         reason_hash,
     );
+
+    // Record recovery action history
+    storage::append_recovery_record(
+        env,
+        shipment_id,
+        &RecoveryRecord {
+            action_type: RecoveryActionType::RollbackOnExternalFailure,
+            admin: admin.clone(),
+            reason_hash: reason_hash.clone(),
+            timestamp: env.ledger().timestamp(),
+        },
+    )?;
 
     Ok(())
 }

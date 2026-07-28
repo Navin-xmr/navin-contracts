@@ -79,7 +79,7 @@ fn test_create_batch_1_succeeds() {
     let shipments = push_shipments(&env, 1);
     let result = client.try_create_shipments_batch(&company, &shipments);
     assert!(result.is_ok(), "single-item batch must succeed");
-    assert_eq!(result.unwrap().len(), 1);
+    assert_eq!(result.unwrap().unwrap().len(), 1);
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn test_create_batch_at_limit_succeeds() {
     let shipments = push_shipments(&env, 10);
     let result = client.try_create_shipments_batch(&company, &shipments);
     assert!(result.is_ok(), "batch of exactly 10 must succeed");
-    assert_eq!(result.unwrap().len(), 10);
+    assert_eq!(result.unwrap().unwrap().len(), 10);
 }
 
 #[test]
