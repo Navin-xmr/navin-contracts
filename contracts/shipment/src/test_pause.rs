@@ -468,6 +468,67 @@ mod tests {
         assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
     }
 
+    #[test]
+    fn test_report_geofence_event_fails_when_paused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+        );
+
+        client.pause(&admin);
+        let result = client.try_report_geofence_event(
+            &carrier,
+            &shipment_id,
+            &GeofenceEvent::ZoneEntry,
+            &hash,
+        );
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_report_geofence_event_succeeds_when_unpaused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+        );
+
+        // Pause then unpause
+        client.pause(&admin);
+        client.unpause(&admin);
+        assert!(!client.is_paused());
+
+        // Should succeed when unpaused
+        client.report_geofence_event(&carrier, &shipment_id, &GeofenceEvent::ZoneEntry, &hash);
+    }
+
     // ── Circuit breaker transition matrix tests (issue #19) ───────────────────────
 
     /// Test valid Closed to Open transition when failure threshold is reached.
