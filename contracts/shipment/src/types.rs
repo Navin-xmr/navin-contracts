@@ -128,6 +128,10 @@ pub enum DataKey {
     CreationQuotaConfig,
     /// Deterministic action digest stored on proposal creation.
     ProposalDigest(u64),
+    /// Per-shipment recovery action record (shipment_id, index) -> RecoveryRecord.
+    RecoveryRecord(u64, u32),
+    /// Total count of recovery action records for a shipment.
+    RecoveryRecordCount(u64),
 }
 
 /// Structured reason codes for escrow freeze events.
@@ -319,7 +323,7 @@ impl ShipmentStatus {
 /// // Struct represents the full shipment payload tracked on-chain.
 /// ```
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Shipment {
     /// Unique shipment identifier.
     pub id: u64,
@@ -535,6 +539,45 @@ pub struct ShipmentInput {
 pub struct ShipmentStatusCursorPage {
     pub shipment_ids: Vec<u64>,
     pub next_cursor: Option<u64>,
+}
+
+/// Cursor page result for searching shipment IDs by sender, carrier, or receiver.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShipmentCursorPage {
+    pub shipment_ids: Vec<u64>,
+    pub next_cursor: Option<u64>,
+}
+
+/// Maximum number of recovery action history records stored per shipment.
+pub const MAX_RECOVERY_RECORDS_PER_SHIPMENT: u32 = 20;
+
+/// Recovery action type for history log audit trail.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum RecoveryActionType {
+    /// Reset shipment state to a valid target status.
+    RecoverShipment,
+    /// Manually unlock stuck escrow.
+    UnlockEscrow,
+    /// Clear finalization flag to allow reprocessing.
+    ClearFinalization,
+    /// Rollback shipment status on external failure.
+    RollbackOnExternalFailure,
+}
+
+/// Queryable recovery action record stored per shipment.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RecoveryRecord {
+    /// Type of recovery action performed.
+    pub action_type: RecoveryActionType,
+    /// Admin address executing the recovery.
+    pub admin: Address,
+    /// Hash of the justification/reason for recovery.
+    pub reason_hash: BytesN<32>,
+    /// Ledger timestamp when recovery was executed.
+    pub timestamp: u64,
 }
 
 /// Storage presence classification used for restore triage.

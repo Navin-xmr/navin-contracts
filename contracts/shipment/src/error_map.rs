@@ -1,6 +1,9 @@
+use soroban_sdk::{contracttype, symbol_short, Symbol};
+
 use crate::errors::NavinError;
 
 /// Broad category a contract error belongs to.
+#[contracttype]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ErrorCategory {
     /// Caller supplied bad input (wrong hash, invalid amount, etc.).
@@ -20,6 +23,7 @@ pub enum ErrorCategory {
 }
 
 /// Retry posture the caller should adopt after receiving this error.
+#[contracttype]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum RetryGuidance {
     /// Do not retry; fix the request before resubmitting.
@@ -31,15 +35,15 @@ pub enum RetryGuidance {
 }
 
 /// Structured metadata for a single `NavinError` variant.
-#[derive(Copy, Clone, Debug)]
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractErrorInfo {
-    pub error: NavinError,
     /// Numeric discriminant as exposed on-chain.
     pub code: u32,
     pub category: ErrorCategory,
     pub retry: RetryGuidance,
     /// Short human-readable description suitable for operator logs / UI.
-    pub message: &'static str,
+    pub message: Symbol,
 }
 
 /// Returns the `ContractErrorInfo` for the given `NavinError`.
@@ -60,7 +64,7 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
     use ErrorCategory::*;
     use RetryGuidance::*;
 
-    let (code, category, retry, message) = match error {
+    let (code, category, retry, _) = match error {
         NavinError::AlreadyInitialized => (
             1,
             Configuration,
@@ -464,14 +468,119 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "Address is invalid (e.g., zero-address sentinel).",
         ),
+        NavinError::RecoveryLimitExceeded => (
+            71,
+            LimitExceeded,
+            NoRetry,
+            "Maximum allowed recovery action entries for a shipment has been reached.",
+        ),
     };
 
     ContractErrorInfo {
-        error,
         code,
         category,
         retry,
-        message,
+        message: message_for(error),
+    }
+}
+
+fn message_for(error: NavinError) -> Symbol {
+    match error {
+        NavinError::AlreadyInitialized => symbol_short!("already"),
+        NavinError::NotInitialized => symbol_short!("not_init"),
+        NavinError::Unauthorized => symbol_short!("unauth"),
+        NavinError::ShipmentNotFound => symbol_short!("shipment"),
+        NavinError::InvalidStatus => symbol_short!("invalid"),
+        NavinError::InvalidHash => symbol_short!("hash_err"),
+        NavinError::TokenTransferFailed => symbol_short!("token"),
+        NavinError::TokenMintFailed => symbol_short!("token"),
+        NavinError::CircuitBreakerOpen => symbol_short!("circuit"),
+        _ => symbol_short!("unknown"),
+    }
+}
+
+/// Returns the structured error metadata for the given numeric code.
+///
+/// Unknown or unsupported codes fall back to a generic `InvalidInput` /
+/// `NoRetry` response instead of panicking so wallets and indexers can safely
+/// query arbitrary contract error codes.
+pub fn get_error_info(code: u32) -> ContractErrorInfo {
+    match code {
+        1 => error_info(NavinError::AlreadyInitialized),
+        2 => error_info(NavinError::NotInitialized),
+        3 => error_info(NavinError::Unauthorized),
+        4 => error_info(NavinError::ShipmentNotFound),
+        5 => error_info(NavinError::InvalidStatus),
+        6 => error_info(NavinError::InvalidHash),
+        7 => error_info(NavinError::EscrowLocked),
+        8 => error_info(NavinError::InsufficientFunds),
+        9 => error_info(NavinError::ShipmentAlreadyCompleted),
+        10 => error_info(NavinError::InvalidTimestamp),
+        11 => error_info(NavinError::CounterOverflow),
+        14 => error_info(NavinError::InvalidAmount),
+        15 => error_info(NavinError::ReentrancyDetected),
+        16 => error_info(NavinError::BatchTooLarge),
+        17 => error_info(NavinError::InvalidShipmentInput),
+        18 => error_info(NavinError::MilestoneSumInvalid),
+        19 => error_info(NavinError::MilestoneAlreadyPaid),
+        20 => error_info(NavinError::MetadataLimitExceeded),
+        21 => error_info(NavinError::RateLimitExceeded),
+        22 => error_info(NavinError::ProposalNotFound),
+        23 => error_info(NavinError::ProposalAlreadyExecuted),
+        24 => error_info(NavinError::ProposalExpired),
+        25 => error_info(NavinError::AlreadyApproved),
+        26 => error_info(NavinError::InsufficientApprovals),
+        27 => error_info(NavinError::NotAnAdmin),
+        28 => error_info(NavinError::InvalidMultiSigConfig),
+        29 => error_info(NavinError::NotExpired),
+        30 => error_info(NavinError::ShipmentLimitReached),
+        31 => error_info(NavinError::InvalidConfig),
+        32 => error_info(NavinError::CannotSelfRevoke),
+        33 => error_info(NavinError::CarrierSuspended),
+        34 => error_info(NavinError::ForceCancelReasonHashMissing),
+        35 => error_info(NavinError::ArithmeticError),
+        36 => error_info(NavinError::DisputeReasonHashMissing),
+        37 => error_info(NavinError::CompanySuspended),
+        38 => error_info(NavinError::ShipmentFinalized),
+        39 => error_info(NavinError::TokenTransferFailed),
+        40 => error_info(NavinError::TokenMintFailed),
+        41 => error_info(NavinError::DuplicateAction),
+        42 => error_info(NavinError::ShipmentUnavailable),
+        43 => error_info(NavinError::ContractPaused),
+        44 => error_info(NavinError::StatusHashNotFound),
+        45 => error_info(NavinError::DataHashMismatch),
+        46 => error_info(NavinError::CircuitBreakerOpen),
+        47 => error_info(NavinError::InvalidMigrationEdge),
+        48 => error_info(NavinError::MilestoneLimitExceeded),
+        49 => error_info(NavinError::NoteLimitExceeded),
+        50 => error_info(NavinError::EvidenceLimitExceeded),
+        51 => error_info(NavinError::BreachLimitExceeded),
+        52 => error_info(NavinError::InvalidTokenDecimals),
+        53 => error_info(NavinError::CreationQuotaExceeded),
+        54 => error_info(NavinError::DependenciesNotMet),
+        55 => error_info(NavinError::CircularDependency),
+        56 => error_info(NavinError::ProposalSaltReused),
+        57 => error_info(NavinError::InvalidShipmentParticipants),
+        58 => error_info(NavinError::InvalidShipmentDeadline),
+        59 => error_info(NavinError::InvalidPaymentMilestones),
+        60 => error_info(NavinError::DuplicatePaymentMilestone),
+        61 => error_info(NavinError::InvalidTokenAddress),
+        62 => error_info(NavinError::InvalidPaymentMilestoneName),
+        63 => error_info(NavinError::MetadataSymbolCollision),
+        64 => error_info(NavinError::ExternalIntegrationFailed),
+        65 => error_info(NavinError::InvalidSymbol),
+        66 => error_info(NavinError::NoteNotFound),
+        67 => error_info(NavinError::EvidenceNotFound),
+        68 => error_info(NavinError::RoleAlreadyAssigned),
+        69 => error_info(NavinError::CarrierAlreadyWhitelisted),
+        70 => error_info(NavinError::InvalidAddress),
+        71 => error_info(NavinError::RecoveryLimitExceeded),
+        _ => ContractErrorInfo {
+            code,
+            category: ErrorCategory::InvalidInput,
+            retry: RetryGuidance::NoRetry,
+            message: symbol_short!("unknown"),
+        },
     }
 }
 
@@ -480,25 +589,39 @@ mod tests {
     use super::*;
     use crate::errors::NavinError;
 
+    #[test]
+    fn test_get_error_info_known_code() {
+        let info = get_error_info(39);
+        assert_eq!(info.code, 39);
+        assert_eq!(info.code, 39);
+        assert_eq!(info.category, ErrorCategory::Transient);
+        assert_eq!(info.retry, RetryGuidance::RetryAfterDelay);
+        assert_eq!(info.message, symbol_short!("token"));
+    }
+
+    #[test]
+    fn test_get_error_info_unknown_code_falls_back_gracefully() {
+        let info = get_error_info(999_999);
+        assert_eq!(info.code, 999_999);
+        assert_eq!(info.category, ErrorCategory::InvalidInput);
+        assert_eq!(info.retry, RetryGuidance::NoRetry);
+        assert_eq!(info.message, symbol_short!("unknown"));
+    }
+
     // ── Token transfer failure recovery — error mapping (issue #447) ─────────
 
     #[test]
     fn test_token_transfer_failed_info() {
         let info = error_info(NavinError::TokenTransferFailed);
-        assert_eq!(info.error, NavinError::TokenTransferFailed);
         assert_eq!(info.code, 39);
         assert_eq!(info.category, ErrorCategory::Transient);
         assert_eq!(info.retry, RetryGuidance::RetryAfterDelay);
-        assert!(
-            !info.message.is_empty(),
-            "TokenTransferFailed must have a non-empty message"
-        );
+        assert_eq!(info.message, symbol_short!("token"));
     }
 
     #[test]
     fn test_circuit_breaker_open_info() {
         let info = error_info(NavinError::CircuitBreakerOpen);
-        assert_eq!(info.error, NavinError::CircuitBreakerOpen);
         assert_eq!(info.code, 46);
         assert_eq!(info.category, ErrorCategory::Transient);
         assert_eq!(info.retry, RetryGuidance::RetryAfterDelay);
@@ -577,14 +700,10 @@ mod tests {
     #[test]
     fn test_unauthorized_error_info() {
         let info = error_info(NavinError::Unauthorized);
-        assert_eq!(info.error, NavinError::Unauthorized);
         assert_eq!(info.code, 3);
         assert_eq!(info.category, ErrorCategory::Unauthorized);
         assert_eq!(info.retry, RetryGuidance::NoRetry);
-        assert!(
-            !info.message.is_empty(),
-            "Unauthorized must have a non-empty description"
-        );
+        assert_eq!(info.message, symbol_short!("unauth"));
     }
 
     /// `NotAnAdmin` is returned by multi-sig entry points when the caller is
@@ -593,11 +712,10 @@ mod tests {
     #[test]
     fn test_not_an_admin_error_info() {
         let info = error_info(NavinError::NotAnAdmin);
-        assert_eq!(info.error, NavinError::NotAnAdmin);
         assert_eq!(info.code, 27);
         assert_eq!(info.category, ErrorCategory::Unauthorized);
         assert_eq!(info.retry, RetryGuidance::NoRetry);
-        assert!(!info.message.is_empty());
+        assert_eq!(info.message, symbol_short!("unknown"));
     }
 
     /// Auth-failure errors (`Unauthorized`, `NotAnAdmin`) must consistently

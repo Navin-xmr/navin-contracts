@@ -393,3 +393,286 @@ fn test_audit_sequence_continuity() {
     let count_again = env.as_contract(&contract_id, || audit::get_audit_entry_count(&env));
     assert_eq!(count_again, 3, "count must persist between reads");
 }
+
+#[test]
+fn test_recovery_history_logging() {
+    use crate::types::RecoveryActionType;
+
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    let reason1 = BytesN::from_array(&env, &[0xA1; 32]);
+    let reason2 = BytesN::from_array(&env, &[0xB2; 32]);
+
+    // Initial history is empty
+    assert_eq!(client.get_recovery_record_count(&shipment_id), 0);
+    assert_eq!(client.get_recovery_history(&shipment_id).len(), 0);
+
+    // Action 1: recover shipment status from Created to Cancelled
+    client.recover_shipment(&admin, &shipment_id, &ShipmentStatus::Cancelled, &reason1);
+
+    // Set finalized flag so clear_finalization can be invoked
+    env.as_contract(&client.address, || {
+        let mut s = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        s.finalized = true;
+        crate::storage::set_shipment(&env, &s);
+    });
+
+    // Action 2: clear finalization flag
+    client.clear_finalization(&admin, &shipment_id, &reason2);
+
+    // Verify history log
+    assert_eq!(client.get_recovery_record_count(&shipment_id), 2);
+    let history = client.get_recovery_history(&shipment_id);
+    assert_eq!(history.len(), 2);
+
+    let rec1 = history.get(0).unwrap();
+    assert_eq!(rec1.action_type, RecoveryActionType::RecoverShipment);
+    assert_eq!(rec1.admin, admin);
+    assert_eq!(rec1.reason_hash, reason1);
+
+    let rec2 = history.get(1).unwrap();
+    assert_eq!(rec2.action_type, RecoveryActionType::ClearFinalization);
+    assert_eq!(rec2.admin, admin);
+    assert_eq!(rec2.reason_hash, reason2);
+}
+
+// ── #649: No orphaned counters/indexes after archive_shipment ────────────────
+
+/// Archive a cancelled shipment that has notes, dispute evidence, and a
+/// recovery record, then assert:
+///   1. The shipment is still readable from temporary (archived) storage.
+///   2. No per-shipment counter or index key survives in persistent storage.
+///   3. `check_contract_health` reports zero storage inconsistencies.
+#[test]
+fn test_archive_clears_all_per_shipment_counters() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xABu8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    // Add two notes via the public API
+    let note0 = BytesN::from_array(&env, &[0x11u8; 32]);
+    let note1 = BytesN::from_array(&env, &[0x22u8; 32]);
+    client.append_note_hash(&company, &shipment_id, &note0);
+    client.append_note_hash(&company, &shipment_id, &note1);
+    assert_eq!(client.get_note_count(&shipment_id), 2);
+
+    // Inject dispute evidence and recovery records directly via storage so
+    // we don't need to go through the Disputed state machine path.  This
+    // mirrors what test_detect_storage_inconsistencies does and is the
+    // standard approach for seeding raw storage in this test suite.
+    let cid = client.address.clone();
+    env.as_contract(&cid, || {
+        use crate::types::{DataKey, RecoveryActionType, RecoveryRecord};
+
+        // Two evidence hashes (index 0 and 1)
+        let evidence0 = BytesN::from_array(&env, &[0x44u8; 32]);
+        let evidence1 = BytesN::from_array(&env, &[0x55u8; 32]);
+        env.storage().persistent().set(&DataKey::DisputeEvidence(shipment_id, 0), &evidence0);
+        env.storage().persistent().set(&DataKey::DisputeEvidence(shipment_id, 1), &evidence1);
+        env.storage().persistent().set(&DataKey::DisputeEvidenceCount(shipment_id), &2u32);
+
+        // One recovery record (index 0)
+        let record = RecoveryRecord {
+            action_type: RecoveryActionType::RecoverShipment,
+            admin: admin.clone(),
+            reason_hash: BytesN::from_array(&env, &[0x77u8; 32]),
+            timestamp: env.ledger().timestamp(),
+        };
+        env.storage().persistent().set(&DataKey::RecoveryRecord(shipment_id, 0), &record);
+        env.storage().persistent().set(&DataKey::RecoveryRecordCount(shipment_id), &1u32);
+    });
+
+    assert_eq!(client.get_dispute_evidence_count(&shipment_id), 2);
+    assert_eq!(client.get_recovery_record_count(&shipment_id), 1);
+
+    // Cancel to reach a terminal state
+    let cancel_hash = BytesN::from_array(&env, &[0x66u8; 32]);
+    client.cancel_shipment(&company, &shipment_id, &cancel_hash);
+    assert_eq!(client.get_shipment(&shipment_id).status, ShipmentStatus::Cancelled);
+
+    // Sanity: health is clean before archival
+    let pre_health = client.check_contract_health(&admin);
+    assert_eq!(
+        pre_health.storage_inconsistencies.len(),
+        0,
+        "unexpected pre-archive inconsistencies: {:?}",
+        pre_health.storage_inconsistencies
+    );
+
+    // Archive the shipment — this is the operation under test
+    client.archive_shipment(&admin, &shipment_id);
+
+    // 1. Shipment must still be readable from temporary (archived) storage
+    let archived = client.get_shipment(&shipment_id);
+    assert_eq!(archived.id, shipment_id);
+    assert_eq!(archived.status, ShipmentStatus::Cancelled);
+
+    // 2. Verify no orphaned persistent keys remain by inspecting storage directly
+    env.as_contract(&cid, || {
+        use crate::types::DataKey;
+
+        // Primary shipment record must be gone
+        assert!(
+            !env.storage().persistent().has(&DataKey::Shipment(shipment_id)),
+            "Shipment key must be removed after archive"
+        );
+
+        // Counters / scalar keys
+        assert!(
+            !env.storage().persistent().has(&DataKey::EventCount(shipment_id)),
+            "EventCount must be cleared after archive"
+        );
+        assert!(
+            !env.storage().persistent().has(&DataKey::MilestoneEventCount(shipment_id)),
+            "MilestoneEventCount must be cleared after archive"
+        );
+        assert!(
+            !env.storage().persistent().has(&DataKey::BreachEventCount(shipment_id)),
+            "BreachEventCount must be cleared after archive"
+        );
+        assert!(
+            !env.storage().persistent().has(&DataKey::LastStatusUpdate(shipment_id)),
+            "LastStatusUpdate must be cleared after archive"
+        );
+        assert!(
+            !env.storage().persistent().has(&DataKey::ConfirmationHash(shipment_id)),
+            "ConfirmationHash must be cleared after archive"
+        );
+        assert!(
+            !env.storage().persistent().has(&DataKey::Escrow(shipment_id)),
+            "Escrow key must be cleared after archive"
+        );
+        assert!(
+            !env.storage().persistent().has(&DataKey::EscrowFreezeReasonByShipment(shipment_id)),
+            "EscrowFreezeReasonByShipment must be cleared after archive"
+        );
+        assert!(
+            !env.storage().persistent().has(&DataKey::ActiveSettlement(shipment_id)),
+            "ActiveSettlement must be cleared after archive"
+        );
+
+        // Note count + per-index entries
+        assert!(
+            !env.storage().persistent().has(&DataKey::ShipmentNoteCount(shipment_id)),
+            "ShipmentNoteCount must be cleared after archive"
+        );
+        assert!(
+            !env.storage().persistent().has(&DataKey::ShipmentNote(shipment_id, 0)),
+            "ShipmentNote[0] must be cleared after archive"
+        );
+        assert!(
+            !env.storage().persistent().has(&DataKey::ShipmentNote(shipment_id, 1)),
+            "ShipmentNote[1] must be cleared after archive"
+        );
+
+        // Evidence count + per-index entries
+        assert!(
+            !env.storage().persistent().has(&DataKey::DisputeEvidenceCount(shipment_id)),
+            "DisputeEvidenceCount must be cleared after archive"
+        );
+        assert!(
+            !env.storage().persistent().has(&DataKey::DisputeEvidence(shipment_id, 0)),
+            "DisputeEvidence[0] must be cleared after archive"
+        );
+        assert!(
+            !env.storage().persistent().has(&DataKey::DisputeEvidence(shipment_id, 1)),
+            "DisputeEvidence[1] must be cleared after archive"
+        );
+
+        // Recovery record count + per-index entries
+        assert!(
+            !env.storage().persistent().has(&DataKey::RecoveryRecordCount(shipment_id)),
+            "RecoveryRecordCount must be cleared after archive"
+        );
+        assert!(
+            !env.storage().persistent().has(&DataKey::RecoveryRecord(shipment_id, 0)),
+            "RecoveryRecord[0] must be cleared after archive"
+        );
+    });
+
+    // 3. check_contract_health must report no false-positive inconsistencies
+    let post_health = client.check_contract_health(&admin);
+    assert_eq!(
+        post_health.storage_inconsistencies.len(),
+        0,
+        "check_contract_health must report no inconsistencies after archive: {:?}",
+        post_health.storage_inconsistencies
+    );
+}
+
+/// Archiving a shipment that has *no* optional counters (no notes, evidence,
+/// or recovery records) must still succeed cleanly — the purge helpers are
+/// no-ops when counts are zero.
+#[test]
+fn test_archive_with_no_optional_counters_is_clean() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0x01u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    client.cancel_shipment(&company, &shipment_id, &data_hash);
+
+    // Archive with no extra state accumulated
+    client.archive_shipment(&admin, &shipment_id);
+
+    // Shipment is readable
+    let archived = client.get_shipment(&shipment_id);
+    assert_eq!(archived.id, shipment_id);
+
+    // No inconsistencies
+    let health = client.check_contract_health(&admin);
+    assert_eq!(
+        health.storage_inconsistencies.len(),
+        0,
+        "no inconsistencies expected after bare archive: {:?}",
+        health.storage_inconsistencies
+    );
+}
