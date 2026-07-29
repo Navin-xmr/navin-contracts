@@ -711,3 +711,14 @@ fn test_clear_finalization_before_initialize_returns_error() {
         Err(Ok(crate::NavinError::NotInitialized))
     );
 }
+
+#[test]
+fn test_rollback_on_external_failure_before_initialize_returns_error() {
+    let (env, client, admin, _token) = setup_shipment_env();
+    let reason = BytesN::from_array(&env, &[0xC6; 32]);
+
+    assert_eq!(
+        client.try_rollback_on_external_failure(&admin, &1u64, &ShipmentStatus::Created, &reason),
+        Err(Ok(crate::NavinError::NotInitialized))
+    );
+}
