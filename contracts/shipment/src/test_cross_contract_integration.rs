@@ -748,6 +748,9 @@ fn test_external_integration_failed_error_code() {
     let info = crate::error_map::error_info(err);
     assert_eq!(info.code, 64);
     assert_eq!(info.category, crate::error_map::ErrorCategory::Transient);
+}
+
+#[test]
 fn test_recovery_behavior_deterministic_across_reruns() {}
 
 // ── Zero-address treasury validation ───────────────────────────────────────────

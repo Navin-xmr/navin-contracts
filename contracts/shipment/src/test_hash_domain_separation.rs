@@ -27,7 +27,7 @@ mod tests {
         HASH_DOMAIN_ESCROW, HASH_DOMAIN_NOTE, HASH_DOMAIN_NOTIFICATION, HASH_DOMAIN_RBAC,
         HASH_DOMAIN_SHIPMENT,
     };
-    use soroban_sdk::{Bytes, BytesN, Env};
+    use soroban_sdk::{Bytes, BytesN, Env, Symbol};
 
     // ── Helper ───────────────────────────────────────────────────────────────
     //
@@ -362,4 +362,157 @@ mod tests {
             "algorithm domain mismatch must produce a detectably different idempotency key"
         );
     }
+
+    // ── issue #637: compute_idempotency_key selects the domain from event_type ─
+
+    /// The public helper must apply a domain derived from `event_type`, not a
+    /// hardcoded one. Two event types from different families sharing the same
+    /// shipment id and counter must produce different keys.
+    #[test]
+    fn compute_idempotency_key_separates_event_domains() {
+        let env = Env::default();
+        let contract_id = env.register(crate::NavinShipment, ());
+        let client = crate::NavinShipmentClient::new(&env, &contract_id);
+
+        let shipment_id = 42u64;
+        let counter = 7u32;
+
+        // Same payload, different families: shipment vs escrow vs dispute.
+        let shipment_key = client.compute_idempotency_key(
+            &shipment_id,
+            &Symbol::new(&env, crate::event_topics::SHIPMENT_CREATED),
+            &counter,
+        );
+        let escrow_key = client.compute_idempotency_key(
+            &shipment_id,
+            &Symbol::new(&env, crate::event_topics::ESCROW_DEPOSITED),
+            &counter,
+        );
+        let dispute_key = client.compute_idempotency_key(
+            &shipment_id,
+            &Symbol::new(&env, crate::event_topics::DISPUTE_RAISED),
+            &counter,
+        );
+
+        assert_ne!(
+            shipment_key, escrow_key,
+            "shipment and escrow events must not share an idempotency key"
+        );
+        assert_ne!(
+            shipment_key, dispute_key,
+            "shipment and dispute events must not share an idempotency key"
+        );
+        assert_ne!(
+            escrow_key, dispute_key,
+            "escrow and dispute events must not share an idempotency key"
+        );
+    }
+
+    /// Backward compatibility: shipment-domain keys must still be computed
+    /// under HASH_DOMAIN_SHIPMENT, matching what the contract emitted before.
+    #[test]
+    fn shipment_domain_keys_are_unchanged() {
+        let env = Env::default();
+        let contract_id = env.register(crate::NavinShipment, ());
+        let client = crate::NavinShipmentClient::new(&env, &contract_id);
+
+        let shipment_id = 1u64;
+        let counter = 1u32;
+        let topic = crate::event_topics::SHIPMENT_CREATED;
+
+        let from_contract =
+            client.compute_idempotency_key(&shipment_id, &Symbol::new(&env, topic), &counter);
+        let expected = crate::events::generate_idempotency_key(
+            &env,
+            HASH_DOMAIN_SHIPMENT,
+            shipment_id,
+            topic,
+            counter,
+        );
+
+        assert_eq!(
+            from_contract, expected,
+            "shipment-domain keys must remain byte-identical to the previous scheme"
+        );
+    }
+
+    /// The helper must agree with the domain each emitter actually passes to
+    /// `generate_idempotency_key`, or off-chain indexers cannot reproduce keys.
+    #[test]
+    fn compute_idempotency_key_matches_emitter_domains() {
+        let env = Env::default();
+        let contract_id = env.register(crate::NavinShipment, ());
+        let client = crate::NavinShipmentClient::new(&env, &contract_id);
+
+        let shipment_id = 9u64;
+        let counter = 3u32;
+
+        let cases = [
+            (crate::event_topics::ESCROW_DEPOSITED, HASH_DOMAIN_ESCROW),
+            (crate::event_topics::ESCROW_RELEASED, HASH_DOMAIN_ESCROW),
+            (crate::event_topics::ESCROW_REFUNDED, HASH_DOMAIN_ESCROW),
+            (crate::event_topics::DISPUTE_RESOLVED, HASH_DOMAIN_DISPUTE),
+            (crate::event_topics::SHIPMENT_CREATED, HASH_DOMAIN_SHIPMENT),
+        ];
+
+        for (topic, expected_domain) in cases {
+            let from_contract =
+                client.compute_idempotency_key(&shipment_id, &Symbol::new(&env, topic), &counter);
+            let expected = crate::events::generate_idempotency_key(
+                &env,
+                expected_domain,
+                shipment_id,
+                topic,
+                counter,
+            );
+            assert_eq!(
+                from_contract, expected,
+                "compute_idempotency_key must use the same domain the emitter passes"
+            );
+        }
+    }
+
+    /// The `&str` and `Symbol` mappings must agree, since off-chain indexers
+    /// mirror the `&str` one.
+    #[test]
+    fn str_and_symbol_domain_mappings_agree() {
+        let env = Env::default();
+
+        let topics = [
+            crate::event_topics::SHIPMENT_CREATED,
+            crate::event_topics::ESCROW_DEPOSITED,
+            crate::event_topics::DISPUTE_RAISED,
+            crate::event_topics::CONDITION_BREACH,
+            crate::event_topics::CARRIER_HANDOFF,
+            crate::event_topics::ROLE_REVOKED,
+            crate::event_topics::NOTIFICATION,
+            crate::event_topics::NOTE_APPENDED,
+            crate::event_topics::PLATFORM_FEE_COLLECTED,
+        ];
+
+        for topic in topics {
+            assert_eq!(
+                crate::event_topics::hash_domain_for_event(topic),
+                crate::event_topics::hash_domain_for_symbol(&env, &Symbol::new(&env, topic)),
+                "str and Symbol domain lookups must agree"
+            );
+        }
+    }
+
+    /// An unrecognised topic falls back to the shipment domain rather than
+    /// panicking, keeping the mapping total.
+    #[test]
+    fn unknown_topic_falls_back_to_shipment_domain() {
+        let env = Env::default();
+
+        assert_eq!(
+            crate::event_topics::hash_domain_for_event("not_a_real_topic"),
+            HASH_DOMAIN_SHIPMENT
+        );
+        assert_eq!(
+            crate::event_topics::hash_domain_for_symbol(&env, &Symbol::new(&env, "nope")),
+            HASH_DOMAIN_SHIPMENT
+        );
+    }
+
 }
