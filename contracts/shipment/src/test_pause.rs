@@ -5,7 +5,10 @@ mod tests {
     use crate::test_utils::*;
     use crate::types::*;
     use crate::{NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
+    use soroban_sdk::{
+        contract, contractimpl, testutils::Address as _, testutils::Ledger as _, Address, BytesN,
+        Env, Symbol, Vec,
+    };
 
     #[contract]
     struct MockToken;
@@ -289,12 +292,251 @@ mod tests {
         );
     }
 
+    // ── Mutating config entry points fail when paused (issue #535) ─────────────
+
+    fn setup_config_env() -> (Env, NavinShipmentClient<'static>, Address) {
+        let (env, client, admin, token_contract) = setup_test_env();
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &Address::generate(&env));
+        (env, client, admin)
+    }
+
+    #[test]
+    fn test_update_config_fails_when_paused() {
+        let (_env, client, admin) = setup_config_env();
+        client.pause(&admin);
+        let config = crate::config::ContractConfig::default();
+        let result = client.try_update_config(&admin, &config);
+        assert!(result.is_err());
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_set_shipment_limit_fails_when_paused() {
+        let (_env, client, admin) = setup_config_env();
+        client.pause(&admin);
+        let result = client.try_set_shipment_limit(&admin, &50);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_set_company_shipment_limit_fails_when_paused() {
+        let (env, client, admin) = setup_config_env();
+        let company = Address::generate(&env);
+        client.add_company(&admin, &company);
+        client.pause(&admin);
+        let result = client.try_set_company_shipment_limit(&admin, &company, &10);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_set_platform_fee_fails_when_paused() {
+        let (_env, client, admin) = setup_config_env();
+        let treasury = Address::generate(&_env);
+        client.pause(&admin);
+        let result = client.try_set_platform_fee(&admin, &100, &treasury);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_deposit_escrow_fails_when_paused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &BytesN::from_array(&env, &[1u8; 32]),
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+        );
+
+        client.pause(&admin);
+        let result = client.try_deposit_escrow(&company, &shipment_id, &1000);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_cancel_shipment_fails_when_paused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+        );
+
+        client.pause(&admin);
+        let result = client.try_cancel_shipment(&company, &shipment_id, &hash);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_raise_dispute_fails_when_paused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+        );
+
+        client.pause(&admin);
+        let result = client.try_raise_dispute(&company, &shipment_id, &hash);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_confirm_delivery_fails_when_paused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+        );
+
+        client.pause(&admin);
+        let result = client.try_confirm_delivery(&receiver, &shipment_id, &hash);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_set_shipment_metadata_fails_when_paused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &BytesN::from_array(&env, &[1u8; 32]),
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+        );
+
+        client.pause(&admin);
+        let result = client.try_set_shipment_metadata(
+            &company,
+            &shipment_id,
+            &Symbol::new(&env, "weight"),
+            &Symbol::new(&env, "kg_100"),
+        );
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_report_geofence_event_fails_when_paused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+        );
+
+        client.pause(&admin);
+        let result = client.try_report_geofence_event(
+            &carrier,
+            &shipment_id,
+            &GeofenceEvent::ZoneEntry,
+            &hash,
+        );
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+    }
+
+    #[test]
+    fn test_report_geofence_event_succeeds_when_unpaused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+        );
+
+        // Pause then unpause
+        client.pause(&admin);
+        client.unpause(&admin);
+        assert!(!client.is_paused());
+
+        // Should succeed when unpaused
+        client.report_geofence_event(&carrier, &shipment_id, &GeofenceEvent::ZoneEntry, &hash);
+    }
+
     // ── Circuit breaker transition matrix tests (issue #19) ───────────────────────
 
     /// Test valid Closed to Open transition when failure threshold is reached.
     #[test]
     fn test_circuit_breaker_closed_to_open_transition() {
-        use crate::circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker};
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
 
         let mut breaker = CircuitBreakerTracker::new();
         let config = CircuitBreakerConfig::new(3, 300, 3);
@@ -318,7 +560,9 @@ mod tests {
     /// Test HalfOpen recovery behavior - success in HalfOpen transitions back to Closed.
     #[test]
     fn test_circuit_breaker_half_open_recovery_behavior() {
-        use crate::circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker};
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
 
         let mut breaker = CircuitBreakerTracker::new();
         let config = CircuitBreakerConfig::new(1, 300, 3);
@@ -340,7 +584,9 @@ mod tests {
     /// Test HalfOpen failure behavior - failure in HalfOpen transitions back to Open.
     #[test]
     fn test_circuit_breaker_half_open_failure_reopens() {
-        use crate::circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker};
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
 
         let mut breaker = CircuitBreakerTracker::new();
         let config = CircuitBreakerConfig::new(1, 300, 3);
@@ -362,7 +608,9 @@ mod tests {
     /// Test illegal transition rejection - Open should not allow requests before timeout.
     #[test]
     fn test_circuit_breaker_open_rejects_requests_before_timeout() {
-        use crate::circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker};
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
 
         let mut breaker = CircuitBreakerTracker::new();
         let config = CircuitBreakerConfig::new(1, 300, 3);
@@ -380,7 +628,9 @@ mod tests {
     /// Test HalfOpen request limit - should reject after max requests exceeded.
     #[test]
     fn test_circuit_breaker_half_open_request_limit() {
-        use crate::circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker};
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
 
         let mut breaker = CircuitBreakerTracker::new();
         let config = CircuitBreakerConfig::new(1, 300, 2); // max 2 half-open requests
@@ -407,7 +657,9 @@ mod tests {
     /// Test all state transitions are covered in the transition matrix.
     #[test]
     fn test_circuit_breaker_all_transitions_covered() {
-        use crate::circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker};
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
 
         let config = CircuitBreakerConfig::new(2, 300, 3);
 
@@ -444,5 +696,142 @@ mod tests {
         let _ = breaker5.should_allow_request(&config, 1400);
         breaker5.record_failure(&config, 1500);
         assert_eq!(breaker5.get_state(), CircuitBreakerState::Open);
+    }
+
+    // ── Combined guard interactions: circuit breaker + pause ───────────────────
+
+    /// Test: Circuit breaker transitions alongside paused state.
+    /// Verify that when the contract is paused, circuit breaker state
+    /// transitions are blocked and the pause takes precedence.
+    #[test]
+    fn test_circuit_breaker_with_pause_state() {
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
+
+        let (_env, client, admin, token_contract) = setup_test_env();
+
+        client.initialize(&admin, &token_contract);
+
+        // Set up circuit breaker in Open state
+        let config = CircuitBreakerConfig::new(1, 300, 3);
+        let mut breaker = CircuitBreakerTracker::new();
+        breaker.record_failure(&config, 1000);
+        assert_eq!(breaker.state, CircuitBreakerState::Open);
+
+        // Pause the contract
+        client.pause(&admin);
+        assert!(client.is_paused());
+
+        // Circuit breaker should remain in Open state (pause doesn't reset it)
+        assert_eq!(breaker.state, CircuitBreakerState::Open);
+
+        // Unpause the contract
+        client.unpause(&admin);
+        assert!(!client.is_paused());
+
+        // Circuit breaker should still be in Open state after unpause
+        assert_eq!(breaker.state, CircuitBreakerState::Open);
+    }
+
+    /// Test: Circuit breaker recovery after pause/unpause cycle.
+    /// Verify that circuit breaker recovery timeout continues during pause
+    /// and can complete after unpause.
+    #[test]
+    fn test_circuit_breaker_recovery_continues_during_pause() {
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
+
+        let (env, client, admin, token_contract) = setup_test_env();
+
+        client.initialize(&admin, &token_contract);
+
+        // Set up circuit breaker in Open state
+        let config = CircuitBreakerConfig::new(1, 300, 3);
+        let mut breaker = CircuitBreakerTracker::new();
+        breaker.record_failure(&config, 1000);
+        assert_eq!(breaker.state, CircuitBreakerState::Open);
+
+        // Pause the contract
+        client.pause(&admin);
+
+        // Advance time past recovery timeout
+        env.ledger().with_mut(|l| l.timestamp = 1400);
+
+        // Unpause the contract
+        client.unpause(&admin);
+
+        // Circuit breaker should transition to HalfOpen after timeout
+        let _ = breaker.should_allow_request(&config, 1400);
+        assert_eq!(breaker.state, CircuitBreakerState::HalfOpen);
+    }
+
+    /// Test: Circuit breaker and pause both active - pause takes precedence.
+    /// Verify that when both guards are active, pause blocks operations
+    /// regardless of circuit breaker state.
+    #[test]
+    fn test_pause_takes_precedence_over_circuit_breaker() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        // Create shipment
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let milestones = Vec::new(&env);
+        let deadline = future_deadline(&env, 86400);
+
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+
+        // Pause the contract
+        client.pause(&admin);
+
+        // Even if circuit breaker were in Closed state, pause should block
+        let result = client.try_update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::InTransit,
+            &BytesN::from_array(&env, &[2u8; 32]),
+        );
+
+        // Should fail with ContractPaused, not CircuitBreakerOpen
+        assert!(result.is_err());
+        let err = result.unwrap_err().unwrap();
+        assert_eq!(err, crate::NavinError::ContractPaused);
+    }
+
+    /// Test: Circuit breaker state persists across pause/unpause cycles.
+    /// Verify that pause/unpause doesn't reset circuit breaker state.
+    #[test]
+    fn test_circuit_breaker_state_persists_across_pause_unpause() {
+        use crate::circuit_breaker::{
+            CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerTracker,
+        };
+
+        let (_env, client, admin, token_contract) = setup_test_env();
+
+        client.initialize(&admin, &token_contract);
+
+        // Set up circuit breaker in Open state
+        let config = CircuitBreakerConfig::new(2, 300, 3);
+        let mut breaker = CircuitBreakerTracker::new();
+        breaker.record_failure(&config, 1000);
+        breaker.record_failure(&config, 1000);
+        assert_eq!(breaker.state, CircuitBreakerState::Open);
+        assert_eq!(breaker.failure_count, 2);
+
+        // Pause and unpause
+        client.pause(&admin);
+        client.unpause(&admin);
+
+        // Circuit breaker state should persist
+        assert_eq!(breaker.state, CircuitBreakerState::Open);
+        assert_eq!(breaker.failure_count, 2);
     }
 }

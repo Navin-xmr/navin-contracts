@@ -14,6 +14,21 @@ const MAX_PAST_OFFSET: u64 = 365 * 24 * 60 * 60;
 /// Roughly 10 years.
 const MAX_FUTURE_OFFSET: u64 = 10 * 365 * 24 * 60 * 60;
 
+/// Expected byte length for SHA-256 hashes (`BytesN<32>`).
+pub const HASH_BYTE_LENGTH: usize = 32;
+
+/// Validate a note hash: enforce exact 32-byte length and reject all-zero sentinels.
+///
+/// Soroban enforces `BytesN<32>` at the type level; this helper documents and
+/// re-checks the length boundary before storage.
+pub fn validate_note_hash(hash: &BytesN<32>) -> Result<(), NavinError> {
+    let bytes: [u8; HASH_BYTE_LENGTH] = hash.to_array();
+    if bytes.len() != HASH_BYTE_LENGTH {
+        return Err(NavinError::InvalidHash);
+    }
+    validate_hash(hash)
+}
+
 /// Ensure a `BytesN<32>` hash is not the all-zeros sentinel value.
 ///
 /// This validator performs a sanity check on external hashes (data_hash, reason_hash, etc.)
@@ -76,9 +91,88 @@ pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
     let symbol_bytes = symbol.to_xdr(env);
     let len = symbol_bytes.len();
 
+    if len == 8 {
+        return Err(NavinError::InvalidSymbol);
+    }
     if !(12..=20).contains(&len) {
         return Err(NavinError::InvalidSymbol);
     }
+
+    Ok(())
+}
+
+/// Validate that every character in a Symbol is alphanumeric or underscore.
+///
+/// Soroban's `Symbol::new` enforces `[a-zA-Z0-9_]` at SDK level, but this
+/// function provides an explicit on-chain character-level check for the
+/// milestone and checkpoint paths. It is the canonical guard against any
+/// symbol that bypasses SDK construction with non-standard characters
+/// (e.g., HTML sequences, backslashes, pipes) that could compromise
+/// indexer storage parsing.
+///
+/// # Arguments
+/// * `env`    - Execution environment (used for XDR serialisation).
+/// * `symbol` - The Symbol whose character content to inspect.
+///
+/// # Returns
+/// * `Ok(())` if every character is in `[A-Za-z0-9_]`.
+/// * `Err(NavinError::InvalidSymbol)` if any character falls outside that set,
+///   or if the symbol is empty.
+///
+/// # Implementation note
+/// XDR layout for a `ScSymbol`: `[4-byte tag][4-byte length field][content bytes
+/// padded to next 4-byte boundary]`.  The raw content starts at byte offset 8.
+/// Padding bytes are `\0` and are skipped (they fall outside `[A-Za-z0-9_]` but
+/// must not trigger rejection).  The actual character count is taken from the
+/// 4-byte big-endian length field stored in bytes 4–7.
+pub fn validate_symbol_chars(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
+    let xdr = symbol.to_xdr(env);
+    let raw: [u8; 32] = {
+        let mut buf = [0u8; 32];
+        let src_len = (xdr.len() as usize).min(32);
+        for (i, byte) in xdr.iter().take(src_len).enumerate() {
+            buf[i] = byte;
+        }
+        buf
+    };
+
+    let char_count = u32::from_be_bytes([raw[4], raw[5], raw[6], raw[7]]) as usize;
+
+    if char_count == 0 {
+        return Err(NavinError::InvalidSymbol);
+    }
+
+    for &byte in raw[8..8 + char_count].iter() {
+        let valid = byte.is_ascii_alphanumeric() || byte == b'_';
+        if !valid {
+            return Err(NavinError::InvalidSymbol);
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate a milestone checkpoint symbol for bounded usage, non-emptiness,
+/// and valid character content.
+///
+/// This is the single call-site guard for all checkpoint symbols on the
+/// `record_milestone` and `record_milestones_batch` paths.  It combines:
+/// 1. Length check (1–12 characters).
+/// 2. Character-set check (alphanumeric + underscore only).
+pub fn validate_checkpoint_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
+    let symbol_bytes = symbol.to_xdr(env);
+    let len = symbol_bytes.len();
+
+    if len <= 8 {
+        return Err(NavinError::InvalidSymbol);
+    }
+
+    if !(12..=20).contains(&len) {
+        return Err(NavinError::InvalidSymbol);
+    }
+
+    // Character-level validation: only [A-Za-z0-9_] allowed.
+    validate_symbol_chars(env, symbol)?;
 
     Ok(())
 }
@@ -104,9 +198,20 @@ pub fn validate_milestone_symbols(
     env: &Env,
     milestones: &soroban_sdk::Vec<(Symbol, u32)>,
 ) -> Result<(), NavinError> {
-    // Check each milestone symbol for validity
+    // Check each milestone symbol for validity and percentage bounds
     for milestone in milestones.iter() {
         validate_symbol(env, &milestone.0)?;
+        // Character-level guard: only [A-Za-z0-9_] allowed in milestone symbols.
+        // Returns InvalidSymbol for any special-character content.
+        validate_symbol_chars(env, &milestone.0).map_err(|_| NavinError::InvalidSymbol)?;
+        // Reject zero or out-of-bounds percentages (negative values cannot appear
+        // in u32, but values > 100 are equally invalid as percentage weights).
+        // Reject invalid milestone name format with a dedicated error code.
+        validate_symbol(env, &milestone.0).map_err(|_| NavinError::InvalidPaymentMilestoneName)?;
+        // Reject zero or out-of-bounds percentages with a dedicated error code.
+        if milestone.1 == 0 || milestone.1 > 100 {
+            return Err(NavinError::InvalidPaymentMilestones);
+        }
     }
 
     // Check for duplicate milestone names by comparing XDR representations
@@ -117,7 +222,7 @@ pub fn validate_milestone_symbols(
             let other = &milestones.get_unchecked(j).0;
             let other_xdr = other.to_xdr(env);
             if current_xdr == other_xdr {
-                return Err(NavinError::InvalidShipmentInput);
+                return Err(NavinError::DuplicatePaymentMilestone);
             }
         }
     }
@@ -153,6 +258,50 @@ pub fn validate_metadata_symbols(
     if key.to_xdr(env) == value.to_xdr(env) {
         return Err(NavinError::MetadataSymbolCollision);
     }
+    // Reject key == value: a self-referential entry is always a caller mistake
+    // and prevents silent data loss when both symbols happen to share the same
+    // XDR representation (e.g., Symbol::new(&env, "weight") used as both key
+    // and value).
+    if key.to_xdr(env) == value.to_xdr(env) {
+        return Err(NavinError::MetadataSymbolCollision);
+    }
+    Ok(())
+}
+
+/// Validate a note symbol for bounded usage and storage efficiency.
+///
+/// This validator ensures that note-related symbols conform to expected length constraints
+/// to prevent excessive storage consumption that could exhaust rent resources.
+/// Note symbols are used for labeling note metadata and categorizing commentary.
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `note_symbol` - The Symbol to validate.
+///
+/// # Returns
+/// * `Ok(())` if the symbol is valid and within length bounds (max 64 characters in XDR).
+/// * `Err(NavinError::InvalidShipmentInput)` if the symbol exceeds length limits.
+///
+/// # Examples
+/// ```rust
+/// validate_note_symbol(&env, &Symbol::new(&env, "evidence_1"))?;
+/// ```
+pub fn validate_note_symbol(env: &Env, note_symbol: &Symbol) -> Result<(), NavinError> {
+    // XDR layout: 4-byte ScValType tag + 4-byte length field + content padded to 4-byte boundary.
+    // Maximum safe note symbol length: 64 characters
+    // Byte counts by character count (64 chars):
+    //   64 chars → 76 bytes (4 + 4 + 64 + padding to 76-byte boundary)
+    //
+    // We limit to 76 bytes to prevent storage exhaustion while allowing reasonable
+    // descriptive note category names.
+    let symbol_bytes = note_symbol.to_xdr(env);
+    let len = symbol_bytes.len();
+
+    // Reject empty symbols and symbols exceeding 76-byte XDR limit
+    if len <= 8 || len > 76 {
+        return Err(NavinError::InvalidShipmentInput);
+    }
+
     Ok(())
 }
 
@@ -185,7 +334,10 @@ pub fn validate_amount(amount: i128) -> Result<(), NavinError> {
 /// * `Ok(())` if `amount > 0`.
 /// * `Err(NavinError::InvalidAmount)` otherwise.
 pub fn validate_positive_amount(amount: i128) -> Result<(), NavinError> {
-    if amount <= 0 || amount > MAX_AMOUNT {
+    if amount <= 0 {
+        return Err(NavinError::InsufficientFunds);
+    }
+    if amount > MAX_AMOUNT {
         return Err(NavinError::InvalidAmount);
     }
     Ok(())
@@ -287,14 +439,29 @@ pub fn preflight_check_shipment_available(
         .persistent()
         .get(&crate::types::DataKey::Shipment(shipment_id));
 
-    let shipment = shipment.ok_or(NavinError::ShipmentNotFound)?;
-
-    // Check if shipment is finalized (locked)
-    if shipment.finalized {
-        return Err(NavinError::ShipmentFinalized);
+    match shipment {
+        None => {
+            // Not in persistent storage. Check if it was archived (temporary storage).
+            // If it exists in temporary storage the shipment is archived and unavailable
+            // for mutations; surface ShipmentUnavailable so callers get a distinct,
+            // actionable error rather than the ambiguous ShipmentNotFound.
+            let archived: Option<Shipment> = env
+                .storage()
+                .temporary()
+                .get(&crate::types::DataKey::ArchivedShipment(shipment_id));
+            if archived.is_some() {
+                return Err(NavinError::ShipmentUnavailable);
+            }
+            Err(NavinError::ShipmentNotFound)
+        }
+        Some(shipment) => {
+            // Check if shipment is finalized (locked)
+            if shipment.finalized {
+                return Err(NavinError::ShipmentFinalized);
+            }
+            Ok(shipment)
+        }
     }
-
-    Ok(shipment)
 }
 
 /// Compute a canonical hash for an off-chain payload.
@@ -363,6 +530,77 @@ pub fn validate_shipment_invariants(shipment: &Shipment) -> Result<(), NavinErro
     Ok(())
 }
 
+/// Validate that `created_at` is within acceptable bounds relative to current ledger time.
+///
+/// This ensures that the creation timestamp is not too far in the future (which would be
+/// impossible) and not too far in the past (which would indicate malformed input).
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `created_at` - The timestamp to validate.
+///
+/// # Returns
+/// * `Ok(())` if the timestamp is within acceptable bounds.
+/// * `Err(NavinError::InvalidTimestamp)` otherwise.
+pub fn validate_created_at_versus_now(env: &Env, created_at: u64) -> Result<(), NavinError> {
+    let now = env.ledger().timestamp();
+
+    // created_at must not be in the future (with small tolerance for clock skew)
+    if created_at > now {
+        return Err(NavinError::InvalidTimestamp);
+    }
+
+    // created_at must not be too far in the past
+    let earliest = now.saturating_sub(MAX_PAST_OFFSET);
+    if created_at < earliest {
+        return Err(NavinError::InvalidTimestamp);
+    }
+
+    Ok(())
+}
+
+/// Validate that `updated_at` is not earlier than `created_at`.
+///
+/// This enforces the invariant that a shipment cannot be updated before it was created.
+///
+/// # Arguments
+/// * `created_at` - Timestamp when the shipment was created.
+/// * `updated_at` - Timestamp of the last update to validate.
+///
+/// # Returns
+/// * `Ok(())` if updated_at >= created_at.
+/// * `Err(NavinError::InvalidStatus)` if the relationship is impossible.
+pub fn validate_created_at_versus_updated_at(
+    created_at: u64,
+    updated_at: u64,
+) -> Result<(), NavinError> {
+    if updated_at < created_at {
+        return Err(NavinError::InvalidStatus);
+    }
+    Ok(())
+}
+
+/// Validate that `created_at` is before `deadline`.
+///
+/// This enforces that the deadline must be in the future relative to creation time.
+///
+/// # Arguments
+/// * `created_at` - Timestamp when the shipment was created.
+/// * `deadline` - The deadline timestamp to validate.
+///
+/// # Returns
+/// * `Ok(())` if created_at < deadline.
+/// * `Err(NavinError::InvalidShipmentDeadline)` if the relationship is impossible.
+pub fn validate_created_at_versus_deadline(
+    created_at: u64,
+    deadline: u64,
+) -> Result<(), NavinError> {
+    if deadline <= created_at {
+        return Err(NavinError::InvalidShipmentDeadline);
+    }
+    Ok(())
+}
+
 // Tests
 #[cfg(test)]
 mod tests {
@@ -370,6 +608,20 @@ mod tests {
     use super::*;
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::{testutils::Ledger, BytesN, Env, Symbol};
+
+    #[test]
+    fn test_validate_note_hash_rejects_zero_hash() {
+        let env = Env::default();
+        let zero_hash: BytesN<32> = BytesN::from_array(&env, &[0u8; 32]);
+        assert_eq!(validate_note_hash(&zero_hash), Err(NavinError::InvalidHash));
+    }
+
+    #[test]
+    fn test_validate_note_hash_accepts_valid_32_byte_hash() {
+        let env = Env::default();
+        let hash: BytesN<32> = BytesN::from_array(&env, &[0xAB_u8; 32]);
+        assert_eq!(validate_note_hash(&hash), Ok(()));
+    }
 
     // validate_hash
     #[test]
@@ -602,7 +854,7 @@ mod tests {
         milestones.push_back((Symbol::new(&env, "warehouse"), 50_u32));
         assert_eq!(
             validate_milestone_symbols(&env, &milestones),
-            Err(NavinError::InvalidShipmentInput)
+            Err(NavinError::DuplicatePaymentMilestone)
         );
     }
 
@@ -673,7 +925,7 @@ mod symbol_validation_tests {
     extern crate std;
 
     use super::*;
-    use soroban_sdk::{Env, Symbol, Vec};
+    use soroban_sdk::{testutils::Ledger, Env, Symbol, Vec};
 
     // Boundary tests for symbol length
     #[test]
@@ -781,7 +1033,7 @@ mod symbol_validation_tests {
         let result = validate_milestone_symbols(&env, &milestones);
         assert_eq!(
             result,
-            Err(NavinError::InvalidShipmentInput),
+            Err(NavinError::DuplicatePaymentMilestone),
             "Duplicate milestone symbols should be rejected"
         );
     }
@@ -954,8 +1206,109 @@ mod symbol_validation_tests {
 
         assert_eq!(
             result,
-            Err(NavinError::InvalidShipmentInput),
-            "Duplicate milestone should return InvalidShipmentInput"
+            Err(NavinError::DuplicatePaymentMilestone),
+            "Duplicate milestone should return DuplicatePaymentMilestone"
+        );
+    }
+
+    // ── created_at relativity tests (issue #460) ─────────────────────────────────
+
+    #[test]
+    fn test_validate_created_at_versus_now_accepts_current_time() {
+        let env = Env::default();
+        let now = env.ledger().timestamp();
+        assert_eq!(validate_created_at_versus_now(&env, now), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_now_accepts_past_within_bounds() {
+        let env = Env::default();
+        // Set ledger time to a value that allows subtraction for the test
+        env.ledger().with_mut(|li| {
+            li.timestamp = MAX_PAST_OFFSET + 24 * 60 * 60 + 100;
+        });
+        let adjusted_now = env.ledger().timestamp();
+        // 1 day in the past - within MAX_PAST_OFFSET
+        let past_ts = adjusted_now - 24 * 60 * 60;
+        assert_eq!(validate_created_at_versus_now(&env, past_ts), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_now_rejects_future() {
+        let env = Env::default();
+        let now = env.ledger().timestamp();
+        // Any future timestamp should be rejected
+        let future_ts = now + 100;
+        assert_eq!(
+            validate_created_at_versus_now(&env, future_ts),
+            Err(NavinError::InvalidTimestamp)
+        );
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_now_rejects_far_past() {
+        let env = Env::default();
+        // Set ledger time far enough ahead
+        env.ledger().with_mut(|li| {
+            li.timestamp = MAX_PAST_OFFSET + 100;
+        });
+        let now = env.ledger().timestamp();
+        let far_past = now - MAX_PAST_OFFSET - 1;
+        assert_eq!(
+            validate_created_at_versus_now(&env, far_past),
+            Err(NavinError::InvalidTimestamp)
+        );
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_updated_at_accepts_equal() {
+        // When created and updated at same time (initial state)
+        assert_eq!(validate_created_at_versus_updated_at(100, 100), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_updated_at_accepts_later() {
+        // updated_at after created_at is valid
+        assert_eq!(validate_created_at_versus_updated_at(100, 200), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_updated_at_rejects_earlier() {
+        // Impossible: updated before created
+        assert_eq!(
+            validate_created_at_versus_updated_at(200, 100),
+            Err(NavinError::InvalidStatus)
+        );
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_deadline_accepts_later() {
+        let created_at: u64 = 1000;
+        let deadline: u64 = 2000;
+        assert_eq!(
+            validate_created_at_versus_deadline(created_at, deadline),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_deadline_rejects_equal() {
+        // Deadline must be strictly after creation
+        let ts: u64 = 1000;
+        assert_eq!(
+            validate_created_at_versus_deadline(ts, ts),
+            Err(NavinError::InvalidShipmentDeadline)
+        );
+    }
+
+    #[test]
+    fn test_validate_created_at_versus_deadline_rejects_earlier() {
+        // Impossible: deadline before creation
+        let created_at: u64 = 2000;
+        let deadline: u64 = 1000;
+        assert_eq!(
+            validate_created_at_versus_deadline(created_at, deadline),
+            Err(NavinError::InvalidShipmentDeadline)
         );
     }
 }

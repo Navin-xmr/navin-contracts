@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 4,
+    "address": 5,
     "nonce": 0
   },
   "auth": [
@@ -30,7 +30,7 @@
                   ]
                 },
                 {
-                  "u32": 1
+                  "u32": 2
                 }
               ]
             }
@@ -54,10 +54,10 @@
                 {
                   "vec": [
                     {
-                      "symbol": "Upgrade"
+                      "symbol": "TransferAdmin"
                     },
                     {
-                      "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                     }
                   ]
                 }
@@ -190,10 +190,10 @@
                       "val": {
                         "vec": [
                           {
-                            "symbol": "Upgrade"
+                            "symbol": "TransferAdmin"
                           },
                           {
-                            "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+                            "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                           }
                         ]
                       }
@@ -309,7 +309,7 @@
                         "symbol": "digest"
                       },
                       "val": {
-                        "bytes": "452c44e1e82484440211aab6c239a29174e7ea4f7d0ba62242508c944c968d8b"
+                        "bytes": "4daa89b1ed1c91cf2709306d3a1036b3ce5e58385099eb7ef5807bdc9d8a70c9"
                       }
                     },
                     {
@@ -561,7 +561,7 @@
                           ]
                         },
                         "val": {
-                          "u32": 1
+                          "u32": 2
                         }
                       },
                       {
@@ -672,7 +672,7 @@
             },
             "ext": "v0"
           },
-          4096
+          518401
         ]
       ],
       [
@@ -725,7 +725,7 @@
             },
             "ext": "v0"
           },
-          4096
+          518401
         ]
       ]
     ]

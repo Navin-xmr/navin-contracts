@@ -128,10 +128,10 @@ pub enum DataKey {
     CreationQuotaConfig,
     /// Deterministic action digest stored on proposal creation.
     ProposalDigest(u64),
-    /// Prerequisite shipment IDs for a shipment (dependencies).
-    ShipmentDeps(u64),
-    /// Shipments that depend on a specific shipment (reverse index).
-    ShipmentDependents(u64),
+    /// Per-shipment recovery action record (shipment_id, index) -> RecoveryRecord.
+    RecoveryRecord(u64, u32),
+    /// Total count of recovery action records for a shipment.
+    RecoveryRecordCount(u64),
 }
 
 /// Structured reason codes for escrow freeze events.
@@ -226,6 +226,8 @@ pub enum ShipmentStatus {
     Disputed,
     /// Shipment has been cancelled.
     Cancelled,
+    /// Shipment has been partially refunded after dispute or cancellation.
+    PartiallyRefunded,
 }
 
 impl ShipmentStatus {
@@ -278,6 +280,13 @@ impl ShipmentStatus {
             (Self::InTransit, Self::Delivered) => true,
             (Self::InTransit, Self::Disputed) => true,
             (Self::InTransit, Self::Cancelled) => true,
+            // Issue #542 — a shipment must return to `InTransit` before
+            // entering another checkpoint, so direct `AtCheckpoint ->
+            // AtCheckpoint` hops are explicitly rejected here rather than
+            // falling through to the catch-all `_ => false` arm. This
+            // protects against off-by-one workflow code that would
+            // otherwise silently record duplicate checkpoint entries.
+            (Self::AtCheckpoint, Self::AtCheckpoint) => false,
             (Self::AtCheckpoint, Self::InTransit) => true,
             (Self::AtCheckpoint, Self::PartiallyDelivered) => true,
             (Self::AtCheckpoint, Self::Delivered) => true,
@@ -289,8 +298,18 @@ impl ShipmentStatus {
             (Self::AtCheckpoint, Self::Cancelled) => true,
             (Self::Disputed, Self::Cancelled) => true,
             (Self::Disputed, Self::Delivered) => true,
-            (_, Self::Cancelled) if self != &Self::Delivered => true,
-            (_, Self::Disputed) if self != &Self::Cancelled && self != &Self::Delivered => true,
+            // PartiallyRefunded is a terminal state - no transitions out
+            (Self::PartiallyRefunded, _) => false,
+            // Transitions TO PartiallyRefunded (from Disputed after partial refund resolution)
+            (Self::Disputed, Self::PartiallyRefunded) => true,
+            (_, Self::Cancelled) if self != &Self::Delivered && self != &Self::Cancelled => true,
+            (_, Self::Disputed)
+                if self != &Self::Cancelled
+                    && self != &Self::Delivered
+                    && self != &Self::Disputed =>
+            {
+                true
+            }
             _ => false,
         }
     }
@@ -304,7 +323,7 @@ impl ShipmentStatus {
 /// // Struct represents the full shipment payload tracked on-chain.
 /// ```
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Shipment {
     /// Unique shipment identifier.
     pub id: u64,
@@ -520,6 +539,45 @@ pub struct ShipmentInput {
 pub struct ShipmentStatusCursorPage {
     pub shipment_ids: Vec<u64>,
     pub next_cursor: Option<u64>,
+}
+
+/// Cursor page result for searching shipment IDs by sender, carrier, or receiver.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShipmentCursorPage {
+    pub shipment_ids: Vec<u64>,
+    pub next_cursor: Option<u64>,
+}
+
+/// Maximum number of recovery action history records stored per shipment.
+pub const MAX_RECOVERY_RECORDS_PER_SHIPMENT: u32 = 20;
+
+/// Recovery action type for history log audit trail.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum RecoveryActionType {
+    /// Reset shipment state to a valid target status.
+    RecoverShipment,
+    /// Manually unlock stuck escrow.
+    UnlockEscrow,
+    /// Clear finalization flag to allow reprocessing.
+    ClearFinalization,
+    /// Rollback shipment status on external failure.
+    RollbackOnExternalFailure,
+}
+
+/// Queryable recovery action record stored per shipment.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RecoveryRecord {
+    /// Type of recovery action performed.
+    pub action_type: RecoveryActionType,
+    /// Admin address executing the recovery.
+    pub admin: Address,
+    /// Hash of the justification/reason for recovery.
+    pub reason_hash: BytesN<32>,
+    /// Ledger timestamp when recovery was executed.
+    pub timestamp: u64,
 }
 
 /// Storage presence classification used for restore triage.
@@ -761,6 +819,33 @@ pub struct ProposalActionDigest {
     pub computed_at: u64,
 }
 
+/// TTL health summary returned by `get_ttl_health_summary`.
+///
+/// Provides a snapshot of how many shipments are in persistent storage
+/// versus archived or missing, along with the configured TTL parameters.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct TtlHealthSummary {
+    /// Total number of shipments tracked by the contract counter.
+    pub total_shipment_count: u64,
+    /// Number of shipments sampled in this health check.
+    pub sampled_count: u64,
+    /// Number of sampled shipments found in persistent storage.
+    pub persistent_count: u64,
+    /// Number of sampled shipments not in persistent storage (archived or missing).
+    pub missing_or_archived_count: u64,
+    /// Percentage of sampled shipments in persistent storage (0–100).
+    pub persistent_percentage: u32,
+    /// Configured TTL threshold (ledgers remaining before extension fires).
+    pub ttl_threshold: u32,
+    /// Configured TTL extension (ledgers added when threshold is reached).
+    pub ttl_extension: u32,
+    /// Current ledger sequence number at query time.
+    pub current_ledger: u32,
+    /// Current ledger timestamp at query time.
+    pub query_timestamp: u64,
+}
+
 /// Configuration for platform revenue collection.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
@@ -770,3 +855,8 @@ pub struct FeeConfig {
     /// The address where collected fees are sent.
     pub treasury: Address,
 }
+
+/// Sample fractional milestone percentages used in tests to verify
+/// integer-division rounding behavior during milestone payouts.
+/// Values (17, 33, 50) sum to exactly 100.
+pub const FRACTIONAL_MILESTONE_PCTS: [u32; 3] = [17, 33, 50];

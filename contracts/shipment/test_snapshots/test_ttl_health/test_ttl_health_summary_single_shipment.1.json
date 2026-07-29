@@ -7,6 +7,7 @@
     [],
     [],
     [],
+    [],
     [
       [
         "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
@@ -70,7 +71,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 },
                 {
-                  "bytes": "1dab000000000000000000000000000000000000000000000000000000000000"
+                  "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
                 },
                 {
                   "vec": []
@@ -202,6 +203,54 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "Escrow"
+                },
+                {
+                  "u64": 1
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "Escrow"
+                    },
+                    {
+                      "u64": 1
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "i128": {
+                    "hi": 0,
+                    "lo": 0
+                  }
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          518401
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
                   "symbol": "EventCount"
                 },
                 {
@@ -250,7 +299,7 @@
                   "symbol": "IdempotencyWindow"
                 },
                 {
-                  "bytes": "cae0bb42345b2e808f1a80d4eef2a738139ded294c2a80426b35cfc90c2e86d9"
+                  "bytes": "92cfce0a756e41f916339226f898fa89cb92af248efb138f99c66ebd0d3caea6"
                 }
               ]
             },
@@ -270,7 +319,7 @@
                       "symbol": "IdempotencyWindow"
                     },
                     {
-                      "bytes": "cae0bb42345b2e808f1a80d4eef2a738139ded294c2a80426b35cfc90c2e86d9"
+                      "bytes": "92cfce0a756e41f916339226f898fa89cb92af248efb138f99c66ebd0d3caea6"
                     }
                   ]
                 },
@@ -343,7 +392,7 @@
                         "symbol": "data_hash"
                       },
                       "val": {
-                        "bytes": "1dab000000000000000000000000000000000000000000000000000000000000"
+                        "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
                       }
                     },
                     {
@@ -394,6 +443,14 @@
                         "symbol": "metadata"
                       },
                       "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestones_completed"
+                      },
+                      "val": {
+                        "vec": []
+                      }
                     },
                     {
                       "key": {
@@ -553,6 +610,22 @@
                               },
                               "val": {
                                 "u32": 10
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "creation_quota_max"
+                              },
+                              "val": {
+                                "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "creation_quota_window_seconds"
+                              },
+                              "val": {
+                                "u64": 3600
                               }
                             },
                             {
@@ -867,7 +940,7 @@
             },
             "ext": "v0"
           },
-          4096
+          500001
         ]
       ],
       [
@@ -921,7 +994,7 @@
             },
             "ext": "v0"
           },
-          4096
+          500001
         ]
       ]
     ]

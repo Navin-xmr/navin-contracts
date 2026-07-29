@@ -464,3 +464,72 @@ fn test_unpause_auth_bound_to_arguments() {
 // Each test verifies that the auth tree contains the exact arguments,
 // preventing signature replay attacks where a signature for one operation
 // could be maliciously reused for a different operation with different args.
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #456: Auth mismatch — wrong role with valid auth produces domain error
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A caller that has valid authentication but the wrong role must be rejected
+/// by the role check and produce the expected domain error.
+///
+/// With `mock_all_auths` active, `require_auth()` passes for any address.
+/// The subsequent `require_admin_or_operator` guard then rejects callers
+/// who are not admins or operators.  This test confirms the mapping is
+/// consistent across the `add_company` entry point.
+#[test]
+fn test_wrong_role_caller_add_company_returns_domain_error() {
+    let (env, client, admin, _token) = setup_env();
+    let company = Address::generate(&env);
+    let impersonator = Address::generate(&env);
+
+    // Register a legitimate company.
+    client.add_company(&admin, &company);
+
+    // impersonator has no admin or operator role.
+    // mock_all_auths is active (via setup_env), so require_auth passes,
+    // but require_admin_or_operator must reject it.
+    let result = client.try_add_company(&impersonator, &company);
+    assert!(
+        result.is_err(),
+        "caller without admin role must be rejected by add_company even with auth mocked"
+    );
+}
+
+/// When a carrier tries to call an admin-only entry point (`add_carrier`),
+/// the role check must reject it consistently, proving that argument-bound
+/// auth alone is not sufficient without the correct role.
+#[test]
+fn test_wrong_role_carrier_cannot_add_carrier() {
+    let (env, client, admin, _token) = setup_env();
+    let carrier = Address::generate(&env);
+    let new_carrier = Address::generate(&env);
+
+    // Register the carrier legitimately.
+    client.add_carrier(&admin, &carrier);
+
+    // carrier (not an admin) tries to register another carrier.
+    let result = client.try_add_carrier(&carrier, &new_carrier);
+    assert!(
+        result.is_err(),
+        "a carrier must not be able to call add_carrier — admin-only entry point"
+    );
+}
+
+/// Revoke-role requires admin auth AND the correct caller role.
+/// A company address that passes auth but is not an admin must be rejected.
+#[test]
+fn test_wrong_role_revoke_role_rejected_for_non_admin() {
+    let (env, client, admin, _token) = setup_env();
+    let company = Address::generate(&env);
+    let target = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_company(&admin, &target);
+
+    // company tries to revoke target's role — admin-only operation.
+    let result = client.try_revoke_role(&company, &target);
+    assert!(
+        result.is_err(),
+        "non-admin must not be able to call revoke_role"
+    );
+}

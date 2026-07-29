@@ -9,11 +9,7 @@
 #[cfg(test)]
 mod tests {
     use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
-    use soroban_sdk::{
-        contract, contractimpl,
-        testutils::{Address as _, Ledger as _},
-        Address, BytesN, Env, Vec,
-    };
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
 
     #[contract]
     struct MockToken;
@@ -91,7 +87,7 @@ mod tests {
 
     #[test]
     fn require_admin_rejects_non_admin() {
-        let (env, client, _admin, company, _carrier) = setup();
+        let (_env, client, _admin, company, _carrier) = setup();
 
         // set_shipment_limit uses require_admin internally.
         let result = client.try_set_shipment_limit(&company, &10);
@@ -229,5 +225,57 @@ mod tests {
         let h5 = make_hash(&env, 12);
         let result = client.try_cancel_shipment(&company, &id, &h5);
         assert_eq!(result, Err(Ok(NavinError::ShipmentFinalized)));
+    }
+
+    // ── Timestamp relativity tests (issue #460) ───────────────────────────────
+
+    #[test]
+    fn test_created_at_future_rejected_at_shipment_creation() {
+        let (env, client, _admin, company, carrier) = setup();
+        let hash = make_hash(&env, 1);
+        let now = env.ledger().timestamp();
+        // Try to create a shipment with a deadline in the past (before current time)
+        // This tests the deadline validation which indirectly tests relativity
+        let past_deadline = now - 100;
+
+        let result = client.try_create_shipment(
+            &company,
+            &Address::generate(&env),
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &past_deadline,
+        );
+        assert_eq!(result, Err(Ok(NavinError::InvalidTimestamp)));
+    }
+
+    #[test]
+    fn test_created_at_vs_updated_at_consistency_via_status_update() {
+        let (env, client, _admin, company, carrier) = setup();
+        let hash = make_hash(&env, 2);
+        let hash2 = make_hash(&env, 3);
+        let deadline = future_deadline(&env);
+
+        let id = client.create_shipment(
+            &company,
+            &Address::generate(&env),
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &deadline,
+        );
+
+        // Get creation and update times
+        let created_at = client.get_shipment_created_at(&id);
+        let updated_at_before = client.get_shipment_updated_at(&id);
+        assert_eq!(created_at, updated_at_before);
+
+        // Advance ledger and update status
+        test_utils::advance_past_rate_limit(&env);
+        client.update_status(&carrier, &id, &ShipmentStatus::InTransit, &hash2);
+
+        // updated_at should be >= created_at
+        let updated_at_after = client.get_shipment_updated_at(&id);
+        assert!(updated_at_after >= created_at);
     }
 }

@@ -8,7 +8,8 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{test_utils, NavinShipment, NavinShipmentClient, ShipmentStatus};
+    extern crate std;
+    use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
     use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
 
     #[contract]
@@ -111,8 +112,7 @@ mod tests {
 
         let archived = client.get_shipment(&shipment_id);
         assert_eq!(
-            archived.escrow_amount,
-            0,
+            archived.escrow_amount, 0,
             "escrow_amount must be 0 in the archived copy after delivery"
         );
     }
@@ -221,11 +221,30 @@ mod tests {
         let (shipment_id, _, _, _, _) = create_and_archive(&env, &client, &admin, 0x06);
 
         // Second archive call on the same (now archived) shipment must fail.
+        env.mock_all_auths();
         let result = client.try_archive_shipment(&admin, &shipment_id);
-        assert!(
-            result.is_err(),
-            "re-archiving an already-archived shipment must return an error"
-        );
+        match result {
+            Ok(Err(e)) => {
+                let expected_error =
+                    soroban_sdk::Error::from_contract_error(NavinError::ShipmentNotFound as u32);
+                let err_str = std::format!("{:?}", e);
+                let expected_str = std::format!("{:?}", expected_error);
+                assert!(
+                    err_str.contains(&expected_str) || err_str.contains("ShipmentNotFound"),
+                    "Expected ShipmentNotFound error, got {:?}",
+                    err_str
+                );
+            }
+            Err(e) => {
+                let err_str = std::format!("{:?}", e);
+                assert!(
+                    err_str.contains("ShipmentNotFound") || err_str.contains("Code(4)"),
+                    "Expected ShipmentNotFound error in host error, got {:?}",
+                    err_str
+                );
+            }
+            _ => panic!("Expected error but got success"),
+        }
     }
 
     // ── Cancelled shipment archival consistency ────────────────────────────────
@@ -327,4 +346,261 @@ mod tests {
         assert_eq!(shipment_b.sender, company_b);
         assert_eq!(shipment_b.carrier, carrier_b);
     }
+
+    // ── [ISSUE #600] ShipmentUnavailable error variant tests ──────────────────
+    //
+    // preflight_check_shipment_available distinguishes three states:
+    //   - ShipmentNotFound  : never existed (not in persistent or temporary storage)
+    //   - ShipmentUnavailable : exists in temporary (archived) storage only
+    //   - ShipmentFinalized   : exists in persistent storage but is locked
+    // These tests pin that distinction so the error hierarchy cannot silently drift.
+
+    /// An archived shipment — present in temporary storage, absent from persistent —
+    /// must cause preflight_check_shipment_available to return ShipmentUnavailable (#42).
+    #[test]
+    fn preflight_archived_shipment_returns_shipment_unavailable() {
+        let (env, client, admin) = setup();
+        let (shipment_id, _, _, _, _) = create_and_archive(&env, &client, &admin, 0x20);
+
+        // Call the validation helper directly inside a contract context.
+        let result = env.as_contract(&client.address, || {
+            crate::validation::preflight_check_shipment_available(&env, shipment_id)
+        });
+
+        assert_eq!(
+            result,
+            Err(NavinError::ShipmentUnavailable),
+            "archived shipment must return ShipmentUnavailable (#42), not ShipmentNotFound or ShipmentFinalized"
+        );
+    }
+
+    /// A shipment that was never created must return ShipmentNotFound, not
+    /// ShipmentUnavailable — distinguishing the two states is important for
+    /// client error handling.
+    #[test]
+    fn preflight_nonexistent_shipment_returns_shipment_not_found() {
+        let (env, client, _admin) = setup();
+
+        let result = env.as_contract(&client.address, || {
+            crate::validation::preflight_check_shipment_available(&env, 9999u64)
+        });
+
+        assert_eq!(
+            result,
+            Err(NavinError::ShipmentNotFound),
+            "non-existent shipment must return ShipmentNotFound, not ShipmentUnavailable"
+        );
+    }
+
+    /// An active (non-finalized) shipment must be returned successfully by
+    /// preflight_check_shipment_available.
+    #[test]
+    fn preflight_active_shipment_returns_ok() {
+        let (env, client, admin) = setup();
+        let company = Address::generate(&env);
+        let receiver = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let data_hash = BytesN::from_array(&env, &[0x21u8; 32]);
+        let deadline = test_utils::future_deadline(&env, 7200);
+
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &data_hash,
+            &Vec::new(&env),
+            &deadline,
+        );
+
+        let result = env.as_contract(&client.address, || {
+            crate::validation::preflight_check_shipment_available(&env, shipment_id)
+        });
+
+        assert!(
+            result.is_ok(),
+            "active shipment must be returned successfully by preflight_check_shipment_available"
+        );
+        let shipment = result.unwrap();
+        assert_eq!(shipment.id, shipment_id);
+        assert!(!shipment.finalized);
+    }
+
+    /// A finalized-but-not-archived shipment (still in persistent storage) must
+    /// return ShipmentFinalized, not ShipmentUnavailable.
+    #[test]
+    fn preflight_finalized_persistent_shipment_returns_shipment_finalized() {
+        let (env, client, admin) = setup();
+        let company = Address::generate(&env);
+        let receiver = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let data_hash = BytesN::from_array(&env, &[0x22u8; 32]);
+        let deadline = test_utils::future_deadline(&env, 7200);
+
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &data_hash,
+            &Vec::new(&env),
+            &deadline,
+        );
+
+        // Cancel without escrow — finalize_if_settled sets finalized=true
+        // while the record stays in persistent storage.
+        client.cancel_shipment(&company, &shipment_id, &data_hash);
+
+        // Confirm the shipment is still in persistent storage (not archived yet).
+        let diag = client.get_restore_diagnostics(&shipment_id);
+        use crate::types::StoragePresenceState;
+        assert_eq!(
+            diag.state,
+            StoragePresenceState::ActivePersistent,
+            "shipment must still be in persistent storage before archival"
+        );
+
+        let result = env.as_contract(&client.address, || {
+            crate::validation::preflight_check_shipment_available(&env, shipment_id)
+        });
+
+        assert_eq!(
+            result,
+            Err(NavinError::ShipmentFinalized),
+            "finalized (but not archived) shipment must return ShipmentFinalized, not ShipmentUnavailable"
+        );
+    }
+
+    /// ShipmentUnavailable error code must be 42.
+    /// This pins the discriminant so it cannot drift across refactors.
+    #[test]
+    fn shipment_unavailable_error_code_is_42() {
+        assert_eq!(NavinError::ShipmentUnavailable as u32, 42,
+            "ShipmentUnavailable discriminant must be 42 per the error contract");
+    }
+
+    /// Attempting to mutate an archived shipment via update_status returns an error.
+    /// Archived shipments are finalized, so the contract surfaces ShipmentFinalized (#38)
+    /// from the require_not_finalized guard — a distinct, actionable error.
+    #[test]
+    fn update_status_on_archived_shipment_is_rejected() {
+        let (env, client, admin) = setup();
+        let (shipment_id, _company, _receiver, carrier, data_hash) =
+            create_and_archive(&env, &client, &admin, 0x23);
+
+        let result = client.try_update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::AtCheckpoint,
+            &data_hash,
+        );
+
+        assert!(
+            result.is_err(),
+            "update_status on an archived shipment must be rejected"
+        );
+    }
+
+    /// Attempting to deposit escrow on an archived shipment is rejected.
+    #[test]
+    fn deposit_escrow_on_archived_shipment_is_rejected() {
+        let (env, client, admin) = setup();
+        let (shipment_id, company, _receiver, _carrier, _data_hash) =
+            create_and_archive(&env, &client, &admin, 0x24);
+
+        let result = client.try_deposit_escrow(&company, &shipment_id, &1000i128);
+
+        assert!(
+            result.is_err(),
+            "deposit_escrow on an archived shipment must be rejected"
+        );
+    }
+
+    /// Attempting to cancel an archived shipment is rejected.
+    #[test]
+    fn cancel_shipment_on_archived_shipment_is_rejected() {
+        let (env, client, admin) = setup();
+        let (shipment_id, company, _receiver, _carrier, data_hash) =
+            create_and_archive(&env, &client, &admin, 0x25);
+
+        let result = client.try_cancel_shipment(&company, &shipment_id, &data_hash);
+
+        assert!(
+            result.is_err(),
+            "cancel_shipment on an archived shipment must be rejected"
+        );
+    }
+
+    /// An archived shipment must still be readable via get_shipment (read-only fallback
+    /// to temporary storage). This confirms availability for query while mutations are blocked.
+    #[test]
+    fn archived_shipment_is_readable_but_immutable() {
+        let (env, client, admin) = setup();
+        let (shipment_id, company, receiver, carrier, data_hash) =
+            create_and_archive(&env, &client, &admin, 0x26);
+
+        // Read path must succeed.
+        let shipment = client.get_shipment(&shipment_id);
+        assert_eq!(shipment.id, shipment_id);
+        assert_eq!(shipment.sender, company);
+        assert_eq!(shipment.receiver, receiver);
+        assert_eq!(shipment.carrier, carrier);
+        assert_eq!(shipment.data_hash, data_hash);
+        assert_eq!(shipment.status, ShipmentStatus::Delivered);
+        assert!(shipment.finalized);
+
+        // Mutation path must fail.
+        let mutate_result = client.try_update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::AtCheckpoint,
+            &data_hash,
+        );
+        assert!(
+            mutate_result.is_err(),
+            "write operation on archived shipment must be rejected"
+        );
+    }
+
+    /// preflight_check_shipment_available returns ShipmentUnavailable for both
+    /// Delivered-archived and Cancelled-archived shipments.
+    #[test]
+    fn preflight_returns_shipment_unavailable_for_cancelled_archived_shipment() {
+        let (env, client, admin) = setup();
+        let company = Address::generate(&env);
+        let receiver = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let data_hash = BytesN::from_array(&env, &[0x27u8; 32]);
+        let deadline = test_utils::future_deadline(&env, 7200);
+
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &data_hash,
+            &Vec::new(&env),
+            &deadline,
+        );
+
+        client.cancel_shipment(&company, &shipment_id, &data_hash);
+        client.archive_shipment(&admin, &shipment_id);
+
+        let result = env.as_contract(&client.address, || {
+            crate::validation::preflight_check_shipment_available(&env, shipment_id)
+        });
+
+        assert_eq!(
+            result,
+            Err(NavinError::ShipmentUnavailable),
+            "cancelled-then-archived shipment must return ShipmentUnavailable"
+        );
+    }
 }
+

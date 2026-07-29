@@ -3,8 +3,8 @@ extern crate std;
 use crate::{
     config,
     consistency::{
-        check_all_consistency, check_batch_consistency, check_shipment_invariants,
-        ConsistencyViolation,
+        check_all_consistency, check_all_consistency_range, check_batch_consistency,
+        check_shipment_invariants, ConsistencyViolation, DEFAULT_CONSISTENCY_SAMPLE_LIMIT,
     },
     test_utils,
     types::{ShipmentInput, ShipmentStatus},
@@ -718,12 +718,619 @@ fn test_config_checksum_raw_compute_matches_saved() {
     assert_eq!(saved, recomputed, "saved checksum must match recomputed");
 }
 
-// ── Dependency cycle detection tests (issue #16) ────────────────────────────────
-
-/// Build an acyclic dependency chain fixture: A -> B -> C -> D
-/// This should pass without any cycle detection errors.
+/// The checksum of the default configuration is a non-zero, deterministic value.
+///
+/// This guards against `compute_config_checksum` returning an all-zero hash
+/// for any realistic config — a zero checksum would defeat drift detection.
 #[test]
-fn test_acyclic_dependency_chain_passes() {
+fn test_config_checksum_never_zero_for_defaults() {
+    let (_env, client, _admin, _) = setup();
+    let checksum = client.get_config_checksum();
+    let bytes: [u8; 32] = checksum.to_array();
+    assert!(
+        bytes.iter().any(|&b| b != 0),
+        "Config checksum for default ContractConfig must not be all zeros"
+    );
+}
+
+// ── [ISSUE #453] Carrier reverse-lookup consistency tests ───────────────────
+
+/// Test: Add forward whitelist entries and verify they can be read back.
+/// This ensures that forward whitelist records are stored and retrieved correctly.
+#[test]
+fn test_carrier_whitelist_forward_lookup_basic() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier1 = Address::generate(&env);
+    let carrier2 = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier1);
+    client.add_carrier(&admin, &carrier2);
+
+    // Add carriers to company whitelist
+    client.add_carrier_to_whitelist(&company, &carrier1);
+    client.add_carrier_to_whitelist(&company, &carrier2);
+
+    // Verify forward lookups work
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier1),
+        "carrier1 should be whitelisted for company"
+    );
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier2),
+        "carrier2 should be whitelisted for company"
+    );
+}
+
+/// Test: Multiple companies can whitelist the same carrier independently.
+/// This verifies that forward lookup views agree across multiple companies.
+#[test]
+fn test_carrier_whitelist_multiple_companies_independent() {
+    let (env, client, admin, _) = setup();
+    let company_a = Address::generate(&env);
+    let company_b = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company_a);
+    client.add_company(&admin, &company_b);
+    client.add_carrier(&admin, &carrier);
+
+    // Company A whitelists the carrier
+    client.add_carrier_to_whitelist(&company_a, &carrier);
+
+    // Verify forward lookups are company-specific
+    assert!(
+        client.is_carrier_whitelisted(&company_a, &carrier),
+        "carrier should be whitelisted for company_a"
+    );
+    assert!(
+        !client.is_carrier_whitelisted(&company_b, &carrier),
+        "carrier should NOT be whitelisted for company_b yet"
+    );
+
+    // Company B whitelists the same carrier
+    client.add_carrier_to_whitelist(&company_b, &carrier);
+
+    // Both lookups should now succeed
+    assert!(
+        client.is_carrier_whitelisted(&company_a, &carrier),
+        "carrier should still be whitelisted for company_a"
+    );
+    assert!(
+        client.is_carrier_whitelisted(&company_b, &carrier),
+        "carrier should now be whitelisted for company_b"
+    );
+}
+
+/// Test: Delete paths clear the whitelist entry and forward lookup returns false.
+/// This confirms deleted entries do not remain visible.
+#[test]
+fn test_carrier_whitelist_delete_clears_forward_lookup() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Add carrier to whitelist
+    client.add_carrier_to_whitelist(&company, &carrier);
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should be whitelisted initially"
+    );
+
+    // Remove carrier from whitelist
+    client.remove_carrier_from_whitelist(&company, &carrier);
+
+    // Verify forward lookup now returns false
+    assert!(
+        !client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should NOT be whitelisted after removal"
+    );
+}
+
+/// Test: Removing a carrier from one company's whitelist does not affect other companies.
+/// This ensures delete paths are scoped correctly and don't corrupt other entries.
+#[test]
+fn test_carrier_whitelist_delete_scoped_to_company() {
+    let (env, client, admin, _) = setup();
+    let company_a = Address::generate(&env);
+    let company_b = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company_a);
+    client.add_company(&admin, &company_b);
+    client.add_carrier(&admin, &carrier);
+
+    // Both companies whitelist the carrier
+    client.add_carrier_to_whitelist(&company_a, &carrier);
+    client.add_carrier_to_whitelist(&company_b, &carrier);
+
+    assert!(client.is_carrier_whitelisted(&company_a, &carrier));
+    assert!(client.is_carrier_whitelisted(&company_b, &carrier));
+
+    // Remove from company_a only
+    client.remove_carrier_from_whitelist(&company_a, &carrier);
+
+    // Verify company_a's lookup is false, but company_b is unaffected
+    assert!(
+        !client.is_carrier_whitelisted(&company_a, &carrier),
+        "carrier should be removed from company_a"
+    );
+    assert!(
+        client.is_carrier_whitelisted(&company_b, &carrier),
+        "carrier should still be whitelisted for company_b"
+    );
+}
+
+/// Test: Lookup behavior is deterministic across repeated calls.
+/// This verifies that forward lookups are stable and read-only.
+#[test]
+fn test_carrier_whitelist_lookup_deterministic() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    // Query multiple times
+    let result1 = client.is_carrier_whitelisted(&company, &carrier);
+    let result2 = client.is_carrier_whitelisted(&company, &carrier);
+    let result3 = client.is_carrier_whitelisted(&company, &carrier);
+
+    assert_eq!(result1, result2, "lookup must be stable across calls");
+    assert_eq!(result2, result3, "lookup must be stable across calls");
+    assert!(result1, "carrier should be whitelisted");
+}
+
+/// Test: Add, remove, and re-add the same carrier to verify state transitions are clean.
+/// This ensures no stale data remains after deletion.
+#[test]
+fn test_carrier_whitelist_add_remove_readd_cycle() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Add carrier
+    client.add_carrier_to_whitelist(&company, &carrier);
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should be whitelisted after add"
+    );
+
+    // Remove carrier
+    client.remove_carrier_from_whitelist(&company, &carrier);
+    assert!(
+        !client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should not be whitelisted after remove"
+    );
+
+    // Re-add carrier
+    client.add_carrier_to_whitelist(&company, &carrier);
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should be whitelisted after re-add"
+    );
+}
+
+/// Test: Verify storage keys are correctly scoped (company, carrier) and not reversed.
+/// This is a low-level consistency check to ensure the storage layout is correct.
+#[test]
+fn test_carrier_whitelist_storage_key_correctness() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    // Verify internal storage using the canonical key order
+    env.as_contract(&client.address, || {
+        let canonical_forward = crate::storage::is_carrier_whitelisted(&env, &company, &carrier);
+        assert!(
+            canonical_forward,
+            "canonical forward lookup (company, carrier) must succeed"
+        );
+
+        // The reverse key (carrier, company) should NOT exist
+        let reversed = crate::storage::is_carrier_whitelisted(&env, &carrier, &company);
+        assert!(
+            !reversed,
+            "reversed lookup (carrier, company) should not exist"
+        );
+    });
+}
+
+/// Test: Bulk whitelist operations maintain consistency.
+/// This verifies that multiple adds/removes in succession maintain correct state.
+#[test]
+fn test_carrier_whitelist_bulk_operations_consistency() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carriers: soroban_sdk::Vec<Address> = {
+        let mut vec = soroban_sdk::Vec::new(&env);
+        for _ in 0..5 {
+            vec.push_back(Address::generate(&env));
+        }
+        vec
+    };
+
+    client.add_company(&admin, &company);
+    for carrier in carriers.iter() {
+        client.add_carrier(&admin, &carrier);
+    }
+
+    // Add all carriers to whitelist
+    for carrier in carriers.iter() {
+        client.add_carrier_to_whitelist(&company, &carrier);
+    }
+
+    // Verify all are whitelisted
+    for carrier in carriers.iter() {
+        assert!(
+            client.is_carrier_whitelisted(&company, &carrier),
+            "all carriers should be whitelisted after bulk add"
+        );
+    }
+
+    // Remove every other carrier
+    for (i, carrier) in carriers.iter().enumerate() {
+        if i % 2 == 0 {
+            client.remove_carrier_from_whitelist(&company, &carrier);
+        }
+    }
+
+    // Verify correct subset remains whitelisted
+    for (i, carrier) in carriers.iter().enumerate() {
+        let expected = i % 2 == 1;
+        let actual = client.is_carrier_whitelisted(&company, &carrier);
+        assert_eq!(
+            actual, expected,
+            "carrier at index {} should have whitelist status = {}",
+            i, expected
+        );
+    }
+}
+
+/// Test: Whitelist state is unaffected by carrier role suspension.
+/// This ensures whitelist and suspension states are independent.
+#[test]
+fn test_carrier_whitelist_independent_of_suspension() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    // Verify whitelist before suspension
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should be whitelisted before suspension"
+    );
+
+    // Suspend the carrier
+    client.suspend_carrier(&admin, &carrier);
+
+    // Whitelist state should be unchanged
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should still be whitelisted after suspension"
+    );
+
+    // Reactivate the carrier
+    client.reactivate_carrier(&admin, &carrier);
+
+    // Whitelist state should still be unchanged
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should still be whitelisted after reactivation"
+    );
+}
+
+/// Test: Non-existent (company, carrier) pair returns false consistently.
+/// This verifies that missing entries are handled correctly.
+#[test]
+fn test_carrier_whitelist_nonexistent_pair_returns_false() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Query without adding to whitelist
+    let result1 = client.is_carrier_whitelisted(&company, &carrier);
+    let result2 = client.is_carrier_whitelisted(&company, &carrier);
+
+    assert!(!result1, "non-existent pair should return false");
+    assert_eq!(
+        result1, result2,
+        "non-existent pair query must be deterministic"
+    );
+}
+
+/// Test: Whitelist state persists across multiple operations on other entities.
+/// This ensures whitelist data is not corrupted by unrelated operations.
+#[test]
+fn test_carrier_whitelist_state_persistence() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier1 = Address::generate(&env);
+    let carrier2 = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier1);
+    client.add_carrier(&admin, &carrier2);
+
+    // Whitelist carrier1
+    client.add_carrier_to_whitelist(&company, &carrier1);
+    assert!(client.is_carrier_whitelisted(&company, &carrier1));
+
+    // Perform unrelated operations (create shipment, whitelist another carrier)
+    let shipment_id = create_one(&env, &client, &company, &carrier1, 0xF1);
+    client.add_carrier_to_whitelist(&company, &carrier2);
+
+    // Verify carrier1's whitelist state persists
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier1),
+        "carrier1 whitelist state should persist after other operations"
+    );
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier2),
+        "carrier2 should also be whitelisted"
+    );
+    assert!(shipment_id > 0, "shipment should be created successfully");
+}
+
+/// Test: Whitelist queries with swapped parameters return different results.
+/// This verifies key order matters and parameters are not commutative.
+#[test]
+fn test_carrier_whitelist_parameter_order_matters() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Add (company, carrier) to whitelist
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    // Forward lookup should succeed
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "(company, carrier) should be whitelisted"
+    );
+
+    // Swapped parameters should fail (carrier as company, company as carrier)
+    assert!(
+        !client.is_carrier_whitelisted(&carrier, &company),
+        "(carrier, company) should NOT be whitelisted - parameters are not commutative"
+    );
+}
+
+/// Test: Repeated add operations are now rejected (issue #539).
+///
+/// Originally this contract treated duplicate whitelist adds as silently
+/// idempotent. Issue #539 hardened that path: the first add succeeds, and
+/// subsequent adds for the same (company, carrier) pair return
+/// `CarrierAlreadyWhitelisted`. The underlying state remains consistent
+/// after the rejection — exactly one entry persists, and a single remove
+/// clears it as before.
+#[test]
+fn test_carrier_whitelist_add_idempotent() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // First add succeeds.
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    // Subsequent adds for the same pair are now rejected with a typed error.
+    let dup = client.try_add_carrier_to_whitelist(&company, &carrier);
+    assert_eq!(
+        dup,
+        Err(Ok(crate::NavinError::CarrierAlreadyWhitelisted)),
+        "duplicate whitelist add must surface CarrierAlreadyWhitelisted (issue #539)"
+    );
+    let dup2 = client.try_add_carrier_to_whitelist(&company, &carrier);
+    assert_eq!(
+        dup2,
+        Err(Ok(crate::NavinError::CarrierAlreadyWhitelisted)),
+        "rejection must be stable across multiple duplicate attempts"
+    );
+
+    // State is unchanged — the original entry persists.
+    assert!(
+        client.is_carrier_whitelisted(&company, &carrier),
+        "carrier must remain whitelisted after rejected duplicate adds"
+    );
+
+    // Single remove still clears it (no phantom extra entries from the
+    // rejected adds).
+    client.remove_carrier_from_whitelist(&company, &carrier);
+    assert!(
+        !client.is_carrier_whitelisted(&company, &carrier),
+        "single remove must clear the carrier after rejected duplicates"
+    );
+}
+
+/// Test: Repeated remove operations are idempotent.
+/// This ensures removing a non-existent entry has no adverse effects.
+#[test]
+fn test_carrier_whitelist_remove_idempotent() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    // Remove without adding (no-op)
+    client.remove_carrier_from_whitelist(&company, &carrier);
+    assert!(!client.is_carrier_whitelisted(&company, &carrier));
+
+    // Add, then remove multiple times
+    client.add_carrier_to_whitelist(&company, &carrier);
+    assert!(client.is_carrier_whitelisted(&company, &carrier));
+
+    client.remove_carrier_from_whitelist(&company, &carrier);
+    client.remove_carrier_from_whitelist(&company, &carrier);
+    client.remove_carrier_from_whitelist(&company, &carrier);
+
+    // Should still be not whitelisted
+    assert!(
+        !client.is_carrier_whitelisted(&company, &carrier),
+        "carrier should not be whitelisted after multiple removes"
+    );
+}
+
+#[test]
+fn test_upgrade_preserves_analytics_counters() {
+    let (env, client, admin, _token) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let id1 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    let id2 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    client.deposit_escrow(&company, &id1, &1000);
+    client.deposit_escrow(&company, &id2, &500);
+
+    let health_before = client.check_contract_health(&admin);
+    assert_eq!(health_before.total_shipments, 2);
+    assert_eq!(health_before.sum_of_escrow_balances, 1500);
+
+    let target_version = client.get_version() + 1;
+    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
+
+    let contract_id = client.address.clone();
+    client.upgrade(&admin, &new_wasm_hash, &target_version);
+
+    env.as_contract(&contract_id, || {
+        let count = crate::storage::get_shipment_counter(&env);
+        assert_eq!(count, 2, "shipment counter should be preserved");
+
+        let escrow1 = crate::storage::get_escrow(&env, id1);
+        assert_eq!(escrow1, 1000);
+
+        let escrow2 = crate::storage::get_escrow(&env, id2);
+        assert_eq!(escrow2, 500);
+    });
+}
+
+// ── [ISSUE #530] get_version read-only method update tests ──────────────────
+
+#[test]
+fn test_get_version_returns_initial_version_one() {
+    let (_env, client, _admin, _token) = setup();
+    assert_eq!(
+        client.get_version(),
+        1,
+        "get_version must return 1 immediately after initialize"
+    );
+}
+
+#[test]
+fn test_get_version_reflects_simulated_upgrade() {
+    let (env, client, _admin, _token) = setup();
+
+    let initial = client.get_version();
+
+    env.as_contract(&client.address, || {
+        crate::storage::set_version(&env, initial + 1);
+    });
+
+    let after = client.get_version();
+    assert_eq!(
+        after,
+        initial + 1,
+        "get_version must reflect the incremented value after simulated upgrade"
+    );
+}
+
+#[test]
+fn test_get_version_increments_match_target_after_upgrade() {
+    let (env, client, admin, _token) = setup();
+
+    let initial = client.get_version();
+    let target = initial + 1;
+
+    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
+    let contract_id = client.address.clone();
+    client.upgrade(&admin, &new_wasm_hash, &target);
+
+    env.as_contract(&contract_id, || {
+        let post = crate::storage::get_version(&env);
+        assert_eq!(
+            post, target,
+            "version must equal the target_version passed to upgrade"
+        );
+    });
+}
+
+#[test]
+fn test_get_version_is_stable_across_repeated_reads() {
+    let (env, client, _admin, _token) = setup();
+
+    let v1 = client.get_version();
+
+    env.as_contract(&client.address, || {
+        crate::storage::set_version(&env, 5);
+    });
+
+    let v2 = client.get_version();
+    let v3 = client.get_version();
+    let v4 = client.get_version();
+
+    assert_eq!(v2, v3, "repeated get_version must return the same value");
+    assert_eq!(v3, v4, "repeated get_version must return the same value");
+    assert_eq!(v2, 5);
+    let _ = v1;
+}
+
+// ── Large-fixture / budget-safety tests (issue #648) ────────────────────────
+
+/// Create N shipments (well above DEFAULT_CONSISTENCY_SAMPLE_LIMIT) and verify
+/// that `check_all_consistency` (the capped variant) inspects exactly
+/// DEFAULT_CONSISTENCY_SAMPLE_LIMIT of them — demonstrating that the call cost
+/// is bounded regardless of total shipment count.
+#[test]
+fn test_large_fixture_check_all_consistency_stays_within_sample_cap() {
     let (env, client, admin, _) = setup();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -731,64 +1338,54 @@ fn test_acyclic_dependency_chain_passes() {
     client.add_carrier(&admin, &carrier);
     client.add_carrier_to_whitelist(&company, &carrier);
 
-    // Create a chain of shipments: A -> B -> C -> D
-    let id_a = create_one(&env, &client, &company, &carrier, 0xA0);
-    let id_b = create_one(&env, &client, &company, &carrier, 0xB0);
-    let id_c = create_one(&env, &client, &company, &carrier, 0xC0);
-    let id_d = create_one(&env, &client, &company, &carrier, 0xD0);
+    // Create more shipments than the sample cap so the cap is actually exercised.
+    let total: u64 = (DEFAULT_CONSISTENCY_SAMPLE_LIMIT as u64) + 50;
+    for seed in 0..total {
+        create_one(&env, &client, &company, &carrier, (seed % 256) as u8);
+    }
 
-    // Set up dependencies: B depends on A, C depends on B, D depends on C
     env.as_contract(&client.address, || {
-        let mut deps_a: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
-        crate::storage::set_dependencies(&env, id_a, &deps_a);
+        let total_stored = crate::storage::get_shipment_count(&env);
+        assert_eq!(
+            total_stored, total,
+            "all shipments must be registered in storage"
+        );
 
-        let mut deps_b: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
-        deps_b.push_back(id_a);
-        crate::storage::set_dependencies(&env, id_b, &deps_b);
-        crate::storage::add_dependent(&env, id_a, id_b);
+        // The default (capped) scan must complete without trapping and must
+        // return no violations (all shipments are healthy).
+        let violations = check_all_consistency(&env);
+        assert!(
+            violations.is_empty(),
+            "expected no violations in clean large fixture: {violations:?}"
+        );
 
-        let mut deps_c: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
-        deps_c.push_back(id_b);
-        crate::storage::set_dependencies(&env, id_c, &deps_c);
-        crate::storage::add_dependent(&env, id_b, id_c);
+        // The scan must have touched at most DEFAULT_CONSISTENCY_SAMPLE_LIMIT
+        // IDs. We verify this indirectly: corrupt shipment ID
+        // DEFAULT_CONSISTENCY_SAMPLE_LIMIT+1 (which is outside the cap window)
+        // and confirm the capped scan does NOT report it.
+        let outside_cap_id = DEFAULT_CONSISTENCY_SAMPLE_LIMIT as u64 + 1;
+        crate::storage::set_escrow(&env, outside_cap_id, 999_999);
 
-        let mut deps_d: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
-        deps_d.push_back(id_c);
-        crate::storage::set_dependencies(&env, id_d, &deps_d);
-        crate::storage::add_dependent(&env, id_c, id_d);
+        let violations_after = check_all_consistency(&env);
+        assert!(
+            !violations_after
+                .iter()
+                .any(|v| v == ConsistencyViolation::EscrowMismatch(outside_cap_id)),
+            "capped scan must NOT report a violation for id={outside_cap_id} \
+             which is beyond the sample window"
+        );
 
-        // Verify the dependency chain is stored correctly
-        let retrieved_b = crate::storage::get_dependencies(&env, id_b).unwrap();
-        assert_eq!(retrieved_b.len(), 1);
-        assert_eq!(retrieved_b.get(0), Some(id_a));
-
-        let retrieved_c = crate::storage::get_dependencies(&env, id_c).unwrap();
-        assert_eq!(retrieved_c.len(), 1);
-        assert_eq!(retrieved_c.get(0), Some(id_b));
-
-        let retrieved_d = crate::storage::get_dependencies(&env, id_d).unwrap();
-        assert_eq!(retrieved_d.len(), 1);
-        assert_eq!(retrieved_d.get(0), Some(id_c));
-
-        // Verify reverse index (dependents)
-        let dependents_a = crate::storage::get_dependents(&env, id_a).unwrap();
-        assert_eq!(dependents_a.len(), 1);
-        assert_eq!(dependents_a.get(0), Some(id_b));
-
-        let dependents_b = crate::storage::get_dependents(&env, id_b).unwrap();
-        assert_eq!(dependents_b.len(), 1);
-        assert_eq!(dependents_b.get(0), Some(id_c));
-
-        let dependents_c = crate::storage::get_dependents(&env, id_c).unwrap();
-        assert_eq!(dependents_c.len(), 1);
-        assert_eq!(dependents_c.get(0), Some(id_d));
+        // Restore to keep remaining assertions clean.
+        let shipment = crate::storage::get_shipment(&env, outside_cap_id).unwrap();
+        crate::storage::set_escrow(&env, outside_cap_id, shipment.escrow_amount);
     });
 }
 
-/// Create a cyclic dependency: A -> B -> C -> A
-/// This should be detected and rejected.
+/// `check_all_consistency_range` with an explicit page that lands entirely
+/// beyond the sample cap must surface violations for that page — proving the
+/// paginated path reaches IDs the capped default skips.
 #[test]
-fn test_cyclic_dependency_is_rejected() {
+fn test_large_fixture_paginated_range_covers_ids_beyond_sample_cap() {
     let (env, client, admin, _) = setup();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -796,168 +1393,130 @@ fn test_cyclic_dependency_is_rejected() {
     client.add_carrier(&admin, &carrier);
     client.add_carrier_to_whitelist(&company, &carrier);
 
-    // Create shipments for the cycle
-    let id_a = create_one(&env, &client, &company, &carrier, 0xAA);
-    let id_b = create_one(&env, &client, &company, &carrier, 0xBB);
-    let id_c = create_one(&env, &client, &company, &carrier, 0xCC);
+    let total: u64 = (DEFAULT_CONSISTENCY_SAMPLE_LIMIT as u64) + 50;
+    for seed in 0..total {
+        create_one(&env, &client, &company, &carrier, (seed % 256) as u8);
+    }
 
     env.as_contract(&client.address, || {
-        // Set up initial chain: A -> B -> C
-        let mut deps_b: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
-        deps_b.push_back(id_a);
-        crate::storage::set_dependencies(&env, id_b, &deps_b);
-        crate::storage::add_dependent(&env, id_a, id_b);
+        // Corrupt a shipment that lies beyond the default cap.
+        let target_id = DEFAULT_CONSISTENCY_SAMPLE_LIMIT as u64 + 10;
+        crate::storage::set_escrow(&env, target_id, 777_777);
 
-        let mut deps_c: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
-        deps_c.push_back(id_b);
-        crate::storage::set_dependencies(&env, id_c, &deps_c);
-        crate::storage::add_dependent(&env, id_b, id_c);
+        // Capped default must miss it.
+        let capped = check_all_consistency(&env);
+        assert!(
+            !capped
+                .iter()
+                .any(|v| v == ConsistencyViolation::EscrowMismatch(target_id)),
+            "default capped scan must not see id={target_id}"
+        );
 
-        // Attempt to create a cycle by making A depend on C
-        // This should be detected as a cycle: A -> B -> C -> A
-        let mut deps_a: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
-        deps_a.push_back(id_c);
-
-        // Detect cycle by traversing the dependency graph
-        let has_cycle = detect_cycle(&env, id_a, &deps_a);
-        assert!(has_cycle, "cycle A -> B -> C -> A should be detected");
+        // Paginated range that covers target_id must find it.
+        let page_start = DEFAULT_CONSISTENCY_SAMPLE_LIMIT as u64 + 1;
+        let page_limit = 50_u64;
+        let paged = check_all_consistency_range(&env, page_start, page_limit);
+        assert!(
+            paged
+                .iter()
+                .any(|v| v == ConsistencyViolation::EscrowMismatch(target_id)),
+            "paginated scan starting at {page_start} must detect EscrowMismatch \
+             for id={target_id}: {paged:?}"
+        );
     });
 }
 
-/// Helper function to detect cycles in the dependency graph.
-/// Returns true if adding the given dependencies would create a cycle.
-fn detect_cycle(env: &Env, start_id: u64, new_deps: &soroban_sdk::Vec<u64>) -> bool {
-    use soroban_sdk::Vec;
+/// Walking the full shipment set page-by-page must collectively find all
+/// violations that a single unbounded scan would have found.
+#[test]
+fn test_large_fixture_full_paginated_walk_finds_all_violations() {
+    let (env, client, admin, _) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
-    let mut visited: Vec<u64> = Vec::new(env);
-    let mut path: Vec<u64> = Vec::new(env);
+    // Create enough shipments to span multiple pages.
+    let total: u64 = (DEFAULT_CONSISTENCY_SAMPLE_LIMIT as u64) + 50;
+    for seed in 0..total {
+        create_one(&env, &client, &company, &carrier, (seed % 256) as u8);
+    }
 
-    for i in 0..new_deps.len() {
-        if let Some(dep_id) = new_deps.get(i) {
-            if has_cycle_recursive(env, dep_id, start_id, &mut visited, &mut path) {
-                return true;
+    env.as_contract(&client.address, || {
+        // Corrupt one id in the first half and one in the second half.
+        let id_a: u64 = 5;
+        let id_b: u64 = DEFAULT_CONSISTENCY_SAMPLE_LIMIT as u64 + 20;
+        crate::storage::set_escrow(&env, id_a, 11_111);
+        crate::storage::set_escrow(&env, id_b, 22_222);
+
+        // Walk all pages and collect every violation.
+        let page_size: u64 = DEFAULT_CONSISTENCY_SAMPLE_LIMIT as u64;
+        let mut all_violations: soroban_sdk::Vec<ConsistencyViolation> =
+            soroban_sdk::Vec::new(&env);
+        let mut cursor: u64 = 1;
+
+        loop {
+            let page = check_all_consistency_range(&env, cursor, page_size);
+            for v in page.iter() {
+                all_violations.push_back(v);
             }
-        }
-    }
-    false
-}
-
-/// Recursive helper for cycle detection using DFS.
-fn has_cycle_recursive(
-    env: &Env,
-    current: u64,
-    target: u64,
-    visited: &mut soroban_sdk::Vec<u64>,
-    path: &mut soroban_sdk::Vec<u64>,
-) -> bool {
-    // If we reached the target, we found a cycle
-    if current == target {
-        return true;
-    }
-
-    // Check if already visited in current path
-    for i in 0..path.len() {
-        if path.get(i) == Some(current) {
-            return true;
-        }
-    }
-
-    // Check if already visited globally
-    for i in 0..visited.len() {
-        if visited.get(i) == Some(current) {
-            return false;
-        }
-    }
-
-    visited.push_back(current);
-    path.push_back(current);
-
-    // Recursively check dependencies
-    if let Some(deps) = crate::storage::get_dependencies(env, current) {
-        for i in 0..deps.len() {
-            if let Some(dep_id) = deps.get(i) {
-                if has_cycle_recursive(env, dep_id, target, visited, path) {
-                    return true;
-                }
+            if cursor + page_size > total {
+                break;
             }
+            cursor += page_size;
         }
-    }
 
-    // Backtrack
-    let _ = path.pop();
-    false
+        assert!(
+            all_violations
+                .iter()
+                .any(|v| v == ConsistencyViolation::EscrowMismatch(id_a)),
+            "paginated walk must find violation for id={id_a}"
+        );
+        assert!(
+            all_violations
+                .iter()
+                .any(|v| v == ConsistencyViolation::EscrowMismatch(id_b)),
+            "paginated walk must find violation for id={id_b}"
+        );
+    });
 }
 
-/// Query output for dependencies must remain deterministic across multiple calls.
+/// `check_consistency_violations_paginated` exposed via the contract client
+/// must reject a zero limit and a limit exceeding the config cap.
 #[test]
-fn test_dependency_query_output_deterministic() {
+fn test_paginated_contract_entry_validates_limit() {
     let (env, client, admin, _) = setup();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
     client.add_carrier_to_whitelist(&company, &carrier);
+    create_one(&env, &client, &company, &carrier, 1);
 
-    // Create a dependency chain
-    let id_a = create_one(&env, &client, &company, &carrier, 0x1A);
-    let id_b = create_one(&env, &client, &company, &carrier, 0x1B);
-    let id_c = create_one(&env, &client, &company, &carrier, 0x1C);
+    // limit = 0 must be rejected.
+    let err_zero = client.try_check_consistency_violations_paginated(&admin, &1_u64, &0_u32);
+    assert!(
+        err_zero.is_err(),
+        "limit=0 must return an error"
+    );
 
-    env.as_contract(&client.address, || {
-        let mut deps_b: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
-        deps_b.push_back(id_a);
-        crate::storage::set_dependencies(&env, id_b, &deps_b);
-        crate::storage::add_dependent(&env, id_a, id_b);
+    // limit > batch_operation_limit must be rejected.
+    let cfg = client.get_contract_config();
+    let too_large = cfg.batch_operation_limit + 1;
+    let err_large =
+        client.try_check_consistency_violations_paginated(&admin, &1_u64, &too_large);
+    assert!(
+        err_large.is_err(),
+        "limit exceeding batch_operation_limit must return an error"
+    );
 
-        let mut deps_c: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
-        deps_c.push_back(id_b);
-        crate::storage::set_dependencies(&env, id_c, &deps_c);
-        crate::storage::add_dependent(&env, id_b, id_c);
+    // A valid page must succeed and return no violations for a clean state.
+    let ok = client.check_consistency_violations_paginated(&admin, &1_u64, &10_u32);
+    assert!(
+        ok.is_empty(),
+        "valid paginated call on clean state must return no violations"
+    );
 
-        // Query multiple times and verify consistency
-        let query1 = crate::storage::get_dependencies(&env, id_b);
-        let query2 = crate::storage::get_dependencies(&env, id_b);
-        let query3 = crate::storage::get_dependencies(&env, id_b);
-
-        assert_eq!(query1, query2, "dependency query must be deterministic");
-        assert_eq!(
-            query2, query3,
-            "dependency query must be stable across calls"
-        );
-
-        let dependents1 = crate::storage::get_dependents(&env, id_a);
-        let dependents2 = crate::storage::get_dependents(&env, id_a);
-        let dependents3 = crate::storage::get_dependents(&env, id_a);
-
-        assert_eq!(
-            dependents1, dependents2,
-            "dependents query must be deterministic"
-        );
-        assert_eq!(
-            dependents2, dependents3,
-            "dependents query must be stable across calls"
-        );
-    });
-}
-
-/// Self-dependency (shipment depending on itself) should be detected as a cycle.
-#[test]
-fn test_self_dependency_is_rejected() {
-    let (env, client, admin, _) = setup();
-    let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-    client.add_carrier_to_whitelist(&company, &carrier);
-
-    let id = create_one(&env, &client, &company, &carrier, 0xFF);
-
-    env.as_contract(&client.address, || {
-        // Attempt to make a shipment depend on itself
-        let mut deps: soroban_sdk::Vec<u64> = soroban_sdk::Vec::new(&env);
-        deps.push_back(id);
-
-        let has_cycle = detect_cycle(&env, id, &deps);
-        assert!(has_cycle, "self-dependency should be detected as a cycle");
-    });
+    let _ = env;
 }

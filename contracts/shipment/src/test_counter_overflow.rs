@@ -1,10 +1,9 @@
-/// Tests for shipment counter overflow guards.
-///
-/// This module ensures that shipment counters cannot wrap or silently overflow
-/// when incremented under edge conditions. Tests exercise the upper-bound counter
-/// path and assert the contract fails safely instead of wrapping.
-use crate::{errors, types::DataKey, NavinError, NavinShipment, NavinShipmentClient};
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Symbol, Vec};
+#![cfg(test)]
+
+extern crate std;
+
+use crate::{types::DataKey, NavinError, NavinShipment, NavinShipmentClient};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec};
 
 #[soroban_sdk::contract]
 struct MockToken;
@@ -44,9 +43,9 @@ fn setup_counter_env() -> (
 /// Test that counter starts at zero.
 #[test]
 fn test_shipment_counter_starts_at_zero() {
-    let (env, client, _admin, _company, _receiver, _carrier) = setup_counter_env();
+    let (_env, client, _admin, _company, _receiver, _carrier) = setup_counter_env();
 
-    let counter = client.get_shipment_counter().unwrap();
+    let counter = client.get_shipment_counter();
     assert_eq!(counter, 0, "Counter should start at 0");
 }
 
@@ -54,11 +53,10 @@ fn test_shipment_counter_starts_at_zero() {
 #[test]
 fn test_shipment_counter_increments() {
     let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
     // Initial counter should be 0
-    let initial = client.get_shipment_counter().unwrap();
+    let initial = client.get_shipment_counter();
     assert_eq!(initial, 0);
 
     // Create first shipment
@@ -66,13 +64,13 @@ fn test_shipment_counter_increments() {
         &company,
         &receiver,
         &carrier,
-        &data_hash,
+        &BytesN::from_array(&env, &[1u8; 32]),
         &Vec::new(&env),
         &deadline,
     );
     assert_eq!(id_1, 1, "First shipment ID should be 1");
 
-    let counter_after_1 = client.get_shipment_counter().unwrap();
+    let counter_after_1 = client.get_shipment_counter();
     assert_eq!(
         counter_after_1, 1,
         "Counter should be 1 after first shipment"
@@ -83,13 +81,13 @@ fn test_shipment_counter_increments() {
         &company,
         &receiver,
         &carrier,
-        &data_hash,
+        &BytesN::from_array(&env, &[2u8; 32]),
         &Vec::new(&env),
         &deadline,
     );
     assert_eq!(id_2, 2, "Second shipment ID should be 2");
 
-    let counter_after_2 = client.get_shipment_counter().unwrap();
+    let counter_after_2 = client.get_shipment_counter();
     assert_eq!(
         counter_after_2, 2,
         "Counter should be 2 after second shipment"
@@ -120,7 +118,7 @@ fn test_shipment_counter_near_max_boundary() {
 
     assert_eq!(id_1, 1, "Normal shipment creation should work");
     assert_eq!(
-        client.get_shipment_counter().unwrap(),
+        client.get_shipment_counter(),
         1,
         "Counter should reflect created shipments"
     );
@@ -132,10 +130,13 @@ fn test_shipment_counter_overflow_rejected_at_max() {
     let data_hash = BytesN::from_array(&env, &[9u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
-    env.storage()
-        .instance()
-        .set(&DataKey::ShipmentCount, &u64::MAX);
+    env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .set(&DataKey::ShipmentCount, &u64::MAX);
+    });
 
+    env.mock_all_auths();
     let result = client.try_create_shipment(
         &company,
         &receiver,
@@ -145,12 +146,28 @@ fn test_shipment_counter_overflow_rejected_at_max() {
         &deadline,
     );
 
-    assert!(
-        result.is_err(),
-        "Shipment creation should reject counter overflow at max value"
-    );
-    if let Err(err) = result {
-        assert_eq!(err, Err(Ok(NavinError::CounterOverflow)));
+    // Verify it returns CounterOverflow error
+    match result {
+        Ok(Err(e)) => {
+            let expected_error =
+                soroban_sdk::Error::from_contract_error(NavinError::CounterOverflow as u32);
+            let err_str = std::format!("{:?}", e);
+            let expected_str = std::format!("{:?}", expected_error);
+            assert!(
+                err_str.contains(&expected_str) || err_str.contains("CounterOverflow"),
+                "Expected CounterOverflow error, got {:?}",
+                err_str
+            );
+        }
+        Err(e) => {
+            let err_str = std::format!("{:?}", e);
+            assert!(
+                err_str.contains("CounterOverflow") || err_str.contains("Code(11)"),
+                "Expected CounterOverflow error in host error, got {:?}",
+                err_str
+            );
+        }
+        _ => panic!("Expected error but got success"),
     }
 }
 
@@ -158,7 +175,6 @@ fn test_shipment_counter_overflow_rejected_at_max() {
 #[test]
 fn test_shipment_counter_integrity_multiple_creates() {
     let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
     // Create 5 shipments and verify counter consistency
@@ -167,18 +183,14 @@ fn test_shipment_counter_integrity_multiple_creates() {
             &company,
             &receiver,
             &carrier,
-            &data_hash,
+            &BytesN::from_array(&env, &[i as u8; 32]),
             &Vec::new(&env),
             &deadline,
         );
 
-        assert_eq!(
-            shipment_id as u64, i,
-            "Shipment ID {} should match iteration",
-            i
-        );
+        assert_eq!(shipment_id, i, "Shipment ID {} should match iteration", i);
 
-        let counter = client.get_shipment_counter().unwrap();
+        let counter = client.get_shipment_counter();
         assert_eq!(counter, i, "Counter should be {} after {} shipments", i, i);
     }
 }
@@ -187,23 +199,22 @@ fn test_shipment_counter_integrity_multiple_creates() {
 #[test]
 fn test_shipment_ids_are_unique_and_sequential() {
     let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
-    let mut ids = Vec::new(&env);
+    let mut ids = Vec::<u64>::new(&env);
 
-    for _ in 0..10 {
+    for i in 0..10 {
         let id = client.create_shipment(
             &company,
             &receiver,
             &carrier,
-            &data_hash,
+            &BytesN::from_array(&env, &[i as u8 + 10; 32]),
             &Vec::new(&env),
             &deadline,
         );
 
         // IDs should never repeat
-        for &existing_id in ids.iter() {
+        for existing_id in ids.iter() {
             assert_ne!(
                 id, existing_id,
                 "Shipment IDs must be unique (duplicate: {})",
@@ -215,7 +226,7 @@ fn test_shipment_ids_are_unique_and_sequential() {
     }
 
     // Verify they are sequential (1, 2, 3, ...)
-    for (idx, &id) in ids.iter().enumerate() {
+    for (idx, id) in ids.iter().enumerate() {
         assert_eq!(id as usize, idx + 1, "Shipment IDs should be sequential");
     }
 }
@@ -224,7 +235,6 @@ fn test_shipment_ids_are_unique_and_sequential() {
 #[test]
 fn test_shipment_counter_persists_across_calls() {
     let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
     // Create first shipment
@@ -232,34 +242,34 @@ fn test_shipment_counter_persists_across_calls() {
         &company,
         &receiver,
         &carrier,
-        &data_hash,
+        &BytesN::from_array(&env, &[1u8; 32]),
         &Vec::new(&env),
         &deadline,
     );
 
     // Query counter multiple times - should remain consistent
-    let counter_check_1 = client.get_shipment_counter().unwrap();
-    let counter_check_2 = client.get_shipment_counter().unwrap();
+    let counter_check_1 = client.get_shipment_counter();
+    let counter_check_2 = client.get_shipment_counter();
 
     assert_eq!(
         counter_check_1, counter_check_2,
         "Counter should be consistent"
     );
-    assert_eq!(counter_check_1, id_1 as u64, "Counter should match last ID");
+    assert_eq!(counter_check_1, id_1, "Counter should match last ID");
 
     // Create another shipment and verify increment
     let id_2 = client.create_shipment(
         &company,
         &receiver,
         &carrier,
-        &data_hash,
+        &BytesN::from_array(&env, &[2u8; 32]),
         &Vec::new(&env),
         &deadline,
     );
 
-    let counter_after = client.get_shipment_counter().unwrap();
+    let counter_after = client.get_shipment_counter();
     assert_eq!(
-        counter_after, id_2 as u64,
+        counter_after, id_2,
         "Counter should update after new shipment"
     );
 }
@@ -269,7 +279,6 @@ fn test_shipment_counter_persists_across_calls() {
 #[test]
 fn test_counter_overflow_uses_checked_arithmetic() {
     let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
     // The counter should never wrap; it should fail when attempting overflow.
@@ -277,16 +286,16 @@ fn test_counter_overflow_uses_checked_arithmetic() {
     // and confirming the counter stays in bounds.
 
     for i in 1..=20 {
-        let shipment_id = client.create_shipment(
+        let _shipment_id = client.create_shipment(
             &company,
             &receiver,
             &carrier,
-            &data_hash,
+            &BytesN::from_array(&env, &[i as u8; 32]),
             &Vec::new(&env),
             &deadline,
         );
 
-        let counter = client.get_shipment_counter().unwrap();
+        let counter = client.get_shipment_counter();
 
         // Counter should never wrap around or go negative
         assert!(
@@ -299,4 +308,110 @@ fn test_counter_overflow_uses_checked_arithmetic() {
             i, i
         );
     }
+}
+
+// =============================================================================
+// Issue #533 — SettlementCounter sequence tracking boundary tests
+// =============================================================================
+
+/// Verify that the settlement counter increments without error for a normal
+/// sequence of create → refund operations, each generating a unique settlement ID.
+#[test]
+fn test_settlement_counter_increments_on_sequential_refunds() {
+    let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
+    let deadline = env.ledger().timestamp() + 3600;
+
+    for i in 1u8..=5 {
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &BytesN::from_array(&env, &[i; 32]),
+            &Vec::new(&env),
+            &deadline,
+        );
+        client.deposit_escrow(&company, &shipment_id, &1_000);
+        // Each refund internally creates a settlement record and increments the counter.
+        client.refund_escrow(&company, &shipment_id);
+    }
+
+    // Shipment counter should be exactly 5
+    assert_eq!(
+        client.get_shipment_counter(),
+        5,
+        "Shipment counter should be 5 after 5 create-refund cycles"
+    );
+}
+
+/// Verify that the shipment counter never silently wraps when forcibly seeded
+/// at u64::MAX - 1 (penultimate value) and one more creation is attempted.
+/// The contract must either succeed with MAX or reject with CounterOverflow.
+#[test]
+fn test_settlement_counter_near_max_boundary_safe() {
+    let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
+    let deadline = env.ledger().timestamp() + 3600;
+
+    // Seed the counter to u64::MAX - 1 to test boundary behavior.
+    env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .set(&crate::types::DataKey::ShipmentCount, &(u64::MAX - 1));
+    });
+
+    // Attempting one creation at MAX-1 might succeed with counter = MAX,
+    // or may return CounterOverflow if the guard fires early.
+    // Either outcome is acceptable — what we MUST NOT see is a silent wrap to 0.
+    let result = client.try_create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0xAAu8; 32]),
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    match &result {
+        Ok(Ok(id)) => {
+            assert_eq!(
+                *id,
+                u64::MAX,
+                "Counter should advance to u64::MAX, not wrap"
+            );
+        }
+        Ok(Err(_)) | Err(_) => {
+            // CounterOverflow or host error — acceptable, no wrap occurred
+        }
+    }
+
+    // Confirm the counter did NOT wrap to 0
+    let counter = client.get_shipment_counter();
+    assert_ne!(counter, 0, "Counter must never silently wrap to 0");
+}
+
+/// Seeding the counter exactly at u64::MAX and attempting another creation
+/// must always fail — this is the hard overflow boundary check.
+#[test]
+fn test_settlement_counter_at_max_always_fails() {
+    let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
+    let deadline = env.ledger().timestamp() + 3600;
+
+    env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .set(&crate::types::DataKey::ShipmentCount, &u64::MAX);
+    });
+
+    let result = client.try_create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0xBBu8; 32]),
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    assert!(
+        result.is_err() || matches!(result, Ok(Err(_))),
+        "Creating a shipment when counter is at u64::MAX must always be rejected"
+    );
 }

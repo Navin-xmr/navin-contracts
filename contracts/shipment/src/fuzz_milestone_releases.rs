@@ -17,9 +17,9 @@
 
 extern crate std;
 
-use crate::{NavinShipment, NavinShipmentClient};
+use crate::{NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::{
-    contract, contractimpl,
+    contract, contractimpl, symbol_short,
     testutils::{Address as _, Ledger as _},
     Address, BytesN, Env, Symbol, Vec,
 };
@@ -68,15 +68,15 @@ fn hash_from_seed(env: &Env, seed: u64) -> BytesN<32> {
 
 /// Build a valid milestone Vec that sums to exactly 100.
 fn build_milestones_summing_to_100(env: &Env, count: usize) -> Vec<(Symbol, u32)> {
-    assert!(count >= 1 && count <= 5);
+    assert!((1..=5).contains(&count));
     let mut milestones = Vec::new(env);
     let per = 100u32 / count as u32;
     let remainder = 100u32 - per * count as u32;
 
     let names = ["alpha", "beta", "gamma", "delta", "epsilon"];
-    for i in 0..count {
+    for (i, &name) in names.iter().enumerate().take(count) {
         let pct = if i == count - 1 { per + remainder } else { per };
-        milestones.push_back((Symbol::new(env, names[i]), pct));
+        milestones.push_back((Symbol::new(env, name), pct));
     }
     milestones
 }
@@ -387,6 +387,162 @@ fn fuzz_milestone_random_valid_percentages() {
         assert!(
             result.is_ok(),
             "Random valid milestones ({p1}+{p2}=100) must be accepted"
+        );
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Property 6: Sequential payout order is enforced — Issue #450
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// For each random iteration:
+/// - out-of-order release (beta/gamma before alpha) is rejected with InvalidStatus
+/// - in-order releases all succeed and drain escrow to zero
+#[test]
+fn fuzz_milestone_order_enforced() {
+    let (env, client, admin) = setup();
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut rng: u64 = 0xB000_F000_A000_0600;
+    let iterations = fuzz_iterations();
+
+    for i in 0..iterations {
+        let seed = xorshift64(&mut rng);
+        env.ledger().with_mut(|l| l.timestamp += 3);
+
+        let receiver = Address::generate(&env);
+        let data_hash = hash_from_seed(&env, seed + i as u64);
+        let deadline = env.ledger().timestamp() + 86_400 * 30;
+
+        let mut milestones = Vec::new(&env);
+        milestones.push_back((Symbol::new(&env, "alpha"), 40u32));
+        milestones.push_back((Symbol::new(&env, "beta"), 35u32));
+        milestones.push_back((Symbol::new(&env, "gamma"), 25u32));
+
+        let id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &data_hash,
+            &milestones,
+            &deadline,
+        );
+
+        let deposit = ((seed % 9_000) + 1_000) as i128;
+        client.deposit_escrow(&company, &id, &deposit);
+
+        env.as_contract(&client.address, || {
+            let mut s = crate::storage::get_shipment(&env, id).unwrap();
+            s.status = ShipmentStatus::InTransit;
+            crate::storage::set_shipment(&env, &s);
+        });
+
+        // beta before alpha must fail
+        assert_eq!(
+            client.try_release_milestone_payment(&carrier, &id, &symbol_short!("beta")),
+            Err(Ok(NavinError::InvalidStatus)),
+            "iteration {i}: beta before alpha must be rejected"
+        );
+
+        // gamma before alpha must fail
+        assert_eq!(
+            client.try_release_milestone_payment(&carrier, &id, &symbol_short!("gamma")),
+            Err(Ok(NavinError::InvalidStatus)),
+            "iteration {i}: gamma before alpha must be rejected"
+        );
+
+        // in-order succeeds
+        client.release_milestone_payment(&carrier, &id, &symbol_short!("alpha"));
+        client.release_milestone_payment(&carrier, &id, &symbol_short!("beta"));
+        client.release_milestone_payment(&carrier, &id, &symbol_short!("gamma"));
+
+        let shipment = client.get_shipment(&id);
+        assert_eq!(
+            shipment.escrow_amount, 0,
+            "iteration {i}: escrow must be zero after all payouts"
+        );
+        assert_eq!(
+            shipment.milestones_completed.len(),
+            3,
+            "iteration {i}: all 3 milestones must be completed"
+        );
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Property 7: Random fractional milestone allocations work correctly
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn fuzz_milestone_fractional_allocation() {
+    let (env, client, admin) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let mut rng: u64 = 0xC000_F000_B000_0700;
+    let iterations = fuzz_iterations();
+
+    for i in 0..iterations {
+        let seed = xorshift64(&mut rng);
+        env.ledger().with_mut(|l| l.timestamp += 2);
+
+        let receiver = Address::generate(&env);
+        let data_hash = hash_from_seed(&env, seed + i as u64);
+        let deadline = env.ledger().timestamp() + 86_400 * 30;
+
+        // Generate 3 random percentages that sum to exactly 100
+        let p1 = (seed % 98 + 1) as u32; // 1..=98
+        let p2 = ((xorshift64(&mut rng) % (99u64 - p1 as u64 - 1)) + 1) as u32; // 1..=(99-p1)
+        let p3 = 100u32 - p1 - p2;
+
+        let mut milestones = Vec::new(&env);
+        milestones.push_back((Symbol::new(&env, "alpha"), p1));
+        milestones.push_back((Symbol::new(&env, "beta"), p2));
+        milestones.push_back((Symbol::new(&env, "gamma"), p3));
+
+        let id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &data_hash,
+            &milestones,
+            &deadline,
+        );
+
+        let deposit = ((seed % 99_999) + 1) as i128;
+        client.deposit_escrow(&company, &id, &deposit);
+
+        env.ledger().with_mut(|l| l.timestamp += 65);
+        let h1 = hash_from_seed(&env, seed.wrapping_add(10));
+        client.update_status(&carrier, &id, &crate::ShipmentStatus::InTransit, &h1);
+
+        // Record milestones in order
+        for name in ["alpha", "beta", "gamma"] {
+            env.ledger().with_mut(|l| l.timestamp += 65);
+            client.release_milestone_payment(&carrier, &id, &Symbol::new(&env, name));
+            let s = client.get_shipment(&id);
+            assert!(
+                s.escrow_amount >= 0,
+                "iteration {i}: escrow went negative after {name}: {}",
+                s.escrow_amount
+            );
+        }
+
+        let shipment = client.get_shipment(&id);
+        assert_eq!(
+            shipment.escrow_amount, 0,
+            "iteration {i}: escrow must be zero after all fractional payouts (p1={p1} p2={p2} p3={p3})"
+        );
+        assert_eq!(
+            shipment.milestones_completed.len(),
+            3,
+            "iteration {i}: all 3 milestones must be completed"
         );
     }
 }

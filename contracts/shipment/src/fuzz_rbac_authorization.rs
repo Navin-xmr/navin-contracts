@@ -88,7 +88,7 @@ fn fuzz_iterations() -> u32 {
 
 #[test]
 fn fuzz_rbac_unauthorized_always_rejected() {
-    let (env, client, admin) = setup();
+    let (env, client, _admin) = setup();
 
     let mut rng: u64 = 0xA000_0000_F000_0100;
     let iterations = fuzz_iterations();

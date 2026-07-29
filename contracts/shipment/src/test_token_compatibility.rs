@@ -322,3 +322,217 @@ fn run_insufficient_funds_test(variant: TokenVariant) {
 // 5. Atomic Releases: Milestone payments and final releases are atomic. If a
 //    token transfer fails, the entire transaction (including status updates)
 //    is rolled back by Soroban.
+
+// ── Token Decimals Validation Tests ─────────────────────────────────────────
+//
+// The contract validates that the payment token uses exactly 7 decimal places
+// (Stellar standard). This prevents silent amount mismatches for non-standard tokens.
+
+mod mock_six_decimals {
+    use soroban_sdk::{contract, contractimpl, Address, Env};
+
+    #[contract]
+    pub struct SixDecimalsToken;
+
+    #[contractimpl]
+    impl SixDecimalsToken {
+        pub fn decimals(_env: Env) -> u32 {
+            6 // Non-standard — should be rejected by the shipment contract
+        }
+        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+    }
+}
+
+mod mock_eight_decimals {
+    use soroban_sdk::{contract, contractimpl, Address, Env};
+
+    #[contract]
+    pub struct EightDecimalsToken;
+
+    #[contractimpl]
+    impl EightDecimalsToken {
+        pub fn decimals(_env: Env) -> u32 {
+            8 // Non-standard — should be rejected by the shipment contract
+        }
+        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+    }
+}
+
+#[test]
+fn test_token_with_7_decimals_deposit_succeeds() {
+    // A valid 7-decimals token should allow deposit_escrow to proceed.
+    let ctx = setup_test(TokenVariant::StellarAsset);
+    let amount = 500i128;
+    mint_tokens(&ctx, &ctx.company, amount);
+
+    let deadline = ctx.env.ledger().timestamp() + 3600;
+    let shipment_id = ctx.shipment_client.create_shipment(
+        &ctx.company,
+        &ctx.receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+
+    // Should succeed — SAC tokens have 7 decimals
+    let result = ctx
+        .shipment_client
+        .try_deposit_escrow(&ctx.company, &shipment_id, &amount);
+    assert!(
+        result.is_ok(),
+        "deposit_escrow must succeed with a 7-decimals token, got: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_token_with_6_decimals_deposit_fails_with_invalid_token_decimals() {
+    // A token with 6 decimals must be rejected at deposit_escrow time.
+    let (env, admin) = test_utils::setup_env();
+    let token = env.register(mock_six_decimals::SixDecimalsToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    client.initialize(&admin, &token);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &dummy_hash(&env),
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    let result = client.try_deposit_escrow(&company, &shipment_id, &500i128);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::InvalidTokenDecimals)),
+        "Token with 6 decimals must be rejected with InvalidTokenDecimals"
+    );
+}
+
+#[test]
+fn test_token_with_8_decimals_deposit_fails_with_invalid_token_decimals() {
+    // A token with 8 decimals must also be rejected at deposit_escrow time.
+    let (env, admin) = test_utils::setup_env();
+    let token = env.register(mock_eight_decimals::EightDecimalsToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    client.initialize(&admin, &token);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    let result = client.try_deposit_escrow(&company, &shipment_id, &500i128);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::InvalidTokenDecimals)),
+        "Token with 8 decimals must be rejected with InvalidTokenDecimals"
+    );
+}
+
+#[test]
+fn test_get_expected_token_decimals_matches_setting() {
+    let ctx = setup_test(TokenVariant::StellarAsset);
+    let decimals = ctx.shipment_client.get_expected_token_decimals();
+    assert_eq!(
+        decimals, 7,
+        "get_expected_token_decimals must return 7 decimals"
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ISSUE #540 — `get_expected_token_decimals` query unit tests
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Querying the expected token decimals before the contract has been
+/// initialized must return `NotInitialized`, not a default value. This
+/// protects callers from acting on a stale / unconfigured contract.
+#[test]
+fn issue_540_get_expected_token_decimals_rejected_before_init() {
+    let env = Env::default();
+    let contract_id = env.register(NavinShipment, ());
+    let client = NavinShipmentClient::new(&env, &contract_id);
+
+    let result = client.try_get_expected_token_decimals();
+    assert!(
+        result.is_err(),
+        "get_expected_token_decimals must fail before initialize is called"
+    );
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::NotInitialized)),
+        "pre-init query must return NavinError::NotInitialized"
+    );
+}
+
+/// After initialization, the query must return exactly 7 — the value
+/// hard-coded in `EXPECTED_TOKEN_DECIMALS` and enforced everywhere escrow
+/// math normalizes token amounts.
+#[test]
+fn issue_540_get_expected_token_decimals_returns_seven_after_init() {
+    let ctx = setup_test(TokenVariant::StellarAsset);
+    assert_eq!(
+        ctx.shipment_client.get_expected_token_decimals(),
+        7,
+        "configured expected decimals must equal the EXPECTED_TOKEN_DECIMALS constant (7)"
+    );
+}
+
+/// The query is read-only — it must return the same value across multiple
+/// invocations and is independent of the underlying token variant (SAC vs.
+/// custom NavinToken) since it reports the *expected* decimals policy, not
+/// the actual decimals of any specific token.
+#[test]
+fn issue_540_get_expected_token_decimals_is_stable_across_calls_and_variants() {
+    let sac = setup_test(TokenVariant::StellarAsset);
+    let d1 = sac.shipment_client.get_expected_token_decimals();
+    let d2 = sac.shipment_client.get_expected_token_decimals();
+    let d3 = sac.shipment_client.get_expected_token_decimals();
+    assert_eq!(d1, d2);
+    assert_eq!(d2, d3);
+    assert_eq!(d1, 7);
+
+    let custom = setup_test(TokenVariant::Custom);
+    assert_eq!(
+        custom.shipment_client.get_expected_token_decimals(),
+        7,
+        "expected decimals policy must not depend on the token variant under test"
+    );
+}
+
+/// The query exposes the on-chain `EXPECTED_TOKEN_DECIMALS` constant
+/// itself. A direct constant comparison guards against accidental drift
+/// between the public query and the value enforced by `deposit_escrow`.
+#[test]
+fn issue_540_get_expected_token_decimals_matches_internal_constant() {
+    let ctx = setup_test(TokenVariant::StellarAsset);
+    assert_eq!(
+        ctx.shipment_client.get_expected_token_decimals(),
+        crate::types::EXPECTED_TOKEN_DECIMALS,
+        "the public query must always return the same value the contract enforces internally"
+    );
+}

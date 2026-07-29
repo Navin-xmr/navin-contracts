@@ -219,6 +219,55 @@ mod tests {
         assert!(page.next_cursor.is_none());
     }
 
+    // ── is_carrier_whitelisted — unassigned role queries (issue #518) ───────────
+
+    /// Query is_carrier_whitelisted for an unassigned carrier under a registered
+    /// company. The function must return false gracefully without a storage panic.
+    #[test]
+    fn whitelist_returns_false_for_unassigned_carrier_under_registered_company() {
+        let (env, client, admin) = setup();
+        let (company, _) = add_company_and_carrier(&env, &client, &admin);
+
+        // This address was never registered with any role.
+        let unassigned = Address::generate(&env);
+
+        assert!(
+            !client.is_carrier_whitelisted(&company, &unassigned),
+            "unassigned carrier must not appear whitelisted under a registered company"
+        );
+    }
+
+    /// Query is_carrier_whitelisted for a registered carrier under an address
+    /// that has no company role. Must return false without erroring.
+    #[test]
+    fn whitelist_returns_false_for_registered_carrier_under_unassigned_company() {
+        let (env, client, admin) = setup();
+        let (_company, carrier) = add_company_and_carrier(&env, &client, &admin);
+
+        // An address that was never given the Company role.
+        let unassigned_company = Address::generate(&env);
+
+        assert!(
+            !client.is_carrier_whitelisted(&unassigned_company, &carrier),
+            "carrier must not appear whitelisted under an address with no company role"
+        );
+    }
+
+    /// Query is_carrier_whitelisted when both addresses have no role assigned.
+    /// Must return false without panicking or producing an invalid-key error.
+    #[test]
+    fn whitelist_returns_false_when_both_addresses_are_unassigned() {
+        let (env, client, _admin) = setup();
+
+        let unassigned_company = Address::generate(&env);
+        let unassigned_carrier = Address::generate(&env);
+
+        assert!(
+            !client.is_carrier_whitelisted(&unassigned_company, &unassigned_carrier),
+            "two fully unassigned addresses must yield false from is_carrier_whitelisted"
+        );
+    }
+
     #[test]
     fn list_deterministic_order_matches_candidates_order() {
         let (env, client, admin) = setup();
@@ -243,5 +292,107 @@ mod tests {
         assert_eq!(page.carriers.len(), 2);
         assert_eq!(page.carriers.get(0).unwrap(), c1);
         assert_eq!(page.carriers.get(1).unwrap(), c3);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ISSUE #539 — duplicate carrier whitelist registration rejection
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// Baseline: a fresh `add_carrier_to_whitelist` succeeds and the
+    /// carrier is then visible via `is_carrier_whitelisted`. Anchors the
+    /// duplicate-rejection tests below — without this we couldn't tell a
+    /// duplicate-rejection failure apart from a generic add failure.
+    #[test]
+    fn issue_539_first_whitelist_add_succeeds() {
+        let (env, client, admin) = setup();
+        let (company, carrier) = add_company_and_carrier(&env, &client, &admin);
+
+        let result = client.try_add_carrier_to_whitelist(&company, &carrier);
+        assert!(
+            result.is_ok(),
+            "first whitelist add for a fresh carrier must succeed"
+        );
+        assert!(
+            client.is_carrier_whitelisted(&company, &carrier),
+            "carrier must be visible on the whitelist after a successful add"
+        );
+    }
+
+    /// Re-adding an already-whitelisted carrier must return the typed
+    /// `CarrierAlreadyWhitelisted` error instead of silently succeeding.
+    /// This is the core acceptance criterion of #539.
+    #[test]
+    fn issue_539_duplicate_whitelist_add_returns_typed_error() {
+        let (env, client, admin) = setup();
+        let (company, carrier) = add_company_and_carrier(&env, &client, &admin);
+
+        client.add_carrier_to_whitelist(&company, &carrier);
+
+        let result = client.try_add_carrier_to_whitelist(&company, &carrier);
+        assert_eq!(
+            result,
+            Err(Ok(crate::NavinError::CarrierAlreadyWhitelisted)),
+            "duplicate add must surface the typed CarrierAlreadyWhitelisted error"
+        );
+    }
+
+    /// Whitelist state must remain consistent after a rejected duplicate
+    /// add. The first entry still exists; no second copy is recorded.
+    /// Guards against a future refactor that returns the error AFTER
+    /// mutating storage.
+    #[test]
+    fn issue_539_whitelist_state_unchanged_after_duplicate_rejection() {
+        let (env, client, admin) = setup();
+        let (company, carrier) = add_company_and_carrier(&env, &client, &admin);
+
+        client.add_carrier_to_whitelist(&company, &carrier);
+        let _ = client.try_add_carrier_to_whitelist(&company, &carrier);
+
+        assert!(
+            client.is_carrier_whitelisted(&company, &carrier),
+            "whitelist entry must persist after a duplicate add is rejected"
+        );
+    }
+
+    /// The duplicate-rejection rule is per (company, carrier) pair. The
+    /// same carrier whitelisted by a DIFFERENT company is a fresh
+    /// (company, carrier) tuple and must still be addable.
+    #[test]
+    fn issue_539_same_carrier_can_be_whitelisted_by_different_companies() {
+        let (env, client, admin) = setup();
+        let company_a = Address::generate(&env);
+        let company_b = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        client.add_company(&admin, &company_a);
+        client.add_company(&admin, &company_b);
+        client.add_carrier(&admin, &carrier);
+
+        client.add_carrier_to_whitelist(&company_a, &carrier);
+        let result = client.try_add_carrier_to_whitelist(&company_b, &carrier);
+        assert!(
+            result.is_ok(),
+            "the duplicate-add rule is scoped per (company, carrier) and must not block a different company"
+        );
+        assert!(client.is_carrier_whitelisted(&company_a, &carrier));
+        assert!(client.is_carrier_whitelisted(&company_b, &carrier));
+    }
+
+    /// After remove + re-add the carrier must be addable again. The
+    /// duplicate-rejection rule must only fire on *current* membership,
+    /// not on historical presence.
+    #[test]
+    fn issue_539_can_readd_after_remove() {
+        let (env, client, admin) = setup();
+        let (company, carrier) = add_company_and_carrier(&env, &client, &admin);
+
+        client.add_carrier_to_whitelist(&company, &carrier);
+        client.remove_carrier_from_whitelist(&company, &carrier);
+        assert!(!client.is_carrier_whitelisted(&company, &carrier));
+
+        let result = client.try_add_carrier_to_whitelist(&company, &carrier);
+        assert!(
+            result.is_ok(),
+            "carrier must be re-addable after being removed from the whitelist"
+        );
     }
 }

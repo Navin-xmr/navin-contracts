@@ -129,4 +129,44 @@ pub enum NavinError {
     InvalidSymbol = 65,
     /// Note not found at the given index.
     NoteNotFound = 66,
+    /// Shipment cannot transition to a delivery state because its prerequisite shipments are not yet completed.
+    DependenciesNotMet = 54,
+    /// A circular dependency was detected in the shipment prerequisites.
+    CircularDependency = 55,
+    /// Proposal salt was already used in a prior proposal; replay attack prevented.
+    ProposalSaltReused = 56,
+    /// Shipment sender, receiver, and carrier addresses must be distinct.
+    InvalidShipmentParticipants = 57,
+    /// Shipment deadline must be strictly in the future.
+    InvalidShipmentDeadline = 58,
+    /// Payment milestone list is malformed or contains invalid percentages.
+    InvalidPaymentMilestones = 59,
+    /// Payment milestone checkpoint names must be unique.
+    DuplicatePaymentMilestone = 60,
+    /// Shipment token address is invalid.
+    InvalidTokenAddress = 61,
+    /// Payment milestone checkpoint name has an invalid format.
+    InvalidPaymentMilestoneName = 62,
+    /// Metadata key and value symbols are identical, which is considered a collision.
+    MetadataSymbolCollision = 63,
+    /// External integration failed (e.g. backend failed to release token).
+    ExternalIntegrationFailed = 64,
+    /// The provided symbol is empty or invalid.
+    InvalidSymbol = 65,
+    /// Note not found or index out of bounds.
+    NoteNotFound = 66,
+    /// Evidence not found or index out of bounds.
+    EvidenceNotFound = 67,
+    /// Address already holds the requested role.
+    RoleAlreadyAssigned = 68,
+    /// Issue #539 — caller attempted to add a carrier to a company's
+    /// whitelist that is already present. The whitelist is set-like;
+    /// duplicate additions are rejected with this dedicated error so
+    /// off-chain monitors can distinguish a no-op from a real failure
+    /// without falling back on the generic `AlreadyInitialized` code.
+    CarrierAlreadyWhitelisted = 69,
+    /// Address is invalid (e.g., zero-address sentinel).
+    InvalidAddress = 70,
+    /// Maximum allowed recovery action entries for a shipment has been reached.
+    RecoveryLimitExceeded = 71,
 }

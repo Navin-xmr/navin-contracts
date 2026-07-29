@@ -213,9 +213,6 @@ pub const HASH_DOMAIN_NOTIFICATION: u8 = 0x08;
 #[allow(dead_code)]
 pub const HASH_DOMAIN_NOTE: u8 = 0x09;
 
-/// Domain tag for dispute-evidence events (`evidence_added`).
-pub const HASH_DOMAIN_EVIDENCE: u8 = 0x0A;
-
 /// Domain tag for platform-level events (`platform_fee_collected`, `fee_config_updated`).
 pub const HASH_DOMAIN_PLATFORM: u8 = 0x0B;
 
@@ -225,6 +222,17 @@ pub const HASH_DOMAIN_PLATFORM: u8 = 0x0B;
 /// Contains a structured reason code (`EscrowFreezeReason`) so that
 /// indexers can classify the freeze without parsing free-form text.
 pub const ESCROW_FROZEN: &str = "escrow_frozen";
+pub const CONTRACT_INITIALIZED: &str = "init";
+pub const SHIPMENT_LIMIT_UPDATED: &str = "set_limit";
+pub const COMPANY_LIMIT_UPDATED: &str = "set_cmp_limit";
+pub const CARRIER_SUSPENDED: &str = "carrier_suspended";
+pub const CARRIER_REACTIVATED: &str = "carrier_reactivated";
+pub const DELIVERY_CONFIRMED: &str = "delivery_confirmed";
+pub const GEOFENCE_EVENT: &str = "geofence_event";
+pub const ETA_UPDATED: &str = "eta_updated";
+pub const PROPOSAL_DIGEST: &str = "proposal_digest";
+pub const CONFIG_UPDATED: &str = "config_updated";
+pub const QUOTA_SET: &str = "quota_set";
 
 #[cfg(test)]
 mod tests {
@@ -270,6 +278,17 @@ mod tests {
             EVIDENCE_ADDED,
             MIGRATION_REPORTED,
             ESCROW_FROZEN,
+            CONTRACT_INITIALIZED,
+            SHIPMENT_LIMIT_UPDATED,
+            COMPANY_LIMIT_UPDATED,
+            CARRIER_SUSPENDED,
+            CARRIER_REACTIVATED,
+            DELIVERY_CONFIRMED,
+            GEOFENCE_EVENT,
+            ETA_UPDATED,
+            PROPOSAL_DIGEST,
+            CONFIG_UPDATED,
+            QUOTA_SET,
         ];
         for topic in &topics {
             assert!(
@@ -320,6 +339,17 @@ mod tests {
         assert_eq!(EVIDENCE_ADDED, "evidence_added");
         assert_eq!(MIGRATION_REPORTED, "migration_reported");
         assert_eq!(ESCROW_FROZEN, "escrow_frozen");
+        assert_eq!(CONTRACT_INITIALIZED, "init");
+        assert_eq!(SHIPMENT_LIMIT_UPDATED, "set_limit");
+        assert_eq!(COMPANY_LIMIT_UPDATED, "set_cmp_limit");
+        assert_eq!(CARRIER_SUSPENDED, "carrier_suspended");
+        assert_eq!(CARRIER_REACTIVATED, "carrier_reactivated");
+        assert_eq!(DELIVERY_CONFIRMED, "delivery_confirmed");
+        assert_eq!(GEOFENCE_EVENT, "geofence_event");
+        assert_eq!(ETA_UPDATED, "eta_updated");
+        assert_eq!(PROPOSAL_DIGEST, "proposal_digest");
+        assert_eq!(CONFIG_UPDATED, "config_updated");
+        assert_eq!(QUOTA_SET, "quota_set");
     }
 
     #[test]
@@ -358,6 +388,17 @@ mod tests {
             EVIDENCE_ADDED,
             MIGRATION_REPORTED,
             ESCROW_FROZEN,
+            CONTRACT_INITIALIZED,
+            SHIPMENT_LIMIT_UPDATED,
+            COMPANY_LIMIT_UPDATED,
+            CARRIER_SUSPENDED,
+            CARRIER_REACTIVATED,
+            DELIVERY_CONFIRMED,
+            GEOFENCE_EVENT,
+            ETA_UPDATED,
+            PROPOSAL_DIGEST,
+            CONFIG_UPDATED,
+            QUOTA_SET,
         ];
         topics.sort_unstable();
         // After sorting, any duplicates are adjacent — windows(2) catches them.
@@ -385,7 +426,6 @@ mod tests {
             HASH_DOMAIN_RBAC,
             HASH_DOMAIN_NOTIFICATION,
             HASH_DOMAIN_NOTE,
-            HASH_DOMAIN_EVIDENCE,
         ];
         domains.sort_unstable();
         for pair in domains.windows(2) {
@@ -410,6 +450,5 @@ mod tests {
         assert_eq!(HASH_DOMAIN_RBAC, 0x07);
         assert_eq!(HASH_DOMAIN_NOTIFICATION, 0x08);
         assert_eq!(HASH_DOMAIN_NOTE, 0x09);
-        assert_eq!(HASH_DOMAIN_EVIDENCE, 0x0A);
     }
 }

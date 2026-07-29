@@ -57,6 +57,10 @@ mod mock_fail {
 
     #[contractimpl]
     impl FailingToken {
+        pub fn decimals(_env: Env) -> u32 {
+            7
+        }
+
         pub fn transfer(
             _env: Env,
             _from: Address,
@@ -72,10 +76,14 @@ mod mock_fail {
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 use crate::{
-    test_utils, types::ShipmentInput, NavinError, NavinShipment, NavinShipmentClient,
-    ShipmentStatus,
+    test_utils,
+    types::{SettlementOperation, SettlementState, ShipmentInput},
+    NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus,
 };
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec};
+use soroban_sdk::{
+    testutils::{Address as _, Events as _},
+    Address, BytesN, Env, Symbol, Vec,
+};
 
 fn dummy_hash(env: &Env, seed: u8) -> BytesN<32> {
     BytesN::from_array(env, &[seed; 32])
@@ -229,6 +237,126 @@ fn test_read_only_queries_work_regardless_of_token_state() {
     assert_eq!(analytics.total_shipments, 0);
 }
 
+/// Test carrier handoff event emission
+#[test]
+fn test_carrier_handoff_event_emitted() {
+    let ctx = setup_ok();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+
+    // Create initial shipment
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 1),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+
+    // Create a new carrier for handoff
+    let new_carrier = Address::generate(&ctx.env);
+    ctx.client.add_carrier(&ctx.admin, &new_carrier);
+
+    // Get count just before handoff
+    let events_before_handoff = ctx.env.events().all().len();
+
+    // Perform handoff
+    ctx.client
+        .handoff_shipment(&ctx.carrier, &new_carrier, &id, &dummy_hash(&ctx.env, 2));
+
+    // Verify handoff events are emitted
+    let events = ctx.env.events().all();
+    assert!(events.len() > events_before_handoff);
+
+    // Find the carrier_handoff event
+    let target_topic = Symbol::new(&ctx.env, "carrier_handoff_completed");
+    let mut handoff_event = None;
+    for e in events.iter() {
+        if !e.1.is_empty() {
+            // Check if topic matches "carrier_handoff" (topic at index 0)
+            if let Ok(topic) = Symbol::try_from_val(&ctx.env, &e.1.get(0).unwrap()) {
+                if topic == target_topic {
+                    handoff_event = Some(e);
+                    break;
+                }
+            }
+        }
+    }
+
+    let event = handoff_event.expect("carrier_handoff event not found");
+
+    // Check from/to carrier in payload
+    use soroban_sdk::TryFromVal;
+    let data: Vec<soroban_sdk::Val> = Vec::try_from_val(&ctx.env, &event.2).unwrap();
+    // Payload for carrier_handoff: [from_carrier, to_carrier, shipment_id]
+    // Wait, let's check events.rs for emit_carrier_handoff_completed
+    // events::emit_carrier_handoff_completed(&env, &old_carrier, &new_carrier, shipment_id);
+
+    let from_carrier: Address = Address::try_from_val(&ctx.env, &data.get(0).unwrap()).unwrap();
+    let to_carrier: Address = Address::try_from_val(&ctx.env, &data.get(1).unwrap()).unwrap();
+    assert_eq!(from_carrier, ctx.carrier);
+    assert_eq!(to_carrier, new_carrier);
+}
+
+/// Test rejected handoff when caller is not current carrier
+#[test]
+fn test_rejected_handoff_when_caller_not_current_carrier() {
+    let ctx = setup_ok();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+
+    // Create initial shipment
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 1),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+
+    // Create a new carrier for handoff
+    let new_carrier = Address::generate(&ctx.env);
+    ctx.client.add_carrier(&ctx.admin, &new_carrier);
+
+    // Try handoff with unauthorized caller (not current carrier)
+    let unauthorized = Address::generate(&ctx.env);
+
+    // Ensure all auths are mocked for the try_ call
+    ctx.env.mock_all_auths();
+
+    let result =
+        ctx.client
+            .try_handoff_shipment(&unauthorized, &new_carrier, &id, &dummy_hash(&ctx.env, 2));
+
+    // Verify it returns Unauthorized error
+    match result {
+        Ok(Err(e)) => {
+            // Success: contract returned error
+            let expected_error =
+                soroban_sdk::Error::from_contract_error(NavinError::Unauthorized as u32);
+            let err_str = std::format!("{:?}", e);
+            let expected_str = std::format!("{:?}", expected_error);
+            assert!(
+                err_str.contains(&expected_str) || err_str.contains("Unauthorized"),
+                "Expected Unauthorized error, got {:?}",
+                err_str
+            );
+        }
+        Err(e) => {
+            // Also accept if host reported the error directly
+            let err_str = std::format!("{:?}", e);
+            assert!(
+                err_str.contains("Unauthorized") || err_str.contains("Code(4)"),
+                "Expected Unauthorized error in host error, got {:?}",
+                err_str
+            );
+        }
+        _ => panic!("Expected error but got success"),
+    }
+}
+
 // ── Failure-mode tests ───────────────────────────────────────────────────────
 
 #[test]
@@ -276,6 +404,98 @@ fn test_token_transfer_failure_returns_correct_error() {
         .unwrap_err()
         .unwrap();
     assert_eq!(err, NavinError::TokenTransferFailed);
+}
+
+#[test]
+fn test_happy_and_failing_token_flows_can_run_together() {
+    let ok_ctx = setup_ok();
+    let fail_ctx = setup_fail();
+    let deadline = test_utils::future_deadline(&ok_ctx.env, 7200);
+    let receiver_ok = Address::generate(&ok_ctx.env);
+    let receiver_fail = Address::generate(&fail_ctx.env);
+
+    let ok_id = ok_ctx.client.create_shipment(
+        &ok_ctx.company,
+        &receiver_ok,
+        &ok_ctx.carrier,
+        &dummy_hash(&ok_ctx.env, 21),
+        &Vec::new(&ok_ctx.env),
+        &deadline,
+    );
+    ok_ctx
+        .client
+        .deposit_escrow(&ok_ctx.company, &ok_id, &1_000);
+
+    test_utils::advance_past_rate_limit(&ok_ctx.env);
+    ok_ctx.client.update_status(
+        &ok_ctx.carrier,
+        &ok_id,
+        &ShipmentStatus::InTransit,
+        &dummy_hash(&ok_ctx.env, 22),
+    );
+    ok_ctx
+        .client
+        .confirm_delivery(&receiver_ok, &ok_id, &dummy_hash(&ok_ctx.env, 23));
+
+    assert_eq!(ok_ctx.client.get_settlement_count(), 2);
+    let deposit = ok_ctx.client.get_settlement(&1);
+    assert_eq!(deposit.operation, SettlementOperation::Deposit);
+    assert_eq!(deposit.state, SettlementState::Completed);
+    let release = ok_ctx.client.get_settlement(&2);
+    assert_eq!(release.operation, SettlementOperation::Release);
+    assert_eq!(release.state, SettlementState::Completed);
+
+    let fail_deposit_id = fail_ctx.client.create_shipment(
+        &fail_ctx.company,
+        &receiver_fail,
+        &fail_ctx.carrier,
+        &dummy_hash(&fail_ctx.env, 25),
+        &Vec::new(&fail_ctx.env),
+        &deadline,
+    );
+    let err = fail_ctx
+        .client
+        .try_deposit_escrow(&fail_ctx.company, &fail_deposit_id, &500)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, NavinError::TokenTransferFailed);
+    assert_eq!(fail_ctx.client.get_escrow_balance(&fail_deposit_id), 0);
+
+    let fail_release_id = fail_ctx.client.create_shipment(
+        &fail_ctx.company,
+        &receiver_fail,
+        &fail_ctx.carrier,
+        &dummy_hash(&fail_ctx.env, 26),
+        &Vec::new(&fail_ctx.env),
+        &deadline,
+    );
+    inject_escrow(&fail_ctx, fail_release_id, 500);
+    advance_to_delivered(&fail_ctx, fail_release_id);
+    let err = fail_ctx
+        .client
+        .try_release_escrow(&receiver_fail, &fail_release_id)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, NavinError::TokenTransferFailed);
+    assert_eq!(fail_ctx.client.get_escrow_balance(&fail_release_id), 500);
+
+    let fail_refund_id = fail_ctx.client.create_shipment(
+        &fail_ctx.company,
+        &receiver_fail,
+        &fail_ctx.carrier,
+        &dummy_hash(&fail_ctx.env, 27),
+        &Vec::new(&fail_ctx.env),
+        &deadline,
+    );
+    inject_escrow(&fail_ctx, fail_refund_id, 250);
+    let err = fail_ctx
+        .client
+        .try_refund_escrow(&fail_ctx.company, &fail_refund_id)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, NavinError::TokenTransferFailed);
+    assert_eq!(fail_ctx.client.get_escrow_balance(&fail_refund_id), 250);
+    assert_eq!(fail_ctx.client.get_settlement_count(), 0);
 }
 
 #[test]
@@ -528,4 +748,193 @@ fn test_external_integration_failed_error_code() {
     let info = crate::error_map::error_info(err);
     assert_eq!(info.code, 64);
     assert_eq!(info.category, crate::error_map::ErrorCategory::Transient);
+fn test_recovery_behavior_deterministic_across_reruns() {}
+
+// ── Zero-address treasury validation ───────────────────────────────────────────
+
+#[test]
+fn test_set_platform_fee_rejects_zero_treasury() {
+    let ctx = setup_ok();
+    // Generate a sentinel zero-address with all-zero ed25519 key bytes.
+    // The strkey for all-zero key with valid CRC-16 checksum.
+    let zero_addr = Address::from_str(
+        &ctx.env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    );
+    let result = ctx
+        .client
+        .try_set_platform_fee(&ctx.admin, &100, &zero_addr);
+    assert_eq!(result, Err(Ok(NavinError::InvalidAddress)));
+}
+
+#[test]
+fn test_set_platform_fee_accepts_valid_treasury() {
+    let ctx = setup_ok();
+    let valid_treasury = Address::generate(&ctx.env);
+    assert!(ctx
+        .client
+        .try_set_platform_fee(&ctx.admin, &100, &valid_treasury)
+        .is_ok());
+}
+
+// ── confirm_delivery token transfer failure (issue #522) ─────────────────────
+
+fn advance_to_in_transit(ctx: &Ctx, id: u64) {
+    test_utils::advance_past_rate_limit(&ctx.env);
+    ctx.client.update_status(
+        &ctx.carrier,
+        &id,
+        &ShipmentStatus::InTransit,
+        &dummy_hash(&ctx.env, 90),
+    );
+}
+
+/// confirm_delivery must return an error when the escrow token transfer fails.
+#[test]
+fn test_confirm_delivery_fails_when_token_transfer_fails() {
+    let ctx = setup_fail();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x70),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+    inject_escrow(&ctx, id, 1000);
+    advance_to_in_transit(&ctx, id);
+
+    let result = ctx
+        .client
+        .try_confirm_delivery(&receiver, &id, &dummy_hash(&ctx.env, 0x71));
+    assert!(
+        result.is_err(),
+        "confirm_delivery must return an error when the token transfer fails"
+    );
+}
+
+/// After a failed confirm_delivery, the shipment status must revert to its
+/// pre-call value — the contract must not partially advance state.
+#[test]
+fn test_confirm_delivery_status_reverts_on_token_failure() {
+    let ctx = setup_fail();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x72),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+    inject_escrow(&ctx, id, 1000);
+    advance_to_in_transit(&ctx, id);
+
+    let status_before = ctx.client.get_shipment(&id).status;
+
+    let _ = ctx
+        .client
+        .try_confirm_delivery(&receiver, &id, &dummy_hash(&ctx.env, 0x73));
+
+    let status_after = ctx.client.get_shipment(&id).status;
+    assert_eq!(
+        status_before, status_after,
+        "shipment status must revert to pre-call value when confirm_delivery fails"
+    );
+    assert_ne!(
+        status_after,
+        ShipmentStatus::Delivered,
+        "status must not advance to Delivered after a failed confirm_delivery"
+    );
+}
+
+/// After a failed confirm_delivery, the escrow balance must remain unchanged —
+/// no tokens are transferred and the escrow is not cleared.
+#[test]
+fn test_confirm_delivery_escrow_not_cleared_on_token_failure() {
+    let ctx = setup_fail();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x74),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+    inject_escrow(&ctx, id, 500);
+    advance_to_in_transit(&ctx, id);
+
+    let escrow_before = ctx.client.get_escrow_balance(&id);
+
+    let _ = ctx
+        .client
+        .try_confirm_delivery(&receiver, &id, &dummy_hash(&ctx.env, 0x75));
+
+    let escrow_after = ctx.client.get_escrow_balance(&id);
+    assert_eq!(
+        escrow_before, escrow_after,
+        "escrow must not be cleared when confirm_delivery token transfer fails"
+    );
+}
+
+/// A token transfer failure inside confirm_delivery must surface as
+/// TokenTransferFailed (error #39).
+#[test]
+fn test_confirm_delivery_error_is_token_transfer_failed() {
+    let ctx = setup_fail();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x76),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+    inject_escrow(&ctx, id, 750);
+    advance_to_in_transit(&ctx, id);
+
+    let err = ctx
+        .client
+        .try_confirm_delivery(&receiver, &id, &dummy_hash(&ctx.env, 0x77))
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(
+        err,
+        NavinError::TokenTransferFailed,
+        "confirm_delivery with failing token must return TokenTransferFailed"
+    );
+}
+
+/// confirm_delivery with zero escrow must succeed even when the token contract
+/// is broken — no token transfer is attempted when escrow is zero.
+#[test]
+fn test_confirm_delivery_without_escrow_succeeds_with_failing_token() {
+    let ctx = setup_fail();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x78),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+    // No escrow injected — confirm_delivery skips the token transfer entirely.
+    advance_to_in_transit(&ctx, id);
+
+    ctx.client
+        .confirm_delivery(&receiver, &id, &dummy_hash(&ctx.env, 0x79));
+    assert_eq!(
+        ctx.client.get_shipment(&id).status,
+        ShipmentStatus::Delivered,
+        "confirm_delivery without escrow must succeed even with a failing token"
+    );
 }
