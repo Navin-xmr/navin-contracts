@@ -425,28 +425,24 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             InvalidInput,
             NoRetry,
             "Metadata keys and values cannot be identical.",
-            "Metadata key and value symbols are identical; use distinct symbols.",
         ),
         NavinError::ExternalIntegrationFailed => (
             64,
             Transient,
             RetryAfterDelay,
             "External integration failed.",
-            "External integration failed (e.g. backend token release); retry or rollback the state.",
         ),
         NavinError::InvalidSymbol => (
             65,
             InvalidInput,
             NoRetry,
             "Symbol is invalid.",
-            "The provided symbol is empty or invalid.",
         ),
         NavinError::NoteNotFound => (
             66,
             NotFound,
             NoRetry,
             "Note not found at the given index.",
-            "Note not found or index out of bounds.",
         ),
         NavinError::EvidenceNotFound => (
             67,

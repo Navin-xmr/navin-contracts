@@ -34,7 +34,7 @@ pub enum CircuitBreakerState {
 
 /// Circuit breaker configuration
 #[contracttype]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CircuitBreakerConfig {
     /// Number of consecutive failures before opening
     pub failure_threshold: u32,
@@ -80,6 +80,74 @@ impl CircuitBreakerConfig {
             half_open_max_requests: 5,
         }
     }
+}
+
+/// Selectable presets for [`set_circuit_breaker_config`].
+///
+/// Exposing named presets keeps the common cases a single argument, while
+/// [`CircuitBreakerPreset::Custom`] still allows explicit tuning.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum CircuitBreakerPreset {
+    /// 5 failures, 300s recovery, 3 half-open requests.
+    Default,
+    /// 3 failures, 600s recovery, 1 half-open request.
+    Strict,
+    /// 10 failures, 60s recovery, 5 half-open requests.
+    Permissive,
+    /// Explicit `(failure_threshold, recovery_timeout, half_open_max_requests)`.
+    Custom(u32, u64, u32),
+}
+
+/// Upper bounds for `Custom`, so a mistyped value cannot wedge transfers.
+/// A zero `failure_threshold` would open the breaker immediately and block
+/// every transfer; an unbounded `recovery_timeout` would keep it open.
+const MAX_FAILURE_THRESHOLD: u32 = 1_000;
+const MAX_RECOVERY_TIMEOUT: u64 = 30 * 24 * 60 * 60; // 30 days
+const MAX_HALF_OPEN_REQUESTS: u32 = 1_000;
+
+impl CircuitBreakerPreset {
+    /// Resolve to a concrete config, validating `Custom` values.
+    pub fn resolve(&self) -> Result<CircuitBreakerConfig, NavinError> {
+        match self {
+            CircuitBreakerPreset::Default => Ok(CircuitBreakerConfig::default()),
+            CircuitBreakerPreset::Strict => Ok(CircuitBreakerConfig::strict()),
+            CircuitBreakerPreset::Permissive => Ok(CircuitBreakerConfig::permissive()),
+            CircuitBreakerPreset::Custom(failure_threshold, recovery_timeout, half_open_max) => {
+                if *failure_threshold == 0
+                    || *failure_threshold > MAX_FAILURE_THRESHOLD
+                    || *recovery_timeout > MAX_RECOVERY_TIMEOUT
+                    || *half_open_max == 0
+                    || *half_open_max > MAX_HALF_OPEN_REQUESTS
+                {
+                    return Err(NavinError::InvalidConfig);
+                }
+                Ok(CircuitBreakerConfig::new(
+                    *failure_threshold,
+                    *recovery_timeout,
+                    *half_open_max,
+                ))
+            }
+        }
+    }
+}
+
+/// Persist the admin-selected circuit breaker configuration.
+pub fn set_config(env: &Env, config: &CircuitBreakerConfig) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::CircuitBreakerConfig, config);
+}
+
+/// Read the active circuit breaker configuration.
+///
+/// Falls back to [`CircuitBreakerConfig::default`] when an admin has never set
+/// one, so existing deployments keep their current behaviour.
+pub fn get_config(env: &Env) -> CircuitBreakerConfig {
+    env.storage()
+        .persistent()
+        .get(&DataKey::CircuitBreakerConfig)
+        .unwrap_or_else(CircuitBreakerConfig::default)
 }
 
 /// Circuit breaker state tracker
@@ -694,4 +762,117 @@ mod tests {
         );
         assert_eq!(NavinError::CircuitBreakerOpen as u32, 46);
     }
+
+    // ── issue #639: preset resolution and validation ─────────────────────────
+
+    #[test]
+    fn preset_resolves_to_matching_config() {
+        assert_eq!(
+            CircuitBreakerPreset::Default.resolve().unwrap().failure_threshold,
+            CircuitBreakerConfig::default().failure_threshold
+        );
+        assert_eq!(
+            CircuitBreakerPreset::Strict.resolve().unwrap().failure_threshold,
+            3
+        );
+        assert_eq!(
+            CircuitBreakerPreset::Permissive.resolve().unwrap().failure_threshold,
+            10
+        );
+    }
+
+    #[test]
+    fn custom_preset_resolves_to_supplied_values() {
+        let config = CircuitBreakerPreset::Custom(7, 120, 2).resolve().unwrap();
+        assert_eq!(config.failure_threshold, 7);
+        assert_eq!(config.recovery_timeout, 120);
+        assert_eq!(config.half_open_max_requests, 2);
+    }
+
+    /// A zero threshold would open the breaker immediately and block every
+    /// transfer, so it must be rejected rather than persisted.
+    #[test]
+    fn custom_preset_rejects_zero_threshold() {
+        assert_eq!(
+            CircuitBreakerPreset::Custom(0, 300, 3).resolve(),
+            Err(NavinError::InvalidConfig)
+        );
+    }
+
+    #[test]
+    fn custom_preset_rejects_zero_half_open_requests() {
+        assert_eq!(
+            CircuitBreakerPreset::Custom(5, 300, 0).resolve(),
+            Err(NavinError::InvalidConfig)
+        );
+    }
+
+    #[test]
+    fn custom_preset_rejects_out_of_range_values() {
+        assert_eq!(
+            CircuitBreakerPreset::Custom(MAX_FAILURE_THRESHOLD + 1, 300, 3).resolve(),
+            Err(NavinError::InvalidConfig)
+        );
+        assert_eq!(
+            CircuitBreakerPreset::Custom(5, MAX_RECOVERY_TIMEOUT + 1, 3).resolve(),
+            Err(NavinError::InvalidConfig)
+        );
+        assert_eq!(
+            CircuitBreakerPreset::Custom(5, 300, MAX_HALF_OPEN_REQUESTS + 1).resolve(),
+            Err(NavinError::InvalidConfig)
+        );
+    }
+
+    /// With nothing stored, the active config must be the built-in default —
+    /// existing deployments keep their behaviour.
+    #[test]
+    fn get_config_falls_back_to_default() {
+        let env = Env::default();
+        let contract_id = env.register(crate::NavinShipment, ());
+
+        env.as_contract(&contract_id, || {
+            let config = get_config(&env);
+            assert_eq!(config.failure_threshold, 5);
+            assert_eq!(config.recovery_timeout, 300);
+        });
+    }
+
+    #[test]
+    fn set_config_is_read_back_by_get_config() {
+        let env = Env::default();
+        let contract_id = env.register(crate::NavinShipment, ());
+
+        env.as_contract(&contract_id, || {
+            set_config(&env, &CircuitBreakerConfig::strict());
+            let config = get_config(&env);
+            assert_eq!(config.failure_threshold, 3);
+            assert_eq!(config.recovery_timeout, 600);
+            assert_eq!(config.half_open_max_requests, 1);
+        });
+    }
+
+    /// The stored config must actually drive breaker behaviour: under the
+    /// strict preset the breaker opens after 3 failures rather than 5.
+    #[test]
+    fn stored_config_changes_when_breaker_opens() {
+        let env = Env::default();
+        let contract_id = env.register(crate::NavinShipment, ());
+
+        env.as_contract(&contract_id, || {
+            set_config(&env, &CircuitBreakerConfig::strict());
+            let config = get_config(&env);
+
+            let mut breaker = CircuitBreakerTracker::new();
+            for _ in 0..3 {
+                breaker.record_failure(&config, 1_000);
+            }
+
+            assert_eq!(
+                breaker.state,
+                CircuitBreakerState::Open,
+                "strict preset must open the breaker after 3 failures"
+            );
+        });
+    }
+
 }
