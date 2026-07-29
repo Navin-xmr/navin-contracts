@@ -370,6 +370,48 @@ fn test_create_shipment_unauthorized() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #57)")]
+fn test_create_shipment_rejects_sender_equals_receiver() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+    client.add_company(&admin, &company);
+    // sender and receiver are the same address — must be rejected
+    client.create_shipment(
+        &company,
+        &company,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #57)")]
+fn test_create_shipment_rejects_sender_equals_carrier() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[8u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+    client.add_company(&admin, &company);
+    // sender and carrier are the same address — must be rejected
+    client.create_shipment(
+        &company,
+        &receiver,
+        &company,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+}
+
+#[test]
 fn test_multiple_shipments_have_unique_ids() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
