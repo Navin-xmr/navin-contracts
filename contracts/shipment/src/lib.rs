@@ -683,6 +683,37 @@ fn require_admin(env: &Env, caller: &Address) -> Result<(), NavinError> {
     Ok(())
 }
 
+fn would_create_cycle(env: &Env, dependent_id: u64, proposed_prereq_id: u64) -> bool {
+    let mut visited = soroban_sdk::Vec::new(env);
+    let mut stack = soroban_sdk::Vec::new(env);
+    stack.push_back(proposed_prereq_id);
+
+    while let Some(current) = stack.pop_back() {
+        if current == dependent_id {
+            return true;
+        }
+
+        let mut already_visited = false;
+        for i in 0..visited.len() {
+            if visited.get(i).unwrap() == current {
+                already_visited = true;
+                break;
+            }
+        }
+        if already_visited {
+            continue;
+        }
+        visited.push_back(current);
+
+        let prereqs = storage::get_shipment_dependents(env, current);
+        for i in 0..prereqs.len() {
+            stack.push_back(prereqs.get(i).unwrap());
+        }
+    }
+
+    false
+}
+
 #[contract]
 pub struct NavinShipment;
 
@@ -5278,6 +5309,62 @@ impl NavinShipment {
         Ok(proposal_id)
     }
 
+    pub fn add_shipment_dependency(
+        env: Env,
+        company: Address,
+        dependent_id: u64,
+        prereq_id: u64,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        company.require_auth();
+
+        if dependent_id == prereq_id {
+            return Err(NavinError::CircularDependency);
+        }
+
+        if storage::get_shipment(&env, dependent_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+        if storage::get_shipment(&env, prereq_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+
+        if would_create_cycle(&env, dependent_id, prereq_id) {
+            return Err(NavinError::CircularDependency);
+        }
+
+        storage::set_shipment_dependency(&env, dependent_id, prereq_id);
+        Ok(())
+    }
+
+    /// Propose an action with a unique salt to prevent replay attacks.
+    /// Same as `propose_action` but accepts an explicit salt value.
+    /// The salt is stored and checked — reuse of the same salt is rejected
+    /// with `ProposalSaltReused`.
+    pub fn propose_action_with_salt(
+        env: Env,
+        proposer: Address,
+        action: crate::types::AdminAction,
+        salt: BytesN<32>,
+    ) -> Result<u64, NavinError> {
+        require_initialized(&env)?;
+        proposer.require_auth();
+
+        if !storage::is_admin(&env, &proposer) {
+            return Err(NavinError::NotAnAdmin);
+        }
+
+        if storage::is_proposal_salt_used(&env, &salt) {
+            return Err(NavinError::ProposalSaltReused);
+        }
+
+        storage::set_proposal_salt_used(&env, &salt);
+
+        // Delegate to the standard propose_action logic
+        Self::propose_action(env, proposer, action)
+    }
+
     /// Approve a pending proposal. Only admins in the admin list can approve.
     /// Same admin cannot approve twice.
     ///
@@ -6052,7 +6139,7 @@ impl NavinShipment {
     ///
     /// The scan is capped at `DEFAULT_CONSISTENCY_SAMPLE_LIMIT` entries so that
     /// compute cost stays within budget as the shipment set grows. For a full
-    /// audit over the entire ledger, use `check_consistency_violations_paginated`
+    /// audit over the entire ledger, use `get_consistency_violations`
     /// to step through all pages.
     ///
     /// # Arguments
@@ -6103,7 +6190,7 @@ impl NavinShipment {
     /// * `NavinError::Unauthorized` - If caller is not admin or operator.
     /// * `NavinError::InvalidConfig` - If `limit` is 0 or exceeds the
     ///   configured `batch_operation_limit`.
-    pub fn check_consistency_violations_paginated(
+    pub fn get_consistency_violations(
         env: Env,
         admin: Address,
         start_id: u64,

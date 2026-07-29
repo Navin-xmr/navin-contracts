@@ -8155,6 +8155,82 @@ fn test_approve_action_returns_already_approved() {
     client.approve_action(&admin2, &proposal_id);
 }
 
+/// Approve the same proposal twice with the same admin — must return AlreadyApproved error.
+#[test]
+fn test_same_admin_approve_twice_returns_already_approved() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+    let admin3 = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3);
+
+    client.initialize(&admin, &token_contract);
+    client.init_multisig(&admin, &admins, &3);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+
+    // First approval by admin2 succeeds
+    let first = client.try_approve_action(&admin2, &proposal_id);
+    assert!(first.is_ok(), "first approval by admin2 must succeed");
+
+    // Second approval by the same admin2 must fail with AlreadyApproved
+    let duplicate = client.try_approve_action(&admin2, &proposal_id);
+    assert_eq!(duplicate, Err(Ok(crate::NavinError::AlreadyApproved)));
+}
+
+/// Two different admins can approve the same proposal — confirms multi-sig flow works.
+#[test]
+fn test_different_admin_approval_succeeds() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+
+    client.initialize(&admin, &token_contract);
+    client.init_multisig(&admin, &admins, &2);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+
+    // Different admin (admin2) approves — should succeed
+    let result = client.try_approve_action(&admin2, &proposal_id);
+    assert!(result.is_ok(), "approval by a different admin must succeed");
+}
+
 // ============= Error #26: InsufficientApprovals Tests =============
 
 #[test]
@@ -8261,6 +8337,147 @@ fn test_approve_action_returns_not_an_admin() {
 
     // Outsider tries to approve
     client.approve_action(&outsider, &proposal_id);
+}
+
+/// Non-admin (not in admin list) attempts propose_action — must return NotAnAdmin.
+#[test]
+fn test_non_admin_propose_action_returns_not_an_admin() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+    let outsider = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    client.initialize(&admin, &token_contract);
+    client.init_multisig(&admin, &admins, &2);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Outsider (not in admin list) tries to propose
+    let result = client.try_propose_action(&outsider, &crate::AdminAction::ForceRelease(shipment_id));
+    assert_eq!(result, Err(Ok(crate::NavinError::NotAnAdmin)));
+}
+
+/// Non-admin (not in admin list) attempts approve_action — must return NotAnAdmin.
+#[test]
+fn test_non_admin_approve_action_returns_not_an_admin() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+    let outsider = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    client.initialize(&admin, &token_contract);
+    client.init_multisig(&admin, &admins, &2);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+
+    // Outsider (not in admin list) tries to approve
+    let result = client.try_approve_action(&outsider, &proposal_id);
+    assert_eq!(result, Err(Ok(crate::NavinError::NotAnAdmin)));
+}
+
+/// Admin (in admin list) can propose_action — verifies admin operations succeed.
+#[test]
+fn test_admin_propose_action_succeeds() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    client.initialize(&admin, &token_contract);
+    client.init_multisig(&admin, &admins, &2);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Admin proposes — should succeed
+    let result = client.try_propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    assert!(result.is_ok(), "admin must be able to propose action");
+}
+
+/// Different admin (in admin list) can approve_action — verifies admin operations succeed.
+#[test]
+fn test_admin_approve_action_succeeds() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+    let admin3 = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3.clone());
+
+    client.initialize(&admin, &token_contract);
+    // Use threshold 3 so auto-execute doesn't trigger (admin proposes, admin2 approves = 2 < 3)
+    client.init_multisig(&admin, &admins, &3);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+
+    // Different admin (admin2) approves — should succeed
+    let result = client.try_approve_action(&admin2, &proposal_id);
+    assert!(result.is_ok(), "admin must be able to approve action");
 }
 
 // ============= Error #28: InvalidMultiSigConfig Tests =============
@@ -14497,6 +14714,8 @@ fn test_get_platform_fee_config_reflects_updated_value() {
     let config = client.get_platform_fee_config().expect("fee config should be set");
     assert_eq!(config.fee_bps, 200);
     assert_eq!(config.treasury, treasury2);
+}
+
 // =============================================================================
 // Issue #601 — DuplicateAction error variant across operations
 // =============================================================================

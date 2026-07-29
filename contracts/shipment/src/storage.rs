@@ -1,5 +1,5 @@
 use crate::{errors::NavinError, types::*};
-use soroban_sdk::{Address, BytesN, Env};
+use soroban_sdk::{Address, BytesN, Env, Vec};
 
 /// Check if the contract has been initialized (admin set).
 ///
@@ -2168,6 +2168,45 @@ pub fn get_recovery_history(
         }
     }
     history
+}
+
+// ============= Proposal Salt Storage Functions =============
+
+/// Check if a proposal salt has been used.
+pub fn is_proposal_salt_used(env: &Env, salt: &BytesN<32>) -> bool {
+    env.storage()
+        .instance()
+        .has(&DataKey::ProposalSalt(salt.clone()))
+}
+
+/// Mark a proposal salt as used.
+pub fn set_proposal_salt_used(env: &Env, salt: &BytesN<32>) {
+    env.storage()
+        .instance()
+        .set(&DataKey::ProposalSalt(salt.clone()), &true);
+}
+
+// ============= Shipment Dependency Storage Functions =============
+
+/// Get the prerequisite IDs for a dependent shipment.
+pub fn get_shipment_dependents(env: &Env, dependent_id: u64) -> Vec<u64> {
+    env.storage()
+        .instance()
+        .get(&DataKey::ShipmentDependents(dependent_id))
+        .unwrap_or(Vec::new(env))
+}
+
+/// Add a prerequisite for a dependent shipment and return the updated list.
+pub fn set_shipment_dependency(env: &Env, dependent_id: u64, prereq_id: u64) {
+    let mut prereqs: Vec<u64> = env
+        .storage()
+        .instance()
+        .get(&DataKey::ShipmentDependents(dependent_id))
+        .unwrap_or(Vec::new(env));
+    prereqs.push_back(prereq_id);
+    env.storage()
+        .instance()
+        .set(&DataKey::ShipmentDependents(dependent_id), &prereqs);
 }
 
 #[cfg(test)]
