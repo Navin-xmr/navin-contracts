@@ -689,3 +689,14 @@ fn test_recover_shipment_before_initialize_returns_error() {
         Err(Ok(crate::NavinError::NotInitialized))
     );
 }
+
+#[test]
+fn test_unlock_escrow_before_initialize_returns_error() {
+    let (env, client, admin, _token) = setup_shipment_env();
+    let reason = BytesN::from_array(&env, &[0xC4; 32]);
+
+    assert_eq!(
+        client.try_unlock_escrow(&admin, &1u64, &reason),
+        Err(Ok(crate::NavinError::NotInitialized))
+    );
+}
