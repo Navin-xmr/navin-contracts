@@ -4386,6 +4386,7 @@ impl NavinShipment {
     /// ```
     pub fn release_escrow(env: Env, caller: Address, shipment_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         caller.require_auth();
 
         with_reentrancy_lock(&env, || {
@@ -4475,6 +4476,7 @@ impl NavinShipment {
     /// ```
     pub fn refund_escrow(env: Env, caller: Address, shipment_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         caller.require_auth();
 
         with_reentrancy_lock(&env, || {
