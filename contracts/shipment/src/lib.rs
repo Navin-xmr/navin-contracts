@@ -6465,6 +6465,7 @@ impl NavinShipment {
         previous_status: ShipmentStatus,
         reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
         recovery::rollback_on_external_failure(
             &env,
             &admin,
