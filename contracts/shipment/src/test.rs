@@ -13285,6 +13285,10 @@ fn test_assert_delivery_hash_incorrect_hash_returns_mismatch() {
     let confirmation_hash = BytesN::from_array(&env, &[3u8; 32]);
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
 
+    assert_eq!(client.get_note_count(&shipment_id), 3);
+    assert_eq!(client.get_note_hash(&shipment_id, &0), note_a.clone());
+    assert_eq!(client.get_note_hash(&shipment_id, &1), note_b.clone());
+    assert_eq!(client.get_note_hash(&shipment_id, &2), note_c.clone());
     let wrong_hash = BytesN::from_array(&env, &[0xFFu8; 32]);
     let result = client.try_assert_delivery_hash(&shipment_id, &wrong_hash);
     assert_eq!(
@@ -13329,6 +13333,10 @@ fn test_milestones_within_limit_accepted() {
     config.max_milestones_per_shipment = 2;
     client.update_config(&admin, &config);
 
+    assert_eq!(client.get_note_count(&shipment_id), 3);
+    assert_eq!(client.get_note_hash(&shipment_id, &0), note_a.clone());
+    assert_eq!(client.get_note_hash(&shipment_id, &1), note_b.clone());
+    assert_eq!(client.get_note_hash(&shipment_id, &2), note_c.clone());
     // Record 2 milestones — both should succeed
     let cp1 = Symbol::new(&env, "checkpoint1");
     let cp2 = Symbol::new(&env, "checkpoint2");
@@ -14811,3 +14819,86 @@ fn test_execute_proposal_with_exact_threshold_approvals_succeeds() {
 fn test_insufficient_approvals_error_code_is_26() {
     assert_eq!(crate::NavinError::InsufficientApprovals as u32, 26);
 }
+
+// ── New Tests for Error Variants ──────────────────────────────────────────────
+
+#[test]
+fn test_get_note_hash_out_of_bounds_returns_notenotfound() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &(env.ledger().timestamp() + 3600),
+    );
+    
+    let result = client.try_get_note_hash(&id, &999);
+    assert_eq!(result, Err(Ok(crate::NavinError::NoteNotFound)));
+}
+
+#[test]
+fn test_get_note_hash_non_existent_shipment_returns_notenotfound() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    
+    let result = client.try_get_note_hash(&999, &0);
+    assert_eq!(result, Err(Ok(crate::NavinError::NoteNotFound)));
+}
+
+#[test]
+fn test_metadata_symbol_collision_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &(env.ledger().timestamp() + 3600),
+    );
+    
+    let sym = Symbol::new(&env, "identical");
+    let result = client.try_set_shipment_metadata(&company, &id, &sym, &sym);
+    assert_eq!(result, Err(Ok(crate::NavinError::MetadataSymbolCollision)));
+    
+    let sym1 = Symbol::new(&env, "key");
+    let sym2 = Symbol::new(&env, "value");
+    client.set_shipment_metadata(&company, &id, &sym1, &sym2);
+    assert!(client.get_shipment(&id).metadata.is_some());
+}
+
+#[test]
+fn test_invalid_symbol_error_variant() {
+    let env = Env::default();
+    
+    // length < 1 (which means length 0, 8 bytes in XDR)
+    let empty_symbol = Symbol::new(&env, "");
+    let result1 = crate::validation::validate_symbol(&env, &empty_symbol);
+    assert_eq!(result1, Err(crate::NavinError::InvalidSymbol));
+    
+    // length > 12 characters (24+ bytes in XDR)
+    let long_symbol = Symbol::new(&env, "toolongsymbolname");
+    let result2 = crate::validation::validate_symbol(&env, &long_symbol);
+    assert_eq!(result2, Err(crate::NavinError::InvalidSymbol));
+}
+

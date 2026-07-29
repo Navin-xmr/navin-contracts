@@ -105,6 +105,8 @@ mod test_utils;
 #[cfg(test)]
 mod test_verification;
 #[cfg(test)]
+mod test_zero_amount_escrow;
+
 mod test_whitelist_multicompany;
 #[cfg(test)]
 mod test_zero_amount_escrow;
@@ -971,10 +973,15 @@ impl NavinShipment {
         env: Env,
         shipment_id: u64,
         index: u32,
-    ) -> Result<Option<BytesN<32>>, NavinError> {
+    ) -> Result<BytesN<32>, NavinError> {
         require_initialized(&env)?;
         if storage::get_shipment(&env, shipment_id).is_none() {
-            return Err(NavinError::ShipmentNotFound);
+            return Err(NavinError::NoteNotFound);
+        }
+        if let Some(hash) = storage::get_note_hash(&env, shipment_id, index) {
+            Ok(hash)
+        } else {
+            Err(NavinError::NoteNotFound)
         }
         let count = storage::get_note_count(&env, shipment_id);
         if index >= count {
