@@ -806,6 +806,141 @@ mod tests {
         assert_eq!(err, crate::NavinError::ContractPaused);
     }
 
+    // ── release_escrow pause guard (#626) ────────────────────────────────────
+
+    /// release_escrow must be blocked when the contract is paused.
+    #[test]
+    #[should_panic(expected = "Error(Contract, #43)")]
+    fn test_release_escrow_fails_when_paused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let milestones = Vec::new(&env);
+        let deadline = future_deadline(&env, 86400);
+
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+
+        // Advance to Delivered state
+        client.update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::InTransit,
+            &BytesN::from_array(&env, &[2u8; 32]),
+        );
+        client.update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::Delivered,
+            &BytesN::from_array(&env, &[3u8; 32]),
+        );
+
+        // Pause the contract, then try to release escrow.
+        client.pause(&admin);
+        client.release_escrow(&receiver, &shipment_id);
+    }
+
+    /// release_escrow succeeds normally when the contract is unpaused.
+    #[test]
+    fn test_release_escrow_succeeds_when_unpaused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let milestones = Vec::new(&env);
+        let deadline = future_deadline(&env, 86400);
+
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+
+        client.update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::InTransit,
+            &BytesN::from_array(&env, &[2u8; 32]),
+        );
+        client.update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::Delivered,
+            &BytesN::from_array(&env, &[3u8; 32]),
+        );
+
+        // Pause then immediately unpause — release should succeed.
+        client.pause(&admin);
+        client.unpause(&admin);
+
+        // Should not panic.
+        client.release_escrow(&receiver, &shipment_id);
+    }
+
+    // ── refund_escrow pause guard (#627) ─────────────────────────────────────
+
+    /// refund_escrow must be blocked when the contract is paused.
+    #[test]
+    #[should_panic(expected = "Error(Contract, #43)")]
+    fn test_refund_escrow_fails_when_paused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let milestones = Vec::new(&env);
+        let deadline = future_deadline(&env, 86400);
+
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+
+        // Pause the contract, then try to refund.
+        client.pause(&admin);
+        client.refund_escrow(&company, &shipment_id);
+    }
+
+    /// refund_escrow succeeds normally when the contract is unpaused.
+    #[test]
+    fn test_refund_escrow_succeeds_when_unpaused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let milestones = Vec::new(&env);
+        let deadline = future_deadline(&env, 86400);
+
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+
+        // Pause then unpause — refund on a Created shipment should succeed.
+        client.pause(&admin);
+        client.unpause(&admin);
+
+        // Should not panic (shipment is in Created status, refund is valid).
+        client.refund_escrow(&company, &shipment_id);
+    }
+
     /// Test: Circuit breaker state persists across pause/unpause cycles.
     /// Verify that pause/unpause doesn't reset circuit breaker state.
     #[test]
