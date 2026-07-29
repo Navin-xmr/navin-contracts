@@ -6470,6 +6470,7 @@ impl NavinShipment {
         target_status: ShipmentStatus,
         reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
         recovery::recover_shipment(&env, &admin, shipment_id, target_status, &reason_hash)
     }
 
@@ -6479,6 +6480,7 @@ impl NavinShipment {
         shipment_id: u64,
         reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
         recovery::unlock_escrow(&env, &admin, shipment_id, &reason_hash)
     }
 
@@ -6488,6 +6490,7 @@ impl NavinShipment {
         shipment_id: u64,
         reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
         recovery::clear_finalization(&env, &admin, shipment_id, &reason_hash)
     }
 
@@ -6498,6 +6501,7 @@ impl NavinShipment {
         previous_status: ShipmentStatus,
         reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
         recovery::rollback_on_external_failure(
             &env,
             &admin,
