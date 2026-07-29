@@ -10,6 +10,7 @@ pub enum TokenError {
     InsufficientBalance = 5,
     InsufficientAllowance = 6,
     SameAccount = 7,
+    Overflow = 8,
 }
 
 #[contracterror]

@@ -110,9 +110,19 @@ impl NavinToken {
             return Err(TokenError::InsufficientBalance);
         }
 
-        // Update balances
-        storage::set_balance(&env, &from, from_balance - amount);
-        storage::set_balance(&env, &to, storage::get_balance(&env, &to) + amount);
+        // Update balances with checked arithmetic
+        let new_from_balance = from_balance
+            .checked_sub(amount)
+            .ok_or(TokenError::Overflow)?;
+        let to_balance = storage::get_balance(&env, &to);
+        let new_to_balance = to_balance
+            .checked_add(amount)
+            .ok_or(TokenError::Overflow)?;
+        storage::set_balance(&env, &from, new_from_balance);
+        storage::set_balance(&env, &to, new_to_balance);
+
+        // Extend TTL for affected balances
+        storage::extend_balance_ttl_for(&env, &[from.clone(), to.clone()], 1000, 500000);
 
         env.events()
             .publish((symbol_short!("transfer"),), (from, to, amount));
@@ -152,10 +162,24 @@ impl NavinToken {
             return Err(TokenError::InsufficientBalance);
         }
 
-        // Update balances and allowance
-        storage::set_balance(&env, &from, from_balance - amount);
-        storage::set_balance(&env, &to, storage::get_balance(&env, &to) + amount);
-        storage::set_allowance(&env, &from, &spender, allowance - amount);
+        // Update balances and allowance with checked arithmetic
+        let new_from_balance = from_balance
+            .checked_sub(amount)
+            .ok_or(TokenError::Overflow)?;
+        let to_balance = storage::get_balance(&env, &to);
+        let new_to_balance = to_balance
+            .checked_add(amount)
+            .ok_or(TokenError::Overflow)?;
+        let new_allowance = allowance
+            .checked_sub(amount)
+            .ok_or(TokenError::Overflow)?;
+        storage::set_balance(&env, &from, new_from_balance);
+        storage::set_balance(&env, &to, new_to_balance);
+        storage::set_allowance(&env, &from, &spender, new_allowance);
+
+        // Extend TTL for affected balances and allowance
+        storage::extend_balance_ttl_for(&env, &[from.clone(), to.clone()], 1000, 500000);
+        storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
 
         env.events()
             .publish((symbol_short!("tr_from"),), (from, to, spender, amount));
@@ -186,6 +210,9 @@ impl NavinToken {
 
         storage::set_allowance(&env, &owner, &spender, amount);
 
+        // Extend TTL for the allowance entry
+        storage::extend_allowance_ttl(&env, &owner, &spender, 1000, 500000);
+
         env.events()
             .publish((symbol_short!("approve"),), (owner, spender, amount));
 
@@ -198,6 +225,100 @@ impl NavinToken {
             return Err(TokenError::NotInitialized);
         }
         Ok(storage::get_allowance(&env, &owner, &spender))
+    }
+
+    /// Increase the allowance for a spender by a delta.
+    /// This avoids the classic ERC-20 race condition present in `approve`.
+    pub fn increase_allowance(
+        env: Env,
+        owner: Address,
+        spender: Address,
+        delta: i128,
+    ) -> Result<(), TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+
+        owner.require_auth();
+
+        if delta <= 0 {
+            return Err(TokenError::InvalidAmount);
+        }
+
+        if owner == spender {
+            return Err(TokenError::SameAccount);
+        }
+
+        let current = storage::get_allowance(&env, &owner, &spender);
+        let new_allowance = current
+            .checked_add(delta)
+            .ok_or(TokenError::Overflow)?;
+        storage::set_allowance(&env, &owner, &spender, new_allowance);
+        storage::extend_allowance_ttl(&env, &owner, &spender, 1000, 500000);
+
+        env.events()
+            .publish((symbol_short!("inc_alw"),), (owner, spender, delta, new_allowance));
+
+        Ok(())
+    }
+
+    /// Decrease the allowance for a spender by a delta.
+    /// Returns `InsufficientAllowance` if the delta exceeds the current allowance.
+    pub fn decrease_allowance(
+        env: Env,
+        owner: Address,
+        spender: Address,
+        delta: i128,
+    ) -> Result<(), TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+
+        owner.require_auth();
+
+        if delta <= 0 {
+            return Err(TokenError::InvalidAmount);
+        }
+
+        if owner == spender {
+            return Err(TokenError::SameAccount);
+        }
+
+        let current = storage::get_allowance(&env, &owner, &spender);
+        if delta > current {
+            return Err(TokenError::InsufficientAllowance);
+        }
+        let new_allowance = current
+            .checked_sub(delta)
+            .ok_or(TokenError::Overflow)?;
+        storage::set_allowance(&env, &owner, &spender, new_allowance);
+        storage::extend_allowance_ttl(&env, &owner, &spender, 1000, 500000);
+
+        env.events()
+            .publish((symbol_short!("dec_alw"),), (owner, spender, delta, new_allowance));
+
+        Ok(())
+    }
+
+    /// Transfer admin rights to a new address.
+    /// Only the current admin can call this.
+    pub fn transfer_admin(env: Env, current_admin: Address, new_admin: Address) -> Result<(), TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+
+        current_admin.require_auth();
+
+        if storage::get_admin(&env) != current_admin {
+            return Err(TokenError::Unauthorized);
+        }
+
+        storage::set_admin(&env, &new_admin);
+
+        env.events()
+            .publish((symbol_short!("admin_tr"),), (current_admin, new_admin));
+
+        Ok(())
     }
 
     /// Mint new tokens (admin only)
@@ -217,8 +338,18 @@ impl NavinToken {
         }
 
         let current_supply = storage::get_total_supply(&env);
-        storage::set_total_supply(&env, current_supply + amount);
-        storage::set_balance(&env, &to, storage::get_balance(&env, &to) + amount);
+        let new_supply = current_supply
+            .checked_add(amount)
+            .ok_or(TokenError::Overflow)?;
+        let to_balance = storage::get_balance(&env, &to);
+        let new_to_balance = to_balance
+            .checked_add(amount)
+            .ok_or(TokenError::Overflow)?;
+        storage::set_total_supply(&env, new_supply);
+        storage::set_balance(&env, &to, new_to_balance);
+
+        // Extend TTL for the recipient's balance
+        storage::extend_balance_ttl(&env, &to, 1000, 500000);
 
         env.events().publish((symbol_short!("mint"),), (to, amount));
 
@@ -247,8 +378,17 @@ impl NavinToken {
         }
 
         let current_supply = storage::get_total_supply(&env);
-        storage::set_total_supply(&env, current_supply - amount);
-        storage::set_balance(&env, &from, from_balance - amount);
+        let new_supply = current_supply
+            .checked_sub(amount)
+            .ok_or(TokenError::Overflow)?;
+        let new_from_balance = from_balance
+            .checked_sub(amount)
+            .ok_or(TokenError::Overflow)?;
+        storage::set_total_supply(&env, new_supply);
+        storage::set_balance(&env, &from, new_from_balance);
+
+        // Extend TTL for the source's balance
+        storage::extend_balance_ttl(&env, &from, 1000, 500000);
 
         env.events()
             .publish((symbol_short!("burn"),), (from, amount));
