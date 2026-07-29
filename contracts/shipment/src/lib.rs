@@ -2029,6 +2029,10 @@ impl NavinShipment {
         validate_milestones(&env, &payment_milestones)?;
         validate_hash(&data_hash)?;
 
+        if sender == receiver || sender == carrier || receiver == carrier {
+            return Err(NavinError::InvalidShipmentParticipants);
+        }
+
         // Idempotency: reject duplicate (sender, data_hash) within the window.
         let mut payload = soroban_sdk::Bytes::new(&env);
         payload.append(&sender.clone().to_xdr(&env));
