@@ -592,6 +592,8 @@ fn test_pause_and_unpause_toggle_is_paused() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_pause_unauthorized() {
+    client.pause(&non_admin);
+}
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
 
