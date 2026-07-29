@@ -1,5 +1,10 @@
 
-.PHONY: help build test fmt fmt-check lint clean check all generate-schema-shipment
+# Minimum line-coverage percentage the `coverage` target enforces.
+# This is a starting baseline recorded from the first cargo-llvm-cov run —
+# raise it as coverage improves so regressions become visible.
+COVERAGE_BASELINE := 40
+
+.PHONY: help build test fmt fmt-check lint clean check all generate-schema-shipment coverage
 
 # Default target
 help:
@@ -8,6 +13,7 @@ help:
 	@echo "  make generate-schema-shipment - Generate shipment contract ABI schema"
 	@echo "  make build        - Build all contracts"
 	@echo "  make test         - Run all tests"
+	@echo "  make coverage     - Measure test coverage with cargo-llvm-cov"
 	@echo "  make fmt          - Format all code"
 	@echo "  make fmt-check    - Check code formatting (for CI)"
 	@echo "  make lint         - Run clippy lints"
@@ -35,6 +41,18 @@ build:
 test:
 	@echo "Running tests..."
 	@cargo test
+
+# Measure test coverage with cargo-llvm-cov.
+# Requires: cargo install cargo-llvm-cov (and the llvm-tools rustup component).
+# Produces an lcov report at target/llvm-cov/lcov.info and an HTML report
+# under target/llvm-cov/html/, and fails if line coverage drops below
+# COVERAGE_BASELINE.
+coverage:
+	@echo "Measuring test coverage (cargo-llvm-cov)..."
+	@cargo llvm-cov --workspace --no-report
+	@cargo llvm-cov report --workspace --lcov --output-path target/llvm-cov/lcov.info
+	@cargo llvm-cov report --workspace --html --output-dir target/llvm-cov/html
+	@cargo llvm-cov report --workspace --fail-under-lines $(COVERAGE_BASELINE)
 
 # Format all code
 fmt:
