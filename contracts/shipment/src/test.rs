@@ -14902,3 +14902,356 @@ fn test_invalid_symbol_error_variant() {
     assert_eq!(result2, Err(crate::NavinError::InvalidSymbol));
 }
 
+
+// =============================================================================
+// Issue #607 — ProposalExpired error variant
+// =============================================================================
+// Tests that expired proposals cannot be approved or executed, that the error
+// code 24 is returned correctly, and that non-expired proposals work normally.
+// =============================================================================
+
+/// Helper to set up a multisig environment with a pending (not-yet-executed)
+/// proposal that has NOT yet expired.  Returns
+/// `(env, client, admin1, admin2, admin3, proposal_id)`.
+fn setup_multisig_with_pending_proposal() -> (
+    soroban_sdk::Env,
+    NavinShipmentClient<'static>,
+    soroban_sdk::Address,
+    soroban_sdk::Address,
+    soroban_sdk::Address,
+    u64,
+) {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = soroban_sdk::Address::generate(&env);
+    let admin2 = soroban_sdk::Address::generate(&env);
+    let admin3 = soroban_sdk::Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3.clone());
+
+    // Threshold 3 so the proposal stays pending after proposal + 1 approval
+    client.init_multisig(&admin, &admins, &3);
+
+    let new_admin = soroban_sdk::Address::generate(&env);
+    let action = crate::AdminAction::TransferAdmin(new_admin);
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    (env, client, admin1, admin2, admin3, proposal_id)
+}
+
+/// Attempting to approve an expired proposal must return `ProposalExpired`
+/// (error code 24) via `try_approve_action`.
+#[test]
+fn test_approve_expired_proposal_returns_proposal_expired() {
+    let (env, client, _admin1, admin2, _admin3, proposal_id) =
+        setup_multisig_with_pending_proposal();
+
+    // Advance time past the proposal expiry window (7 days + 1 second)
+    super::test_utils::advance_past_multisig_expiry(&env);
+
+    let result = client.try_approve_action(&admin2, &proposal_id);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalExpired)),
+        "approving an expired proposal must return ProposalExpired"
+    );
+}
+
+/// Attempting to execute an expired proposal (even if threshold was met
+/// before expiry) must return `ProposalExpired` (error code 24).
+#[test]
+fn test_execute_expired_proposal_returns_proposal_expired() {
+    let (env, client, _admin1, admin2, _admin3, proposal_id) =
+        setup_multisig_with_pending_proposal();
+
+    // admin2 approves — still below threshold (need 3)
+    client.approve_action(&admin2, &proposal_id);
+
+    // Advance time past expiry
+    super::test_utils::advance_past_multisig_expiry(&env);
+
+    let result = client.try_execute_proposal(&proposal_id);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalExpired)),
+        "executing an expired proposal must return ProposalExpired"
+    );
+}
+
+/// `ProposalExpired` must carry error code 24.
+#[test]
+fn test_proposal_expired_error_code_is_24() {
+    assert_eq!(
+        crate::NavinError::ProposalExpired as u32,
+        24,
+        "ProposalExpired discriminant must be 24"
+    );
+}
+
+/// A proposal that is within its expiry window can still be approved normally.
+/// Verifies the non-expired happy path (Acceptance Criterion: non-expired
+/// proposals work normally).
+#[test]
+fn test_non_expired_proposal_can_be_approved() {
+    let (env, client, _admin1, admin2, _admin3, proposal_id) =
+        setup_multisig_with_pending_proposal();
+
+    // No time advance — proposal is fresh
+    let result = client.try_approve_action(&admin2, &proposal_id);
+    assert!(
+        result.is_ok(),
+        "approving a non-expired proposal must succeed: {:?}",
+        result
+    );
+
+    let proposal = client.get_proposal(&proposal_id);
+    assert_eq!(
+        proposal.approvals.len(),
+        2,
+        "admin2 approval must be recorded"
+    );
+    assert!(
+        !proposal.executed,
+        "proposal must not auto-execute with only 2/3 approvals"
+    );
+}
+
+/// A non-expired proposal that reaches the approval threshold is auto-executed
+/// without error.  This confirms the full non-expired happy path including
+/// execution.
+#[test]
+fn test_non_expired_proposal_executes_at_threshold() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = soroban_sdk::Address::generate(&env);
+    let admin2 = soroban_sdk::Address::generate(&env);
+    let new_admin = soroban_sdk::Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+
+    // Threshold 2 — executes on admin2 approval
+    client.init_multisig(&admin, &admins, &2);
+
+    let action = crate::AdminAction::TransferAdmin(new_admin.clone());
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // admin2 approves → reaches threshold → auto-executes
+    let result = client.try_approve_action(&admin2, &proposal_id);
+    assert!(
+        result.is_ok(),
+        "approving non-expired proposal at threshold must succeed"
+    );
+
+    // Confirm the action was actually executed
+    assert_eq!(
+        client.get_admin(),
+        new_admin,
+        "admin must be transferred after auto-execution"
+    );
+}
+
+/// An expired proposal must not be approvable at any point — not even a third
+/// admin who had never approved before.
+#[test]
+fn test_all_approvals_fail_after_expiry() {
+    let (env, client, _admin1, admin2, admin3, proposal_id) =
+        setup_multisig_with_pending_proposal();
+
+    // admin2 approves while proposal is still valid (1 more approval but still below 3)
+    client.approve_action(&admin2, &proposal_id);
+
+    // Advance time past expiry
+    super::test_utils::advance_past_multisig_expiry(&env);
+
+    // admin3 (fresh approver) tries to approve after expiry
+    let result = client.try_approve_action(&admin3, &proposal_id);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalExpired)),
+        "a fresh approver must still receive ProposalExpired after expiry"
+    );
+}
+
+// =============================================================================
+// Issue #608 — ProposalAlreadyExecuted error variant
+// =============================================================================
+// Tests that duplicate proposal executions are rejected, that the error code
+// 23 is returned correctly, and that single execution succeeds.
+// =============================================================================
+
+/// `ProposalAlreadyExecuted` must carry error code 23.
+#[test]
+fn test_proposal_already_executed_error_code_is_23() {
+    assert_eq!(
+        crate::NavinError::ProposalAlreadyExecuted as u32,
+        23,
+        "ProposalAlreadyExecuted discriminant must be 23"
+    );
+}
+
+/// Executing a proposal a second time must return `ProposalAlreadyExecuted`
+/// (error code 23) via `try_execute_proposal`.
+#[test]
+fn test_execute_already_executed_proposal_returns_error() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = soroban_sdk::Address::generate(&env);
+    let admin2 = soroban_sdk::Address::generate(&env);
+    let new_admin = soroban_sdk::Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+
+    client.init_multisig(&admin, &admins, &2);
+
+    let action = crate::AdminAction::TransferAdmin(new_admin.clone());
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // First approval reaches threshold → auto-executes
+    client.approve_action(&admin2, &proposal_id);
+
+    // Verify it executed
+    let proposal = client.get_proposal(&proposal_id);
+    assert!(proposal.executed, "proposal must be marked as executed");
+
+    // Attempt a second execute call
+    let result = client.try_execute_proposal(&proposal_id);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalAlreadyExecuted)),
+        "second execute call must return ProposalAlreadyExecuted"
+    );
+}
+
+/// Approving an already-executed proposal must also return
+/// `ProposalAlreadyExecuted` (error code 23).
+#[test]
+fn test_approve_already_executed_proposal_returns_error() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = soroban_sdk::Address::generate(&env);
+    let admin2 = soroban_sdk::Address::generate(&env);
+    let admin3 = soroban_sdk::Address::generate(&env);
+    let new_admin = soroban_sdk::Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3.clone());
+
+    // Threshold 2 — executes when admin2 approves
+    client.init_multisig(&admin, &admins, &2);
+
+    let action = crate::AdminAction::TransferAdmin(new_admin);
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // Reaches threshold, auto-executes
+    client.approve_action(&admin2, &proposal_id);
+
+    // admin3 tries to approve the already-executed proposal
+    let result = client.try_approve_action(&admin3, &proposal_id);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalAlreadyExecuted)),
+        "approving an already-executed proposal must return ProposalAlreadyExecuted"
+    );
+}
+
+/// A single execution succeeds and correctly applies the proposed action.
+/// Uses TransferAdmin to avoid replacing the WASM (which would break
+/// subsequent `get_proposal` reads).
+#[test]
+fn test_single_execution_succeeds_and_applies_action() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = soroban_sdk::Address::generate(&env);
+    let admin2 = soroban_sdk::Address::generate(&env);
+    let new_admin = soroban_sdk::Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+
+    client.init_multisig(&admin, &admins, &2);
+
+    let action = crate::AdminAction::TransferAdmin(new_admin.clone());
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // Proposal not yet executed
+    let proposal_before = client.get_proposal(&proposal_id);
+    assert!(!proposal_before.executed);
+
+    // admin2 approval reaches threshold → auto-executes
+    client.approve_action(&admin2, &proposal_id);
+
+    // Confirm execution state
+    let proposal_after = client.get_proposal(&proposal_id);
+    assert!(
+        proposal_after.executed,
+        "proposal must be marked executed after threshold is reached"
+    );
+
+    // Confirm the admin was actually transferred
+    assert_eq!(
+        client.get_admin(),
+        new_admin,
+        "admin must be the new admin after successful single execution"
+    );
+}
+
+/// ForceRelease proposal: single execution releases escrow correctly.
+/// Verifies that the `ProposalAlreadyExecuted` guard works for non-Upgrade actions.
+#[test]
+fn test_force_release_single_execution_and_duplicate_rejected() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = soroban_sdk::Address::generate(&env);
+    let admin2 = soroban_sdk::Address::generate(&env);
+
+    let company = soroban_sdk::Address::generate(&env);
+    let receiver = soroban_sdk::Address::generate(&env);
+    let carrier = soroban_sdk::Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &5000);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    let action = crate::AdminAction::ForceRelease(shipment_id);
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // First execution via approval reaching threshold
+    client.approve_action(&admin2, &proposal_id);
+
+    // Escrow must be released
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.escrow_amount, 0, "escrow must be zero after ForceRelease");
+
+    // Duplicate execute must fail
+    let result = client.try_execute_proposal(&proposal_id);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalAlreadyExecuted)),
+        "second execute of ForceRelease proposal must return ProposalAlreadyExecuted"
+    );
+}
