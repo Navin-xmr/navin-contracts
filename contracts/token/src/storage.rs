@@ -60,35 +60,62 @@ pub fn set_total_supply(env: &Env, supply: i128) {
     env.storage().instance().set(&DataKey::TotalSupply, &supply);
 }
 
-/// Get the balance of an address
+/// Get the balance of an address from persistent storage.
 pub fn get_balance(env: &Env, address: &Address) -> i128 {
     env.storage()
-        .instance()
+        .persistent()
         .get(&DataKey::Balance(address.clone()))
         .unwrap_or(0)
 }
 
-/// Set the balance of an address
+/// Set the balance of an address in persistent storage.
 pub fn set_balance(env: &Env, address: &Address, balance: i128) {
     env.storage()
-        .instance()
+        .persistent()
         .set(&DataKey::Balance(address.clone()), &balance);
 }
 
-/// Get the allowance of a spender for an owner's tokens
+/// Extend TTL for a single balance entry.
+pub fn extend_balance_ttl(env: &Env, address: &Address, threshold: u32, extend_to: u32) {
+    let key = DataKey::Balance(address.clone());
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, threshold, extend_to);
+    }
+}
+
+/// Extend TTL for multiple balance entries (e.g. sender and recipient).
+pub fn extend_balance_ttl_for(env: &Env, addresses: &[Address], threshold: u32, extend_to: u32) {
+    for addr in addresses {
+        extend_balance_ttl(env, addr, threshold, extend_to);
+    }
+}
+
+/// Get the allowance of a spender for an owner's tokens from persistent storage.
 pub fn get_allowance(env: &Env, owner: &Address, spender: &Address) -> i128 {
     env.storage()
-        .instance()
+        .persistent()
         .get(&DataKey::Allowance(owner.clone(), spender.clone()))
         .unwrap_or(0)
 }
 
-/// Set the allowance of a spender for an owner's tokens
+/// Set the allowance of a spender for an owner's tokens in persistent storage.
 pub fn set_allowance(env: &Env, owner: &Address, spender: &Address, allowance: i128) {
-    env.storage().instance().set(
+    env.storage().persistent().set(
         &DataKey::Allowance(owner.clone(), spender.clone()),
         &allowance,
     );
+}
+
+/// Extend TTL for a single allowance entry.
+pub fn extend_allowance_ttl(env: &Env, owner: &Address, spender: &Address, threshold: u32, extend_to: u32) {
+    let key = DataKey::Allowance(owner.clone(), spender.clone());
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, threshold, extend_to);
+    }
 }
 
 // ============================================================================

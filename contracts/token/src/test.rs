@@ -3,7 +3,10 @@
 extern crate std;
 
 use crate::{test_utils::setup_env, NavinToken, NavinTokenClient};
-use soroban_sdk::{testutils::Address as _, Address, Env, String, Symbol};
+use soroban_sdk::{
+    testutils::Address as _,
+    Address, Env, String, Symbol,
+};
 
 fn setup_token_env() -> (Env, NavinTokenClient<'static>, Address) {
     let (env, admin) = setup_env();
@@ -359,4 +362,197 @@ fn test_multiple_allowed_keys() {
     assert!(!client.is_metadata_key_allowed(&key2));
     assert!(client.is_metadata_key_allowed(&key1));
     assert!(client.is_metadata_key_allowed(&key3));
+}
+
+// ============================================================================
+// Persistent Storage Tests
+// ============================================================================
+
+#[test]
+fn test_balance_persistent_after_write() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let exists = env.as_contract(&client.address, || {
+        let key = crate::storage::DataKey::Balance(admin.clone());
+        env.storage().persistent().has(&key)
+    });
+    assert!(exists, "Admin balance must be stored in persistent storage");
+}
+
+#[test]
+fn test_allowance_persistent_after_write() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let spender = Address::generate(&env);
+    client.approve(&admin, &spender, &500);
+
+    let exists = env.as_contract(&client.address, || {
+        let key = crate::storage::DataKey::Allowance(admin.clone(), spender.clone());
+        env.storage().persistent().has(&key)
+    });
+    assert!(
+        exists,
+        "Allowance must be stored in persistent storage"
+    );
+}
+
+#[test]
+fn test_ttl_extended_on_transfer() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let recipient = Address::generate(&env);
+
+    client.transfer(&admin, &recipient, &200);
+
+    // After transfer, both sender and recipient balances should exist in persistent storage
+    let sender_exists = env.as_contract(&client.address, || {
+        let key = crate::storage::DataKey::Balance(admin.clone());
+        env.storage().persistent().has(&key)
+    });
+    let recipient_exists = env.as_contract(&client.address, || {
+        let key = crate::storage::DataKey::Balance(recipient.clone());
+        env.storage().persistent().has(&key)
+    });
+    assert!(sender_exists, "Sender balance must persist after transfer");
+    assert!(recipient_exists, "Recipient balance must persist after transfer");
+}
+
+#[test]
+fn test_ttl_extended_on_mint() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let recipient = Address::generate(&env);
+
+    // Verify recipient doesn't have a balance entry yet
+    let exists_before = env.as_contract(&client.address, || {
+        let key = crate::storage::DataKey::Balance(recipient.clone());
+        env.storage().persistent().has(&key)
+    });
+    assert!(!exists_before, "Recipient should not have balance before mint");
+
+    client.mint(&admin, &recipient, &500);
+
+    let exists_after = env.as_contract(&client.address, || {
+        let key = crate::storage::DataKey::Balance(recipient.clone());
+        env.storage().persistent().has(&key)
+    });
+    assert!(exists_after, "Recipient balance must persist after mint");
+}
+
+// ============================================================================
+// Checked Arithmetic Tests
+// ============================================================================
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")]
+fn test_mint_overflow_rejected() {
+    let (env, client, admin) = setup_token_env();
+    // Initialize with total supply near i128::MAX
+    initialize_token(&client, &env, &admin, i128::MAX - 1000);
+
+    let recipient = Address::generate(&env);
+    // Minting an amount that would overflow total_supply is rejected
+    client.mint(&admin, &recipient, &2000);
+}
+
+#[test]
+fn test_operations_near_max_supply() {
+    // Prove that normal operations near i128::MAX work without overflow
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, i128::MAX - 500);
+
+    let recipient = Address::generate(&env);
+    // Transfer a near-max amount works correctly
+    client.transfer(&admin, &recipient, &(i128::MAX - 1000));
+
+    assert_eq!(client.balance(&admin), 500);
+    assert_eq!(client.balance(&recipient), i128::MAX - 1000);
+    assert_eq!(client.total_supply(), i128::MAX - 500);
+}
+
+// ============================================================================
+// Increase / Decrease Allowance Tests
+// ============================================================================
+
+#[test]
+fn test_increase_allowance() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let spender = Address::generate(&env);
+
+    client.increase_allowance(&admin, &spender, &300);
+    assert_eq!(client.allowance(&admin, &spender), 300);
+
+    // Increase again
+    client.increase_allowance(&admin, &spender, &200);
+    assert_eq!(client.allowance(&admin, &spender), 500);
+}
+
+#[test]
+fn test_decrease_allowance() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let spender = Address::generate(&env);
+
+    client.approve(&admin, &spender, &500);
+    assert_eq!(client.allowance(&admin, &spender), 500);
+
+    client.decrease_allowance(&admin, &spender, &200);
+    assert_eq!(client.allowance(&admin, &spender), 300);
+}
+
+#[test]
+fn test_decrease_allowance_below_zero_rejected() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let spender = Address::generate(&env);
+
+    client.approve(&admin, &spender, &100);
+
+    // Decreasing below current allowance should panic
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.decrease_allowance(&admin, &spender, &200);
+    }));
+    assert!(
+        result.is_err(),
+        "Decreasing allowance below zero must be rejected"
+    );
+    // Allowance should remain unchanged
+    assert_eq!(client.allowance(&admin, &spender), 100);
+}
+
+// ============================================================================
+// Admin Transfer Tests
+// ============================================================================
+
+#[test]
+fn test_transfer_admin_success() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+
+    assert_eq!(client.get_admin(), new_admin);
+}
+
+#[test]
+fn test_transfer_admin_unauthorized() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let non_admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.transfer_admin(&non_admin, &new_admin);
+    }));
+    assert!(result.is_err(), "Non-admin must not be able to transfer admin");
 }
