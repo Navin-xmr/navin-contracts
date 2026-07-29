@@ -1632,6 +1632,9 @@ impl NavinShipment {
 
     /// Allow admin to grant Guardian role.
     ///
+    /// Use [`Self::remove_guardian`] to revoke the guardian role through the
+    /// matching ergonomic endpoint.
+    ///
     /// # Arguments
     /// * `env` - Execution environment.
     /// * `admin` - Contract admin executing the role grant.
@@ -1639,6 +1642,12 @@ impl NavinShipment {
     ///
     /// # Returns
     /// * `Result<(), NavinError>` - Ok on successful role assignment.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // contract.add_guardian(&env, &admin, &guardian_addr);
+    /// // contract.remove_guardian(&env, &admin, &guardian_addr);
+    /// ```
     pub fn add_guardian(env: Env, admin: Address, guardian: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
@@ -1663,6 +1672,9 @@ impl NavinShipment {
 
     /// Allow admin to grant Operator role.
     ///
+    /// Use [`Self::remove_operator`] to revoke the operator role through the
+    /// matching ergonomic endpoint.
+    ///
     /// # Arguments
     /// * `env` - Execution environment.
     /// * `admin` - Contract admin executing the role grant.
@@ -1670,6 +1682,12 @@ impl NavinShipment {
     ///
     /// # Returns
     /// * `Result<(), NavinError>` - Ok on successful role assignment.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // contract.add_operator(&env, &admin, &operator_addr);
+    /// // contract.remove_operator(&env, &admin, &operator_addr);
+    /// ```
     pub fn add_operator(env: Env, admin: Address, operator: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
@@ -1690,6 +1708,24 @@ impl NavinShipment {
         );
 
         Ok(())
+    }
+
+    /// Revoke a Guardian role using the ergonomic counterpart to [`Self::add_guardian`].
+    ///
+    /// This is a thin wrapper over [`Self::revoke_role`], so authorization,
+    /// self-revocation protection, events, and behavior are identical to calling
+    /// `revoke_role` directly for the guardian address.
+    pub fn remove_guardian(env: Env, admin: Address, guardian: Address) -> Result<(), NavinError> {
+        Self::revoke_role(env, admin, guardian)
+    }
+
+    /// Revoke an Operator role using the ergonomic counterpart to [`Self::add_operator`].
+    ///
+    /// This is a thin wrapper over [`Self::revoke_role`], so authorization,
+    /// self-revocation protection, events, and behavior are identical to calling
+    /// `revoke_role` directly for the operator address.
+    pub fn remove_operator(env: Env, admin: Address, operator: Address) -> Result<(), NavinError> {
+        Self::revoke_role(env, admin, operator)
     }
 
     /// Suspend a carrier from carrier-only operations.
