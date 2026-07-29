@@ -121,4 +121,12 @@ pub enum NavinError {
     InvalidTokenDecimals = 52,
     /// Company has exceeded the shipment creation quota for the current time window.
     CreationQuotaExceeded = 53,
+    /// Metadata keys and values cannot be identical.
+    MetadataSymbolCollision = 63,
+    /// External integration failed.
+    ExternalIntegrationFailed = 64,
+    /// Symbol is invalid.
+    InvalidSymbol = 65,
+    /// Note not found at the given index.
+    NoteNotFound = 66,
 }

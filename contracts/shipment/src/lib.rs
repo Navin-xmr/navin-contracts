@@ -86,8 +86,7 @@ mod test_utils;
 mod test_verification;
 #[cfg(test)]
 mod test_zero_amount_escrow;
-#[cfg(test)]
-mod test_counter_overflow;
+
 #[cfg(test)]
 mod test_whitelist_multicompany;
 #[cfg(test)]
@@ -877,12 +876,16 @@ impl NavinShipment {
         env: Env,
         shipment_id: u64,
         index: u32,
-    ) -> Result<Option<BytesN<32>>, NavinError> {
+    ) -> Result<BytesN<32>, NavinError> {
         require_initialized(&env)?;
         if storage::get_shipment(&env, shipment_id).is_none() {
-            return Err(NavinError::ShipmentNotFound);
+            return Err(NavinError::NoteNotFound);
         }
-        Ok(storage::get_note_hash(&env, shipment_id, index))
+        if let Some(hash) = storage::get_note_hash(&env, shipment_id, index) {
+            Ok(hash)
+        } else {
+            Err(NavinError::NoteNotFound)
+        }
     }
     /// Initialize the contract with an admin address and token contract address.
     /// Can only be called once. Sets the admin and shipment counter to 0.

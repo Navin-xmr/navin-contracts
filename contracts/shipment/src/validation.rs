@@ -77,7 +77,7 @@ pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
     let len = symbol_bytes.len();
 
     if !(12..=20).contains(&len) {
-        return Err(NavinError::InvalidShipmentInput);
+        return Err(NavinError::InvalidSymbol);
     }
 
     Ok(())
@@ -150,6 +150,9 @@ pub fn validate_metadata_symbols(
 ) -> Result<(), NavinError> {
     validate_symbol(env, key)?;
     validate_symbol(env, value)?;
+    if key.to_xdr(env) == value.to_xdr(env) {
+        return Err(NavinError::MetadataSymbolCollision);
+    }
     Ok(())
 }
 

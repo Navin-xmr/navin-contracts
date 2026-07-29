@@ -362,6 +362,30 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             RetryAfterStateChange,
             "Company has exceeded the shipment creation quota for the current time window.",
         ),
+        NavinError::MetadataSymbolCollision => (
+            63,
+            InvalidInput,
+            NoRetry,
+            "Metadata keys and values cannot be identical.",
+        ),
+        NavinError::ExternalIntegrationFailed => (
+            64,
+            Transient,
+            RetryAfterDelay,
+            "External integration failed.",
+        ),
+        NavinError::InvalidSymbol => (
+            65,
+            InvalidInput,
+            NoRetry,
+            "Symbol is invalid.",
+        ),
+        NavinError::NoteNotFound => (
+            66,
+            NotFound,
+            NoRetry,
+            "Note not found at the given index.",
+        ),
     };
 
     ContractErrorInfo {
