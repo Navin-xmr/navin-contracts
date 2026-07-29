@@ -7341,6 +7341,38 @@ fn test_execute_proposal_returns_proposal_not_found() {
     client.execute_proposal(&999);
 }
 
+#[test]
+fn test_approve_action_returns_proposal_not_found_variant() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+
+    client.initialize(&admin, &token_contract);
+    client.init_multisig(&admin, &admins, &2);
+
+    let result = client.try_approve_action(&admin2, &999);
+    assert_eq!(result, Err(Ok(NavinError::ProposalNotFound)));
+}
+
+#[test]
+fn test_execute_proposal_returns_proposal_not_found_variant() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    client.initialize(&admin, &token_contract);
+    client.init_multisig(&admin, &admins, &2);
+
+    let result = client.try_execute_proposal(&999);
+    assert_eq!(result, Err(Ok(NavinError::ProposalNotFound)));
+}
+
 // ============= Error #23: ProposalAlreadyExecuted Tests =============
 
 #[test]
