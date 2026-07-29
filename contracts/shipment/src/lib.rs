@@ -6490,6 +6490,7 @@ impl NavinShipment {
         shipment_id: u64,
         reason_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
         recovery::clear_finalization(&env, &admin, shipment_id, &reason_hash)
     }
 
