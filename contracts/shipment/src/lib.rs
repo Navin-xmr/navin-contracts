@@ -109,8 +109,6 @@ mod test_zero_amount_escrow;
 
 mod test_whitelist_multicompany;
 #[cfg(test)]
-mod test_zero_amount_escrow;
-#[cfg(test)]
 mod test_invalid_config;
 // Error-variant test suites (issues #613–#616)
 #[cfg(test)]
@@ -521,7 +519,9 @@ fn invoke_token_transfer(
     to: &Address,
     amount: i128,
 ) -> Result<(), NavinError> {
-    let cb_config = circuit_breaker::CircuitBreakerConfig::default();
+    // Use the admin-configured thresholds, falling back to the built-in
+    // default when none has been set.
+    let cb_config = circuit_breaker::get_config(env);
     circuit_breaker::check_transfer_allowed(env, &cb_config)?;
 
     let mut args: soroban_sdk::Vec<soroban_sdk::Val> = Vec::new(env);
@@ -978,16 +978,13 @@ impl NavinShipment {
         if storage::get_shipment(&env, shipment_id).is_none() {
             return Err(NavinError::NoteNotFound);
         }
+        // A missing index yields None from storage, so the bounds check is
+        // implicit here.
         if let Some(hash) = storage::get_note_hash(&env, shipment_id, index) {
             Ok(hash)
         } else {
             Err(NavinError::NoteNotFound)
         }
-        let count = storage::get_note_count(&env, shipment_id);
-        if index >= count {
-            return Err(NavinError::NoteNotFound);
-        }
-        Ok(storage::get_note_hash(&env, shipment_id, index))
     }
     /// Initialize the contract with an admin address and token contract address.
     /// Can only be called once. Sets the admin and shipment counter to 0.
@@ -1355,9 +1352,15 @@ impl NavinShipment {
     /// high-impact operations (e.g., dispute resolution).
     ///
     /// Canonical serialization order:
-    /// 1. `shipment_id` as big-endian u64 (8 bytes)
-    /// 2. `event_type` as XDR-encoded Symbol (variable-length)
-    /// 3. `event_counter` as big-endian u32 (4 bytes)
+    /// 1. hash-domain tag for `event_type`, length-prefixed (see
+    ///    [`event_topics::hash_domain_for_event`] for the mapping off-chain
+    ///    indexers must mirror)
+    /// 2. `shipment_id` as big-endian u64 (8 bytes)
+    /// 3. `event_type` as XDR-encoded Symbol (variable-length)
+    /// 4. `event_counter` as big-endian u32 (4 bytes)
+    ///
+    /// The domain tag binds each key to its event family, so an identical
+    /// payload in two different families never yields the same key.
     ///
     /// The concatenated byte vector is hashed with SHA-256 to produce a
     /// 32-byte idempotency key.
@@ -1385,8 +1388,11 @@ impl NavinShipment {
 
         let mut payload = Bytes::new(&env);
 
-        // Domain prefix (HASH_DOMAIN_SHIPMENT = 0x01)
-        let domain = crate::event_topics::HASH_DOMAIN_SHIPMENT;
+        // Domain prefix, selected from `event_type` so that the same payload in
+        // two different event families cannot produce the same key. Shipment
+        // events still resolve to HASH_DOMAIN_SHIPMENT (0x01), so their
+        // previously emitted keys are unchanged.
+        let domain = crate::event_topics::hash_domain_for_symbol(&env, &event_type);
         let domain_bytes = domain.to_be_bytes();
         let domain_len = (domain_bytes.len() as u32).to_be_bytes();
         payload.append(&Bytes::from_array(&env, &domain_len));
@@ -2148,34 +2154,10 @@ impl NavinShipment {
             return Err(NavinError::ShipmentLimitReached);
         }
 
-        // Check per-company creation quota window for the entire batch (issue #296).
-        // We check once per item to correctly track the rolling count.
-        {
-            let cfg = config::get_config(&env);
-            if cfg.creation_quota_max > 0 {
-                let now_ts = env.ledger().timestamp();
-                let mut tracker = storage::get_creation_quota(&env, &sender).unwrap_or(
-                    crate::types::CreationQuotaTracker {
-                        count: 0,
-                        window_start: now_ts,
-                    },
-                );
-                if now_ts >= tracker.window_start + cfg.creation_quota_window_seconds {
-                    tracker.window_start = now_ts;
-                    tracker.count = 0;
-                }
-                let batch_len = shipments.len();
-                let new_count = tracker
-                    .count
-                    .checked_add(batch_len)
-                    .ok_or(NavinError::CounterOverflow)?;
-                if new_count > cfg.creation_quota_max {
-                    return Err(NavinError::CreationQuotaExceeded);
-                }
-                tracker.count = new_count;
-                storage::set_creation_quota(&env, &sender, &tracker);
-            }
-        }
+        // Reserve the whole batch against the per-company creation quota
+        // (issue #296) through the same helper single creation uses, so the two
+        // paths cannot diverge at the boundary.
+        check_and_update_creation_quota_by(&env, &sender, shipments.len())?;
 
         for shipment_input in shipments.iter() {
             if shipment_input.receiver == shipment_input.carrier {
@@ -4963,6 +4945,10 @@ impl NavinShipment {
         require_initialized(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
+        // A suspended carrier must not be able to report a breach: with
+        // `auto_dispute_breach` enabled, a fabricated Critical breach would
+        // otherwise open a dispute and freeze escrow.
+        require_active_carrier(&env, &carrier)?;
 
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
@@ -6041,8 +6027,64 @@ impl NavinShipment {
         env: Env,
     ) -> Result<(CircuitBreakerState, u32, u64), NavinError> {
         require_initialized(&env)?;
-        let config = circuit_breaker::CircuitBreakerConfig::default();
+        let config = circuit_breaker::get_config(&env);
         Ok(circuit_breaker::get_breaker_status(&env, &config))
+    }
+
+    /// Set the circuit breaker configuration used for token transfers.
+    ///
+    /// Admin-only. Lets an operator tune `failure_threshold` /
+    /// `recovery_timeout` in response to a flaky token contract without
+    /// redeploying. Until this is called the built-in default applies, so
+    /// existing deployments are unaffected.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Caller, must be the contract admin.
+    /// * `preset` - A named preset, or `Custom(failure_threshold,
+    ///   recovery_timeout, half_open_max_requests)`.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If `admin` is not the contract admin.
+    /// * `NavinError::InvalidConfig` - If `Custom` values are out of range
+    ///   (a zero threshold would open the breaker permanently).
+    pub fn set_circuit_breaker_config(
+        env: Env,
+        admin: Address,
+        preset: circuit_breaker::CircuitBreakerPreset,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+        require_admin(&env, &admin)?;
+
+        let config = preset.resolve()?;
+        circuit_breaker::set_config(&env, &config);
+
+        env.events().publish(
+            (Symbol::new(&env, event_topics::CONFIG_UPDATED),),
+            (
+                Symbol::new(&env, "circuit_breaker"),
+                config.failure_threshold,
+                config.recovery_timeout,
+                config.half_open_max_requests,
+            ),
+        );
+
+        Ok(())
+    }
+
+    /// Read the active circuit breaker configuration.
+    ///
+    /// Returns the built-in default when an admin has not set one.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn get_circuit_breaker_config(
+        env: Env,
+    ) -> Result<circuit_breaker::CircuitBreakerConfig, NavinError> {
+        require_initialized(&env)?;
+        Ok(circuit_breaker::get_config(&env))
     }
 
     /// Scan all tracked shipments and return every consistency violation found.
@@ -6059,7 +6101,7 @@ impl NavinShipment {
     ///
     /// The scan is capped at `DEFAULT_CONSISTENCY_SAMPLE_LIMIT` entries so that
     /// compute cost stays within budget as the shipment set grows. For a full
-    /// audit over the entire ledger, use `check_consistency_violations_paginated`
+    /// audit over the entire ledger, use `check_consistency_paginated`
     /// to step through all pages.
     ///
     /// # Arguments
@@ -6110,7 +6152,7 @@ impl NavinShipment {
     /// * `NavinError::Unauthorized` - If caller is not admin or operator.
     /// * `NavinError::InvalidConfig` - If `limit` is 0 or exceeds the
     ///   configured `batch_operation_limit`.
-    pub fn check_consistency_violations_paginated(
+    pub fn check_consistency_paginated(
         env: Env,
         admin: Address,
         start_id: u64,
@@ -6580,8 +6622,24 @@ fn compute_action_digest(
 /// for the current window. Rolls the window forward automatically when expired.
 /// No-ops when `creation_quota_max == 0` (quota disabled).
 fn check_and_update_creation_quota(env: &Env, company: &Address) -> Result<(), NavinError> {
+    check_and_update_creation_quota_by(env, company, 1)
+}
+
+/// Reserve `requested` shipment creations against the company's quota window.
+///
+/// The single source of truth for window rollover and quota enforcement, shared
+/// by `create_shipment` (`requested == 1`) and `create_shipments_batch`
+/// (`requested == batch length`). Batch reservation is all-or-nothing: if the
+/// whole batch does not fit in the remaining quota, nothing is consumed.
+///
+/// No-ops when `creation_quota_max == 0` (quota disabled) or `requested == 0`.
+fn check_and_update_creation_quota_by(
+    env: &Env,
+    company: &Address,
+    requested: u32,
+) -> Result<(), NavinError> {
     let cfg = config::get_config(env);
-    if cfg.creation_quota_max == 0 {
+    if cfg.creation_quota_max == 0 || requested == 0 {
         return Ok(());
     }
 
@@ -6598,11 +6656,17 @@ fn check_and_update_creation_quota(env: &Env, company: &Address) -> Result<(), N
         tracker.count = 0;
     }
 
-    if tracker.count >= cfg.creation_quota_max {
+    // For `requested == 1` this is exactly the previous `count >= max` test,
+    // so single-shipment behaviour at the boundary is unchanged.
+    let new_count = tracker
+        .count
+        .checked_add(requested)
+        .ok_or(NavinError::CounterOverflow)?;
+    if new_count > cfg.creation_quota_max {
         return Err(NavinError::CreationQuotaExceeded);
     }
 
-    tracker.count = tracker.count.saturating_add(1);
+    tracker.count = new_count;
     storage::set_creation_quota(env, company, &tracker);
     Ok(())
 }

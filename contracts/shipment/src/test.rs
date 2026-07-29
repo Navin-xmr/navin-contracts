@@ -14505,6 +14505,8 @@ fn test_get_platform_fee_config_reflects_updated_value() {
     let config = client.get_platform_fee_config().expect("fee config should be set");
     assert_eq!(config.fee_bps, 200);
     assert_eq!(config.treasury, treasury2);
+}
+
 // =============================================================================
 // Issue #601 — DuplicateAction error variant across operations
 // =============================================================================
