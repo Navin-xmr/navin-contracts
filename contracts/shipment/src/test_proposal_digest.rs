@@ -1529,4 +1529,47 @@ mod tests {
         );
     }
 
+    #[test]
+    fn force_refund_performs_full_escrow_accounting() {
+        let (env, client, admin, admin2) = setup_multisig();
+        let (company, shipment_id) = setup_shipment_for_force_action(&env, &client, &admin);
+
+        let action = crate::types::AdminAction::ForceRefund(shipment_id);
+        let proposal_id = client.propose_action(&admin, &action);
+        client.approve_action(&admin2, &proposal_id);
+
+        client.execute_proposal(&proposal_id);
+
+        let shipment = client.get_shipment(&shipment_id);
+        assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+        assert_eq!(shipment.escrow_amount, 0);
+        assert!(shipment.finalized, "shipment must be finalized after ForceRefund");
+        assert_eq!(
+            client.get_active_shipment_count(&company),
+            0,
+            "sender's active-shipment slot must be released"
+        );
+    }
+
+    #[test]
+    fn force_release_rejects_already_terminal_shipment() {
+        let (env, client, admin, admin2) = setup_multisig();
+        let (_company, shipment_id) = setup_shipment_for_force_action(&env, &client, &admin);
+
+        let first = crate::types::AdminAction::ForceRelease(shipment_id);
+        let first_id = client.propose_action(&admin, &first);
+        client.approve_action(&admin2, &first_id);
+        client.execute_proposal(&first_id);
+
+        let second = crate::types::AdminAction::ForceRefund(shipment_id);
+        let second_id = client.propose_action(&admin, &second);
+        client.approve_action(&admin2, &second_id);
+
+        let result = client.try_execute_proposal(&second_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::ShipmentAlreadyCompleted)),
+            "a second force action on an already-terminal shipment must be rejected"
+        );
+    }
 }

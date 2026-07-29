@@ -5469,6 +5469,13 @@ impl NavinShipment {
                 let mut shipment =
                     storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+                // Terminal shipments have already had their status/counters settled.
+                if shipment.status == ShipmentStatus::Delivered
+                    || shipment.status == ShipmentStatus::Cancelled
+                {
+                    return Err(NavinError::ShipmentAlreadyCompleted);
+                }
+
                 let escrow_amount = shipment.escrow_amount;
                 if escrow_amount > 0 {
                     // Get token contract address
@@ -5485,10 +5492,6 @@ impl NavinShipment {
                     }
 
                     shipment.escrow_amount = 0;
-                    shipment.updated_at = env.ledger().timestamp();
-                    shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
-                    persist_shipment(&env, &shipment)?;
-
                     events::emit_escrow_refunded(
                         &env,
                         shipment_id,
@@ -5496,6 +5499,18 @@ impl NavinShipment {
                         escrow_amount,
                     );
                 }
+
+                let old_status = shipment.status.clone();
+                shipment.status = ShipmentStatus::Cancelled;
+                shipment.updated_at = env.ledger().timestamp();
+                shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
+
+                storage::decrement_status_count(&env, &old_status);
+                storage::increment_status_count(&env, &shipment.status);
+                storage::decrement_active_shipment_count(&env, &shipment.sender);
+
+                finalize_if_settled(&env, &mut shipment);
+                persist_shipment(&env, &shipment)?;
             }
         }
 
