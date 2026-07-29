@@ -360,3 +360,32 @@ fn test_multiple_allowed_keys() {
     assert!(client.is_metadata_key_allowed(&key1));
     assert!(client.is_metadata_key_allowed(&key3));
 }
+
+// ============================================================================
+// Admin Transfer Tests
+// ============================================================================
+
+#[test]
+fn test_transfer_admin_success() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+
+    assert_eq!(client.get_admin(), new_admin);
+}
+
+#[test]
+fn test_transfer_admin_unauthorized() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let non_admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.transfer_admin(&non_admin, &new_admin);
+    }));
+    assert!(result.is_err(), "Non-admin must not be able to transfer admin");
+}

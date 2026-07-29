@@ -200,6 +200,27 @@ impl NavinToken {
         Ok(storage::get_allowance(&env, &owner, &spender))
     }
 
+    /// Transfer admin rights to a new address.
+    /// Only the current admin can call this.
+    pub fn transfer_admin(env: Env, current_admin: Address, new_admin: Address) -> Result<(), TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+
+        current_admin.require_auth();
+
+        if storage::get_admin(&env) != current_admin {
+            return Err(TokenError::Unauthorized);
+        }
+
+        storage::set_admin(&env, &new_admin);
+
+        env.events()
+            .publish((symbol_short!("admin_tr"),), (current_admin, new_admin));
+
+        Ok(())
+    }
+
     /// Mint new tokens (admin only)
     pub fn mint(env: Env, admin: Address, to: Address, amount: i128) -> Result<(), TokenError> {
         if !storage::is_initialized(&env) {
