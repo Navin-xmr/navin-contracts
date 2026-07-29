@@ -335,6 +335,33 @@ pub(crate) fn checked_mul_div_i128(
     Ok(product / divisor)
 }
 
+/// Fuzzing-only entry points into the escrow checked-arithmetic helpers.
+///
+/// These re-export the crate-private checked-math functions so the
+/// `fuzz/` cargo-fuzz crate can drive them directly. Only compiled when
+/// `cargo fuzz` sets `--cfg fuzzing`; never part of a normal build.
+#[cfg(fuzzing)]
+pub mod fuzz_api {
+    use super::{checked_add_i128, checked_mul_div_i128, checked_sub_escrow, checked_sub_i128};
+    use crate::errors::NavinError;
+
+    pub fn add_i128(a: i128, b: i128) -> Result<i128, NavinError> {
+        checked_add_i128(a, b)
+    }
+
+    pub fn sub_i128(a: i128, b: i128) -> Result<i128, NavinError> {
+        checked_sub_i128(a, b)
+    }
+
+    pub fn sub_escrow(a: i128, b: i128) -> Result<i128, NavinError> {
+        checked_sub_escrow(a, b)
+    }
+
+    pub fn mul_div_i128(value: i128, multiplier: i128, divisor: i128) -> Result<i128, NavinError> {
+        checked_mul_div_i128(value, multiplier, divisor)
+    }
+}
+
 fn with_reentrancy_lock<T, F>(env: &Env, operation: F) -> Result<T, NavinError>
 where
     F: FnOnce() -> Result<T, NavinError>,
