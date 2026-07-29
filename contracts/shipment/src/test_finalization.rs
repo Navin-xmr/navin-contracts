@@ -676,3 +676,16 @@ fn test_archive_with_no_optional_counters_is_clean() {
         health.storage_inconsistencies
     );
 }
+
+// ── #677-#680: recovery wrappers return NotInitialized instead of panicking ──
+
+#[test]
+fn test_recover_shipment_before_initialize_returns_error() {
+    let (env, client, admin, _token) = setup_shipment_env();
+    let reason = BytesN::from_array(&env, &[0xC3; 32]);
+
+    assert_eq!(
+        client.try_recover_shipment(&admin, &1u64, &ShipmentStatus::Cancelled, &reason),
+        Err(Ok(crate::NavinError::NotInitialized))
+    );
+}
