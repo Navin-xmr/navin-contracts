@@ -7886,84 +7886,84 @@ fn test_deposit_escrow_returns_escrow_already_deposited() {
 
 // ============= Error #19: MilestoneAlreadyPaid Tests =============
 
-// NOTE: This test is commented out because the feature may not be fully implemented yet
-// #[test]
-// #[should_panic(expected = "Error(Contract, #19)")]
-// fn test_record_milestone_returns_milestone_already_paid() {
-//     let (env, client, admin, token_contract) = setup_shipment_env();
-//     let company = Address::generate(&env);
-//     let receiver = Address::generate(&env);
-//     let carrier = Address::generate(&env);
-//     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-//     let checkpoint = soroban_sdk::Symbol::new(&env, "port_arrival");
-//     let deadline = env.ledger().timestamp() + 3600;
-//
-//     let mut milestones = soroban_sdk::Vec::new(&env);
-//     milestones.push_back((checkpoint.clone(), 100u32));
-//
-//     client.initialize(&admin, &token_contract);
-//     client.add_company(&admin, &company);
-//     client.add_carrier(&admin, &carrier);
-//
-//     let shipment_id = client.create_shipment(
-//         &company,
-//         &receiver,
-//         &carrier,
-//         &data_hash,
-//         &milestones,
-//         &deadline,
-//     );
-//
-//     client.deposit_escrow(&company, &shipment_id, &1000);
-//
-//     env.as_contract(&client.address, || {
-//         let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
-//         shipment.status = crate::ShipmentStatus::InTransit;
-//         crate::storage::set_shipment(&env, &shipment);
-//     });
-//
-//     client.record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
-//     // Try to record the same milestone again
-//     client.record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
-// }
+#[test]
+fn test_record_milestone_returns_milestone_already_paid() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let checkpoint = soroban_sdk::Symbol::new(&env, "port_arrival");
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((checkpoint.clone(), 100u32));
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    client.deposit_escrow(&company, &shipment_id, &1000);
+
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::ShipmentStatus::InTransit;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+
+    client.record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
+
+    // Try to record the same milestone again — must be rejected
+    let result =
+        client.try_record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
+    assert_eq!(result, Err(Ok(NavinError::MilestoneAlreadyPaid)));
+}
 
 // ============= Error #20: MetadataLimitExceeded Tests =============
 
-// NOTE: This test is commented out because the feature may not be fully implemented yet
-// #[test]
-// #[should_panic(expected = "Error(Contract, #20)")]
-// fn test_set_shipment_metadata_returns_metadata_limit_exceeded() {
-//     let (env, client, admin, token_contract) = setup_shipment_env();
-//     let company = Address::generate(&env);
-//     let receiver = Address::generate(&env);
-//     let carrier = Address::generate(&env);
-//     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-//     let deadline = env.ledger().timestamp() + 3600;
-//
-//     client.initialize(&admin, &token_contract);
-//     client.add_company(&admin, &company);
-//
-//     let shipment_id = client.create_shipment(
-//         &company,
-//         &receiver,
-//         &carrier,
-//         &data_hash,
-//         &soroban_sdk::Vec::new(&env),
-//         &deadline,
-//     );
-//
-//     // Add 5 metadata entries first (limit is 5)
-//     for i in 0..5 {
-//         let key = soroban_sdk::Symbol::new(&env, "key");
-//         let value = soroban_sdk::Symbol::new(&env, "value");
-//         client.set_shipment_metadata(&company, &shipment_id, &key, &value);
-//     }
-//
-//     // Try to add 6th metadata entry (should fail)
-//     let key = soroban_sdk::Symbol::new(&env, "key6");
-//     let value = soroban_sdk::Symbol::new(&env, "value6");
-//     client.set_shipment_metadata(&company, &shipment_id, &key, &value);
-// }
+#[test]
+fn test_set_shipment_metadata_returns_metadata_limit_exceeded() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Add 5 unique metadata entries to reach the limit
+    for i in 0..5 {
+        let key = soroban_sdk::Symbol::new(&env, &format!("key{i}"));
+        let value = soroban_sdk::Symbol::new(&env, &format!("val{i}"));
+        client.set_shipment_metadata(&company, &shipment_id, &key, &value);
+    }
+
+    // Try to add a 6th metadata entry (should fail)
+    let key = soroban_sdk::Symbol::new(&env, "key6");
+    let value = soroban_sdk::Symbol::new(&env, "val6");
+    let result = client.try_set_shipment_metadata(&company, &shipment_id, &key, &value);
+    assert_eq!(result, Err(Ok(NavinError::MetadataLimitExceeded)));
+}
 
 // ============= Error #21: RateLimitExceeded Tests =============
 
