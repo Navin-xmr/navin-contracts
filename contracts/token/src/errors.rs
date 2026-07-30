@@ -16,6 +16,8 @@ pub enum TokenError {
     /// A state-changing call was rejected because the contract is paused
     /// (issue #657).
     ContractPaused = 9,
+    /// Arithmetic overflow/underflow (checked_add/checked_sub failed).
+    Overflow = 10,
 }
 
 #[contracterror]
