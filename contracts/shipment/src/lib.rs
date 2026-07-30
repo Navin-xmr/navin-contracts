@@ -51,6 +51,8 @@ mod validation;
 #[cfg(test)]
 mod test_archive_restore_consistency;
 #[cfg(test)]
+mod test_audit_trail;
+#[cfg(test)]
 mod test_auth;
 #[cfg(test)]
 mod test_auth_matrix;
@@ -1453,6 +1455,7 @@ impl NavinShipment {
             (symbol_short!("add_wl"),),
             (company.clone(), carrier.clone()),
         );
+        audit::log_carrier_whitelisted(&env, &company, &company, &carrier)?;
 
         Ok(())
     }
@@ -1583,6 +1586,7 @@ impl NavinShipment {
             &company,
             &Role::Company,
         );
+        audit::log_role_assigned(&env, &admin, &company, &Role::Company)?;
 
         Ok(())
     }
@@ -1626,6 +1630,7 @@ impl NavinShipment {
             &carrier,
             &Role::Carrier,
         );
+        audit::log_role_assigned(&env, &admin, &carrier, &Role::Carrier)?;
 
         Ok(())
     }
@@ -1666,6 +1671,7 @@ impl NavinShipment {
             &guardian,
             &Role::Guardian,
         );
+        audit::log_role_assigned(&env, &admin, &guardian, &Role::Guardian)?;
 
         Ok(())
     }
@@ -1706,6 +1712,7 @@ impl NavinShipment {
             &operator,
             &Role::Operator,
         );
+        audit::log_role_assigned(&env, &admin, &operator, &Role::Operator)?;
 
         Ok(())
     }
@@ -1789,6 +1796,72 @@ impl NavinShipment {
         Ok(storage::is_company_suspended(&env, &company))
     }
 
+    /// Query the audit trail for every role/permission change recorded against
+    /// a specific address, whether it was the actor (e.g. the admin) or the
+    /// target (e.g. the address whose role changed).
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `target` - The address to fetch audit entries for.
+    ///
+    /// # Returns
+    /// * `Result<Vec<audit::AuditLogEntry>, NavinError>` - All entries recorded
+    ///   with `target` as the affected address, oldest first.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn query_audit_history_for_target(
+        env: Env,
+        target: Address,
+    ) -> Result<Vec<audit::AuditLogEntry>, NavinError> {
+        require_initialized(&env)?;
+        Ok(audit::query_audit_history_for_target(&env, &target))
+    }
+
+    /// Query the audit trail for every role/permission change performed by a
+    /// specific actor (e.g. an admin who assigned, revoked, or suspended roles).
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `actor` - The address that performed the audited actions.
+    ///
+    /// # Returns
+    /// * `Result<Vec<audit::AuditLogEntry>, NavinError>` - All entries recorded
+    ///   with `actor` as the performing address, oldest first.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn query_audit_history_by_actor(
+        env: Env,
+        actor: Address,
+    ) -> Result<Vec<audit::AuditLogEntry>, NavinError> {
+        require_initialized(&env)?;
+        Ok(audit::query_audit_history_by_actor(&env, &actor))
+    }
+
+    /// Query the audit trail for role/permission changes within a timestamp
+    /// window, inclusive of both bounds.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `start_time` - Start timestamp (inclusive).
+    /// * `end_time` - End timestamp (inclusive).
+    ///
+    /// # Returns
+    /// * `Result<Vec<audit::AuditLogEntry>, NavinError>` - All entries whose
+    ///   timestamp falls within `[start_time, end_time]`.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn query_audit_history(
+        env: Env,
+        start_time: u64,
+        end_time: u64,
+    ) -> Result<Vec<audit::AuditLogEntry>, NavinError> {
+        require_initialized(&env)?;
+        Ok(audit::query_audit_history(&env, start_time, end_time))
+    }
+
     /// Revoke a previously assigned role from an address.
     ///
     /// Only the admin can revoke roles. The admin cannot revoke their own role;
@@ -1844,6 +1917,7 @@ impl NavinShipment {
             &target,
             &current_role,
         );
+        audit::log_role_revoked(&env, &admin, &target, &current_role)?;
 
         Ok(())
     }
@@ -1900,6 +1974,7 @@ impl NavinShipment {
             &target,
             &current_role,
         );
+        audit::log_role_suspended(&env, &admin, &target, &current_role)?;
 
         Ok(())
     }
@@ -1951,6 +2026,7 @@ impl NavinShipment {
             &target,
             &current_role,
         );
+        audit::log_role_reactivated(&env, &admin, &target, &current_role)?;
 
         Ok(())
     }
@@ -5160,6 +5236,10 @@ impl NavinShipment {
         storage::set_company_role(&env, &new_admin);
 
         events::emit_admin_transferred(&env, &old_admin, &new_admin);
+        // Logged here (not in `transfer_admin`) because the transfer only
+        // takes effect once the proposed admin accepts it — logging at
+        // proposal time would record transfers that never complete.
+        audit::log_admin_transferred(&env, &old_admin, &new_admin)?;
 
         Ok(())
     }
