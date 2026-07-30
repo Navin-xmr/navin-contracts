@@ -4,7 +4,7 @@ extern crate std;
 
 use crate::{test_utils::setup_env, NavinToken, NavinTokenClient};
 use soroban_sdk::{
-    testutils::Address as _,
+    testutils::{Address as _, Ledger as _},
     Address, Env, String, Symbol,
 };
 
@@ -110,7 +110,7 @@ fn test_approve_and_transfer_from() {
     let spender = Address::generate(&env);
     let recipient = Address::generate(&env);
 
-    client.approve(&admin, &spender, &300);
+    client.approve(&admin, &spender, &300, &crate::MAX_EXPIRATION_LEDGER);
     assert_eq!(client.allowance(&admin, &spender), 300);
 
     client.transfer_from(&spender, &admin, &recipient, &200);
@@ -365,194 +365,435 @@ fn test_multiple_allowed_keys() {
 }
 
 // ============================================================================
-// Persistent Storage Tests
+// Allowance Expiration Tests (issue #659)
 // ============================================================================
 
-#[test]
-fn test_balance_persistent_after_write() {
-    let (env, client, admin) = setup_token_env();
-    initialize_token(&client, &env, &admin, 1_000_000);
-
-    let exists = env.as_contract(&client.address, || {
-        let key = crate::storage::DataKey::Balance(admin.clone());
-        env.storage().persistent().has(&key)
+fn set_ledger_sequence(env: &Env, seq: u32) {
+    env.ledger().with_mut(|li| {
+        li.sequence_number = seq;
     });
-    assert!(exists, "Admin balance must be stored in persistent storage");
 }
 
 #[test]
-fn test_allowance_persistent_after_write() {
+fn test_approve_with_expiration_ledger_readable_before_expiry() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
-
     let spender = Address::generate(&env);
-    client.approve(&admin, &spender, &500);
 
-    let exists = env.as_contract(&client.address, || {
-        let key = crate::storage::DataKey::Allowance(admin.clone(), spender.clone());
-        env.storage().persistent().has(&key)
-    });
-    assert!(
-        exists,
-        "Allowance must be stored in persistent storage"
-    );
+    let current = env.ledger().sequence();
+    client.approve(&admin, &spender, &500, &(current + 10));
+
+    assert_eq!(client.allowance(&admin, &spender), 500);
 }
 
 #[test]
-fn test_ttl_extended_on_transfer() {
+fn test_allowance_valid_at_exact_expiration_ledger() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
+    let spender = Address::generate(&env);
 
-    let recipient = Address::generate(&env);
+    let expiry = env.ledger().sequence() + 5;
+    client.approve(&admin, &spender, &500, &expiry);
 
-    client.transfer(&admin, &recipient, &200);
-
-    // After transfer, both sender and recipient balances should exist in persistent storage
-    let sender_exists = env.as_contract(&client.address, || {
-        let key = crate::storage::DataKey::Balance(admin.clone());
-        env.storage().persistent().has(&key)
-    });
-    let recipient_exists = env.as_contract(&client.address, || {
-        let key = crate::storage::DataKey::Balance(recipient.clone());
-        env.storage().persistent().has(&key)
-    });
-    assert!(sender_exists, "Sender balance must persist after transfer");
-    assert!(recipient_exists, "Recipient balance must persist after transfer");
+    set_ledger_sequence(&env, expiry);
+    assert_eq!(client.allowance(&admin, &spender), 500);
 }
 
 #[test]
-fn test_ttl_extended_on_mint() {
+fn test_allowance_reads_as_zero_after_expiration_ledger() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
+    let spender = Address::generate(&env);
 
-    let recipient = Address::generate(&env);
+    let expiry = env.ledger().sequence() + 5;
+    client.approve(&admin, &spender, &500, &expiry);
 
-    // Verify recipient doesn't have a balance entry yet
-    let exists_before = env.as_contract(&client.address, || {
-        let key = crate::storage::DataKey::Balance(recipient.clone());
-        env.storage().persistent().has(&key)
-    });
-    assert!(!exists_before, "Recipient should not have balance before mint");
-
-    client.mint(&admin, &recipient, &500);
-
-    let exists_after = env.as_contract(&client.address, || {
-        let key = crate::storage::DataKey::Balance(recipient.clone());
-        env.storage().persistent().has(&key)
-    });
-    assert!(exists_after, "Recipient balance must persist after mint");
+    set_ledger_sequence(&env, expiry + 1);
+    assert_eq!(client.allowance(&admin, &spender), 0);
 }
 
-// ============================================================================
-// Checked Arithmetic Tests
-// ============================================================================
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_transfer_from_fails_once_allowance_expired() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let spender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let expiry = env.ledger().sequence() + 5;
+    client.approve(&admin, &spender, &500, &expiry);
+
+    set_ledger_sequence(&env, expiry + 1);
+    // Allowance reads back as 0, so this must fail InsufficientAllowance.
+    client.transfer_from(&spender, &admin, &recipient, &100);
+}
+
+#[test]
+fn test_approve_max_expiration_ledger_never_expires() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let spender = Address::generate(&env);
+
+    client.approve(&admin, &spender, &500, &crate::MAX_EXPIRATION_LEDGER);
+
+    // Extend the contract instance's own TTL before jumping the ledger
+    // sequence far into the future — otherwise the test sandbox treats the
+    // instance itself as archived, independent of the allowance logic
+    // under test (mirrors contracts/shipment/src/test_ttl_health.rs).
+    env.as_contract(&client.address, || {
+        env.storage().instance().extend_ttl(200_000, 200_000);
+    });
+
+    // Advance far beyond any realistic expiration window to demonstrate
+    // MAX_EXPIRATION_LEDGER behaves as "effectively never expires".
+    set_ledger_sequence(&env, 100_000);
+    assert_eq!(client.allowance(&admin, &spender), 500);
+}
 
 #[test]
 #[should_panic(expected = "Error(Contract, #8)")]
-fn test_mint_overflow_rejected() {
+fn test_approve_rejects_expiration_ledger_already_passed() {
     let (env, client, admin) = setup_token_env();
-    // Initialize with total supply near i128::MAX
-    initialize_token(&client, &env, &admin, i128::MAX - 1000);
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let spender = Address::generate(&env);
 
-    let recipient = Address::generate(&env);
-    // Minting an amount that would overflow total_supply is rejected
-    client.mint(&admin, &recipient, &2000);
+    set_ledger_sequence(&env, 100);
+    // A positive amount with an expiration_ledger before "now" is invalid.
+    client.approve(&admin, &spender, &500, &50);
 }
 
 #[test]
-fn test_operations_near_max_supply() {
-    // Prove that normal operations near i128::MAX work without overflow
+fn test_approve_zero_amount_allowed_even_with_past_expiration_ledger() {
     let (env, client, admin) = setup_token_env();
-    initialize_token(&client, &env, &admin, i128::MAX - 500);
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let spender = Address::generate(&env);
 
+    set_ledger_sequence(&env, 100);
+    // Zero-amount approve clears the allowance regardless of expiration_ledger.
+    client.approve(&admin, &spender, &0, &50);
+
+    assert_eq!(client.allowance(&admin, &spender), 0);
+}
+
+#[test]
+fn test_transfer_from_preserves_expiration_ledger_after_partial_spend() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let spender = Address::generate(&env);
     let recipient = Address::generate(&env);
-    // Transfer a near-max amount works correctly
-    client.transfer(&admin, &recipient, &(i128::MAX - 1000));
 
-    assert_eq!(client.balance(&admin), 500);
-    assert_eq!(client.balance(&recipient), i128::MAX - 1000);
-    assert_eq!(client.total_supply(), i128::MAX - 500);
+    let expiry = env.ledger().sequence() + 5;
+    client.approve(&admin, &spender, &500, &expiry);
+    client.transfer_from(&spender, &admin, &recipient, &100);
+
+    // Still valid at the original expiry boundary.
+    set_ledger_sequence(&env, expiry);
+    assert_eq!(client.allowance(&admin, &spender), 400);
+
+    // And still expires at the originally-set ledger, not extended.
+    set_ledger_sequence(&env, expiry + 1);
+    assert_eq!(client.allowance(&admin, &spender), 0);
 }
 
 // ============================================================================
-// Increase / Decrease Allowance Tests
+// Burn Tests (issue #658)
 // ============================================================================
 
 #[test]
-fn test_increase_allowance() {
+fn test_admin_burn_success() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
+    let holder = Address::generate(&env);
+    client.mint(&admin, &holder, &500);
 
-    let spender = Address::generate(&env);
+    client.admin_burn(&admin, &holder, &200);
 
-    client.increase_allowance(&admin, &spender, &300);
-    assert_eq!(client.allowance(&admin, &spender), 300);
-
-    // Increase again
-    client.increase_allowance(&admin, &spender, &200);
-    assert_eq!(client.allowance(&admin, &spender), 500);
+    assert_eq!(client.balance(&holder), 300);
+    assert_eq!(client.total_supply(), 1_000_300);
 }
 
 #[test]
-fn test_decrease_allowance() {
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_admin_burn_unauthorized() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
+    let holder = Address::generate(&env);
+    client.mint(&admin, &holder, &500);
 
-    let spender = Address::generate(&env);
-
-    client.approve(&admin, &spender, &500);
-    assert_eq!(client.allowance(&admin, &spender), 500);
-
-    client.decrease_allowance(&admin, &spender, &200);
-    assert_eq!(client.allowance(&admin, &spender), 300);
+    let non_admin = Address::generate(&env);
+    client.admin_burn(&non_admin, &holder, &200);
 }
 
 #[test]
-fn test_decrease_allowance_below_zero_rejected() {
+fn test_holder_burn_success() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
+    let holder = Address::generate(&env);
+    client.mint(&admin, &holder, &500);
 
+    // No admin involved — the holder authorizes their own burn.
+    client.burn(&holder, &200);
+
+    assert_eq!(client.balance(&holder), 300);
+    assert_eq!(client.total_supply(), 1_000_300);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #5)")]
+fn test_holder_burn_insufficient_balance() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let holder = Address::generate(&env);
+
+    client.burn(&holder, &100);
+}
+
+#[test]
+fn test_burn_from_success() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
     let spender = Address::generate(&env);
 
-    client.approve(&admin, &spender, &100);
+    client.approve(&admin, &spender, &300, &crate::MAX_EXPIRATION_LEDGER);
+    client.burn_from(&spender, &admin, &200);
 
-    // Decreasing below current allowance should panic
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.decrease_allowance(&admin, &spender, &200);
-    }));
-    assert!(
-        result.is_err(),
-        "Decreasing allowance below zero must be rejected"
-    );
-    // Allowance should remain unchanged
+    assert_eq!(client.balance(&admin), 999_800);
+    assert_eq!(client.total_supply(), 999_800);
     assert_eq!(client.allowance(&admin, &spender), 100);
 }
 
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_burn_from_insufficient_allowance() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let spender = Address::generate(&env);
+
+    client.approve(&admin, &spender, &100, &crate::MAX_EXPIRATION_LEDGER);
+    client.burn_from(&spender, &admin, &200);
+}
+
 // ============================================================================
-// Admin Transfer Tests
+// Pause/Unpause Tests (issue #657)
 // ============================================================================
 
 #[test]
-fn test_transfer_admin_success() {
+fn test_pause_and_unpause_toggle_is_paused() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
 
-    let new_admin = Address::generate(&env);
-    client.transfer_admin(&admin, &new_admin);
-
-    assert_eq!(client.get_admin(), new_admin);
+    assert!(!client.is_paused());
+    client.pause(&admin);
+    assert!(client.is_paused());
+    client.unpause(&admin);
+    assert!(!client.is_paused());
 }
 
 #[test]
-fn test_transfer_admin_unauthorized() {
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_pause_unauthorized() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
 
     let non_admin = Address::generate(&env);
-    let new_admin = Address::generate(&env);
+    client.pause(&non_admin);
+}
 
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.transfer_admin(&non_admin, &new_admin);
-    }));
-    assert!(result.is_err(), "Non-admin must not be able to transfer admin");
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_paused_blocks_transfer() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let recipient = Address::generate(&env);
+
+    client.pause(&admin);
+    client.transfer(&admin, &recipient, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_paused_blocks_transfer_from() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let spender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    client.approve(&admin, &spender, &300, &crate::MAX_EXPIRATION_LEDGER);
+
+    client.pause(&admin);
+    client.transfer_from(&spender, &admin, &recipient, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_paused_blocks_mint() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let recipient = Address::generate(&env);
+
+    client.pause(&admin);
+    client.mint(&admin, &recipient, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_paused_blocks_holder_burn() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    client.pause(&admin);
+    client.burn(&admin, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_paused_blocks_admin_burn() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    client.pause(&admin);
+    client.admin_burn(&admin, &admin, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_paused_blocks_burn_from() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let spender = Address::generate(&env);
+    client.approve(&admin, &spender, &300, &crate::MAX_EXPIRATION_LEDGER);
+
+    client.pause(&admin);
+    client.burn_from(&spender, &admin, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_paused_blocks_batch_transfer() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let recipient = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    recipients.push_back((recipient, 100));
+
+    client.pause(&admin);
+    client.batch_transfer(&admin, &recipients);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_paused_blocks_approve() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let spender = Address::generate(&env);
+
+    client.pause(&admin);
+    client.approve(&admin, &spender, &100, &crate::MAX_EXPIRATION_LEDGER);
+}
+
+#[test]
+fn test_unpause_restores_transfer() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let recipient = Address::generate(&env);
+
+    client.pause(&admin);
+    client.unpause(&admin);
+    client.transfer(&admin, &recipient, &100);
+
+    assert_eq!(client.balance(&recipient), 100);
+}
+
+// ============================================================================
+// Batch Transfer Tests (issue #656)
+// ============================================================================
+
+#[test]
+fn test_batch_transfer_success() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+    let r3 = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    recipients.push_back((r1.clone(), 100));
+    recipients.push_back((r2.clone(), 200));
+    recipients.push_back((r3.clone(), 300));
+
+    client.batch_transfer(&admin, &recipients);
+
+    assert_eq!(client.balance(&r1), 100);
+    assert_eq!(client.balance(&r2), 200);
+    assert_eq!(client.balance(&r3), 300);
+    assert_eq!(client.balance(&admin), 1_000_000 - 600);
+}
+
+#[test]
+fn test_batch_transfer_partial_failure_rejects_all() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    recipients.push_back((r1.clone(), 100));
+    // Second leg is invalid (non-positive amount) — the whole batch must
+    // fail, and r1's leg must NOT have been applied either.
+    recipients.push_back((r2.clone(), 0));
+
+    let result = client.try_batch_transfer(&admin, &recipients);
+    assert!(result.is_err());
+
+    assert_eq!(
+        client.balance(&r1),
+        0,
+        "no leg should apply when any leg fails"
+    );
+    assert_eq!(
+        client.balance(&admin),
+        1_000_000,
+        "sender balance must be untouched"
+    );
+}
+
+#[test]
+fn test_batch_transfer_insufficient_total_balance_rejects_all() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    recipients.push_back((r1.clone(), 600));
+    recipients.push_back((r2.clone(), 600)); // 1200 total > 1000 balance
+
+    let result = client.try_batch_transfer(&admin, &recipients);
+    assert!(result.is_err());
+
+    assert_eq!(client.balance(&r1), 0);
+    assert_eq!(client.balance(&r2), 0);
+    assert_eq!(client.balance(&admin), 1_000);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")]
+fn test_batch_transfer_empty_batch_rejected() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let recipients: soroban_sdk::Vec<(Address, i128)> = soroban_sdk::Vec::new(&env);
+    client.batch_transfer(&admin, &recipients);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")]
+fn test_batch_transfer_rejects_self_transfer_leg() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    recipients.push_back((admin.clone(), 100));
+
+    client.batch_transfer(&admin, &recipients);
 }

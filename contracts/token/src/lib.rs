@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String, Symbol};
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String, Symbol, Vec};
 
 mod errors;
 mod storage;
@@ -11,8 +11,22 @@ mod test_utils;
 
 pub use errors::*;
 
+/// Pass as `expiration_ledger` to `approve` for an allowance that
+/// effectively never expires (issue #659).
+pub const MAX_EXPIRATION_LEDGER: u32 = u32::MAX;
+
 #[contract]
 pub struct NavinToken;
+
+/// Returns Err(TokenError::ContractPaused) if the contract is currently
+/// paused (issue #657). Checked after initialization but before
+/// require_auth, matching the shipment contract's guard ordering.
+fn require_not_paused(env: &Env) -> Result<(), TokenError> {
+    if storage::is_paused(env) {
+        return Err(TokenError::ContractPaused);
+    }
+    Ok(())
+}
 
 #[contractimpl]
 impl NavinToken {
@@ -94,6 +108,7 @@ impl NavinToken {
         if !storage::is_initialized(&env) {
             return Err(TokenError::NotInitialized);
         }
+        require_not_paused(&env)?;
 
         from.require_auth();
 
@@ -141,6 +156,7 @@ impl NavinToken {
         if !storage::is_initialized(&env) {
             return Err(TokenError::NotInitialized);
         }
+        require_not_paused(&env)?;
 
         spender.require_auth();
 
@@ -162,24 +178,15 @@ impl NavinToken {
             return Err(TokenError::InsufficientBalance);
         }
 
-        // Update balances and allowance with checked arithmetic
-        let new_from_balance = from_balance
-            .checked_sub(amount)
-            .ok_or(TokenError::Overflow)?;
-        let to_balance = storage::get_balance(&env, &to);
-        let new_to_balance = to_balance
-            .checked_add(amount)
-            .ok_or(TokenError::Overflow)?;
-        let new_allowance = allowance
-            .checked_sub(amount)
-            .ok_or(TokenError::Overflow)?;
-        storage::set_balance(&env, &from, new_from_balance);
-        storage::set_balance(&env, &to, new_to_balance);
-        storage::set_allowance(&env, &from, &spender, new_allowance);
-
-        // Extend TTL for affected balances and allowance
-        storage::extend_balance_ttl_for(&env, &[from.clone(), to.clone()], 1000, 500000);
-        storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
+        // Update balances and allowance. Preserve the existing
+        // expiration_ledger (issue #659) — spending down an allowance
+        // doesn't reset how long it's valid for.
+        let expiration_ledger = storage::get_allowance_raw(&env, &from, &spender)
+            .map(|v| v.expiration_ledger)
+            .unwrap_or(0);
+        storage::set_balance(&env, &from, from_balance - amount);
+        storage::set_balance(&env, &to, storage::get_balance(&env, &to) + amount);
+        storage::set_allowance(&env, &from, &spender, allowance - amount, expiration_ledger);
 
         env.events()
             .publish((symbol_short!("tr_from"),), (from, to, spender, amount));
@@ -187,44 +194,55 @@ impl NavinToken {
         Ok(())
     }
 
-    /// Approve an address to spend tokens on behalf of caller
+    /// Approve `spender` to transfer up to `amount` of `from`'s tokens,
+    /// until `expiration_ledger` (issue #659) — matches the standard
+    /// Soroban token interface's `approve(from, spender, amount,
+    /// expiration_ledger)` shape. Pass `MAX_EXPIRATION_LEDGER` for an
+    /// allowance that effectively never expires. `amount == 0` clears the
+    /// allowance regardless of `expiration_ledger`.
     pub fn approve(
         env: Env,
-        owner: Address,
+        from: Address,
         spender: Address,
         amount: i128,
+        expiration_ledger: u32,
     ) -> Result<(), TokenError> {
         if !storage::is_initialized(&env) {
             return Err(TokenError::NotInitialized);
         }
+        require_not_paused(&env)?;
 
-        owner.require_auth();
+        from.require_auth();
 
         if amount < 0 {
             return Err(TokenError::InvalidAmount);
         }
 
-        if owner == spender {
+        if from == spender {
             return Err(TokenError::SameAccount);
         }
 
-        storage::set_allowance(&env, &owner, &spender, amount);
+        if amount > 0 && expiration_ledger < env.ledger().sequence() {
+            return Err(TokenError::InvalidExpirationLedger);
+        }
 
-        // Extend TTL for the allowance entry
-        storage::extend_allowance_ttl(&env, &owner, &spender, 1000, 500000);
+        storage::set_allowance(&env, &from, &spender, amount, expiration_ledger);
 
-        env.events()
-            .publish((symbol_short!("approve"),), (owner, spender, amount));
+        env.events().publish(
+            (symbol_short!("approve"),),
+            (from, spender, amount, expiration_ledger),
+        );
 
         Ok(())
     }
 
-    /// Get allowance of spender for owner's tokens
-    pub fn allowance(env: Env, owner: Address, spender: Address) -> Result<i128, TokenError> {
+    /// Get the current allowance of `spender` for `from`'s tokens. Reads
+    /// back as 0 once `expiration_ledger` has passed (issue #659).
+    pub fn allowance(env: Env, from: Address, spender: Address) -> Result<i128, TokenError> {
         if !storage::is_initialized(&env) {
             return Err(TokenError::NotInitialized);
         }
-        Ok(storage::get_allowance(&env, &owner, &spender))
+        Ok(storage::get_allowance(&env, &from, &spender))
     }
 
     /// Increase the allowance for a spender by a delta.
@@ -326,6 +344,7 @@ impl NavinToken {
         if !storage::is_initialized(&env) {
             return Err(TokenError::NotInitialized);
         }
+        require_not_paused(&env)?;
 
         admin.require_auth();
 
@@ -356,11 +375,20 @@ impl NavinToken {
         Ok(())
     }
 
-    /// Burn tokens (admin only)
-    pub fn burn(env: Env, admin: Address, from: Address, amount: i128) -> Result<(), TokenError> {
+    /// Admin clawback burn: burns tokens from an arbitrary `from` address,
+    /// authorized by the admin rather than the holder (issue #658). Kept
+    /// under this distinct name so it can't be confused with the
+    /// holder-authorized `burn` below, which requires `from`'s own auth.
+    pub fn admin_burn(
+        env: Env,
+        admin: Address,
+        from: Address,
+        amount: i128,
+    ) -> Result<(), TokenError> {
         if !storage::is_initialized(&env) {
             return Err(TokenError::NotInitialized);
         }
+        require_not_paused(&env)?;
 
         admin.require_auth();
 
@@ -391,7 +419,179 @@ impl NavinToken {
         storage::extend_balance_ttl(&env, &from, 1000, 500000);
 
         env.events()
+            .publish((symbol_short!("adm_burn"),), (from, amount));
+
+        Ok(())
+    }
+
+    /// Holder self-service burn: `from` burns their own tokens, requiring
+    /// only their own auth — no admin involvement (issue #658).
+    pub fn burn(env: Env, from: Address, amount: i128) -> Result<(), TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+        require_not_paused(&env)?;
+
+        from.require_auth();
+
+        if amount <= 0 {
+            return Err(TokenError::InvalidAmount);
+        }
+
+        let from_balance = storage::get_balance(&env, &from);
+        if from_balance < amount {
+            return Err(TokenError::InsufficientBalance);
+        }
+
+        let current_supply = storage::get_total_supply(&env);
+        storage::set_total_supply(&env, current_supply - amount);
+        storage::set_balance(&env, &from, from_balance - amount);
+
+        env.events()
             .publish((symbol_short!("burn"),), (from, amount));
+
+        Ok(())
+    }
+
+    /// Allowance-based burn: `spender` burns `amount` of `from`'s tokens,
+    /// consuming an existing allowance — mirrors `transfer_from` but
+    /// destroys the tokens instead of moving them (issue #658).
+    pub fn burn_from(
+        env: Env,
+        spender: Address,
+        from: Address,
+        amount: i128,
+    ) -> Result<(), TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+        require_not_paused(&env)?;
+
+        spender.require_auth();
+
+        if amount <= 0 {
+            return Err(TokenError::InvalidAmount);
+        }
+
+        let allowance = storage::get_allowance(&env, &from, &spender);
+        if allowance < amount {
+            return Err(TokenError::InsufficientAllowance);
+        }
+
+        let from_balance = storage::get_balance(&env, &from);
+        if from_balance < amount {
+            return Err(TokenError::InsufficientBalance);
+        }
+
+        let expiration_ledger = storage::get_allowance_raw(&env, &from, &spender)
+            .map(|v| v.expiration_ledger)
+            .unwrap_or(0);
+        let current_supply = storage::get_total_supply(&env);
+        storage::set_total_supply(&env, current_supply - amount);
+        storage::set_balance(&env, &from, from_balance - amount);
+        storage::set_allowance(&env, &from, &spender, allowance - amount, expiration_ledger);
+
+        env.events()
+            .publish((symbol_short!("burn_from"),), (from, spender, amount));
+
+        Ok(())
+    }
+
+    /// Pause the contract, blocking transfer/transfer_from/mint/burn/
+    /// burn_from/admin_burn/batch_transfer until unpause() is called
+    /// (issue #657). Admin only.
+    pub fn pause(env: Env, admin: Address) -> Result<(), TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(TokenError::Unauthorized);
+        }
+
+        storage::set_paused(&env, true);
+        env.events().publish((symbol_short!("paused"),), (admin,));
+
+        Ok(())
+    }
+
+    /// Unpause the contract, re-enabling fund-moving operations
+    /// (issue #657). Admin only.
+    pub fn unpause(env: Env, admin: Address) -> Result<(), TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+
+        admin.require_auth();
+
+        if storage::get_admin(&env) != admin {
+            return Err(TokenError::Unauthorized);
+        }
+
+        storage::set_paused(&env, false);
+        env.events().publish((symbol_short!("unpaused"),), (admin,));
+
+        Ok(())
+    }
+
+    /// Check whether the contract is currently paused. Read-only, no auth
+    /// required (issue #657).
+    pub fn is_paused(env: Env) -> Result<bool, TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+        Ok(storage::is_paused(&env))
+    }
+
+    /// Transfer to multiple recipients in a single call (issue #656). The
+    /// whole batch is validated up front — if any leg would fail (a
+    /// non-positive amount, a self-transfer, or insufficient total
+    /// balance), the entire call returns Err and Soroban reverts every
+    /// storage change made during this invocation, so no partial transfer
+    /// can ever be observed. An empty `recipients` list is rejected as
+    /// InvalidAmount, mirroring how a non-positive amount is rejected
+    /// everywhere else in this contract.
+    pub fn batch_transfer(
+        env: Env,
+        from: Address,
+        recipients: Vec<(Address, i128)>,
+    ) -> Result<(), TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+        require_not_paused(&env)?;
+
+        from.require_auth();
+
+        if recipients.is_empty() {
+            return Err(TokenError::InvalidAmount);
+        }
+
+        let mut total: i128 = 0;
+        for (to, amount) in recipients.iter() {
+            if amount <= 0 {
+                return Err(TokenError::InvalidAmount);
+            }
+            if to == from {
+                return Err(TokenError::SameAccount);
+            }
+            total = total.checked_add(amount).ok_or(TokenError::InvalidAmount)?;
+        }
+
+        let from_balance = storage::get_balance(&env, &from);
+        if from_balance < total {
+            return Err(TokenError::InsufficientBalance);
+        }
+
+        storage::set_balance(&env, &from, from_balance - total);
+        for (to, amount) in recipients.iter() {
+            storage::set_balance(&env, &to, storage::get_balance(&env, &to) + amount);
+        }
+
+        env.events()
+            .publish((symbol_short!("batch_tr"),), (from, recipients.len()));
 
         Ok(())
     }
