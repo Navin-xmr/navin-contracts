@@ -75,7 +75,6 @@ pub struct AuditLogEntry {
 /// # Returns
 /// * `Ok(entry_id)` on success
 /// * `Err(NavinError)` on failure
-#[allow(dead_code)]
 pub fn log_role_assigned(
     env: &Env,
     admin: &Address,
@@ -110,7 +109,6 @@ pub fn log_role_assigned(
 /// # Returns
 /// * `Ok(entry_id)` on success
 /// * `Err(NavinError)` on failure
-#[allow(dead_code)]
 pub fn log_role_revoked(
     env: &Env,
     admin: &Address,
@@ -145,7 +143,6 @@ pub fn log_role_revoked(
 /// # Returns
 /// * `Ok(entry_id)` on success
 /// * `Err(NavinError)` on failure
-#[allow(dead_code)]
 pub fn log_role_suspended(
     env: &Env,
     admin: &Address,
@@ -180,7 +177,6 @@ pub fn log_role_suspended(
 /// # Returns
 /// * `Ok(entry_id)` on success
 /// * `Err(NavinError)` on failure
-#[allow(dead_code)]
 pub fn log_role_reactivated(
     env: &Env,
     admin: &Address,
@@ -214,7 +210,6 @@ pub fn log_role_reactivated(
 /// # Returns
 /// * `Ok(entry_id)` on success
 /// * `Err(NavinError)` on failure
-#[allow(dead_code)]
 pub fn log_admin_transferred(
     env: &Env,
     old_admin: &Address,
@@ -248,7 +243,6 @@ pub fn log_admin_transferred(
 /// # Returns
 /// * `Ok(entry_id)` on success
 /// * `Err(NavinError)` on failure
-#[allow(dead_code)]
 pub fn log_carrier_whitelisted(
     env: &Env,
     admin: &Address,
@@ -281,7 +275,6 @@ pub fn log_carrier_whitelisted(
 ///
 /// # Returns
 /// * Vector of audit entries within the time range
-#[allow(dead_code)]
 pub fn query_audit_history(
     env: &Env,
     start_time: u64,
@@ -309,7 +302,6 @@ pub fn query_audit_history(
 ///
 /// # Returns
 /// * Vector of audit entries for the target
-#[allow(dead_code)]
 pub fn query_audit_history_for_target(
     env: &Env,
     target: &Address,
@@ -336,7 +328,6 @@ pub fn query_audit_history_for_target(
 ///
 /// # Returns
 /// * Vector of audit entries by the actor
-#[allow(dead_code)]
 pub fn query_audit_history_by_actor(env: &Env, actor: &Address) -> soroban_sdk::Vec<AuditLogEntry> {
     let mut results = soroban_sdk::Vec::new(env);
     let total_entries = get_audit_entry_count(env);
