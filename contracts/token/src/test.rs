@@ -442,6 +442,14 @@ fn test_approve_max_expiration_ledger_never_expires() {
     // under test (mirrors contracts/shipment/src/test_ttl_health.rs).
     env.as_contract(&client.address, || {
         env.storage().instance().extend_ttl(200_000, 200_000);
+        // Allowances live in persistent storage, so the allowance entry's
+        // TTL must be extended as well — a fresh persistent entry only starts
+        // with `min_persistent_entry_ttl` (4096) ledgers of life.
+        env.storage().persistent().extend_ttl(
+            &crate::storage::DataKey::Allowance(admin.clone(), spender.clone()),
+            200_000,
+            200_000,
+        );
     });
 
     // Advance far beyond any realistic expiration window to demonstrate
@@ -797,10 +805,6 @@ fn test_batch_transfer_rejects_self_transfer_leg() {
 
     client.batch_transfer(&admin, &recipients);
 }
-
-// ============================================================================
-// Admin Transfer Tests
-// ============================================================================
 
 #[test]
 fn test_transfer_admin_success() {
