@@ -349,3 +349,100 @@ fn test_record_milestone_blocked_on_cancelled_shipment() {
         "Expected InvalidStatus for milestone on cancelled shipment"
     );
 }
+
+// ── issue #676: suspended carriers cannot report breaches ────────────────────
+
+/// A suspended carrier must not be able to report a breach at all. With
+/// `auto_dispute_breach` enabled this is the higher-severity case: a fabricated
+/// Critical breach would otherwise open a dispute and freeze escrow.
+#[test]
+fn test_suspended_carrier_cannot_trigger_auto_dispute() {
+    let (env, client, admin, token) = setup();
+    let (id, _company, _receiver, carrier) = create_test_shipment(&env, &client, &admin, &token);
+    enable_auto_dispute(&client, &admin);
+
+    client.suspend_carrier(&admin, &carrier);
+
+    let breach_hash = BytesN::from_array(&env, &[44u8; 32]);
+    let result = client.try_report_condition_breach(
+        &carrier,
+        &id,
+        &BreachType::TamperDetected,
+        &Severity::Critical,
+        &breach_hash,
+    );
+
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::CarrierSuspended)),
+        "a suspended carrier must not be able to report a condition breach"
+    );
+
+    let shipment = client.get_shipment(&id);
+    assert_eq!(
+        shipment.status,
+        ShipmentStatus::Created,
+        "no auto-dispute may be opened by a suspended carrier"
+    );
+}
+
+/// The suspension check must apply regardless of the auto-dispute toggle.
+#[test]
+fn test_suspended_carrier_breach_rejected_with_auto_dispute_disabled() {
+    let (env, client, admin, token) = setup();
+    let (id, _company, _receiver, carrier) = create_test_shipment(&env, &client, &admin, &token);
+
+    client.suspend_carrier(&admin, &carrier);
+
+    let breach_hash = BytesN::from_array(&env, &[45u8; 32]);
+    let result = client.try_report_condition_breach(
+        &carrier,
+        &id,
+        &BreachType::TemperatureHigh,
+        &Severity::Low,
+        &breach_hash,
+    );
+
+    assert_eq!(result, Err(Ok(crate::NavinError::CarrierSuspended)));
+}
+
+/// Active carriers must be entirely unaffected by the new check.
+#[test]
+fn test_active_carrier_breach_reporting_unaffected() {
+    let (env, client, admin, token) = setup();
+    let (id, _company, _receiver, carrier) = create_test_shipment(&env, &client, &admin, &token);
+    enable_auto_dispute(&client, &admin);
+
+    let breach_hash = BytesN::from_array(&env, &[46u8; 32]);
+    client.report_condition_breach(
+        &carrier,
+        &id,
+        &BreachType::TamperDetected,
+        &Severity::Critical,
+        &breach_hash,
+    );
+
+    assert_eq!(client.get_shipment(&id).status, ShipmentStatus::Disputed);
+}
+
+/// A carrier reinstated after suspension can report breaches again.
+#[test]
+fn test_reactivated_carrier_can_report_breach_again() {
+    let (env, client, admin, token) = setup();
+    let (id, _company, _receiver, carrier) = create_test_shipment(&env, &client, &admin, &token);
+    enable_auto_dispute(&client, &admin);
+
+    client.suspend_carrier(&admin, &carrier);
+    client.reactivate_carrier(&admin, &carrier);
+
+    let breach_hash = BytesN::from_array(&env, &[47u8; 32]);
+    client.report_condition_breach(
+        &carrier,
+        &id,
+        &BreachType::TamperDetected,
+        &Severity::Critical,
+        &breach_hash,
+    );
+
+    assert_eq!(client.get_shipment(&id).status, ShipmentStatus::Disputed);
+}

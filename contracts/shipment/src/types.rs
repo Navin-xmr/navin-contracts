@@ -106,6 +106,9 @@ pub enum DataKey {
     ActorQuota(Address),
     /// Circuit breaker state for token transfers.
     CircuitBreakerState,
+    /// Admin-configured circuit breaker thresholds. Absent means the built-in
+    /// default is in effect.
+    CircuitBreakerConfig,
     /// Audit log entry keyed by entry ID.
     AuditEntry(u64),
     /// Total count of audit log entries.

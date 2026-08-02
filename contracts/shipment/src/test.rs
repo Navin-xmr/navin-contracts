@@ -370,6 +370,48 @@ fn test_create_shipment_unauthorized() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #57)")]
+fn test_create_shipment_rejects_sender_equals_receiver() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+    client.add_company(&admin, &company);
+    // sender and receiver are the same address — must be rejected
+    client.create_shipment(
+        &company,
+        &company,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #57)")]
+fn test_create_shipment_rejects_sender_equals_carrier() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[8u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+    client.add_company(&admin, &company);
+    // sender and carrier are the same address — must be rejected
+    client.create_shipment(
+        &company,
+        &receiver,
+        &company,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+}
+
+#[test]
 fn test_multiple_shipments_have_unique_ids() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -7844,84 +7886,84 @@ fn test_deposit_escrow_returns_escrow_already_deposited() {
 
 // ============= Error #19: MilestoneAlreadyPaid Tests =============
 
-// NOTE: This test is commented out because the feature may not be fully implemented yet
-// #[test]
-// #[should_panic(expected = "Error(Contract, #19)")]
-// fn test_record_milestone_returns_milestone_already_paid() {
-//     let (env, client, admin, token_contract) = setup_shipment_env();
-//     let company = Address::generate(&env);
-//     let receiver = Address::generate(&env);
-//     let carrier = Address::generate(&env);
-//     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-//     let checkpoint = soroban_sdk::Symbol::new(&env, "port_arrival");
-//     let deadline = env.ledger().timestamp() + 3600;
-//
-//     let mut milestones = soroban_sdk::Vec::new(&env);
-//     milestones.push_back((checkpoint.clone(), 100u32));
-//
-//     client.initialize(&admin, &token_contract);
-//     client.add_company(&admin, &company);
-//     client.add_carrier(&admin, &carrier);
-//
-//     let shipment_id = client.create_shipment(
-//         &company,
-//         &receiver,
-//         &carrier,
-//         &data_hash,
-//         &milestones,
-//         &deadline,
-//     );
-//
-//     client.deposit_escrow(&company, &shipment_id, &1000);
-//
-//     env.as_contract(&client.address, || {
-//         let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
-//         shipment.status = crate::ShipmentStatus::InTransit;
-//         crate::storage::set_shipment(&env, &shipment);
-//     });
-//
-//     client.record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
-//     // Try to record the same milestone again
-//     client.record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
-// }
+#[test]
+fn test_record_milestone_returns_milestone_already_paid() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let checkpoint = soroban_sdk::Symbol::new(&env, "port_arrival");
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((checkpoint.clone(), 100u32));
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    client.deposit_escrow(&company, &shipment_id, &1000);
+
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::ShipmentStatus::InTransit;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+
+    client.record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
+
+    // Try to record the same milestone again — must be rejected
+    let result =
+        client.try_record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
+    assert_eq!(result, Err(Ok(NavinError::MilestoneAlreadyPaid)));
+}
 
 // ============= Error #20: MetadataLimitExceeded Tests =============
 
-// NOTE: This test is commented out because the feature may not be fully implemented yet
-// #[test]
-// #[should_panic(expected = "Error(Contract, #20)")]
-// fn test_set_shipment_metadata_returns_metadata_limit_exceeded() {
-//     let (env, client, admin, token_contract) = setup_shipment_env();
-//     let company = Address::generate(&env);
-//     let receiver = Address::generate(&env);
-//     let carrier = Address::generate(&env);
-//     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-//     let deadline = env.ledger().timestamp() + 3600;
-//
-//     client.initialize(&admin, &token_contract);
-//     client.add_company(&admin, &company);
-//
-//     let shipment_id = client.create_shipment(
-//         &company,
-//         &receiver,
-//         &carrier,
-//         &data_hash,
-//         &soroban_sdk::Vec::new(&env),
-//         &deadline,
-//     );
-//
-//     // Add 5 metadata entries first (limit is 5)
-//     for i in 0..5 {
-//         let key = soroban_sdk::Symbol::new(&env, "key");
-//         let value = soroban_sdk::Symbol::new(&env, "value");
-//         client.set_shipment_metadata(&company, &shipment_id, &key, &value);
-//     }
-//
-//     // Try to add 6th metadata entry (should fail)
-//     let key = soroban_sdk::Symbol::new(&env, "key6");
-//     let value = soroban_sdk::Symbol::new(&env, "value6");
-//     client.set_shipment_metadata(&company, &shipment_id, &key, &value);
-// }
+#[test]
+fn test_set_shipment_metadata_returns_metadata_limit_exceeded() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Add 5 unique metadata entries to reach the limit
+    for i in 0..5 {
+        let key = soroban_sdk::Symbol::new(&env, &format!("key{i}"));
+        let value = soroban_sdk::Symbol::new(&env, &format!("val{i}"));
+        client.set_shipment_metadata(&company, &shipment_id, &key, &value);
+    }
+
+    // Try to add a 6th metadata entry (should fail)
+    let key = soroban_sdk::Symbol::new(&env, "key6");
+    let value = soroban_sdk::Symbol::new(&env, "val6");
+    let result = client.try_set_shipment_metadata(&company, &shipment_id, &key, &value);
+    assert_eq!(result, Err(Ok(NavinError::MetadataLimitExceeded)));
+}
 
 // ============= Error #21: RateLimitExceeded Tests =============
 
@@ -8000,6 +8042,38 @@ fn test_execute_proposal_returns_proposal_not_found() {
     client.init_multisig(&admin, &admins, &2);
 
     client.execute_proposal(&999);
+}
+
+#[test]
+fn test_approve_action_returns_proposal_not_found_variant() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+
+    client.initialize(&admin, &token_contract);
+    client.init_multisig(&admin, &admins, &2);
+
+    let result = client.try_approve_action(&admin2, &999);
+    assert_eq!(result, Err(Ok(NavinError::ProposalNotFound)));
+}
+
+#[test]
+fn test_execute_proposal_returns_proposal_not_found_variant() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    client.initialize(&admin, &token_contract);
+    client.init_multisig(&admin, &admins, &2);
+
+    let result = client.try_execute_proposal(&999);
+    assert_eq!(result, Err(Ok(NavinError::ProposalNotFound)));
 }
 
 // ============= Error #23: ProposalAlreadyExecuted Tests =============
@@ -13502,6 +13576,10 @@ fn test_assert_delivery_hash_incorrect_hash_returns_mismatch() {
     let confirmation_hash = BytesN::from_array(&env, &[3u8; 32]);
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
 
+    assert_eq!(client.get_note_count(&shipment_id), 3);
+    assert_eq!(client.get_note_hash(&shipment_id, &0), note_a.clone());
+    assert_eq!(client.get_note_hash(&shipment_id, &1), note_b.clone());
+    assert_eq!(client.get_note_hash(&shipment_id, &2), note_c.clone());
     let wrong_hash = BytesN::from_array(&env, &[0xFFu8; 32]);
     let result = client.try_assert_delivery_hash(&shipment_id, &wrong_hash);
     assert_eq!(
@@ -13546,6 +13624,10 @@ fn test_milestones_within_limit_accepted() {
     config.max_milestones_per_shipment = 2;
     client.update_config(&admin, &config);
 
+    assert_eq!(client.get_note_count(&shipment_id), 3);
+    assert_eq!(client.get_note_hash(&shipment_id, &0), note_a.clone());
+    assert_eq!(client.get_note_hash(&shipment_id, &1), note_b.clone());
+    assert_eq!(client.get_note_hash(&shipment_id, &2), note_c.clone());
     // Record 2 milestones — both should succeed
     let cp1 = Symbol::new(&env, "checkpoint1");
     let cp2 = Symbol::new(&env, "checkpoint2");
@@ -15030,3 +15112,86 @@ fn test_execute_proposal_with_exact_threshold_approvals_succeeds() {
 fn test_insufficient_approvals_error_code_is_26() {
     assert_eq!(crate::NavinError::InsufficientApprovals as u32, 26);
 }
+
+// ── New Tests for Error Variants ──────────────────────────────────────────────
+
+#[test]
+fn test_get_note_hash_out_of_bounds_returns_notenotfound() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &(env.ledger().timestamp() + 3600),
+    );
+    
+    let result = client.try_get_note_hash(&id, &999);
+    assert_eq!(result, Err(Ok(crate::NavinError::NoteNotFound)));
+}
+
+#[test]
+fn test_get_note_hash_non_existent_shipment_returns_notenotfound() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    
+    let result = client.try_get_note_hash(&999, &0);
+    assert_eq!(result, Err(Ok(crate::NavinError::NoteNotFound)));
+}
+
+#[test]
+fn test_metadata_symbol_collision_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &(env.ledger().timestamp() + 3600),
+    );
+    
+    let sym = Symbol::new(&env, "identical");
+    let result = client.try_set_shipment_metadata(&company, &id, &sym, &sym);
+    assert_eq!(result, Err(Ok(crate::NavinError::MetadataSymbolCollision)));
+    
+    let sym1 = Symbol::new(&env, "key");
+    let sym2 = Symbol::new(&env, "value");
+    client.set_shipment_metadata(&company, &id, &sym1, &sym2);
+    assert!(client.get_shipment(&id).metadata.is_some());
+}
+
+#[test]
+fn test_invalid_symbol_error_variant() {
+    let env = Env::default();
+    
+    // length < 1 (which means length 0, 8 bytes in XDR)
+    let empty_symbol = Symbol::new(&env, "");
+    let result1 = crate::validation::validate_symbol(&env, &empty_symbol);
+    assert_eq!(result1, Err(crate::NavinError::InvalidSymbol));
+    
+    // length > 12 characters (24+ bytes in XDR)
+    let long_symbol = Symbol::new(&env, "toolongsymbolname");
+    let result2 = crate::validation::validate_symbol(&env, &long_symbol);
+    assert_eq!(result2, Err(crate::NavinError::InvalidSymbol));
+}
+

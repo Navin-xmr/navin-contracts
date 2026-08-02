@@ -13,6 +13,18 @@ pub enum DataKey {
     AllowedMetadataKey(Symbol),
     /// Token metadata key-value pairs
     Metadata(Symbol),
+    /// Contract-wide pause flag (issue #657)
+    Paused,
+}
+
+/// An allowance amount plus the ledger sequence it expires on (issue #659),
+/// matching the standard Soroban token interface's `approve`/`allowance`
+/// shape. `u32::MAX` is used as the "never expires" sentinel.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AllowanceValue {
+    pub amount: i128,
+    pub expiration_ledger: u32,
 }
 
 /// Check if the contract has been initialized
@@ -60,35 +72,89 @@ pub fn set_total_supply(env: &Env, supply: i128) {
     env.storage().instance().set(&DataKey::TotalSupply, &supply);
 }
 
-/// Get the balance of an address
+/// Get the balance of an address from persistent storage.
 pub fn get_balance(env: &Env, address: &Address) -> i128 {
     env.storage()
-        .instance()
+        .persistent()
         .get(&DataKey::Balance(address.clone()))
         .unwrap_or(0)
 }
 
-/// Set the balance of an address
+/// Set the balance of an address in persistent storage.
 pub fn set_balance(env: &Env, address: &Address, balance: i128) {
     env.storage()
-        .instance()
+        .persistent()
         .set(&DataKey::Balance(address.clone()), &balance);
 }
 
-/// Get the allowance of a spender for an owner's tokens
+/// Get the allowance of a spender for an owner's tokens. Returns 0 once the
+/// current ledger sequence has passed the stored `expiration_ledger`
+/// (issue #659) without requiring an explicit reset.
 pub fn get_allowance(env: &Env, owner: &Address, spender: &Address) -> i128 {
-    env.storage()
+    let stored: Option<AllowanceValue> = env
+        .storage()
         .instance()
-        .get(&DataKey::Allowance(owner.clone(), spender.clone()))
-        .unwrap_or(0)
+        .get(&DataKey::Allowance(owner.clone(), spender.clone()));
+
+    match stored {
+        Some(value) if env.ledger().sequence() <= value.expiration_ledger => value.amount,
+        _ => 0,
+    }
 }
 
-/// Set the allowance of a spender for an owner's tokens
-pub fn set_allowance(env: &Env, owner: &Address, spender: &Address, allowance: i128) {
+/// Get the raw stored allowance entry (amount + expiration_ledger), not
+/// zeroed out on expiry. Used where the caller needs to distinguish "no
+/// allowance was ever set" from "the allowance expired".
+pub fn get_allowance_raw(env: &Env, owner: &Address, spender: &Address) -> Option<AllowanceValue> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Allowance(owner.clone(), spender.clone()))
+}
+
+/// Set the allowance of a spender for an owner's tokens, along with the
+/// ledger sequence it expires on (issue #659).
+pub fn set_allowance(
+    env: &Env,
+    owner: &Address,
+    spender: &Address,
+    amount: i128,
+    expiration_ledger: u32,
+) {
     env.storage().instance().set(
         &DataKey::Allowance(owner.clone(), spender.clone()),
-        &allowance,
+        &AllowanceValue {
+            amount,
+            expiration_ledger,
+        },
     );
+}
+
+/// Extend TTL for a single allowance entry.
+pub fn extend_allowance_ttl(env: &Env, owner: &Address, spender: &Address, threshold: u32, extend_to: u32) {
+    let key = DataKey::Allowance(owner.clone(), spender.clone());
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, threshold, extend_to);
+    }
+}
+
+// ============================================================================
+// Pause Storage Functions (issue #657)
+// ============================================================================
+
+/// Check whether the contract is currently paused. Defaults to false
+/// (unpaused) before pause() has ever been called.
+pub fn is_paused(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::Paused)
+        .unwrap_or(false)
+}
+
+/// Set the contract's paused flag.
+pub fn set_paused(env: &Env, paused: bool) {
+    env.storage().instance().set(&DataKey::Paused, &paused);
 }
 
 // ============================================================================

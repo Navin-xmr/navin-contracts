@@ -1482,7 +1482,7 @@ fn test_large_fixture_full_paginated_walk_finds_all_violations() {
     });
 }
 
-/// `get_consistency_violations` exposed via the contract client
+/// `check_consistency_paginated` exposed via the contract client
 /// must reject a zero limit and a limit exceeding the config cap.
 #[test]
 fn test_paginated_contract_entry_validates_limit() {
@@ -1495,7 +1495,7 @@ fn test_paginated_contract_entry_validates_limit() {
     create_one(&env, &client, &company, &carrier, 1);
 
     // limit = 0 must be rejected.
-    let err_zero = client.try_get_consistency_violations(&admin, &1_u64, &0_u32);
+    let err_zero = client.try_check_consistency_paginated(&admin, &1_u64, &0_u32);
     assert!(
         err_zero.is_err(),
         "limit=0 must return an error"
@@ -1505,14 +1505,14 @@ fn test_paginated_contract_entry_validates_limit() {
     let cfg = client.get_contract_config();
     let too_large = cfg.batch_operation_limit + 1;
     let err_large =
-        client.try_get_consistency_violations(&admin, &1_u64, &too_large);
+        client.try_check_consistency_paginated(&admin, &1_u64, &too_large);
     assert!(
         err_large.is_err(),
         "limit exceeding batch_operation_limit must return an error"
     );
 
     // A valid page must succeed and return no violations for a clean state.
-    let ok = client.get_consistency_violations(&admin, &1_u64, &10_u32);
+    let ok = client.check_consistency_paginated(&admin, &1_u64, &10_u32);
     assert!(
         ok.is_empty(),
         "valid paginated call on clean state must return no violations"

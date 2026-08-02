@@ -742,6 +742,15 @@ fn test_batch_creation_does_not_call_token_contract() {
 }
 
 #[test]
+fn test_external_integration_failed_error_code() {
+    let err = crate::NavinError::ExternalIntegrationFailed;
+    assert_eq!(err as u32, 64);
+    let info = crate::error_map::error_info(err);
+    assert_eq!(info.code, 64);
+    assert_eq!(info.category, crate::error_map::ErrorCategory::Transient);
+}
+
+#[test]
 fn test_recovery_behavior_deterministic_across_reruns() {}
 
 // ── Zero-address treasury validation ───────────────────────────────────────────

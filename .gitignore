@@ -1,5 +1,8 @@
 target
 test_snapshots/**/test_snapshots/
+fuzz/target
+fuzz/corpus
+fuzz/artifacts
 
 .agent/
 .agents/
