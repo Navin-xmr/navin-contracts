@@ -135,6 +135,10 @@ pub enum DataKey {
     RecoveryRecord(u64, u32),
     /// Total count of recovery action records for a shipment.
     RecoveryRecordCount(u64),
+    /// Proposal salt used to prevent replay attacks — salt -> bool.
+    ProposalSalt(BytesN<32>),
+    /// Prerequisite shipment IDs for a dependent — dependent_id -> Vec<u64>.
+    ShipmentDependents(u64),
 }
 
 /// Structured reason codes for escrow freeze events.
