@@ -227,6 +227,10 @@ impl NavinToken {
         }
 
         storage::set_allowance(&env, &from, &spender, amount, expiration_ledger);
+        // Persistent entries must have their TTL maintained on write, or the
+        // allowance is archived after the ledger passes its live-until
+        // (issue #659).
+        storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
 
         env.events().publish(
             (symbol_short!("approve"),),
@@ -271,7 +275,12 @@ impl NavinToken {
         let new_allowance = current
             .checked_add(delta)
             .ok_or(TokenError::Overflow)?;
-        storage::set_allowance(&env, &owner, &spender, new_allowance);
+        // Preserve the existing expiration_ledger (issue #659) — raising an
+        // allowance doesn't reset how long it's valid for.
+        let expiration_ledger = storage::get_allowance_raw(&env, &owner, &spender)
+            .map(|v| v.expiration_ledger)
+            .unwrap_or(0);
+        storage::set_allowance(&env, &owner, &spender, new_allowance, expiration_ledger);
         storage::extend_allowance_ttl(&env, &owner, &spender, 1000, 500000);
 
         env.events()
@@ -309,7 +318,12 @@ impl NavinToken {
         let new_allowance = current
             .checked_sub(delta)
             .ok_or(TokenError::Overflow)?;
-        storage::set_allowance(&env, &owner, &spender, new_allowance);
+        // Preserve the existing expiration_ledger (issue #659) — lowering an
+        // allowance doesn't reset how long it's valid for.
+        let expiration_ledger = storage::get_allowance_raw(&env, &owner, &spender)
+            .map(|v| v.expiration_ledger)
+            .unwrap_or(0);
+        storage::set_allowance(&env, &owner, &spender, new_allowance, expiration_ledger);
         storage::extend_allowance_ttl(&env, &owner, &spender, 1000, 500000);
 
         env.events()

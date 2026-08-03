@@ -93,7 +93,7 @@ pub fn set_balance(env: &Env, address: &Address, balance: i128) {
 pub fn get_allowance(env: &Env, owner: &Address, spender: &Address) -> i128 {
     let stored: Option<AllowanceValue> = env
         .storage()
-        .instance()
+        .persistent()
         .get(&DataKey::Allowance(owner.clone(), spender.clone()));
 
     match stored {
@@ -120,7 +120,7 @@ pub fn set_allowance(
     amount: i128,
     expiration_ledger: u32,
 ) {
-    env.storage().instance().set(
+    env.storage().persistent().set(
         &DataKey::Allowance(owner.clone(), spender.clone()),
         &AllowanceValue {
             amount,
@@ -136,6 +136,23 @@ pub fn extend_allowance_ttl(env: &Env, owner: &Address, spender: &Address, thres
         env.storage()
             .persistent()
             .extend_ttl(&key, threshold, extend_to);
+    }
+}
+
+/// Extend TTL for a single balance entry.
+pub fn extend_balance_ttl(env: &Env, address: &Address, threshold: u32, extend_to: u32) {
+    let key = DataKey::Balance(address.clone());
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, threshold, extend_to);
+    }
+}
+
+/// Extend TTL for several balance entries at once.
+pub fn extend_balance_ttl_for(env: &Env, addresses: &[Address], threshold: u32, extend_to: u32) {
+    for address in addresses {
+        extend_balance_ttl(env, address, threshold, extend_to);
     }
 }
 

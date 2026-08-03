@@ -442,6 +442,14 @@ fn test_approve_max_expiration_ledger_never_expires() {
     // under test (mirrors contracts/shipment/src/test_ttl_health.rs).
     env.as_contract(&client.address, || {
         env.storage().instance().extend_ttl(200_000, 200_000);
+        // Allowances live in persistent storage, so the allowance entry's
+        // TTL must be extended as well — a fresh persistent entry only starts
+        // with `min_persistent_entry_ttl` (4096) ledgers of life.
+        env.storage().persistent().extend_ttl(
+            &crate::storage::DataKey::Allowance(admin.clone(), spender.clone()),
+            200_000,
+            200_000,
+        );
     });
 
     // Advance far beyond any realistic expiration window to demonstrate
@@ -796,4 +804,29 @@ fn test_batch_transfer_rejects_self_transfer_leg() {
     recipients.push_back((admin.clone(), 100));
 
     client.batch_transfer(&admin, &recipients);
+}
+
+#[test]
+fn test_transfer_admin_success() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+
+    assert_eq!(client.get_admin(), new_admin);
+}
+
+#[test]
+fn test_transfer_admin_unauthorized() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let non_admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.transfer_admin(&non_admin, &new_admin);
+    }));
+    assert!(result.is_err(), "Non-admin must not be able to transfer admin");
 }
