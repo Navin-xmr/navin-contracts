@@ -129,6 +129,10 @@ fn test_add_allowed_metadata_key_success() {
     client.add_allowed_metadata_key(&admin, &key);
 
     assert!(client.is_metadata_key_allowed(&key));
+
+    let allowed_keys = client.get_allowed_metadata_keys();
+    assert_eq!(allowed_keys.len(), 1);
+    assert_eq!(allowed_keys.get(0), Some(key));
 }
 
 #[test]
