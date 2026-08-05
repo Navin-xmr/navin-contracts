@@ -1444,31 +1444,25 @@ impl NavinShipment {
         event_type: Symbol,
         event_counter: u32,
     ) -> BytesN<32> {
-        use soroban_sdk::Bytes;
+        // Recover the topic's raw string bytes from its Symbol XDR encoding
+        // (4-byte type tag + 4-byte length + content) so the preimage matches
+        // `events::generate_idempotency_key` byte-for-byte. The Symbol's own
+        // `to_xdr()` cannot be appended directly — it carries a type-tag
+        // header and padding that `generate_idempotency_key` (which emitters
+        // actually call) does not include.
+        let xdr = event_type.clone().to_xdr(&env);
+        let mut raw = [0u8; 32];
+        let src_len = (xdr.len() as usize).min(32);
+        for (i, byte) in xdr.iter().take(src_len).enumerate() {
+            raw[i] = byte;
+        }
+        let char_count = u32::from_be_bytes([raw[4], raw[5], raw[6], raw[7]]) as usize;
+        let topic_bytes = &raw[8..8 + char_count];
+        let topic = core::str::from_utf8(topic_bytes).unwrap_or("");
 
-        let mut payload = Bytes::new(&env);
-
-        // Domain prefix, selected from `event_type` so that the same payload in
-        // two different event families cannot produce the same key. Shipment
-        // events still resolve to HASH_DOMAIN_SHIPMENT (0x01), so their
-        // previously emitted keys are unchanged.
         let domain = crate::event_topics::hash_domain_for_symbol(&env, &event_type);
-        let domain_bytes = domain.to_be_bytes();
-        let domain_len = (domain_bytes.len() as u32).to_be_bytes();
-        payload.append(&Bytes::from_array(&env, &domain_len));
-        payload.append(&Bytes::from_slice(&env, &domain_bytes));
 
-        // Shipment ID (raw bytes)
-        payload.append(&Bytes::from_array(&env, &shipment_id.to_be_bytes()));
-
-        // Event type: use the same XDR encoding as generate_idempotency_key
-        // (as_bytes() of the &str produces the same result as XDR for symbol strings)
-        payload.append(&event_type.clone().to_xdr(&env));
-
-        // Event counter (raw bytes)
-        payload.append(&Bytes::from_array(&env, &event_counter.to_be_bytes()));
-
-        env.crypto().sha256(&payload).into()
+        crate::events::generate_idempotency_key(&env, domain, shipment_id, topic, event_counter)
     }
 
     /// Add a carrier to a company's whitelist.
@@ -2799,6 +2793,20 @@ impl NavinShipment {
 
         crate::validate_shipment_transition(&shipment.status, &new_status)?;
 
+        // Prerequisite shipments (added via `add_shipment_dependency`) must all
+        // be Delivered before this shipment may advance to InTransit.
+        if new_status == ShipmentStatus::InTransit {
+            let prereqs = storage::get_shipment_dependents(&env, shipment_id);
+            for i in 0..prereqs.len() {
+                let prereq_id = prereqs.get(i).unwrap();
+                let prereq_shipment =
+                    storage::get_shipment(&env, prereq_id).ok_or(NavinError::ShipmentNotFound)?;
+                if prereq_shipment.status != ShipmentStatus::Delivered {
+                    return Err(NavinError::DependenciesNotMet);
+                }
+            }
+        }
+
         let old_status = shipment.status.clone();
         shipment.status = new_status.clone();
         shipment.data_hash = data_hash.clone();
@@ -3843,12 +3851,11 @@ impl NavinShipment {
         };
 
         // Do NOT store the milestone on-chain
-        // Emit the milestone_recorded event (Hash-and-Emit pattern)
+        // Emit the milestone_recorded event (Hash-and-Emit pattern). This also
+        // increments the milestone event count used by the payload-size guard
+        // above — do not increment it again here, or every milestone would
+        // consume two units of the configured budget instead of one.
         events::emit_milestone_recorded(&env, shipment_id, &checkpoint, &data_hash, &carrier);
-
-        // Increment the milestone event count so the payload-size guard
-        // is actually enforced on subsequent calls.
-        storage::increment_milestone_event_count(&env, shipment_id);
 
         // Check for milestone-based payments
         let mut mut_shipment = shipment;
@@ -4016,12 +4023,10 @@ impl NavinShipment {
                 reporter: carrier.clone(),
             };
 
-            // Emit one event per milestone (Hash-and-Emit pattern)
+            // Emit one event per milestone (Hash-and-Emit pattern). This also
+            // increments the milestone event count used by the payload-size
+            // guard above — do not increment it again here.
             events::emit_milestone_recorded(&env, shipment_id, &checkpoint, &data_hash, &carrier);
-
-            // Increment the milestone event count so the payload-size guard
-            // is actually enforced on subsequent calls.
-            storage::increment_milestone_event_count(&env, shipment_id);
 
             // Check for milestone-based payments
             let mut found_index = None;
@@ -5491,7 +5496,6 @@ impl NavinShipment {
         salt: BytesN<32>,
     ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
-        proposer.require_auth();
 
         if !storage::is_admin(&env, &proposer) {
             return Err(NavinError::NotAnAdmin);
@@ -5503,7 +5507,10 @@ impl NavinShipment {
 
         storage::set_proposal_salt_used(&env, &salt);
 
-        // Delegate to the standard propose_action logic
+        // Delegate to the standard propose_action logic, which performs the
+        // proposer's require_auth(). Do not also require_auth() here — the
+        // host rejects a second require_auth() for the same identity within
+        // one invocation as "frame is already authorized".
         Self::propose_action(env, proposer, action)
     }
 

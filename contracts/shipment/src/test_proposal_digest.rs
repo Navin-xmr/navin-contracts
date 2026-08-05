@@ -9,7 +9,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient};
+    use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
     use soroban_sdk::testutils::Ledger as _;
     use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
 
@@ -1514,9 +1514,9 @@ mod tests {
 
         let action = crate::types::AdminAction::ForceRelease(shipment_id);
         let proposal_id = client.propose_action(&admin, &action);
+        // The 2nd approval meets the multisig threshold and auto-executes
+        // the proposal, so there is no separate execute_proposal call.
         client.approve_action(&admin2, &proposal_id);
-
-        client.execute_proposal(&proposal_id);
 
         let shipment = client.get_shipment(&shipment_id);
         assert_eq!(shipment.status, ShipmentStatus::Delivered);
@@ -1536,9 +1536,9 @@ mod tests {
 
         let action = crate::types::AdminAction::ForceRefund(shipment_id);
         let proposal_id = client.propose_action(&admin, &action);
+        // The 2nd approval meets the multisig threshold and auto-executes
+        // the proposal, so there is no separate execute_proposal call.
         client.approve_action(&admin2, &proposal_id);
-
-        client.execute_proposal(&proposal_id);
 
         let shipment = client.get_shipment(&shipment_id);
         assert_eq!(shipment.status, ShipmentStatus::Cancelled);
@@ -1558,14 +1558,16 @@ mod tests {
 
         let first = crate::types::AdminAction::ForceRelease(shipment_id);
         let first_id = client.propose_action(&admin, &first);
+        // The 2nd approval meets the multisig threshold and auto-executes
+        // the proposal, finalizing the shipment.
         client.approve_action(&admin2, &first_id);
-        client.execute_proposal(&first_id);
 
+        // A second force action on the now-terminal shipment must be
+        // rejected. Auto-execution happens inside approve_action itself
+        // once the threshold is met, so that is where the rejection surfaces.
         let second = crate::types::AdminAction::ForceRefund(shipment_id);
         let second_id = client.propose_action(&admin, &second);
-        client.approve_action(&admin2, &second_id);
-
-        let result = client.try_execute_proposal(&second_id);
+        let result = client.try_approve_action(&admin2, &second_id);
         assert_eq!(
             result,
             Err(Ok(NavinError::ShipmentAlreadyCompleted)),

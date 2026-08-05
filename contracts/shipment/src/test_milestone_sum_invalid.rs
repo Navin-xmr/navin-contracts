@@ -99,7 +99,11 @@ fn test_milestone_zero_sum_returns_error() {
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
 
-    // Two milestones both at 0 — sum = 0
+    // Two milestones both at 0 — sum = 0. A per-item percentage of 0 is
+    // rejected by the individual-value guard (InvalidPaymentMilestones)
+    // before the sum is ever computed, so this never reaches
+    // MilestoneSumInvalid — unlike the over/under/single-entry cases above,
+    // which all use in-range (1-100) individual percentages.
     let mut milestones = soroban_sdk::Vec::new(&env);
     milestones.push_back((Symbol::new(&env, "zero1"), 0u32));
     milestones.push_back((Symbol::new(&env, "zero2"), 0u32));
@@ -109,8 +113,8 @@ fn test_milestone_zero_sum_returns_error() {
     );
     assert_eq!(
         result,
-        Err(Ok(NavinError::MilestoneSumInvalid)),
-        "sum 0 must return MilestoneSumInvalid"
+        Err(Ok(NavinError::InvalidPaymentMilestones)),
+        "a zero-percent milestone must be rejected as InvalidPaymentMilestones"
     );
 }
 

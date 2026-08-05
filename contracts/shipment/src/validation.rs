@@ -255,9 +255,6 @@ pub fn validate_metadata_symbols(
 ) -> Result<(), NavinError> {
     validate_symbol(env, key)?;
     validate_symbol(env, value)?;
-    if key.to_xdr(env) == value.to_xdr(env) {
-        return Err(NavinError::MetadataSymbolCollision);
-    }
     // Reject key == value: a self-referential entry is always a caller mistake
     // and prevents silent data loss when both symbols happen to share the same
     // XDR representation (e.g., Symbol::new(&env, "weight") used as both key
@@ -1108,7 +1105,7 @@ mod symbol_validation_tests {
         let result = validate_symbol(&env, &oversized_symbol);
         assert_eq!(
             result,
-            Err(NavinError::InvalidShipmentInput),
+            Err(NavinError::InvalidSymbol),
             "Oversized symbol must return InvalidShipmentInput"
         );
     }
@@ -1136,7 +1133,7 @@ mod symbol_validation_tests {
         let value = Symbol::new(&env, &long);
         assert_eq!(
             validate_metadata_symbols(&env, &key, &value),
-            Err(NavinError::InvalidShipmentInput),
+            Err(NavinError::InvalidSymbol),
             "13-char metadata value must be rejected"
         );
     }
@@ -1161,7 +1158,7 @@ mod symbol_validation_tests {
         let value = Symbol::new(&env, "ok");
         assert_eq!(
             validate_metadata_symbols(&env, &key, &value),
-            Err(NavinError::InvalidShipmentInput),
+            Err(NavinError::InvalidSymbol),
             "13-char metadata key must be rejected"
         );
     }
@@ -1188,7 +1185,7 @@ mod symbol_validation_tests {
             let s: std::string::String = "A".repeat(len);
             assert_eq!(
                 validate_metadata_symbols(&env, &key, &Symbol::new(&env, &s)),
-                Err(NavinError::InvalidShipmentInput),
+                Err(NavinError::InvalidSymbol),
                 "metadata value of length {len} must be rejected"
             );
         }

@@ -11,6 +11,9 @@ doctest = false
 [features]
 testutils = []
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }
+
 [dependencies]
 soroban-sdk = { workspace = true }
 

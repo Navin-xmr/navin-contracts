@@ -1337,11 +1337,12 @@ fn test_large_fixture_check_all_consistency_stays_within_sample_cap() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
     client.add_carrier_to_whitelist(&company, &carrier);
+    client.set_shipment_limit(&admin, &10_000u32);
 
     // Create more shipments than the sample cap so the cap is actually exercised.
-    let total: u64 = (DEFAULT_CONSISTENCY_SAMPLE_LIMIT as u64) + 50;
+    let total: u64 = DEFAULT_CONSISTENCY_SAMPLE_LIMIT + 50;
     for seed in 0..total {
-        create_one(&env, &client, &company, &carrier, (seed % 256) as u8);
+        create_one(&env, &client, &company, &carrier, ((seed % 255) + 1) as u8);
     }
 
     env.as_contract(&client.address, || {
@@ -1363,7 +1364,7 @@ fn test_large_fixture_check_all_consistency_stays_within_sample_cap() {
         // IDs. We verify this indirectly: corrupt shipment ID
         // DEFAULT_CONSISTENCY_SAMPLE_LIMIT+1 (which is outside the cap window)
         // and confirm the capped scan does NOT report it.
-        let outside_cap_id = DEFAULT_CONSISTENCY_SAMPLE_LIMIT as u64 + 1;
+        let outside_cap_id = DEFAULT_CONSISTENCY_SAMPLE_LIMIT + 1;
         crate::storage::set_escrow(&env, outside_cap_id, 999_999);
 
         let violations_after = check_all_consistency(&env);
@@ -1392,15 +1393,16 @@ fn test_large_fixture_paginated_range_covers_ids_beyond_sample_cap() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
     client.add_carrier_to_whitelist(&company, &carrier);
+    client.set_shipment_limit(&admin, &10_000u32);
 
-    let total: u64 = (DEFAULT_CONSISTENCY_SAMPLE_LIMIT as u64) + 50;
+    let total: u64 = DEFAULT_CONSISTENCY_SAMPLE_LIMIT + 50;
     for seed in 0..total {
-        create_one(&env, &client, &company, &carrier, (seed % 256) as u8);
+        create_one(&env, &client, &company, &carrier, ((seed % 255) + 1) as u8);
     }
 
     env.as_contract(&client.address, || {
         // Corrupt a shipment that lies beyond the default cap.
-        let target_id = DEFAULT_CONSISTENCY_SAMPLE_LIMIT as u64 + 10;
+        let target_id = DEFAULT_CONSISTENCY_SAMPLE_LIMIT + 10;
         crate::storage::set_escrow(&env, target_id, 777_777);
 
         // Capped default must miss it.
@@ -1413,7 +1415,7 @@ fn test_large_fixture_paginated_range_covers_ids_beyond_sample_cap() {
         );
 
         // Paginated range that covers target_id must find it.
-        let page_start = DEFAULT_CONSISTENCY_SAMPLE_LIMIT as u64 + 1;
+        let page_start = DEFAULT_CONSISTENCY_SAMPLE_LIMIT + 1;
         let page_limit = 50_u64;
         let paged = check_all_consistency_range(&env, page_start, page_limit);
         assert!(
@@ -1436,22 +1438,23 @@ fn test_large_fixture_full_paginated_walk_finds_all_violations() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
     client.add_carrier_to_whitelist(&company, &carrier);
+    client.set_shipment_limit(&admin, &10_000u32);
 
     // Create enough shipments to span multiple pages.
-    let total: u64 = (DEFAULT_CONSISTENCY_SAMPLE_LIMIT as u64) + 50;
+    let total: u64 = DEFAULT_CONSISTENCY_SAMPLE_LIMIT + 50;
     for seed in 0..total {
-        create_one(&env, &client, &company, &carrier, (seed % 256) as u8);
+        create_one(&env, &client, &company, &carrier, ((seed % 255) + 1) as u8);
     }
 
     env.as_contract(&client.address, || {
         // Corrupt one id in the first half and one in the second half.
         let id_a: u64 = 5;
-        let id_b: u64 = DEFAULT_CONSISTENCY_SAMPLE_LIMIT as u64 + 20;
+        let id_b: u64 = DEFAULT_CONSISTENCY_SAMPLE_LIMIT + 20;
         crate::storage::set_escrow(&env, id_a, 11_111);
         crate::storage::set_escrow(&env, id_b, 22_222);
 
         // Walk all pages and collect every violation.
-        let page_size: u64 = DEFAULT_CONSISTENCY_SAMPLE_LIMIT as u64;
+        let page_size: u64 = DEFAULT_CONSISTENCY_SAMPLE_LIMIT;
         let mut all_violations: soroban_sdk::Vec<ConsistencyViolation> =
             soroban_sdk::Vec::new(&env);
         let mut cursor: u64 = 1;
@@ -1501,14 +1504,14 @@ fn test_paginated_contract_entry_validates_limit() {
         "limit=0 must return an error"
     );
 
-    // limit > batch_operation_limit must be rejected.
-    let cfg = client.get_contract_config();
-    let too_large = cfg.batch_operation_limit + 1;
+    // limit > the paginated query's max batch size must be rejected. This cap
+    // is `MAX_BATCH_QUERY_SIZE`, independent of `config.batch_operation_limit`.
+    let too_large = crate::MAX_BATCH_QUERY_SIZE + 1;
     let err_large =
         client.try_check_consistency_paginated(&admin, &1_u64, &too_large);
     assert!(
         err_large.is_err(),
-        "limit exceeding batch_operation_limit must return an error"
+        "limit exceeding MAX_BATCH_QUERY_SIZE must return an error"
     );
 
     // A valid page must succeed and return no violations for a clean state.

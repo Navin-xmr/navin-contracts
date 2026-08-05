@@ -873,7 +873,7 @@ fn test_append_note_hash_valid_32_byte_hash() {
         .try_append_note_hash(&company, &shipment_id, &note_hash)
         .is_ok());
     assert_eq!(client.get_note_count(&shipment_id), 1);
-    assert_eq!(client.get_note_hash(&shipment_id, &0), Some(note_hash));
+    assert_eq!(client.get_note_hash(&shipment_id, &0), note_hash);
 }
 
 #[test]

@@ -835,6 +835,7 @@ mod tests {
             &ShipmentStatus::InTransit,
             &BytesN::from_array(&env, &[2u8; 32]),
         );
+        advance_past_rate_limit(&env);
         client.update_status(
             &carrier,
             &shipment_id,
@@ -865,6 +866,7 @@ mod tests {
 
         let shipment_id =
             client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+        client.deposit_escrow(&company, &shipment_id, &1_000_i128);
 
         client.update_status(
             &carrier,
@@ -872,6 +874,7 @@ mod tests {
             &ShipmentStatus::InTransit,
             &BytesN::from_array(&env, &[2u8; 32]),
         );
+        advance_past_rate_limit(&env);
         client.update_status(
             &carrier,
             &shipment_id,
@@ -932,6 +935,7 @@ mod tests {
 
         let shipment_id =
             client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+        client.deposit_escrow(&company, &shipment_id, &1_000_i128);
 
         // Pause then unpause — refund on a Created shipment should succeed.
         client.pause(&admin);

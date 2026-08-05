@@ -450,18 +450,22 @@ mod invalid_amount_validation {
         (env, client, admin)
     }
 
-    fn check_invalid_amount(result: Result<Result<(), soroban_sdk::Error>, soroban_sdk::InvokeError>) {
-        let expected = soroban_sdk::Error::from_contract_error(NavinError::InvalidAmount as u32);
+    fn check_invalid_amount(
+        result: Result<
+            Result<(), soroban_sdk::ConversionError>,
+            Result<NavinError, soroban_sdk::InvokeError>,
+        >,
+    ) {
         match result {
-            Ok(Err(e)) => assert_eq!(e, expected, "must return InvalidAmount (code #14)"),
-            Err(e) => {
+            Err(Ok(e)) => assert_eq!(e, NavinError::InvalidAmount, "must return InvalidAmount (code #14)"),
+            Err(Err(e)) => {
                 let s = std::format!("{:?}", e);
                 assert!(
                     s.contains("InvalidAmount") || s.contains("Code(14)"),
                     "expected InvalidAmount in host error, got {:?}", s
                 );
             }
-            Ok(Ok(_)) => panic!("expected InvalidAmount error but call succeeded"),
+            Ok(_) => panic!("expected InvalidAmount error but call succeeded"),
         }
     }
 
