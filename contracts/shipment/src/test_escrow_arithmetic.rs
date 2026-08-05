@@ -457,12 +457,17 @@ mod invalid_amount_validation {
         >,
     ) {
         match result {
-            Err(Ok(e)) => assert_eq!(e, NavinError::InvalidAmount, "must return InvalidAmount (code #14)"),
+            Err(Ok(e)) => assert_eq!(
+                e,
+                NavinError::InvalidAmount,
+                "must return InvalidAmount (code #14)"
+            ),
             Err(Err(e)) => {
                 let s = std::format!("{:?}", e);
                 assert!(
                     s.contains("InvalidAmount") || s.contains("Code(14)"),
-                    "expected InvalidAmount in host error, got {:?}", s
+                    "expected InvalidAmount in host error, got {:?}",
+                    s
                 );
             }
             Ok(_) => panic!("expected InvalidAmount error but call succeeded"),

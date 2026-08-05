@@ -828,5 +828,8 @@ fn test_transfer_admin_unauthorized() {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         client.transfer_admin(&non_admin, &new_admin);
     }));
-    assert!(result.is_err(), "Non-admin must not be able to transfer admin");
+    assert!(
+        result.is_err(),
+        "Non-admin must not be able to transfer admin"
+    );
 }

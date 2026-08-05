@@ -130,7 +130,13 @@ pub fn set_allowance(
 }
 
 /// Extend TTL for a single allowance entry.
-pub fn extend_allowance_ttl(env: &Env, owner: &Address, spender: &Address, threshold: u32, extend_to: u32) {
+pub fn extend_allowance_ttl(
+    env: &Env,
+    owner: &Address,
+    spender: &Address,
+    threshold: u32,
+    extend_to: u32,
+) {
     let key = DataKey::Allowance(owner.clone(), spender.clone());
     if env.storage().persistent().has(&key) {
         env.storage()

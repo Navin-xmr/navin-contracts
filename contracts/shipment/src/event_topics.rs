@@ -312,6 +312,12 @@ pub fn hash_domain_for_symbol(env: &soroban_sdk::Env, event_type: &soroban_sdk::
 ///
 /// Unknown topics fall back to [`HASH_DOMAIN_SHIPMENT`], which keeps the
 /// function total and preserves keys previously emitted for shipment events.
+///
+/// Only reachable from `#[cfg(test)]` code today (it exercises the `&str`
+/// twin of [`hash_domain_for_symbol`] to prove the two mappings agree) — kept
+/// as the documented reference implementation for off-chain indexers, who
+/// work with plain strings rather than a live `Symbol`.
+#[cfg(test)]
 pub fn hash_domain_for_event(event_type: &str) -> u8 {
     let mut i = 0;
     while i < NON_DEFAULT_HASH_DOMAINS.len() {
@@ -325,6 +331,7 @@ pub fn hash_domain_for_event(event_type: &str) -> u8 {
 }
 
 /// `str` equality usable in this no_std context.
+#[cfg(test)]
 fn str_eq(a: &str, b: &str) -> bool {
     a.as_bytes() == b.as_bytes()
 }

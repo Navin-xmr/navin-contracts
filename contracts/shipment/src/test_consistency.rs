@@ -1499,16 +1499,12 @@ fn test_paginated_contract_entry_validates_limit() {
 
     // limit = 0 must be rejected.
     let err_zero = client.try_check_consistency_paginated(&admin, &1_u64, &0_u32);
-    assert!(
-        err_zero.is_err(),
-        "limit=0 must return an error"
-    );
+    assert!(err_zero.is_err(), "limit=0 must return an error");
 
     // limit > the paginated query's max batch size must be rejected. This cap
     // is `MAX_BATCH_QUERY_SIZE`, independent of `config.batch_operation_limit`.
     let too_large = crate::MAX_BATCH_QUERY_SIZE + 1;
-    let err_large =
-        client.try_check_consistency_paginated(&admin, &1_u64, &too_large);
+    let err_large = client.try_check_consistency_paginated(&admin, &1_u64, &too_large);
     assert!(
         err_large.is_err(),
         "limit exceeding MAX_BATCH_QUERY_SIZE must return an error"

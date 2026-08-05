@@ -52,7 +52,12 @@ fn test_assert_delivery_hash_wrong_hash_returns_data_hash_mismatch() {
 
     crate::test_utils::advance_past_rate_limit(&env);
     let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &crate::ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
     let confirmation_hash = BytesN::from_array(&env, &[3u8; 32]);
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
@@ -93,7 +98,12 @@ fn test_assert_delivery_hash_correct_hash_returns_ok() {
 
     crate::test_utils::advance_past_rate_limit(&env);
     let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &crate::ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
     let confirmation_hash = BytesN::from_array(&env, &[3u8; 32]);
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
@@ -186,11 +196,17 @@ fn test_assert_data_hash_wrong_hash_returns_data_hash_mismatch() {
     );
 
     let transit_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
-    client.update_status(&carrier, &shipment_id, &crate::ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
     // A different hash must produce DataHashMismatch.
     let wrong_hash = BytesN::from_array(&env, &[0xBBu8; 32]);
-    let result = client.try_assert_data_hash(&shipment_id, &crate::ShipmentStatus::InTransit, &wrong_hash);
+    let result =
+        client.try_assert_data_hash(&shipment_id, &crate::ShipmentStatus::InTransit, &wrong_hash);
     assert_eq!(
         result,
         Err(Ok(NavinError::DataHashMismatch)),
@@ -223,9 +239,18 @@ fn test_assert_data_hash_correct_hash_returns_ok() {
     );
 
     let transit_hash = BytesN::from_array(&env, &[0xCCu8; 32]);
-    client.update_status(&carrier, &shipment_id, &crate::ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
-    let result = client.try_assert_data_hash(&shipment_id, &crate::ShipmentStatus::InTransit, &transit_hash);
+    let result = client.try_assert_data_hash(
+        &shipment_id,
+        &crate::ShipmentStatus::InTransit,
+        &transit_hash,
+    );
     assert_eq!(
         result,
         Ok(Ok(())),
@@ -276,7 +301,8 @@ fn test_assert_data_hash_unset_status_returns_status_hash_not_found() {
 
     // AtCheckpoint was never set.
     let probe = BytesN::from_array(&env, &[7u8; 32]);
-    let result = client.try_assert_data_hash(&shipment_id, &crate::ShipmentStatus::AtCheckpoint, &probe);
+    let result =
+        client.try_assert_data_hash(&shipment_id, &crate::ShipmentStatus::AtCheckpoint, &probe);
     assert_eq!(
         result,
         Err(Ok(NavinError::StatusHashNotFound)),
@@ -324,10 +350,19 @@ fn test_assert_delivery_hash_single_byte_difference_returns_mismatch() {
 
     crate::test_utils::advance_past_rate_limit(&env);
     let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &crate::ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
     let mut conf_bytes = [0x10u8; 32];
-    client.confirm_delivery(&receiver, &shipment_id, &BytesN::from_array(&env, &conf_bytes));
+    client.confirm_delivery(
+        &receiver,
+        &shipment_id,
+        &BytesN::from_array(&env, &conf_bytes),
+    );
 
     // Flip a single byte.
     conf_bytes[31] ^= 0x01;

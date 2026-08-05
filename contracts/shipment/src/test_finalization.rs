@@ -501,9 +501,15 @@ fn test_archive_clears_all_per_shipment_counters() {
         // Two evidence hashes (index 0 and 1)
         let evidence0 = BytesN::from_array(&env, &[0x44u8; 32]);
         let evidence1 = BytesN::from_array(&env, &[0x55u8; 32]);
-        env.storage().persistent().set(&DataKey::DisputeEvidence(shipment_id, 0), &evidence0);
-        env.storage().persistent().set(&DataKey::DisputeEvidence(shipment_id, 1), &evidence1);
-        env.storage().persistent().set(&DataKey::DisputeEvidenceCount(shipment_id), &2u32);
+        env.storage()
+            .persistent()
+            .set(&DataKey::DisputeEvidence(shipment_id, 0), &evidence0);
+        env.storage()
+            .persistent()
+            .set(&DataKey::DisputeEvidence(shipment_id, 1), &evidence1);
+        env.storage()
+            .persistent()
+            .set(&DataKey::DisputeEvidenceCount(shipment_id), &2u32);
 
         // One recovery record (index 0)
         let record = RecoveryRecord {
@@ -512,8 +518,12 @@ fn test_archive_clears_all_per_shipment_counters() {
             reason_hash: BytesN::from_array(&env, &[0x77u8; 32]),
             timestamp: env.ledger().timestamp(),
         };
-        env.storage().persistent().set(&DataKey::RecoveryRecord(shipment_id, 0), &record);
-        env.storage().persistent().set(&DataKey::RecoveryRecordCount(shipment_id), &1u32);
+        env.storage()
+            .persistent()
+            .set(&DataKey::RecoveryRecord(shipment_id, 0), &record);
+        env.storage()
+            .persistent()
+            .set(&DataKey::RecoveryRecordCount(shipment_id), &1u32);
     });
 
     assert_eq!(client.get_dispute_evidence_count(&shipment_id), 2);
@@ -522,7 +532,10 @@ fn test_archive_clears_all_per_shipment_counters() {
     // Cancel to reach a terminal state
     let cancel_hash = BytesN::from_array(&env, &[0x66u8; 32]);
     client.cancel_shipment(&company, &shipment_id, &cancel_hash);
-    assert_eq!(client.get_shipment(&shipment_id).status, ShipmentStatus::Cancelled);
+    assert_eq!(
+        client.get_shipment(&shipment_id).status,
+        ShipmentStatus::Cancelled
+    );
 
     // Sanity: health is clean before archival
     let pre_health = client.check_contract_health(&admin);
@@ -547,79 +560,113 @@ fn test_archive_clears_all_per_shipment_counters() {
 
         // Primary shipment record must be gone
         assert!(
-            !env.storage().persistent().has(&DataKey::Shipment(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::Shipment(shipment_id)),
             "Shipment key must be removed after archive"
         );
 
         // Counters / scalar keys
         assert!(
-            !env.storage().persistent().has(&DataKey::EventCount(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::EventCount(shipment_id)),
             "EventCount must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::MilestoneEventCount(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::MilestoneEventCount(shipment_id)),
             "MilestoneEventCount must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::BreachEventCount(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::BreachEventCount(shipment_id)),
             "BreachEventCount must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::LastStatusUpdate(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::LastStatusUpdate(shipment_id)),
             "LastStatusUpdate must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::ConfirmationHash(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::ConfirmationHash(shipment_id)),
             "ConfirmationHash must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::Escrow(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::Escrow(shipment_id)),
             "Escrow key must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::EscrowFreezeReasonByShipment(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::EscrowFreezeReasonByShipment(shipment_id)),
             "EscrowFreezeReasonByShipment must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::ActiveSettlement(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::ActiveSettlement(shipment_id)),
             "ActiveSettlement must be cleared after archive"
         );
 
         // Note count + per-index entries
         assert!(
-            !env.storage().persistent().has(&DataKey::ShipmentNoteCount(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::ShipmentNoteCount(shipment_id)),
             "ShipmentNoteCount must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::ShipmentNote(shipment_id, 0)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::ShipmentNote(shipment_id, 0)),
             "ShipmentNote[0] must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::ShipmentNote(shipment_id, 1)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::ShipmentNote(shipment_id, 1)),
             "ShipmentNote[1] must be cleared after archive"
         );
 
         // Evidence count + per-index entries
         assert!(
-            !env.storage().persistent().has(&DataKey::DisputeEvidenceCount(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::DisputeEvidenceCount(shipment_id)),
             "DisputeEvidenceCount must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::DisputeEvidence(shipment_id, 0)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::DisputeEvidence(shipment_id, 0)),
             "DisputeEvidence[0] must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::DisputeEvidence(shipment_id, 1)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::DisputeEvidence(shipment_id, 1)),
             "DisputeEvidence[1] must be cleared after archive"
         );
 
         // Recovery record count + per-index entries
         assert!(
-            !env.storage().persistent().has(&DataKey::RecoveryRecordCount(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::RecoveryRecordCount(shipment_id)),
             "RecoveryRecordCount must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::RecoveryRecord(shipment_id, 0)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::RecoveryRecord(shipment_id, 0)),
             "RecoveryRecord[0] must be cleared after archive"
         );
     });

@@ -1521,7 +1521,10 @@ mod tests {
         let shipment = client.get_shipment(&shipment_id);
         assert_eq!(shipment.status, ShipmentStatus::Delivered);
         assert_eq!(shipment.escrow_amount, 0);
-        assert!(shipment.finalized, "shipment must be finalized after ForceRelease");
+        assert!(
+            shipment.finalized,
+            "shipment must be finalized after ForceRelease"
+        );
         assert_eq!(
             client.get_active_shipment_count(&company),
             0,
@@ -1543,7 +1546,10 @@ mod tests {
         let shipment = client.get_shipment(&shipment_id);
         assert_eq!(shipment.status, ShipmentStatus::Cancelled);
         assert_eq!(shipment.escrow_amount, 0);
-        assert!(shipment.finalized, "shipment must be finalized after ForceRefund");
+        assert!(
+            shipment.finalized,
+            "shipment must be finalized after ForceRefund"
+        );
         assert_eq!(
             client.get_active_shipment_count(&company),
             0,

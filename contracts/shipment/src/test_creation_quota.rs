@@ -1204,11 +1204,7 @@ mod tests {
 
     // ── issue #638: single and batch creation share one quota implementation ──
 
-    fn batch_input(
-        env: &Env,
-        carrier: &Address,
-        seed: u8,
-    ) -> crate::types::ShipmentInput {
+    fn batch_input(env: &Env, carrier: &Address, seed: u8) -> crate::types::ShipmentInput {
         crate::types::ShipmentInput {
             receiver: Address::generate(env),
             carrier: carrier.clone(),
@@ -1243,7 +1239,10 @@ mod tests {
         let (env, client, admin, company, carrier, _token) = setup();
         client.set_creation_quota(&admin, &3, &3600);
 
-        assert_eq!(try_batch(&env, &client, &company, &carrier, &[1, 2, 3]), Ok(3));
+        assert_eq!(
+            try_batch(&env, &client, &company, &carrier, &[1, 2, 3]),
+            Ok(3)
+        );
 
         env.ledger().with_mut(|l| l.timestamp += 400);
         assert_eq!(
@@ -1316,7 +1315,9 @@ mod tests {
     fn batch_unrestricted_when_quota_disabled() {
         let (env, client, _admin, company, carrier, _token) = setup();
 
-        assert_eq!(try_batch(&env, &client, &company, &carrier, &[1, 2, 3, 4, 5]), Ok(5));
+        assert_eq!(
+            try_batch(&env, &client, &company, &carrier, &[1, 2, 3, 4, 5]),
+            Ok(5)
+        );
     }
-
 }

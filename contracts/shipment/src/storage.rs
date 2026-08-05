@@ -1744,8 +1744,6 @@ pub fn purge_status_hashes(env: &Env, shipment_id: u64) {
     }
 }
 
-
-
 /// Get the total number of notes appended to a shipment.
 pub fn get_note_count(env: &Env, shipment_id: u64) -> u32 {
     env.storage()

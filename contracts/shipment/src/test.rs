@@ -6964,7 +6964,7 @@ fn test_circular_dependency_error_code_55() {
 
     // Try to create cycle
     let result = client.try_add_shipment_dependency(&company, &shipment_b, &shipment_a);
-    
+
     // Verify the error is CircularDependency with code 55
     assert_eq!(
         result,
@@ -6973,7 +6973,10 @@ fn test_circular_dependency_error_code_55() {
     );
 
     let circular_dep_err = crate::NavinError::CircularDependency;
-    assert_eq!(circular_dep_err as u32, 55, "CircularDependency error code must be 55");
+    assert_eq!(
+        circular_dep_err as u32, 55,
+        "CircularDependency error code must be 55"
+    );
 }
 
 // ============= Dependencies Not Met Tests =============
@@ -7077,20 +7080,11 @@ fn test_dependencies_not_met_multiple_prerequisites() {
     // Try to transition with only one prerequisite met
     client.update_status(&carrier, &prereq_a, &ShipmentStatus::InTransit, &data_hash);
     super::test_utils::advance_past_rate_limit(&env);
-    client.update_status(
-        &carrier,
-        &prereq_a,
-        &ShipmentStatus::Delivered,
-        &data_hash,
-    );
+    client.update_status(&carrier, &prereq_a, &ShipmentStatus::Delivered, &data_hash);
 
     // Attempt transition with prereq_b still incomplete
-    let result = client.try_update_status(
-        &carrier,
-        &dependent,
-        &ShipmentStatus::InTransit,
-        &data_hash,
-    );
+    let result =
+        client.try_update_status(&carrier, &dependent, &ShipmentStatus::InTransit, &data_hash);
 
     assert_eq!(
         result,
@@ -7135,7 +7129,12 @@ fn test_dependencies_met_transition_succeeds() {
     client.add_shipment_dependency(&company, &shipment_dependent, &shipment_prereq);
 
     // Complete the prerequisite shipment
-    client.update_status(&carrier, &shipment_prereq, &ShipmentStatus::InTransit, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_prereq,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
     super::test_utils::advance_past_rate_limit(&env);
     client.update_status(
         &carrier,
@@ -7210,8 +7209,7 @@ fn test_dependencies_not_met_error_code_54() {
 
     let deps_not_met_err = crate::NavinError::DependenciesNotMet;
     assert_eq!(
-        deps_not_met_err as u32,
-        54,
+        deps_not_met_err as u32, 54,
         "DependenciesNotMet error code must be 54"
     );
 }
@@ -7378,8 +7376,7 @@ fn test_proposal_salt_reuse_error_code_56() {
 
     let salt_reused_err = crate::NavinError::ProposalSaltReused;
     assert_eq!(
-        salt_reused_err as u32,
-        56,
+        salt_reused_err as u32, 56,
         "ProposalSaltReused error code must be 56"
     );
 }
@@ -7932,8 +7929,7 @@ fn test_record_milestone_returns_milestone_already_paid() {
     client.record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
 
     // Try to record the same milestone again — must be rejected
-    let result =
-        client.try_record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
+    let result = client.try_record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
     assert_eq!(result, Err(Ok(NavinError::MilestoneAlreadyPaid)));
 }
 
@@ -8452,7 +8448,8 @@ fn test_non_admin_propose_action_returns_not_an_admin() {
     );
 
     // Outsider (not in admin list) tries to propose
-    let result = client.try_propose_action(&outsider, &crate::AdminAction::ForceRelease(shipment_id));
+    let result =
+        client.try_propose_action(&outsider, &crate::AdminAction::ForceRelease(shipment_id));
     assert_eq!(result, Err(Ok(crate::NavinError::NotAnAdmin)));
 }
 
@@ -9956,7 +9953,12 @@ fn test_shipment_unavailable_for_archived_delivered_shipment() {
     );
 
     super::test_utils::advance_past_rate_limit(&env);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
     client.confirm_delivery(&receiver, &shipment_id, &data_hash);
     client.archive_shipment(&admin, &shipment_id);
 
@@ -10098,12 +10100,22 @@ fn test_update_status_on_archived_shipment_fails_with_finalized() {
     );
 
     super::test_utils::advance_past_rate_limit(&env);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
     client.confirm_delivery(&receiver, &shipment_id, &data_hash);
     client.archive_shipment(&admin, &shipment_id);
 
     // Must fail — ShipmentFinalized (#38) from require_not_finalized.
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &data_hash,
+    );
 }
 
 /// Attempting cancel_shipment on an archived shipment must fail.
@@ -10131,7 +10143,12 @@ fn test_cancel_shipment_on_archived_shipment_fails_with_finalized() {
     );
 
     super::test_utils::advance_past_rate_limit(&env);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
     client.confirm_delivery(&receiver, &shipment_id, &data_hash);
     client.archive_shipment(&admin, &shipment_id);
 
@@ -10164,7 +10181,12 @@ fn test_archived_shipment_still_readable_after_archival() {
     );
 
     super::test_utils::advance_past_rate_limit(&env);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
     client.confirm_delivery(&receiver, &shipment_id, &data_hash);
     client.archive_shipment(&admin, &shipment_id);
 
@@ -11192,18 +11214,12 @@ fn test_shipment_notes_success() {
     // Sender can append
     client.append_note_hash(&company, &shipment_id, &note_hash1.clone());
     assert_eq!(client.get_note_count(&shipment_id), 1);
-    assert_eq!(
-        client.get_note_hash(&shipment_id, &0),
-        note_hash1.clone()
-    );
+    assert_eq!(client.get_note_hash(&shipment_id, &0), note_hash1.clone());
 
     // Carrier can append
     client.append_note_hash(&carrier, &shipment_id, &note_hash2.clone());
     assert_eq!(client.get_note_count(&shipment_id), 2);
-    assert_eq!(
-        client.get_note_hash(&shipment_id, &1),
-        note_hash2.clone()
-    );
+    assert_eq!(client.get_note_hash(&shipment_id, &1), note_hash2.clone());
 
     // Admin can append
     let note_hash3 = BytesN::from_array(&env, &[12u8; 32]);
@@ -11211,18 +11227,9 @@ fn test_shipment_notes_success() {
     assert_eq!(client.get_note_count(&shipment_id), 3);
 
     // Verify storage consistency
-    assert_eq!(
-        client.get_note_hash(&shipment_id, &0),
-        note_hash1.clone()
-    );
-    assert_eq!(
-        client.get_note_hash(&shipment_id, &1),
-        note_hash2.clone()
-    );
-    assert_eq!(
-        client.get_note_hash(&shipment_id, &2),
-        note_hash3.clone()
-    );
+    assert_eq!(client.get_note_hash(&shipment_id, &0), note_hash1.clone());
+    assert_eq!(client.get_note_hash(&shipment_id, &1), note_hash2.clone());
+    assert_eq!(client.get_note_hash(&shipment_id, &2), note_hash3.clone());
 
     // Verify event count was incremented in storage (proves event emission was triggered)
     assert_eq!(client.get_event_count(&shipment_id), 4);
@@ -11551,14 +11558,9 @@ fn test_reorder_notes_fails() {
     // and it never overwrites existing indices.
     let swapped_first = client.get_note_hash(&shipment_id, &0);
     let swapped_second = client.get_note_hash(&shipment_id, &1);
+    assert_eq!(swapped_first, note_b, "index 0 should be note_b after swap");
     assert_eq!(
-        swapped_first,
-        note_b,
-        "index 0 should be note_b after swap"
-    );
-    assert_eq!(
-        swapped_second,
-        note_a,
+        swapped_second, note_a,
         "index 1 should be note_a after swap"
     );
 
@@ -13431,7 +13433,12 @@ fn test_get_status_hash_valid_returns_correct_hash() {
     );
 
     let transit_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
     let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
     assert_eq!(
@@ -13531,7 +13538,12 @@ fn test_milestone_limit_valid_milestones_work() {
     );
 
     let transit_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
     let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
     assert_eq!(
@@ -13594,7 +13606,12 @@ fn test_assert_delivery_hash_incorrect_hash_returns_mismatch() {
 
     super::test_utils::advance_past_rate_limit(&env);
     let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
     let confirmation_hash = BytesN::from_array(&env, &[3u8; 32]);
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
@@ -13737,7 +13754,12 @@ fn test_breach_limit_exceeded() {
 
     super::test_utils::advance_past_rate_limit(&env);
     let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
     let confirmation_hash = BytesN::from_array(&env, &[3u8; 32]);
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
@@ -13789,7 +13811,12 @@ fn test_assert_data_hash_incorrect_hash_returns_mismatch() {
     );
 
     let transit_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
     let wrong_hash = BytesN::from_array(&env, &[0xBBu8; 32]);
     let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &wrong_hash);
@@ -13958,9 +13985,15 @@ fn test_breach_limit_one_allowed() {
     );
 
     let transit_hash = BytesN::from_array(&env, &[0xCCu8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
-    let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    let result =
+        client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &transit_hash);
     assert_eq!(
         result,
         Ok(Ok(())),
@@ -14153,8 +14186,14 @@ fn test_creation_quota_resets_after_window() {
 /// must all be distinct error codes.
 #[test]
 fn test_data_hash_mismatch_is_distinct_from_other_hash_errors() {
-    assert_ne!(NavinError::DataHashMismatch as u32, NavinError::StatusHashNotFound as u32);
-    assert_ne!(NavinError::DataHashMismatch as u32, NavinError::ShipmentNotFound as u32);
+    assert_ne!(
+        NavinError::DataHashMismatch as u32,
+        NavinError::StatusHashNotFound as u32
+    );
+    assert_ne!(
+        NavinError::DataHashMismatch as u32,
+        NavinError::ShipmentNotFound as u32
+    );
     assert_eq!(NavinError::DataHashMismatch as u32, 45);
 }
 
@@ -14202,10 +14241,20 @@ fn test_release_escrow_blocked_when_circuit_breaker_open() {
 
     super::test_utils::advance_past_rate_limit(&env);
     let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
     super::test_utils::advance_past_rate_limit(&env);
     let confirm_hash = BytesN::from_array(&env, &[3u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::Delivered, &confirm_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::Delivered,
+        &confirm_hash,
+    );
 
     env.as_contract(&client.address, || {
         let tracker = crate::circuit_breaker::CircuitBreakerTracker {
@@ -14381,10 +14430,20 @@ fn test_creation_quota_resets_exactly_at_window_boundary() {
     // Advance to Delivered so release_escrow is eligible.
     super::test_utils::advance_past_rate_limit(&env);
     let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
     super::test_utils::advance_past_rate_limit(&env);
     let confirm_hash = BytesN::from_array(&env, &[3u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::Delivered, &confirm_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::Delivered,
+        &confirm_hash,
+    );
 
     // Inject circuit-breaker Open state directly into storage.
     env.as_contract(&client.address, || {
@@ -14435,10 +14494,20 @@ fn test_release_escrow_succeeds_when_circuit_breaker_closed() {
 
     super::test_utils::advance_past_rate_limit(&env);
     let transit_hash = BytesN::from_array(&env, &[5u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
     super::test_utils::advance_past_rate_limit(&env);
     let confirm_hash = BytesN::from_array(&env, &[6u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::Delivered, &confirm_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::Delivered,
+        &confirm_hash,
+    );
 
     let result = client.try_release_escrow(&receiver, &shipment_id);
     assert!(
@@ -14800,7 +14869,9 @@ fn test_get_platform_fee_config_reflects_set_platform_fee() {
     client.initialize(&admin, &token_contract);
     client.set_platform_fee(&admin, &50_u32, &treasury);
 
-    let config = client.get_platform_fee_config().expect("fee config should be set");
+    let config = client
+        .get_platform_fee_config()
+        .expect("fee config should be set");
     assert_eq!(config.fee_bps, 50);
     assert_eq!(config.treasury, treasury);
 }
@@ -14815,7 +14886,9 @@ fn test_get_platform_fee_config_reflects_updated_value() {
     client.set_platform_fee(&admin, &100_u32, &treasury1);
     client.set_platform_fee(&admin, &200_u32, &treasury2);
 
-    let config = client.get_platform_fee_config().expect("fee config should be set");
+    let config = client
+        .get_platform_fee_config()
+        .expect("fee config should be set");
     assert_eq!(config.fee_bps, 200);
     assert_eq!(config.treasury, treasury2);
 }
@@ -15141,14 +15214,14 @@ fn test_insufficient_approvals_error_code_is_26() {
 fn test_get_note_hash_out_of_bounds_returns_notenotfound() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
-    
+
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
-    
+
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
-    
+
     let id = client.create_shipment(
         &company,
         &receiver,
@@ -15157,7 +15230,7 @@ fn test_get_note_hash_out_of_bounds_returns_notenotfound() {
         &soroban_sdk::Vec::new(&env),
         &(env.ledger().timestamp() + 3600),
     );
-    
+
     let result = client.try_get_note_hash(&id, &999);
     assert_eq!(result, Err(Ok(crate::NavinError::NoteNotFound)));
 }
@@ -15166,7 +15239,7 @@ fn test_get_note_hash_out_of_bounds_returns_notenotfound() {
 fn test_get_note_hash_non_existent_shipment_returns_notenotfound() {
     let (_env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
-    
+
     let result = client.try_get_note_hash(&999, &0);
     assert_eq!(result, Err(Ok(crate::NavinError::NoteNotFound)));
 }
@@ -15175,14 +15248,14 @@ fn test_get_note_hash_non_existent_shipment_returns_notenotfound() {
 fn test_metadata_symbol_collision_rejected() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
-    
+
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
-    
+
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
-    
+
     let id = client.create_shipment(
         &company,
         &receiver,
@@ -15191,11 +15264,11 @@ fn test_metadata_symbol_collision_rejected() {
         &soroban_sdk::Vec::new(&env),
         &(env.ledger().timestamp() + 3600),
     );
-    
+
     let sym = Symbol::new(&env, "identical");
     let result = client.try_set_shipment_metadata(&company, &id, &sym, &sym);
     assert_eq!(result, Err(Ok(crate::NavinError::MetadataSymbolCollision)));
-    
+
     let sym1 = Symbol::new(&env, "key");
     let sym2 = Symbol::new(&env, "value");
     client.set_shipment_metadata(&company, &id, &sym1, &sym2);
@@ -15205,18 +15278,17 @@ fn test_metadata_symbol_collision_rejected() {
 #[test]
 fn test_invalid_symbol_error_variant() {
     let env = Env::default();
-    
+
     // length < 1 (which means length 0, 8 bytes in XDR)
     let empty_symbol = Symbol::new(&env, "");
     let result1 = crate::validation::validate_symbol(&env, &empty_symbol);
     assert_eq!(result1, Err(crate::NavinError::InvalidSymbol));
-    
+
     // length > 12 characters (24+ bytes in XDR)
     let long_symbol = Symbol::new(&env, "toolongsymbolname");
     let result2 = crate::validation::validate_symbol(&env, &long_symbol);
     assert_eq!(result2, Err(crate::NavinError::InvalidSymbol));
 }
-
 
 // =============================================================================
 // Issue #607 — ProposalExpired error variant
@@ -15560,7 +15632,10 @@ fn test_force_release_single_execution_and_duplicate_rejected() {
 
     // Escrow must be released
     let shipment = client.get_shipment(&shipment_id);
-    assert_eq!(shipment.escrow_amount, 0, "escrow must be zero after ForceRelease");
+    assert_eq!(
+        shipment.escrow_amount, 0,
+        "escrow must be zero after ForceRelease"
+    );
 
     // Duplicate execute must fail
     let result = client.try_execute_proposal(&proposal_id);

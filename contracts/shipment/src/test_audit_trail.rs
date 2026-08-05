@@ -55,7 +55,10 @@ mod tests {
 
         let entries = client.query_audit_history_for_target(&carrier);
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries.get(0).unwrap().event_type, AuditEventType::RoleAssigned);
+        assert_eq!(
+            entries.get(0).unwrap().event_type,
+            AuditEventType::RoleAssigned
+        );
     }
 
     // ── Revoke ───────────────────────────────────────────────────────────────
@@ -71,8 +74,14 @@ mod tests {
         let entries = client.query_audit_history_for_target(&company);
         // One entry for the assignment, one for the revocation.
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries.get(0).unwrap().event_type, AuditEventType::RoleAssigned);
-        assert_eq!(entries.get(1).unwrap().event_type, AuditEventType::RoleRevoked);
+        assert_eq!(
+            entries.get(0).unwrap().event_type,
+            AuditEventType::RoleAssigned
+        );
+        assert_eq!(
+            entries.get(1).unwrap().event_type,
+            AuditEventType::RoleRevoked
+        );
         assert_eq!(entries.get(1).unwrap().actor, admin);
         assert_eq!(entries.get(1).unwrap().target, company);
     }
@@ -89,7 +98,10 @@ mod tests {
 
         let entries = client.query_audit_history_for_target(&carrier);
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries.get(1).unwrap().event_type, AuditEventType::RoleSuspended);
+        assert_eq!(
+            entries.get(1).unwrap().event_type,
+            AuditEventType::RoleSuspended
+        );
         assert_eq!(entries.get(1).unwrap().actor, admin);
         assert_eq!(entries.get(1).unwrap().target, carrier);
     }

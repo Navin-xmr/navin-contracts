@@ -149,10 +149,17 @@ fn test_create_single_shipment_distinct_participants_succeeds() {
     client.add_company(&admin, &company);
 
     let result = client.try_create_shipment(
-        &company, &receiver, &carrier, &data_hash,
-        &soroban_sdk::Vec::new(&env), &deadline,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
-    assert!(result.is_ok(), "single shipment with valid participants must succeed");
+    assert!(
+        result.is_ok(),
+        "single shipment with valid participants must succeed"
+    );
 }
 
 #[test]

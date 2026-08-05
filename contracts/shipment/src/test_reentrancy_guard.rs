@@ -315,7 +315,19 @@ fn test_lock_preheld_blocks_all_three_escrow_ops() {
     let rel = client.try_release_escrow(&receiver, &shipment_id);
     let ref_ = client.try_refund_escrow(&company, &shipment_id);
 
-    assert_eq!(dep, Err(Ok(NavinError::ReentrancyDetected)), "deposit must be blocked");
-    assert_eq!(rel, Err(Ok(NavinError::ReentrancyDetected)), "release must be blocked");
-    assert_eq!(ref_, Err(Ok(NavinError::ReentrancyDetected)), "refund must be blocked");
+    assert_eq!(
+        dep,
+        Err(Ok(NavinError::ReentrancyDetected)),
+        "deposit must be blocked"
+    );
+    assert_eq!(
+        rel,
+        Err(Ok(NavinError::ReentrancyDetected)),
+        "release must be blocked"
+    );
+    assert_eq!(
+        ref_,
+        Err(Ok(NavinError::ReentrancyDetected)),
+        "refund must be blocked"
+    );
 }

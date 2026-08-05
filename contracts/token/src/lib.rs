@@ -130,9 +130,7 @@ impl NavinToken {
             .checked_sub(amount)
             .ok_or(TokenError::Overflow)?;
         let to_balance = storage::get_balance(&env, &to);
-        let new_to_balance = to_balance
-            .checked_add(amount)
-            .ok_or(TokenError::Overflow)?;
+        let new_to_balance = to_balance.checked_add(amount).ok_or(TokenError::Overflow)?;
         storage::set_balance(&env, &from, new_from_balance);
         storage::set_balance(&env, &to, new_to_balance);
 
@@ -272,9 +270,7 @@ impl NavinToken {
         }
 
         let current = storage::get_allowance(&env, &owner, &spender);
-        let new_allowance = current
-            .checked_add(delta)
-            .ok_or(TokenError::Overflow)?;
+        let new_allowance = current.checked_add(delta).ok_or(TokenError::Overflow)?;
         // Preserve the existing expiration_ledger (issue #659) — raising an
         // allowance doesn't reset how long it's valid for.
         let expiration_ledger = storage::get_allowance_raw(&env, &owner, &spender)
@@ -283,8 +279,10 @@ impl NavinToken {
         storage::set_allowance(&env, &owner, &spender, new_allowance, expiration_ledger);
         storage::extend_allowance_ttl(&env, &owner, &spender, 1000, 500000);
 
-        env.events()
-            .publish((symbol_short!("inc_alw"),), (owner, spender, delta, new_allowance));
+        env.events().publish(
+            (symbol_short!("inc_alw"),),
+            (owner, spender, delta, new_allowance),
+        );
 
         Ok(())
     }
@@ -315,9 +313,7 @@ impl NavinToken {
         if delta > current {
             return Err(TokenError::InsufficientAllowance);
         }
-        let new_allowance = current
-            .checked_sub(delta)
-            .ok_or(TokenError::Overflow)?;
+        let new_allowance = current.checked_sub(delta).ok_or(TokenError::Overflow)?;
         // Preserve the existing expiration_ledger (issue #659) — lowering an
         // allowance doesn't reset how long it's valid for.
         let expiration_ledger = storage::get_allowance_raw(&env, &owner, &spender)
@@ -326,15 +322,21 @@ impl NavinToken {
         storage::set_allowance(&env, &owner, &spender, new_allowance, expiration_ledger);
         storage::extend_allowance_ttl(&env, &owner, &spender, 1000, 500000);
 
-        env.events()
-            .publish((symbol_short!("dec_alw"),), (owner, spender, delta, new_allowance));
+        env.events().publish(
+            (symbol_short!("dec_alw"),),
+            (owner, spender, delta, new_allowance),
+        );
 
         Ok(())
     }
 
     /// Transfer admin rights to a new address.
     /// Only the current admin can call this.
-    pub fn transfer_admin(env: Env, current_admin: Address, new_admin: Address) -> Result<(), TokenError> {
+    pub fn transfer_admin(
+        env: Env,
+        current_admin: Address,
+        new_admin: Address,
+    ) -> Result<(), TokenError> {
         if !storage::is_initialized(&env) {
             return Err(TokenError::NotInitialized);
         }
@@ -375,9 +377,7 @@ impl NavinToken {
             .checked_add(amount)
             .ok_or(TokenError::Overflow)?;
         let to_balance = storage::get_balance(&env, &to);
-        let new_to_balance = to_balance
-            .checked_add(amount)
-            .ok_or(TokenError::Overflow)?;
+        let new_to_balance = to_balance.checked_add(amount).ok_or(TokenError::Overflow)?;
         storage::set_total_supply(&env, new_supply);
         storage::set_balance(&env, &to, new_to_balance);
 

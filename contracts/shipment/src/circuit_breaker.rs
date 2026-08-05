@@ -44,6 +44,17 @@ pub struct CircuitBreakerConfig {
     pub half_open_max_requests: u32,
 }
 
+impl Default for CircuitBreakerConfig {
+    /// Default configuration: 5 failures, 300 second recovery, 3 half-open requests
+    fn default() -> Self {
+        CircuitBreakerConfig {
+            failure_threshold: 5,
+            recovery_timeout: 300,
+            half_open_max_requests: 3,
+        }
+    }
+}
+
 impl CircuitBreakerConfig {
     /// Create a new circuit breaker configuration
     pub fn new(failure_threshold: u32, recovery_timeout: u64, half_open_max_requests: u32) -> Self {
@@ -51,15 +62,6 @@ impl CircuitBreakerConfig {
             failure_threshold,
             recovery_timeout,
             half_open_max_requests,
-        }
-    }
-
-    /// Default configuration: 5 failures, 300 second recovery, 3 half-open requests
-    pub fn default() -> Self {
-        CircuitBreakerConfig {
-            failure_threshold: 5,
-            recovery_timeout: 300,
-            half_open_max_requests: 3,
         }
     }
 
@@ -147,7 +149,7 @@ pub fn get_config(env: &Env) -> CircuitBreakerConfig {
     env.storage()
         .persistent()
         .get(&DataKey::CircuitBreakerConfig)
-        .unwrap_or_else(CircuitBreakerConfig::default)
+        .unwrap_or_default()
 }
 
 /// Circuit breaker state tracker
@@ -605,7 +607,10 @@ mod tests {
 
         // Exactly at timeout boundary (1000 + 300 = 1300 — still open).
         let at_boundary = breaker.should_allow_request(&config, 1300);
-        assert!(at_boundary.is_ok(), "Request at recovery boundary must be allowed");
+        assert!(
+            at_boundary.is_ok(),
+            "Request at recovery boundary must be allowed"
+        );
         assert_eq!(breaker.state, CircuitBreakerState::HalfOpen);
     }
 
@@ -653,7 +658,10 @@ mod tests {
 
         // Requests must now be allowed without error.
         let result = breaker.should_allow_request(&config, 1500);
-        assert!(result.is_ok(), "Closed breaker after recovery must allow requests");
+        assert!(
+            result.is_ok(),
+            "Closed breaker after recovery must allow requests"
+        );
     }
 
     /// A failure in HalfOpen re-opens the breaker and subsequent requests are
@@ -698,7 +706,10 @@ mod tests {
         assert_eq!(breaker.failure_count, 0);
 
         let result = breaker.should_allow_request(&config, 1500);
-        assert!(result.is_ok(), "Breaker must allow requests after manual reset");
+        assert!(
+            result.is_ok(),
+            "Breaker must allow requests after manual reset"
+        );
     }
 
     /// Failures below the threshold must not open the breaker.
@@ -768,15 +779,24 @@ mod tests {
     #[test]
     fn preset_resolves_to_matching_config() {
         assert_eq!(
-            CircuitBreakerPreset::Default.resolve().unwrap().failure_threshold,
+            CircuitBreakerPreset::Default
+                .resolve()
+                .unwrap()
+                .failure_threshold,
             CircuitBreakerConfig::default().failure_threshold
         );
         assert_eq!(
-            CircuitBreakerPreset::Strict.resolve().unwrap().failure_threshold,
+            CircuitBreakerPreset::Strict
+                .resolve()
+                .unwrap()
+                .failure_threshold,
             3
         );
         assert_eq!(
-            CircuitBreakerPreset::Permissive.resolve().unwrap().failure_threshold,
+            CircuitBreakerPreset::Permissive
+                .resolve()
+                .unwrap()
+                .failure_threshold,
             10
         );
     }
@@ -874,5 +894,4 @@ mod tests {
             );
         });
     }
-
 }

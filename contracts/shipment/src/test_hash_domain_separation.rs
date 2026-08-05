@@ -514,5 +514,4 @@ mod tests {
             HASH_DOMAIN_SHIPMENT
         );
     }
-
 }

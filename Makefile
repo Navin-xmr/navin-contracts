@@ -50,9 +50,10 @@ test:
 coverage:
 	@echo "Measuring test coverage (cargo-llvm-cov)..."
 	@cargo llvm-cov --workspace --no-report
-	@cargo llvm-cov report --workspace --lcov --output-path target/llvm-cov/lcov.info
-	@cargo llvm-cov report --workspace --html --output-dir target/llvm-cov/html
-	@cargo llvm-cov report --workspace --fail-under-lines $(COVERAGE_BASELINE)
+	@mkdir -p target/llvm-cov
+	@cargo llvm-cov report --lcov --output-path target/llvm-cov/lcov.info
+	@cargo llvm-cov report --html --output-dir target/llvm-cov/html
+	@cargo llvm-cov report --fail-under-lines $(COVERAGE_BASELINE)
 
 # Format all code
 fmt:

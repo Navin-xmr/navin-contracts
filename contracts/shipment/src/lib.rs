@@ -109,16 +109,16 @@ mod test_verification;
 #[cfg(test)]
 mod test_zero_amount_escrow;
 
-mod test_whitelist_multicompany;
 #[cfg(test)]
 mod test_invalid_config;
+mod test_whitelist_multicompany;
 // Error-variant test suites (issues #613–#616)
 #[cfg(test)]
-mod test_milestone_sum_invalid;
+mod test_batch_too_large;
 #[cfg(test)]
 mod test_invalid_shipment_input;
 #[cfg(test)]
-mod test_batch_too_large;
+mod test_milestone_sum_invalid;
 
 // ── Fuzz / property-based test harnesses ─────────────────────────────────────
 #[cfg(test)]
@@ -1029,11 +1029,7 @@ impl NavinShipment {
     ///
     /// # Returns
     /// * `Result<Option<BytesN<32>>, NavinError>` - The note hash if found.
-    pub fn get_note_hash(
-        env: Env,
-        shipment_id: u64,
-        index: u32,
-    ) -> Result<BytesN<32>, NavinError> {
+    pub fn get_note_hash(env: Env, shipment_id: u64, index: u32) -> Result<BytesN<32>, NavinError> {
         require_initialized(&env)?;
         if storage::get_shipment(&env, shipment_id).is_none() {
             return Err(NavinError::NoteNotFound);
@@ -1411,12 +1407,14 @@ impl NavinShipment {
     /// events during indexing and to protect against duplicate submissions of
     /// high-impact operations (e.g., dispute resolution).
     ///
-    /// Canonical serialization order:
+    /// Canonical serialization order (matches `events::generate_idempotency_key`,
+    /// which every emitter calls):
     /// 1. hash-domain tag for `event_type`, length-prefixed (see
-    ///    [`event_topics::hash_domain_for_event`] for the mapping off-chain
-    ///    indexers must mirror)
+    ///    `event_topics::hash_domain_for_symbol` / `hash_domain_for_event` for
+    ///    the mapping off-chain indexers must mirror)
     /// 2. `shipment_id` as big-endian u64 (8 bytes)
-    /// 3. `event_type` as XDR-encoded Symbol (variable-length)
+    /// 3. `event_type`'s raw string bytes, length-prefixed (NOT its XDR
+    ///    encoding, which carries an extra type-tag header)
     /// 4. `event_counter` as big-endian u32 (4 bytes)
     ///
     /// The domain tag binds each key to its event family, so an identical
@@ -6755,10 +6753,7 @@ impl NavinShipment {
     }
 
     /// Get the count of logged recovery history records for a shipment.
-    pub fn get_recovery_record_count(
-        env: Env,
-        shipment_id: u64,
-    ) -> Result<u32, NavinError> {
+    pub fn get_recovery_record_count(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
         require_initialized(&env)?;
         if storage::get_shipment(&env, shipment_id).is_none() {
             return Err(NavinError::ShipmentNotFound);
