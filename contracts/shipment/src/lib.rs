@@ -4711,9 +4711,10 @@ impl NavinShipment {
             }
 
             extend_shipment_ttl(&env, shipment_id);
-            extend_shipment_ttl(&env, shipment_id);
 
             events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
+            let empty_reason_hash = BytesN::from_array(&env, &[0u8; 32]);
+            events::emit_shipment_cancelled(&env, shipment_id, &caller, &empty_reason_hash);
 
             Ok(())
         })
@@ -4970,6 +4971,7 @@ impl NavinShipment {
                 events::emit_escrow_refunded(&env, shipment_id, &recipient, escrow_amount);
                 // Reputation: carrier lost this dispute
                 events::emit_carrier_dispute_loss(&env, &shipment.carrier, shipment_id);
+                events::emit_shipment_cancelled(&env, shipment_id, &admin, &reason_hash);
             }
         }
 
@@ -5990,7 +5992,24 @@ impl NavinShipment {
         }
 
         extend_shipment_ttl(&env, shipment_id);
+        let empty_reason_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let contract_address = env.current_contract_address();
+        events::emit_shipment_cancelled(&env, shipment_id, &contract_address, &empty_reason_hash);
         events::emit_shipment_expired(&env, shipment_id);
+        events::emit_notification(
+            &env,
+            &shipment.sender,
+            NotificationType::StatusChanged,
+            shipment_id,
+            &empty_reason_hash,
+        );
+        events::emit_notification(
+            &env,
+            &shipment.carrier,
+            NotificationType::StatusChanged,
+            shipment_id,
+            &empty_reason_hash,
+        );
 
         Ok(())
     }

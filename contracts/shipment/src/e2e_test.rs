@@ -592,9 +592,12 @@ fn test_e2e_partial_milestones_then_cancel_via_deadline() {
         deadline_topics,
         std::vec![
             "escrow_refunded".to_string(),
-            "shipment_expired".to_string()
+            "shipment_cancelled".to_string(),
+            "shipment_expired".to_string(),
+            "notification".to_string(),
+            "notification".to_string(),
         ],
-        "deadline expiry must emit refund before expired marker"
+        "deadline expiry must emit refund, cancellation, expired marker, and notifications"
     );
     assert!(
         has_event(&env, "shipment_expired"),
@@ -690,7 +693,10 @@ fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
         deadline_topics,
         std::vec![
             "escrow_refunded".to_string(),
-            "shipment_expired".to_string()
+            "shipment_cancelled".to_string(),
+            "shipment_expired".to_string(),
+            "notification".to_string(),
+            "notification".to_string(),
         ],
         "deadline refund and expiry ordering must be deterministic"
     );
@@ -808,8 +814,11 @@ fn test_regression_deadline_refund_event_ordering() {
         topics,
         std::vec![
             "escrow_refunded".to_string(),
-            "shipment_expired".to_string()
+            "shipment_cancelled".to_string(),
+            "shipment_expired".to_string(),
+            "notification".to_string(),
+            "notification".to_string(),
         ],
-        "regression guard: refund must be emitted before shipment_expired"
+        "regression guard: refund must be emitted before shipment_cancelled and shipment_expired"
     );
 }
