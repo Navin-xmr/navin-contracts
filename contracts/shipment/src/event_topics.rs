@@ -119,6 +119,12 @@ pub const CONTRACT_UNPAUSED: &str = "contract_unpaused";
 /// Emitted when an admin forcibly cancels a shipment (privileged path).
 pub const FORCE_CANCELLED: &str = "force_cancelled";
 
+/// Emitted when an admin forcibly releases escrow for a shipment to carrier (privileged path).
+pub const FORCE_RELEASED: &str = "force_released";
+
+/// Emitted when an admin forcibly refunds escrow for a shipment to company (privileged path).
+pub const FORCE_REFUNDED: &str = "force_refunded";
+
 /// Emitted when the platform fee configuration is updated.
 pub const FEE_CONFIG_UPDATED: &str = "fee_config_updated";
 

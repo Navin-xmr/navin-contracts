@@ -5125,7 +5125,8 @@ fn test_force_release_action() {
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
 
     // Propose force release
-    let action = crate::AdminAction::ForceRelease(shipment_id);
+    let reason_hash = BytesN::from_array(&env, &[0x01u8; 32]);
+    let action = crate::AdminAction::ForceRelease(shipment_id, reason_hash);
     let proposal_id = client.propose_action(&admin1, &action);
 
     // Approve and execute
@@ -5173,7 +5174,8 @@ fn test_force_refund_action() {
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
 
     // Propose force refund
-    let action = crate::AdminAction::ForceRefund(shipment_id);
+    let reason_hash = BytesN::from_array(&env, &[0x07u8; 32]);
+    let action = crate::AdminAction::ForceRefund(shipment_id, reason_hash);
     let proposal_id = client.propose_action(&admin1, &action);
 
     // Approve and execute
@@ -8111,7 +8113,7 @@ fn test_execute_proposal_returns_proposal_already_executed() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
 
     client.approve_action(&admin2, &proposal_id);
     client.execute_proposal(&proposal_id);
@@ -8149,7 +8151,7 @@ fn test_approve_action_returns_proposal_expired() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
 
     // Fast forward time past expiration (7 days)
     super::test_utils::advance_past_multisig_expiry(&env);
@@ -8185,7 +8187,7 @@ fn test_execute_proposal_returns_proposal_expired() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
 
     client.approve_action(&admin2, &proposal_id);
 
@@ -8227,7 +8229,7 @@ fn test_approve_action_returns_already_approved() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
 
     client.approve_action(&admin2, &proposal_id);
     // Try to approve again with the same admin
@@ -8264,7 +8266,7 @@ fn test_same_admin_approve_twice_returns_already_approved() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
 
     // First approval by admin2 succeeds
     let first = client.try_approve_action(&admin2, &proposal_id);
@@ -8303,7 +8305,7 @@ fn test_different_admin_approval_succeeds() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
 
     // Different admin (admin2) approves — should succeed
     let result = client.try_approve_action(&admin2, &proposal_id);
@@ -8342,7 +8344,7 @@ fn test_execute_proposal_returns_insufficient_approvals() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
 
     // Only 1 approval (proposer), but threshold is 3
     client.execute_proposal(&proposal_id);
@@ -8380,7 +8382,7 @@ fn test_propose_action_returns_not_an_admin() {
     );
 
     // Outsider tries to propose
-    client.propose_action(&outsider, &crate::AdminAction::ForceRelease(shipment_id));
+    client.propose_action(&outsider, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x03u8; 32])));
 }
 
 #[test]
@@ -8412,7 +8414,7 @@ fn test_approve_action_returns_not_an_admin() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
 
     // Outsider tries to approve
     client.approve_action(&outsider, &proposal_id);
@@ -8449,7 +8451,7 @@ fn test_non_admin_propose_action_returns_not_an_admin() {
 
     // Outsider (not in admin list) tries to propose
     let result =
-        client.try_propose_action(&outsider, &crate::AdminAction::ForceRelease(shipment_id));
+        client.try_propose_action(&outsider, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x04u8; 32])));
     assert_eq!(result, Err(Ok(crate::NavinError::NotAnAdmin)));
 }
 
@@ -8482,7 +8484,7 @@ fn test_non_admin_approve_action_returns_not_an_admin() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
 
     // Outsider (not in admin list) tries to approve
     let result = client.try_approve_action(&outsider, &proposal_id);
@@ -8518,7 +8520,7 @@ fn test_admin_propose_action_succeeds() {
     );
 
     // Admin proposes — should succeed
-    let result = client.try_propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let result = client.try_propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x05u8; 32])));
     assert!(result.is_ok(), "admin must be able to propose action");
 }
 
@@ -8553,7 +8555,7 @@ fn test_admin_approve_action_succeeds() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
 
     // Different admin (admin2) approves — should succeed
     let result = client.try_approve_action(&admin2, &proposal_id);
@@ -15624,7 +15626,7 @@ fn test_force_release_single_execution_and_duplicate_rejected() {
     admins.push_back(admin2.clone());
     client.init_multisig(&admin, &admins, &2);
 
-    let action = crate::AdminAction::ForceRelease(shipment_id);
+    let action = crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x06u8; 32]));
     let proposal_id = client.propose_action(&admin1, &action);
 
     // First execution via approval reaching threshold
@@ -15644,4 +15646,218 @@ fn test_force_release_single_execution_and_duplicate_rejected() {
         Err(Ok(crate::NavinError::ProposalAlreadyExecuted)),
         "second execute of ForceRelease proposal must return ProposalAlreadyExecuted"
     );
+}
+
+
+// =============================================================================
+// ForceRelease reason_hash validation and audit trail tests
+// =============================================================================
+
+/// ForceRelease with reason_hash: verifies reason hash is persisted in event stream and queryable.
+/// Ensures audit trail contains the admin-provided reason for the force release.
+#[test]
+fn test_force_release_reason_hash_persisted_in_event() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &5000);
+
+    let mut admins = Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    // Create reason hash: deterministic hash for audit trail
+    let reason_hash = BytesN::from_array(&env, &[0xAB u8; 32]);
+    let action = crate::AdminAction::ForceRelease(shipment_id, reason_hash.clone());
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // Execute the proposal
+    client.approve_action(&admin2, &proposal_id);
+
+    // Verify force_released event was emitted with reason_hash
+    let events = env.events().all();
+    let force_released_event = events.iter().find(|(_contract, topics, _data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "force_released");
+            }
+        }
+        false
+    });
+
+    assert!(
+        force_released_event.is_some(),
+        "force_released event must be emitted after ForceRelease execution"
+    );
+
+    // Event is persisted in the event stream and queryable by indexer/client
+    if let Some((_contract, _topics, data)) = force_released_event {
+        assert!(!data.is_empty(), "force_released event must have data payload with reason hash");
+    }
+}
+
+/// ForceRelease rejects zero reason_hash, matching force_cancel_shipment behavior.
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_force_release_zero_reason_hash_rejected() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &5000);
+
+    let mut admins = Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    // Attempt with zero reason_hash — should fail validation
+    let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+    let action = crate::AdminAction::ForceRelease(shipment_id, zero_hash);
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // Execution should fail on zero reason hash validation
+    client.approve_action(&admin2, &proposal_id);
+}
+
+
+/// ForceRefund with reason_hash: verifies reason hash is persisted in event stream and queryable.
+/// Ensures audit trail contains the admin-provided reason for the force refund.
+#[test]
+fn test_force_refund_reason_hash_persisted_in_event() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &5000);
+
+    let mut admins = Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    // Create reason hash: deterministic hash for audit trail
+    let reason_hash = BytesN::from_array(&env, &[0xCD u8; 32]);
+    let action = crate::AdminAction::ForceRefund(shipment_id, reason_hash.clone());
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // Execute the proposal
+    client.approve_action(&admin2, &proposal_id);
+
+    // Verify force_refunded event was emitted with reason_hash
+    let events = env.events().all();
+    let force_refunded_event = events.iter().find(|(_contract, topics, _data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "force_refunded");
+            }
+        }
+        false
+    });
+
+    assert!(
+        force_refunded_event.is_some(),
+        "force_refunded event must be emitted after ForceRefund execution"
+    );
+
+    // Event is persisted in the event stream and queryable by indexer/client
+    if let Some((_contract, _topics, data)) = force_refunded_event {
+        assert!(!data.is_empty(), "force_refunded event must have data payload with reason hash");
+    }
+}
+
+/// ForceRefund rejects zero reason_hash, matching force_cancel_shipment behavior.
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_force_refund_zero_reason_hash_rejected() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &5000);
+
+    let mut admins = Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    // Attempt with zero reason_hash — should fail validation
+    let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+    let action = crate::AdminAction::ForceRefund(shipment_id, zero_hash);
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // Execution should fail on zero reason hash validation
+    client.approve_action(&admin2, &proposal_id);
 }

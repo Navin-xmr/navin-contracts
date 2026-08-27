@@ -5653,7 +5653,10 @@ impl NavinShipment {
                 storage::set_company_role(&env, &new_admin);
                 events::emit_admin_transferred(&env, &old_admin, &new_admin);
             }
-            crate::types::AdminAction::ForceRelease(shipment_id) => {
+            crate::types::AdminAction::ForceRelease(shipment_id, reason_hash) => {
+                // Reason hash is mandatory and must be non-zero for audit trail.
+                validation::validate_hash(&reason_hash)?;
+
                 let mut shipment =
                     storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
@@ -5699,8 +5702,14 @@ impl NavinShipment {
 
                 finalize_if_settled(&env, &mut shipment);
                 persist_shipment(&env, &shipment)?;
+
+                // Emit the dedicated force-release event with reason hash for audit trail
+                events::emit_force_released(&env, shipment_id, &proposal.proposer, &reason_hash, escrow_amount);
             }
-            crate::types::AdminAction::ForceRefund(shipment_id) => {
+            crate::types::AdminAction::ForceRefund(shipment_id, reason_hash) => {
+                // Reason hash is mandatory and must be non-zero for audit trail.
+                validation::validate_hash(&reason_hash)?;
+
                 let mut shipment =
                     storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
@@ -5746,6 +5755,9 @@ impl NavinShipment {
 
                 finalize_if_settled(&env, &mut shipment);
                 persist_shipment(&env, &shipment)?;
+
+                // Emit the dedicated force-refund event with reason hash for audit trail
+                events::emit_force_refunded(&env, shipment_id, &proposal.proposer, &reason_hash, escrow_amount);
             }
         }
 
