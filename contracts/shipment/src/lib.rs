@@ -4883,6 +4883,36 @@ impl NavinShipment {
             &current_carrier,
         );
 
+        // Notify all parties affected by the ownership change.
+        events::emit_notification(
+            &env,
+            &shipment.sender,
+            NotificationType::CarrierHandoff,
+            shipment_id,
+            &handoff_hash,
+        );
+        events::emit_notification(
+            &env,
+            &shipment.receiver,
+            NotificationType::CarrierHandoff,
+            shipment_id,
+            &handoff_hash,
+        );
+        events::emit_notification(
+            &env,
+            &old_carrier,
+            NotificationType::CarrierHandoff,
+            shipment_id,
+            &handoff_hash,
+        );
+        events::emit_notification(
+            &env,
+            &new_carrier,
+            NotificationType::CarrierHandoff,
+            shipment_id,
+            &handoff_hash,
+        );
+
         Ok(())
     }
 

@@ -726,6 +726,8 @@ pub enum NotificationType {
     DisputeResolved,
     /// Deadline is approaching.
     DeadlineApproaching,
+    /// Carrier handoff occurred — ownership transferred to a new carrier.
+    CarrierHandoff,
 }
 
 /// Aggregated on-chain analytics data.
