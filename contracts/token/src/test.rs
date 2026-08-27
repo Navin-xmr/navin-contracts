@@ -833,3 +833,71 @@ fn test_transfer_admin_unauthorized() {
         "Non-admin must not be able to transfer admin"
     );
 }
+
+// ============================================================================
+// Event Fixture Tests (#660): pin each token event topic + schema version +
+// payload shape so indexers can rely on a stable, versioned surface.
+// ============================================================================
+
+#[test]
+fn event_fixtures_transfer_and_mint_and_burn() {
+    let (env, client, admin) = setup_token_env();
+    let user = Address::generate(&env);
+    let to = Address::generate(&env);
+    initialize_token(&client, &env, &admin, 1000);
+
+    env.mock_all_auths();
+    client.mint(&admin, &to, &100);
+    client.transfer(&admin, &to, &10);
+    client.burn(&admin, &10);
+
+    let events = env.events().all();
+    // mint, transfer, burn — plus any init events from the SDK.
+    let mut found_mint = false;
+    let mut found_transfer = false;
+    let mut found_burn = false;
+    for event in events.iter() {
+        let (topics, _data) = (event.topics(), event.data());
+        let first: soroban_sdk::Symbol = topics.get(0).unwrap();
+        let second: soroban_sdk::Symbol = topics.get(1).unwrap();
+        // Every token event carries the schema version as the second topic.
+        assert_eq!(second.to_string(), "v1");
+        match first.to_string().as_str() {
+            "mint" => found_mint = true,
+            "transfer" => found_transfer = true,
+            "burn" => found_burn = true,
+            _ => {}
+        }
+    }
+    assert!(found_mint, "expected a mint event");
+    assert!(found_transfer, "expected a transfer event");
+    assert!(found_burn, "expected a burn event");
+}
+
+#[test]
+fn event_fixtures_approve_and_metadata() {
+    let (env, client, admin) = setup_token_env();
+    let spender = Address::generate(&env);
+    initialize_token(&client, &env, &admin, 1000);
+
+    env.mock_all_auths();
+    client.approve(&admin, &spender, &50, &u32::MAX);
+    client.set_metadata(&admin, &Symbol::new(&env, "key"), &String::from_str(&env, "value"));
+
+    let events = env.events().all();
+    let mut found_approve = false;
+    let mut found_meta = false;
+    for event in events.iter() {
+        let (topics, _data) = (event.topics(), event.data());
+        let first: soroban_sdk::Symbol = topics.get(0).unwrap();
+        let second: soroban_sdk::Symbol = topics.get(1).unwrap();
+        assert_eq!(second.to_string(), "v1");
+        match first.to_string().as_str() {
+            "approve" => found_approve = true,
+            "meta_set" => found_meta = true,
+            _ => {}
+        }
+    }
+    assert!(found_approve, "expected an approve event");
+    assert!(found_meta, "expected a metadata event");
+}

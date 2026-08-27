@@ -3,6 +3,7 @@
 use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String, Symbol, Vec};
 
 mod errors;
+mod event_topics;
 mod storage;
 mod test;
 
@@ -53,7 +54,7 @@ impl NavinToken {
         storage::set_balance(&env, &admin, total_supply);
 
         env.events()
-            .publish((symbol_short!("init"),), (admin.clone(), total_supply));
+            .publish((Symbol::new(env, event_topics::INIT), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)), (admin.clone(), total_supply));
 
         Ok(())
     }
@@ -138,7 +139,7 @@ impl NavinToken {
         storage::extend_balance_ttl_for(&env, &[from.clone(), to.clone()], 1000, 500000);
 
         env.events()
-            .publish((symbol_short!("transfer"),), (from, to, amount));
+            .publish((Symbol::new(env, event_topics::TRANSFER), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)), (from, to, amount));
 
         Ok(())
     }
@@ -187,7 +188,7 @@ impl NavinToken {
         storage::set_allowance(&env, &from, &spender, allowance - amount, expiration_ledger);
 
         env.events()
-            .publish((symbol_short!("tr_from"),), (from, to, spender, amount));
+            .publish((Symbol::new(env, event_topics::TRANSFER_FROM), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)), (from, to, spender, amount));
 
         Ok(())
     }
@@ -231,7 +232,7 @@ impl NavinToken {
         storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
 
         env.events().publish(
-            (symbol_short!("approve"),),
+            (Symbol::new(env, event_topics::APPROVE), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)),
             (from, spender, amount, expiration_ledger),
         );
 
@@ -280,7 +281,7 @@ impl NavinToken {
         storage::extend_allowance_ttl(&env, &owner, &spender, 1000, 500000);
 
         env.events().publish(
-            (symbol_short!("inc_alw"),),
+            (Symbol::new(env, event_topics::ALLOWANCE_INCREASED), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)),
             (owner, spender, delta, new_allowance),
         );
 
@@ -323,7 +324,7 @@ impl NavinToken {
         storage::extend_allowance_ttl(&env, &owner, &spender, 1000, 500000);
 
         env.events().publish(
-            (symbol_short!("dec_alw"),),
+            (Symbol::new(env, event_topics::ALLOWANCE_DECREASED), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)),
             (owner, spender, delta, new_allowance),
         );
 
@@ -350,7 +351,7 @@ impl NavinToken {
         storage::set_admin(&env, &new_admin);
 
         env.events()
-            .publish((symbol_short!("admin_tr"),), (current_admin, new_admin));
+            .publish((Symbol::new(env, event_topics::ADMIN_TRANSFERRED), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)), (current_admin, new_admin));
 
         Ok(())
     }
@@ -384,7 +385,7 @@ impl NavinToken {
         // Extend TTL for the recipient's balance
         storage::extend_balance_ttl(&env, &to, 1000, 500000);
 
-        env.events().publish((symbol_short!("mint"),), (to, amount));
+        env.events().publish((Symbol::new(env, event_topics::MINT), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)), (to, amount));
 
         Ok(())
     }
@@ -433,7 +434,7 @@ impl NavinToken {
         storage::extend_balance_ttl(&env, &from, 1000, 500000);
 
         env.events()
-            .publish((symbol_short!("adm_burn"),), (from, amount));
+            .publish((Symbol::new(env, event_topics::ADMIN_BURN), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)), (from, amount));
 
         Ok(())
     }
@@ -462,7 +463,7 @@ impl NavinToken {
         storage::set_balance(&env, &from, from_balance - amount);
 
         env.events()
-            .publish((symbol_short!("burn"),), (from, amount));
+            .publish((Symbol::new(env, event_topics::BURN), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)), (from, amount));
 
         Ok(())
     }
@@ -506,7 +507,7 @@ impl NavinToken {
         storage::set_allowance(&env, &from, &spender, allowance - amount, expiration_ledger);
 
         env.events()
-            .publish((symbol_short!("burn_from"),), (from, spender, amount));
+            .publish((Symbol::new(env, event_topics::BURN_FROM), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)), (from, spender, amount));
 
         Ok(())
     }
@@ -526,7 +527,7 @@ impl NavinToken {
         }
 
         storage::set_paused(&env, true);
-        env.events().publish((symbol_short!("paused"),), (admin,));
+        env.events().publish((Symbol::new(env, event_topics::PAUSED), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)), (admin,));
 
         Ok(())
     }
@@ -545,7 +546,7 @@ impl NavinToken {
         }
 
         storage::set_paused(&env, false);
-        env.events().publish((symbol_short!("unpaused"),), (admin,));
+        env.events().publish((Symbol::new(env, event_topics::UNPAUSED), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)), (admin,));
 
         Ok(())
     }
@@ -605,7 +606,7 @@ impl NavinToken {
         }
 
         env.events()
-            .publish((symbol_short!("batch_tr"),), (from, recipients.len()));
+            .publish((Symbol::new(env, event_topics::BATCH_TRANSFER), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)), (from, recipients.len()));
 
         Ok(())
     }
@@ -655,7 +656,7 @@ impl NavinToken {
         storage::add_allowed_metadata_key(&env, &key);
 
         env.events()
-            .publish((symbol_short!("meta_add"),), (admin, key));
+            .publish((Symbol::new(env, event_topics::METADATA_ADDED), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)), (admin, key));
 
         Ok(())
     }
@@ -694,7 +695,7 @@ impl NavinToken {
         storage::remove_allowed_metadata_key(&env, &key);
 
         env.events()
-            .publish((symbol_short!("meta_rm"),), (admin, key));
+            .publish((Symbol::new(env, event_topics::METADATA_REMOVED), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)), (admin, key));
 
         Ok(())
     }
@@ -760,7 +761,7 @@ impl NavinToken {
         storage::set_metadata(&env, &key, &value);
 
         env.events()
-            .publish((symbol_short!("meta_set"),), (admin, key, value));
+            .publish((Symbol::new(env, event_topics::METADATA_SET), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)), (admin, key, value));
 
         Ok(())
     }
@@ -813,7 +814,7 @@ impl NavinToken {
         storage::remove_metadata(&env, &key);
 
         env.events()
-            .publish((symbol_short!("meta_del"),), (admin, key));
+            .publish((Symbol::new(env, event_topics::METADATA_DELETED), Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR)), (admin, key));
 
         Ok(())
     }
