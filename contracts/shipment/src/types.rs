@@ -679,9 +679,11 @@ pub enum AdminAction {
     /// Transfer admin role to new address.
     TransferAdmin(Address),
     /// Force release escrow for a shipment to carrier.
-    ForceRelease(u64),
+    /// Includes a reason_hash for audit trail and accountability.
+    ForceRelease(u64, BytesN<32>),
     /// Force refund escrow for a shipment to company.
-    ForceRefund(u64),
+    /// Includes a reason_hash for audit trail and accountability.
+    ForceRefund(u64, BytesN<32>),
 }
 
 /// Multi-signature proposal for critical admin actions.
