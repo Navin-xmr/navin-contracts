@@ -177,8 +177,10 @@ mod tests {
         let (env, client, _admin, _admin2) = setup_multisig();
 
         let shipment_id = 42u64;
-        let action_release = crate::types::AdminAction::ForceRelease(shipment_id, test_reason_hash(&env));
-        let action_refund = crate::types::AdminAction::ForceRefund(shipment_id, test_reason_hash(&env));
+        let action_release =
+            crate::types::AdminAction::ForceRelease(shipment_id, test_reason_hash(&env));
+        let action_refund =
+            crate::types::AdminAction::ForceRefund(shipment_id, test_reason_hash(&env));
 
         let digest_release = client.compute_proposal_digest(&1, &action_release);
         let digest_refund = client.compute_proposal_digest(&1, &action_refund);
@@ -798,10 +800,11 @@ mod tests {
 
         let original_id: u64 = 1;
         let tampered_id: u64 = 999;
-        let dummy_hash = soroban_sdk::BytesN::from_array(&_env, &[1u8; 32]);
 
-        let original_action = crate::types::AdminAction::ForceRelease(original_id, test_reason_hash(&env));
-        let tampered_action = crate::types::AdminAction::ForceRelease(tampered_id, test_reason_hash(&env));
+        let original_action =
+            crate::types::AdminAction::ForceRelease(original_id, test_reason_hash(&env));
+        let tampered_action =
+            crate::types::AdminAction::ForceRelease(tampered_id, test_reason_hash(&env));
 
         let proposal_id = client.propose_action(&admin, &original_action);
 
@@ -828,10 +831,11 @@ mod tests {
 
         let original_id: u64 = 42;
         let tampered_id: u64 = 1;
-        let dummy_hash = soroban_sdk::BytesN::from_array(&_env, &[1u8; 32]);
 
-        let original_action = crate::types::AdminAction::ForceRefund(original_id, test_reason_hash(&env));
-        let tampered_action = crate::types::AdminAction::ForceRefund(tampered_id, test_reason_hash(&env));
+        let original_action =
+            crate::types::AdminAction::ForceRefund(original_id, test_reason_hash(&env));
+        let tampered_action =
+            crate::types::AdminAction::ForceRefund(tampered_id, test_reason_hash(&env));
 
         let proposal_id = client.propose_action(&admin, &original_action);
 
@@ -858,8 +862,10 @@ mod tests {
         let (env, client, admin, _admin2) = setup_multisig();
 
         let shipment_id: u64 = 7;
-        let original_action = crate::types::AdminAction::ForceRelease(shipment_id, test_reason_hash(&env));
-        let swapped_action = crate::types::AdminAction::ForceRefund(shipment_id, test_reason_hash(&env));
+        let original_action =
+            crate::types::AdminAction::ForceRelease(shipment_id, test_reason_hash(&env));
+        let swapped_action =
+            crate::types::AdminAction::ForceRefund(shipment_id, test_reason_hash(&env));
 
         let proposal_id = client.propose_action(&admin, &original_action);
 
@@ -987,8 +993,10 @@ mod tests {
     fn digest_mismatch_detectable_for_max_shipment_id_substitution() {
         let (env, client, admin, _admin2) = setup_multisig();
 
-        let original_action = crate::types::AdminAction::ForceRefund(u64::MAX, test_reason_hash(&env));
-        let tampered_action = crate::types::AdminAction::ForceRefund(u64::MAX - 1, test_reason_hash(&env));
+        let original_action =
+            crate::types::AdminAction::ForceRefund(u64::MAX, test_reason_hash(&env));
+        let tampered_action =
+            crate::types::AdminAction::ForceRefund(u64::MAX - 1, test_reason_hash(&env));
 
         let proposal_id = client.propose_action(&admin, &original_action);
         let stored = client.get_proposal_action_digest(&proposal_id);

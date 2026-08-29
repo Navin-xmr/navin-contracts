@@ -4454,7 +4454,6 @@ impl NavinShipment {
                 &shipment.sender,
                 escrow_amount,
             )?;
-            storage::remove_escrow_balance(&env, shipment_id);
             events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
         }
 
@@ -4463,7 +4462,6 @@ impl NavinShipment {
         shipment.updated_at = env.ledger().timestamp();
         shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
-        persist_shipment(&env, &shipment)?;
         storage::decrement_status_count(&env, &old_status);
         storage::increment_status_count(&env, &ShipmentStatus::Cancelled);
 
@@ -4474,6 +4472,9 @@ impl NavinShipment {
 
         finalize_if_settled(&env, &mut shipment);
         persist_shipment(&env, &shipment)?;
+        if escrow_amount > 0 {
+            storage::remove_escrow_balance(&env, shipment_id);
+        }
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_shipment_cancelled(&env, shipment_id, &caller, &reason_hash);

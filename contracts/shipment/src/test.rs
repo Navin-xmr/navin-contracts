@@ -9,7 +9,7 @@ use crate::{
 use soroban_sdk::{
     contract, contracterror, contractimpl,
     testutils::{storage::Persistent, Address as _, Events, Ledger},
-    Address, BytesN, Env, IntoVal, Symbol, TryFromVal, TryIntoVal, Vec,
+    Address, BytesN, Env, FromVal, IntoVal, Symbol, TryFromVal, TryIntoVal, Vec,
 };
 
 #[contract]
@@ -1595,6 +1595,8 @@ fn setup_shipment_with_status(
 
     client.initialize(admin, token_contract);
     client.add_company(admin, &company);
+    client.add_carrier(admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -3031,6 +3033,8 @@ fn test_cancel_shipment_with_escrow() {
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -3045,18 +3049,28 @@ fn test_cancel_shipment_with_escrow() {
 
     client.cancel_shipment(&company, &shipment_id, &reason_hash);
 
+    let events = env.events().all();
+    let emitted_refund = events.iter().any(|(_contract, topics, _data)| {
+        topics
+            .iter()
+            .any(|v| Symbol::from_val(&env, &v) == Symbol::new(&env, "escrow_refunded"))
+    });
+    assert!(
+        emitted_refund,
+        "cancel_shipment must emit escrow_refunded when returning escrow"
+    );
+
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
     assert_eq!(shipment.escrow_amount, 0);
-
-    let events = env.events().all();
-    let emitted_refund = events.iter().any(|(_contract, topics, _data)| {
-        topics.iter().any(|v| {
-            let sym: Symbol = soroban_sdk::Symbol::from_val(&env, &v);
-            sym.to_string() == "escrow_refunded"
-        })
+    assert!(shipment.finalized);
+    assert_eq!(client.get_escrow_balance(&shipment_id), 0);
+    env.as_contract(&client.address, || {
+        assert!(
+            !crate::storage::has_escrow_entry(&env, shipment_id),
+            "escrow storage must be removed exactly once after a refunded cancel"
+        );
     });
-    assert!(emitted_refund, "cancel_shipment must emit escrow_refunded when returning escrow");
 }
 
 #[test]
@@ -3071,6 +3085,8 @@ fn test_cancel_shipment_without_escrow() {
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -3085,6 +3101,19 @@ fn test_cancel_shipment_without_escrow() {
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
     assert_eq!(shipment.escrow_amount, 0);
+    assert!(shipment.finalized);
+    assert_eq!(client.get_escrow_balance(&shipment_id), 0);
+
+    let events = env.events().all();
+    let emitted_refund = events.iter().any(|(_contract, topics, _data)| {
+        topics
+            .iter()
+            .any(|v| Symbol::from_val(&env, &v) == Symbol::new(&env, "escrow_refunded"))
+    });
+    assert!(
+        !emitted_refund,
+        "cancel_shipment must not refund escrow when none is held"
+    );
 }
 
 #[test]
@@ -3099,6 +3128,8 @@ fn test_cancel_shipment_by_admin() {
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -3112,6 +3143,9 @@ fn test_cancel_shipment_by_admin() {
 
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
+    assert_eq!(shipment.escrow_amount, 0);
+    assert!(shipment.finalized);
+    assert_eq!(client.get_escrow_balance(&shipment_id), 0);
 }
 
 #[test]
@@ -3212,6 +3246,8 @@ fn test_escrow_cancel_path_create_deposit_cancel_refund() {
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -3228,6 +3264,14 @@ fn test_escrow_cancel_path_create_deposit_cancel_refund() {
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
     assert_eq!(shipment.escrow_amount, 0);
+    assert!(shipment.finalized);
+    assert_eq!(client.get_escrow_balance(&shipment_id), 0);
+    env.as_contract(&client.address, || {
+        assert!(
+            !crate::storage::has_escrow_entry(&env, shipment_id),
+            "escrow storage must be cleaned up exactly once on the cancel-refund path"
+        );
+    });
 }
 
 #[test]
@@ -8122,7 +8166,10 @@ fn test_execute_proposal_returns_proposal_already_executed() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     client.approve_action(&admin2, &proposal_id);
     client.execute_proposal(&proposal_id);
@@ -8160,7 +8207,10 @@ fn test_approve_action_returns_proposal_expired() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     // Fast forward time past expiration (7 days)
     super::test_utils::advance_past_multisig_expiry(&env);
@@ -8196,7 +8246,10 @@ fn test_execute_proposal_returns_proposal_expired() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     client.approve_action(&admin2, &proposal_id);
 
@@ -8238,7 +8291,10 @@ fn test_approve_action_returns_already_approved() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     client.approve_action(&admin2, &proposal_id);
     // Try to approve again with the same admin
@@ -8275,7 +8331,10 @@ fn test_same_admin_approve_twice_returns_already_approved() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     // First approval by admin2 succeeds
     let first = client.try_approve_action(&admin2, &proposal_id);
@@ -8314,7 +8373,10 @@ fn test_different_admin_approval_succeeds() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     // Different admin (admin2) approves — should succeed
     let result = client.try_approve_action(&admin2, &proposal_id);
@@ -8353,7 +8415,10 @@ fn test_execute_proposal_returns_insufficient_approvals() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     // Only 1 approval (proposer), but threshold is 3
     client.execute_proposal(&proposal_id);
@@ -8391,7 +8456,10 @@ fn test_propose_action_returns_not_an_admin() {
     );
 
     // Outsider tries to propose
-    client.propose_action(&outsider, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x03u8; 32])));
+    client.propose_action(
+        &outsider,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x03u8; 32])),
+    );
 }
 
 #[test]
@@ -8423,7 +8491,10 @@ fn test_approve_action_returns_not_an_admin() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     // Outsider tries to approve
     client.approve_action(&outsider, &proposal_id);
@@ -8459,8 +8530,10 @@ fn test_non_admin_propose_action_returns_not_an_admin() {
     );
 
     // Outsider (not in admin list) tries to propose
-    let result =
-        client.try_propose_action(&outsider, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x04u8; 32])));
+    let result = client.try_propose_action(
+        &outsider,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x04u8; 32])),
+    );
     assert_eq!(result, Err(Ok(crate::NavinError::NotAnAdmin)));
 }
 
@@ -8493,7 +8566,10 @@ fn test_non_admin_approve_action_returns_not_an_admin() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     // Outsider (not in admin list) tries to approve
     let result = client.try_approve_action(&outsider, &proposal_id);
@@ -8529,7 +8605,10 @@ fn test_admin_propose_action_succeeds() {
     );
 
     // Admin proposes — should succeed
-    let result = client.try_propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x05u8; 32])));
+    let result = client.try_propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x05u8; 32])),
+    );
     assert!(result.is_ok(), "admin must be able to propose action");
 }
 
@@ -8564,7 +8643,10 @@ fn test_admin_approve_action_succeeds() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     // Different admin (admin2) approves — should succeed
     let result = client.try_approve_action(&admin2, &proposal_id);
@@ -10143,6 +10225,7 @@ fn test_cancel_shipment_on_archived_shipment_fails_with_finalized() {
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -11187,7 +11270,10 @@ fn test_release_refund_force_cancel_settlement_regression() {
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
 
     assert_eq!(client.get_escrow_balance(&shipment_id), escrow_amount);
-    assert_eq!(crate::storage::get_status_count(&env, &ShipmentStatus::Created), 1);
+    assert_eq!(
+        crate::storage::get_status_count(&env, &ShipmentStatus::Created),
+        1
+    );
 
     env.as_contract(&client.address, || {
         let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
@@ -11199,7 +11285,10 @@ fn test_release_refund_force_cancel_settlement_regression() {
     let released = client.get_shipment(&shipment_id);
     assert_eq!(released.status, ShipmentStatus::Delivered);
     assert_eq!(released.escrow_amount, 0);
-    assert_eq!(crate::storage::get_status_count(&env, &ShipmentStatus::Delivered), 1);
+    assert_eq!(
+        crate::storage::get_status_count(&env, &ShipmentStatus::Delivered),
+        1
+    );
     assert!(env.events().all().iter().any(|(_contract, topics, _data)| {
         if let Some(raw) = topics.get(0) {
             if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
@@ -11223,7 +11312,10 @@ fn test_release_refund_force_cancel_settlement_regression() {
     let refunded = client.get_shipment(&refund_id);
     assert_eq!(refunded.status, ShipmentStatus::Cancelled);
     assert_eq!(refunded.escrow_amount, 0);
-    assert_eq!(crate::storage::get_status_count(&env, &ShipmentStatus::Cancelled), 1);
+    assert_eq!(
+        crate::storage::get_status_count(&env, &ShipmentStatus::Cancelled),
+        1
+    );
     assert!(env.events().all().iter().any(|(_contract, topics, _data)| {
         if let Some(raw) = topics.get(0) {
             if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
@@ -11265,7 +11357,10 @@ fn test_release_refund_force_cancel_settlement_regression() {
         }
         false
     }));
-    assert_eq!(crate::storage::get_status_count(&env, &ShipmentStatus::Cancelled), 2);
+    assert_eq!(
+        crate::storage::get_status_count(&env, &ShipmentStatus::Cancelled),
+        2
+    );
 }
 
 /// The dedicated force_cancelled event is emitted (not shipment_cancelled).
@@ -15749,7 +15844,8 @@ fn test_force_release_single_execution_and_duplicate_rejected() {
     admins.push_back(admin2.clone());
     client.init_multisig(&admin, &admins, &2);
 
-    let action = crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x06u8; 32]));
+    let action =
+        crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x06u8; 32]));
     let proposal_id = client.propose_action(&admin1, &action);
 
     // First execution via approval reaching threshold
@@ -15770,7 +15866,6 @@ fn test_force_release_single_execution_and_duplicate_rejected() {
         "second execute of ForceRelease proposal must return ProposalAlreadyExecuted"
     );
 }
-
 
 // =============================================================================
 // ForceRelease reason_hash validation and audit trail tests
@@ -15885,7 +15980,6 @@ fn test_force_release_zero_reason_hash_rejected() {
     // Execution should fail on zero reason hash validation
     client.approve_action(&admin2, &proposal_id);
 }
-
 
 /// ForceRefund with reason_hash: verifies reason hash is persisted in event stream and queryable.
 /// Ensures audit trail contains the admin-provided reason for the force refund.

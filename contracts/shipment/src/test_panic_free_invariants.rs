@@ -345,6 +345,7 @@ fn test_cancel_shipment_unauthorized_caller() {
 
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,

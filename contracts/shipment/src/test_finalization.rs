@@ -77,6 +77,8 @@ fn test_finalization_on_cancel_with_zero_escrow() {
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -154,6 +156,8 @@ fn create_and_finalize(
 
     client.initialize(admin, token_contract);
     client.add_company(admin, &company);
+    client.add_carrier(admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
