@@ -6,7 +6,7 @@
 #[cfg(test)]
 mod tests {
     use crate::{test_utils, NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env, Vec};
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env, Symbol, Vec};
 
     #[contract]
     struct MockToken;
@@ -375,6 +375,117 @@ mod tests {
         );
         assert!(client.is_carrier_whitelisted(&company_a, &carrier));
         assert!(client.is_carrier_whitelisted(&company_b, &carrier));
+    }
+
+    // ── handoff_shipment notification emission (issue #690) ─────────────────
+
+    /// Performing a carrier handoff must emit exactly four `notification`
+    /// events — one each for the sender, receiver, old carrier, and new
+    /// carrier — using the `CarrierHandoff` notification type.
+    #[test]
+    fn handoff_emits_notifications_for_all_four_parties() {
+        use crate::types::NotificationType;
+        use soroban_sdk::TryFromVal;
+
+        let (env, client, admin) = setup();
+
+        let company = Address::generate(&env);
+        let receiver = Address::generate(&env);
+        let old_carrier = Address::generate(&env);
+        let new_carrier = Address::generate(&env);
+
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &old_carrier);
+        client.add_carrier(&admin, &new_carrier);
+
+        let data_hash = soroban_sdk::BytesN::from_array(&env, &[1u8; 32]);
+        let handoff_hash = soroban_sdk::BytesN::from_array(&env, &[2u8; 32]);
+        let deadline = env.ledger().timestamp() + 3600;
+
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &old_carrier,
+            &data_hash,
+            &Vec::new(&env),
+            &deadline,
+        );
+
+        // Clear events produced during setup so the count below is unambiguous.
+        env.events().all();
+
+        client.handoff_shipment(&old_carrier, &new_carrier, &shipment_id, &handoff_hash);
+
+        let events = env.events().all();
+
+        // Collect every notification event emitted during the handoff call.
+        let notification_events: soroban_sdk::Vec<_> = events
+            .iter()
+            .filter(|(_contract, topics, _data)| {
+                topics
+                    .get(0)
+                    .and_then(|raw| Symbol::try_from_val(&env, &raw).ok())
+                    == Some(Symbol::new(&env, "notification"))
+            })
+            .collect();
+
+        assert_eq!(
+            notification_events.len(),
+            4,
+            "handoff_shipment must emit exactly 4 notifications: sender, receiver, old carrier, new carrier"
+        );
+
+        // Every notification must carry the CarrierHandoff type.
+        for (_contract, _topics, data) in notification_events.iter() {
+            let (_recipient, notif_type, sid, _hash): (
+                Address,
+                NotificationType,
+                u64,
+                soroban_sdk::BytesN<32>,
+            ) = soroban_sdk::TryFromVal::try_from_val(&env, &data)
+                .expect("notification event data must deserialize");
+
+            assert_eq!(
+                notif_type,
+                NotificationType::CarrierHandoff,
+                "all handoff notifications must use NotificationType::CarrierHandoff"
+            );
+            assert_eq!(
+                sid, shipment_id,
+                "notification must reference the correct shipment id"
+            );
+        }
+
+        // Verify each of the four parties received exactly one notification.
+        let recipients: std::vec::Vec<Address> = notification_events
+            .iter()
+            .map(|(_contract, _topics, data)| {
+                let (recipient, _, _, _): (
+                    Address,
+                    NotificationType,
+                    u64,
+                    soroban_sdk::BytesN<32>,
+                ) = soroban_sdk::TryFromVal::try_from_val(&env, &data).unwrap();
+                recipient
+            })
+            .collect();
+
+        assert!(
+            recipients.contains(&company),
+            "sender (company) must receive a CarrierHandoff notification"
+        );
+        assert!(
+            recipients.contains(&receiver),
+            "receiver must receive a CarrierHandoff notification"
+        );
+        assert!(
+            recipients.contains(&old_carrier),
+            "old carrier must receive a CarrierHandoff notification"
+        );
+        assert!(
+            recipients.contains(&new_carrier),
+            "new carrier must receive a CarrierHandoff notification"
+        );
     }
 
     /// After remove + re-add the carrier must be addable again. The
