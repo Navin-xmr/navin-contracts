@@ -1072,6 +1072,16 @@ impl NavinShipment {
     /// client.initialize(&admin, &token_contract);
     /// ```
     pub fn initialize(env: Env, admin: Address, token_contract: Address) -> Result<(), NavinError> {
+        // Issue #748 — deploy and initialize are separate transactions, so
+        // without this anyone can watch for an uninitialized contract and call
+        // `initialize` with themselves as admin. `AlreadyInitialized` then
+        // locks the real deployer out permanently, with no recovery path.
+        //
+        // Requiring auth from `admin` makes the caller prove control of the
+        // address they are installing, which matches every other
+        // admin-granting entry point (`transfer_admin`, `add_guardian`, ...).
+        admin.require_auth();
+
         if storage::is_initialized(&env) {
             return Err(NavinError::AlreadyInitialized);
         }
@@ -1441,7 +1451,7 @@ impl NavinShipment {
         shipment_id: u64,
         event_type: Symbol,
         event_counter: u32,
-    ) -> BytesN<32> {
+    ) -> Result<BytesN<32>, NavinError> {
         // Recover the topic's raw string bytes from its Symbol XDR encoding
         // (4-byte type tag + 4-byte length + content) so the preimage matches
         // `events::generate_idempotency_key` byte-for-byte. The Symbol's own
@@ -1455,12 +1465,31 @@ impl NavinShipment {
             raw[i] = byte;
         }
         let char_count = u32::from_be_bytes([raw[4], raw[5], raw[6], raw[7]]) as usize;
+
+        // Issue #750 — a Soroban `Symbol` may be up to 32 characters, so its
+        // XDR is 8 bytes of header plus up to 32 of content: 40 bytes, into a
+        // 32-byte buffer. Any symbol of 25-32 characters made `8 + char_count`
+        // exceed the buffer and panicked on the slice.
+        //
+        // A panic here is worse than a wrong answer: it aborts the whole
+        // invocation, so an event type that is merely long takes down the call
+        // that emitted it. Returning an error lets the caller decide.
+        if char_count > raw.len().saturating_sub(8) {
+            return Err(NavinError::InvalidSymbolEncoding);
+        }
+
         let topic_bytes = &raw[8..8 + char_count];
         let topic = core::str::from_utf8(topic_bytes).unwrap_or("");
 
         let domain = crate::event_topics::hash_domain_for_symbol(&env, &event_type);
 
-        crate::events::generate_idempotency_key(&env, domain, shipment_id, topic, event_counter)
+        Ok(crate::events::generate_idempotency_key(
+            &env,
+            domain,
+            shipment_id,
+            topic,
+            event_counter,
+        ))
     }
 
     /// Add a carrier to a company's whitelist.
@@ -1773,6 +1802,12 @@ impl NavinShipment {
     /// self-revocation protection, events, and behavior are identical to calling
     /// `revoke_role` directly for the guardian address.
     pub fn remove_guardian(env: Env, admin: Address, guardian: Address) -> Result<(), NavinError> {
+        // Issue #749 — `revoke_role` strips whatever role the target holds, so
+        // without this check `remove_guardian(admin, some_company)` silently
+        // revokes that address's Company role. The caller named a specific
+        // role; if the target does not hold it, that is a mistake worth
+        // surfacing rather than a different role worth destroying.
+        Self::require_exact_role(&env, &guardian, &Role::Guardian)?;
         Self::revoke_role(env, admin, guardian)
     }
 
@@ -1782,7 +1817,27 @@ impl NavinShipment {
     /// self-revocation protection, events, and behavior are identical to calling
     /// `revoke_role` directly for the operator address.
     pub fn remove_operator(env: Env, admin: Address, operator: Address) -> Result<(), NavinError> {
+        // Issue #749 — see the note on `remove_guardian`.
+        Self::require_exact_role(&env, &operator, &Role::Operator)?;
         Self::revoke_role(env, admin, operator)
+    }
+
+    /// Fail unless `target` currently holds exactly `expected` (Issue #749).
+    ///
+    /// Deliberately checked *before* `revoke_role` runs its own admin auth, so
+    /// a mismatch is reported as `RoleMismatch` rather than being masked by an
+    /// authorization error — the caller needs to know which of the two went
+    /// wrong.
+    fn require_exact_role(
+        env: &Env,
+        target: &Address,
+        expected: &Role,
+    ) -> Result<(), NavinError> {
+        let current = storage::get_role(env, target).unwrap_or(Role::Unassigned);
+        if current != *expected {
+            return Err(NavinError::RoleMismatch);
+        }
+        Ok(())
     }
 
     /// Suspend a carrier from carrier-only operations.
@@ -5464,15 +5519,28 @@ impl NavinShipment {
         require_not_paused(&env)?;
         company.require_auth();
 
+        // Issue #751 — `require_auth` only proves the caller controls the
+        // address they named; it says nothing about that address being
+        // entitled to touch these shipments. Without the checks below, any
+        // authenticated account could chain another company's shipment to a
+        // prerequisite that never delivers, pinning it out of `InTransit`
+        // permanently: a cross-tenant denial of service with no recovery.
+        require_role(&env, &company, Role::Company)?;
+
         if dependent_id == prereq_id {
             return Err(NavinError::CircularDependency);
         }
 
-        if storage::get_shipment(&env, dependent_id).is_none() {
-            return Err(NavinError::ShipmentNotFound);
-        }
-        if storage::get_shipment(&env, prereq_id).is_none() {
-            return Err(NavinError::ShipmentNotFound);
+        let dependent = storage::get_shipment(&env, dependent_id)
+            .ok_or(NavinError::ShipmentNotFound)?;
+        let prereq = storage::get_shipment(&env, prereq_id)
+            .ok_or(NavinError::ShipmentNotFound)?;
+
+        // Both sides must belong to the caller. Checking only the dependent
+        // would still allow chaining your own shipment behind a stranger's,
+        // which leaks their delivery state through your shipment's liveness.
+        if dependent.sender != company || prereq.sender != company {
+            return Err(NavinError::Unauthorized);
         }
 
         if would_create_cycle(&env, dependent_id, prereq_id) {

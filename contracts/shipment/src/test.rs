@@ -15687,7 +15687,7 @@ fn test_force_release_reason_hash_persisted_in_event() {
     client.init_multisig(&admin, &admins, &2);
 
     // Create reason hash: deterministic hash for audit trail
-    let reason_hash = BytesN::from_array(&env, &[0xAB u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[0xABu8; 32]);
     let action = crate::AdminAction::ForceRelease(shipment_id, reason_hash.clone());
     let proposal_id = client.propose_action(&admin1, &action);
 
@@ -15792,7 +15792,7 @@ fn test_force_refund_reason_hash_persisted_in_event() {
     client.init_multisig(&admin, &admins, &2);
 
     // Create reason hash: deterministic hash for audit trail
-    let reason_hash = BytesN::from_array(&env, &[0xCD u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[0xCDu8; 32]);
     let action = crate::AdminAction::ForceRefund(shipment_id, reason_hash.clone());
     let proposal_id = client.propose_action(&admin1, &action);
 
@@ -15860,4 +15860,284 @@ fn test_force_refund_zero_reason_hash_rejected() {
 
     // Execution should fail on zero reason hash validation
     client.approve_action(&admin2, &proposal_id);
+}
+
+// ===========================================================================
+// Security regressions: #748, #749, #750, #751
+// ===========================================================================
+
+/// #748 — `initialize` must require auth from the address it installs as admin.
+///
+/// Deploy and initialize are separate transactions, so an attacker can watch
+/// for an uninitialized contract and call `initialize` naming themselves.
+/// `AlreadyInitialized` then locks the real deployer out with no recovery.
+#[test]
+fn test_initialize_requires_admin_auth() {
+    let env = Env::default();
+    let token_contract = env.register(MockToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    let attacker = Address::generate(&env);
+
+    // No auth mocked: the call must not succeed on the attacker's say-so.
+    let result = client.try_initialize(&attacker, &token_contract);
+    assert!(
+        result.is_err(),
+        "initialize must not succeed without auth from the admin being installed"
+    );
+}
+
+/// #748 — with the admin's authorization present, initialization still works.
+#[test]
+fn test_initialize_succeeds_with_admin_auth() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let token_contract = env.register(MockToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    let admin = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    assert_eq!(client.get_admin(), admin);
+}
+
+/// #748 — the authorization recorded is the admin's own, so a third party
+/// cannot front-run initialization by signing for themselves while naming
+/// someone else.
+#[test]
+fn test_initialize_auth_is_attributed_to_the_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let token_contract = env.register(MockToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    let admin = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+
+    let auths = env.auths();
+    assert!(
+        auths.iter().any(|(addr, _)| *addr == admin),
+        "initialize must require auth from the admin address itself"
+    );
+}
+
+/// #749 — `remove_guardian` must not strip an unrelated role.
+///
+/// Before the fix this silently revoked the target's Company role, because
+/// `revoke_role` removes whatever role the address happens to hold.
+#[test]
+fn test_remove_guardian_rejects_a_company_target() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let company = Address::generate(&env);
+    client.add_company(&admin, &company);
+
+    let result = client.try_remove_guardian(&admin, &company);
+    assert_eq!(result, Err(Ok(crate::NavinError::RoleMismatch)));
+
+    // The critical assertion: the Company role survived the failed call.
+    assert!(
+        client.try_get_role(&company).is_ok(),
+        "a rejected remove_guardian must leave the target's real role intact"
+    );
+}
+
+/// #749 — the mirror case for operators.
+#[test]
+fn test_remove_operator_rejects_a_guardian_target() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let guardian = Address::generate(&env);
+    client.add_guardian(&admin, &guardian);
+
+    let result = client.try_remove_operator(&admin, &guardian);
+    assert_eq!(result, Err(Ok(crate::NavinError::RoleMismatch)));
+}
+
+/// #749 — removing an address that holds no role at all is also a mismatch,
+/// rather than a silent success.
+#[test]
+fn test_remove_guardian_rejects_an_unassigned_target() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let nobody = Address::generate(&env);
+
+    assert_eq!(
+        client.try_remove_guardian(&admin, &nobody),
+        Err(Ok(crate::NavinError::RoleMismatch))
+    );
+}
+
+/// #749 — the happy path still works: a real guardian is still removable.
+#[test]
+fn test_remove_guardian_still_removes_a_guardian() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let guardian = Address::generate(&env);
+    client.add_guardian(&admin, &guardian);
+
+    client.remove_guardian(&admin, &guardian);
+
+    assert_eq!(
+        client.try_remove_guardian(&admin, &guardian),
+        Err(Ok(crate::NavinError::RoleMismatch)),
+        "the role is gone, so a second removal is now a mismatch"
+    );
+}
+
+/// #750 — a long `event_type` must not panic.
+///
+/// A Soroban `Symbol` allows up to 32 characters; the XDR decode wrote into a
+/// 32-byte buffer and sliced `8 + char_count`, so 25-32 characters ran past
+/// the end. A panic aborts the whole invocation, so a merely-long event type
+/// took down the call that emitted it.
+#[test]
+fn test_compute_idempotency_key_rejects_oversized_symbols() {
+    let (env, client, _admin, _token) = setup_initialized_shipment_env();
+
+    // 25 characters — the first length that overflowed the buffer.
+    let long_symbol = Symbol::new(&env, "abcdefghijklmnopqrstuvwxy");
+    let result = client.try_compute_idempotency_key(&1u64, &long_symbol, &0u32);
+    assert!(
+        result.is_err(),
+        "an oversized symbol must return an error rather than panicking"
+    );
+}
+
+/// #750 — the maximum-length symbol is handled the same way.
+#[test]
+fn test_compute_idempotency_key_handles_max_length_symbol() {
+    let (env, client, _admin, _token) = setup_initialized_shipment_env();
+
+    // 32 characters — the SDK's maximum.
+    let max_symbol = Symbol::new(&env, "abcdefghijklmnopqrstuvwxyz012345");
+    let result = client.try_compute_idempotency_key(&1u64, &max_symbol, &0u32);
+    assert!(result.is_err(), "must not panic at the maximum symbol length");
+}
+
+/// #750 — ordinary symbols still produce a stable key.
+#[test]
+fn test_compute_idempotency_key_still_works_for_short_symbols() {
+    let (env, client, _admin, _token) = setup_initialized_shipment_env();
+
+    let symbol = Symbol::new(&env, "created");
+    let first = client.compute_idempotency_key(&1u64, &symbol, &0u32);
+    let second = client.compute_idempotency_key(&1u64, &symbol, &0u32);
+
+    assert_eq!(first, second, "the key must be deterministic");
+
+    let other = client.compute_idempotency_key(&2u64, &symbol, &0u32);
+    assert_ne!(first, other, "a different shipment must yield a different key");
+}
+
+/// #751 — a company must not chain a shipment it does not own.
+///
+/// This was a cross-tenant denial of service: the victim's shipment could be
+/// pinned behind a prerequisite that never delivers, with no way to undo it.
+#[test]
+fn test_add_shipment_dependency_rejects_a_foreign_shipment() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+
+    let victim = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &victim);
+    client.add_company(&admin, &attacker);
+
+    let victim_shipment = client.create_shipment(
+        &victim, &receiver, &carrier, &data_hash,
+        &soroban_sdk::Vec::new(&env), &deadline,
+    );
+    let attacker_shipment = client.create_shipment(
+        &attacker, &receiver, &carrier, &data_hash,
+        &soroban_sdk::Vec::new(&env), &deadline,
+    );
+
+    // The attack: pin the victim's shipment behind the attacker's.
+    assert_eq!(
+        client.try_add_shipment_dependency(&attacker, &victim_shipment, &attacker_shipment),
+        Err(Ok(crate::NavinError::Unauthorized))
+    );
+}
+
+/// #751 — nor may a company chain its own shipment behind a stranger's, which
+/// would leak the stranger's delivery state through its own liveness.
+#[test]
+fn test_add_shipment_dependency_rejects_a_foreign_prerequisite() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+
+    let owner = Address::generate(&env);
+    let other = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &owner);
+    client.add_company(&admin, &other);
+
+    let own = client.create_shipment(
+        &owner, &receiver, &carrier, &data_hash,
+        &soroban_sdk::Vec::new(&env), &deadline,
+    );
+    let foreign = client.create_shipment(
+        &other, &receiver, &carrier, &data_hash,
+        &soroban_sdk::Vec::new(&env), &deadline,
+    );
+
+    assert_eq!(
+        client.try_add_shipment_dependency(&owner, &own, &foreign),
+        Err(Ok(crate::NavinError::Unauthorized))
+    );
+}
+
+/// #751 — an address with no Company role cannot create dependencies at all,
+/// even between shipments it somehow references.
+#[test]
+fn test_add_shipment_dependency_requires_the_company_role() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+
+    let company = Address::generate(&env);
+    let outsider = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+    let a = client.create_shipment(
+        &company, &receiver, &carrier, &data_hash,
+        &soroban_sdk::Vec::new(&env), &deadline,
+    );
+    let b = client.create_shipment(
+        &company, &receiver, &carrier, &data_hash,
+        &soroban_sdk::Vec::new(&env), &deadline,
+    );
+
+    assert!(
+        client.try_add_shipment_dependency(&outsider, &a, &b).is_err(),
+        "require_auth alone is not authorization - the Company role is required"
+    );
+}
+
+/// #751 — the legitimate case still works.
+#[test]
+fn test_add_shipment_dependency_allows_own_shipments() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+    let dependent = client.create_shipment(
+        &company, &receiver, &carrier, &data_hash,
+        &soroban_sdk::Vec::new(&env), &deadline,
+    );
+    let prereq = client.create_shipment(
+        &company, &receiver, &carrier, &data_hash,
+        &soroban_sdk::Vec::new(&env), &deadline,
+    );
+
+    client.add_shipment_dependency(&company, &dependent, &prereq);
 }

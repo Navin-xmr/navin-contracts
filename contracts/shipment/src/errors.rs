@@ -161,4 +161,13 @@ pub enum NavinError {
     InvalidAddress = 70,
     /// Maximum allowed recovery action entries for a shipment has been reached.
     RecoveryLimitExceeded = 71,
+    /// Issue #749 — the target of a role-specific revocation does not hold
+    /// the role being revoked. Raised instead of silently revoking whatever
+    /// role the address happens to have, which previously let
+    /// `remove_guardian` strip an unrelated Company role.
+    RoleMismatch = 72,
+    /// Issue #750 — a `Symbol` could not be decoded from its XDR encoding
+    /// because the declared content length does not fit the buffer. Returned
+    /// instead of panicking on an out-of-range slice.
+    InvalidSymbolEncoding = 73,
 }
