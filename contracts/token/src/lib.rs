@@ -458,8 +458,10 @@ impl NavinToken {
         }
 
         let current_supply = storage::get_total_supply(&env);
-        storage::set_total_supply(&env, current_supply - amount);
-        storage::set_balance(&env, &from, from_balance - amount);
+        let new_supply = current_supply.checked_sub(amount).ok_or(TokenError::Overflow)?;
+        let new_from_balance = from_balance.checked_sub(amount).ok_or(TokenError::Overflow)?;
+        storage::set_total_supply(&env, new_supply);
+        storage::set_balance(&env, &from, new_from_balance);
 
         env.events()
             .publish((symbol_short!("burn"),), (from, amount));
@@ -501,9 +503,12 @@ impl NavinToken {
             .map(|v| v.expiration_ledger)
             .unwrap_or(0);
         let current_supply = storage::get_total_supply(&env);
-        storage::set_total_supply(&env, current_supply - amount);
-        storage::set_balance(&env, &from, from_balance - amount);
-        storage::set_allowance(&env, &from, &spender, allowance - amount, expiration_ledger);
+        let new_supply = current_supply.checked_sub(amount).ok_or(TokenError::Overflow)?;
+        let new_from_balance = from_balance.checked_sub(amount).ok_or(TokenError::Overflow)?;
+        let new_allowance = allowance.checked_sub(amount).ok_or(TokenError::Overflow)?;
+        storage::set_total_supply(&env, new_supply);
+        storage::set_balance(&env, &from, new_from_balance);
+        storage::set_allowance(&env, &from, &spender, new_allowance, expiration_ledger);
 
         env.events()
             .publish((symbol_short!("burn_from"),), (from, spender, amount));
@@ -591,7 +596,7 @@ impl NavinToken {
             if to == from {
                 return Err(TokenError::SameAccount);
             }
-            total = total.checked_add(amount).ok_or(TokenError::InvalidAmount)?;
+            total = total.checked_add(amount).ok_or(TokenError::Overflow)?;
         }
 
         let from_balance = storage::get_balance(&env, &from);
@@ -599,9 +604,25 @@ impl NavinToken {
             return Err(TokenError::InsufficientBalance);
         }
 
-        storage::set_balance(&env, &from, from_balance - total);
+        let mut touched = Vec::new(&env);
+        touched.push_back(from.clone());
+
+        storage::set_balance(
+            &env,
+            &from,
+            from_balance.checked_sub(total).ok_or(TokenError::Overflow)?,
+        );
         for (to, amount) in recipients.iter() {
-            storage::set_balance(&env, &to, storage::get_balance(&env, &to) + amount);
+            let recipient_balance = storage::get_balance(&env, &to);
+            let new_recipient_balance = recipient_balance
+                .checked_add(amount)
+                .ok_or(TokenError::Overflow)?;
+            storage::set_balance(&env, &to, new_recipient_balance);
+            touched.push_back(to.clone());
+        }
+
+        for address in touched.iter() {
+            storage::extend_balance_ttl(&env, &address, 1000, 500000);
         }
 
         env.events()

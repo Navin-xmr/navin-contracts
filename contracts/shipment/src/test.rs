@@ -11151,6 +11151,114 @@ fn test_force_cancel_shipment_refunds_escrow() {
     assert_eq!(shipment.escrow_amount, 0);
 }
 
+#[test]
+fn test_release_refund_force_cancel_settlement_regression() {
+    use soroban_sdk::TryFromVal;
+
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0x1Cu8; 32]);
+    let deadline = env.ledger().timestamp() + 7200;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let escrow_amount: i128 = 5_000;
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    assert_eq!(client.get_escrow_balance(&shipment_id), escrow_amount);
+    assert_eq!(crate::storage::get_status_count(&env, &ShipmentStatus::Created), 1);
+
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::ShipmentStatus::Delivered;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+    client.release_escrow(&receiver, &shipment_id);
+
+    let released = client.get_shipment(&shipment_id);
+    assert_eq!(released.status, ShipmentStatus::Delivered);
+    assert_eq!(released.escrow_amount, 0);
+    assert_eq!(crate::storage::get_status_count(&env, &ShipmentStatus::Delivered), 1);
+    assert!(env.events().all().iter().any(|(_contract, topics, _data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "escrow_released");
+            }
+        }
+        false
+    }));
+
+    let refund_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0x1Du8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &(env.ledger().timestamp() + 7200),
+    );
+    client.deposit_escrow(&company, &refund_id, &escrow_amount);
+    client.refund_escrow(&company, &refund_id);
+
+    let refunded = client.get_shipment(&refund_id);
+    assert_eq!(refunded.status, ShipmentStatus::Cancelled);
+    assert_eq!(refunded.escrow_amount, 0);
+    assert_eq!(crate::storage::get_status_count(&env, &ShipmentStatus::Cancelled), 1);
+    assert!(env.events().all().iter().any(|(_contract, topics, _data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "escrow_refunded");
+            }
+        }
+        false
+    }));
+
+    let force_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0x1Eu8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &(env.ledger().timestamp() + 7200),
+    );
+    client.deposit_escrow(&company, &force_id, &escrow_amount);
+
+    let reason_hash = BytesN::from_array(&env, &[0x1Fu8; 32]);
+    client.force_cancel_shipment(&admin, &force_id, &reason_hash);
+
+    let forced = client.get_shipment(&force_id);
+    assert_eq!(forced.status, ShipmentStatus::Cancelled);
+    assert_eq!(forced.escrow_amount, 0);
+    assert!(env.events().all().iter().any(|(_contract, topics, _data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "force_cancelled");
+            }
+        }
+        false
+    }));
+    assert!(env.events().all().iter().any(|(_contract, topics, _data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "escrow_refunded");
+            }
+        }
+        false
+    }));
+    assert_eq!(crate::storage::get_status_count(&env, &ShipmentStatus::Cancelled), 2);
+}
+
 /// The dedicated force_cancelled event is emitted (not shipment_cancelled).
 #[test]
 fn test_force_cancel_emits_dedicated_event_not_shipment_cancelled() {

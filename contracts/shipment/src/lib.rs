@@ -323,6 +323,76 @@ fn internal_release_escrow(
     Ok(())
 }
 
+fn settle_escrow(
+    env: &Env,
+    shipment: &mut Shipment,
+    destination: &Address,
+    operation: SettlementOperation,
+    next_status: ShipmentStatus,
+) -> Result<(), NavinError> {
+    let old_status = shipment.status.clone();
+    let escrow_amount = shipment.escrow_amount;
+
+    if escrow_amount > 0 {
+        let token_contract = storage::get_token_contract(env).ok_or(NavinError::NotInitialized)?;
+        let contract_address = env.current_contract_address();
+
+        let settlement_id = create_settlement(
+            env,
+            shipment.id,
+            operation.clone(),
+            escrow_amount,
+            &contract_address,
+            destination,
+        )?;
+
+        invoke_token_transfer(
+            env,
+            &token_contract,
+            &contract_address,
+            destination,
+            escrow_amount,
+        )?;
+
+        complete_settlement(env, settlement_id, shipment.id)?;
+
+        shipment.escrow_amount = 0;
+
+        match operation {
+            SettlementOperation::Release => {
+                events::emit_escrow_released(env, shipment.id, destination, escrow_amount);
+            }
+            SettlementOperation::Refund => {
+                events::emit_escrow_refunded(env, shipment.id, destination, escrow_amount);
+            }
+            SettlementOperation::Deposit | SettlementOperation::MilestonePayment => {
+                // These settlement paths are not used by escrow settlement helpers.
+            }
+        }
+    }
+
+    shipment.status = next_status.clone();
+    shipment.updated_at = env.ledger().timestamp();
+    shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
+
+    if old_status != next_status {
+        storage::decrement_status_count(env, &old_status);
+        storage::increment_status_count(env, &next_status);
+
+        if old_status != ShipmentStatus::Cancelled
+            && (next_status == ShipmentStatus::Cancelled || next_status == ShipmentStatus::Delivered)
+        {
+            storage::decrement_active_shipment_count(env, &shipment.sender);
+        }
+    }
+
+    finalize_if_settled(env, shipment);
+    persist_shipment(env, shipment)?;
+    extend_shipment_ttl(env, shipment.id);
+
+    Ok(())
+}
+
 pub(crate) fn checked_mul_div_i128(
     value: i128,
     multiplier: i128,
@@ -4397,43 +4467,19 @@ impl NavinShipment {
         let old_status = shipment.status.clone();
         let escrow_amount = shipment.escrow_amount;
 
-        // Deterministic escrow refund: always refund to company if escrow is held.
-        if escrow_amount > 0 {
-            let token_contract =
-                storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
-            let contract_address = env.current_contract_address();
-            invoke_token_transfer(
-                &env,
-                &token_contract,
-                &contract_address,
-                &shipment.sender,
-                escrow_amount,
-            )?;
-
-            shipment.escrow_amount = 0;
-            events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
-        }
-
-        shipment.status = ShipmentStatus::Cancelled;
-        shipment.updated_at = env.ledger().timestamp();
-        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
-
-        storage::decrement_status_count(&env, &old_status);
-        storage::increment_status_count(&env, &ShipmentStatus::Cancelled);
-
-        // Decrement active count only if the shipment was not already in a
-        // non-active state (Cancelled is the only non-active non-terminal state
-        // that can't reach here, so this is always safe).
-        storage::decrement_active_shipment_count(&env, &shipment.sender);
-
-        finalize_if_settled(&env, &mut shipment);
-        persist_shipment(&env, &shipment)?;
-
-        extend_shipment_ttl(&env, shipment_id);
+        let destination = shipment.sender.clone();
+        settle_escrow(
+            &env,
+            &mut shipment,
+            &destination,
+            SettlementOperation::Refund,
+            ShipmentStatus::Cancelled,
+        )?;
 
         // Emit the dedicated force-cancel event — distinct from shipment_cancelled.
         events::emit_force_cancelled(&env, shipment_id, &admin, &reason_hash, escrow_amount);
 
+        let _ = old_status;
         Ok(())
     }
 
@@ -4594,9 +4640,15 @@ impl NavinShipment {
                 return Err(NavinError::InsufficientFunds);
             }
 
-            internal_release_escrow(&env, &mut shipment, escrow_amount)?;
-            finalize_if_settled(&env, &mut shipment);
-            persist_shipment(&env, &shipment)?;
+            let destination = shipment.carrier.clone();
+            settle_escrow(
+                &env,
+                &mut shipment,
+                &destination,
+                SettlementOperation::Release,
+                ShipmentStatus::Delivered,
+            )?;
+
             events::emit_notification(
                 &env,
                 &shipment.sender,
@@ -4691,55 +4743,14 @@ impl NavinShipment {
                 return Err(NavinError::InsufficientFunds);
             }
 
-            // Get token contract address
-            let token_contract =
-                storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
-
-            // Transfer tokens from this contract to company
-            let contract_address = env.current_contract_address();
-
-            // Create settlement record in Pending state
-            let settlement_id = create_settlement(
+            let destination = shipment.sender.clone();
+            settle_escrow(
                 &env,
-                shipment_id,
+                &mut shipment,
+                &destination,
                 SettlementOperation::Refund,
-                escrow_amount,
-                &contract_address,
-                &shipment.sender,
+                ShipmentStatus::Cancelled,
             )?;
-
-            // Transfer tokens
-            invoke_token_transfer(
-                &env,
-                &token_contract,
-                &contract_address,
-                &shipment.sender,
-                escrow_amount,
-            )?;
-
-            // Mark settlement as completed
-            complete_settlement(&env, settlement_id, shipment_id)?;
-
-            shipment.escrow_amount = 0;
-            let old_status = shipment.status.clone();
-            shipment.status = ShipmentStatus::Cancelled;
-            shipment.updated_at = env.ledger().timestamp();
-            shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
-
-            finalize_if_settled(&env, &mut shipment);
-            persist_shipment(&env, &shipment)?;
-            storage::decrement_status_count(&env, &old_status);
-            storage::increment_status_count(&env, &ShipmentStatus::Cancelled);
-
-            // Decrement active shipment count if it was not already cancelled
-            if old_status != ShipmentStatus::Cancelled {
-                storage::decrement_active_shipment_count(&env, &shipment.sender);
-            }
-
-            extend_shipment_ttl(&env, shipment_id);
-            extend_shipment_ttl(&env, shipment_id);
-
-            events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
 
             Ok(())
         })
