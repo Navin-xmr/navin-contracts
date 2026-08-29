@@ -798,6 +798,7 @@ mod tests {
 
         let original_id: u64 = 1;
         let tampered_id: u64 = 999;
+        let dummy_hash = soroban_sdk::BytesN::from_array(&_env, &[1u8; 32]);
 
         let original_action = crate::types::AdminAction::ForceRelease(original_id, test_reason_hash(&env));
         let tampered_action = crate::types::AdminAction::ForceRelease(tampered_id, test_reason_hash(&env));
@@ -827,6 +828,7 @@ mod tests {
 
         let original_id: u64 = 42;
         let tampered_id: u64 = 1;
+        let dummy_hash = soroban_sdk::BytesN::from_array(&_env, &[1u8; 32]);
 
         let original_action = crate::types::AdminAction::ForceRefund(original_id, test_reason_hash(&env));
         let tampered_action = crate::types::AdminAction::ForceRefund(tampered_id, test_reason_hash(&env));

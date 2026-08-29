@@ -941,3 +941,35 @@ fn test_confirm_delivery_without_escrow_succeeds_with_failing_token() {
         "confirm_delivery without escrow must succeed even with a failing token"
     );
 }
+
+/// Non-sender company attempting to deposit escrow for a shipment must be rejected with Unauthorized (#684).
+#[test]
+fn test_non_sender_company_cannot_deposit_escrow() {
+    let ctx = setup_ok();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x80),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+
+    // Register a second distinct company
+    let other_company = Address::generate(&ctx.env);
+    ctx.client.add_company(&ctx.admin, &other_company);
+
+    let err = ctx
+        .client
+        .try_deposit_escrow(&other_company, &id, &1000i128)
+        .unwrap_err()
+        .unwrap();
+
+    assert_eq!(
+        err,
+        NavinError::Unauthorized,
+        "Non-sender company deposit into another company's shipment must be rejected with Unauthorized"
+    );
+}
