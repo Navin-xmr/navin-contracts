@@ -83,6 +83,7 @@ mod test_pause;
 #[cfg(test)]
 mod test_precondition_guards;
 #[cfg(test)]
+mod test_admin_pause_guards;
 mod test_proposal_digest;
 #[cfg(test)]
 mod test_require_auth_for_args;
@@ -5316,6 +5317,7 @@ impl NavinShipment {
     /// * `new_admin` - Address proposed as the new administrator.
     pub fn transfer_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -5335,6 +5337,7 @@ impl NavinShipment {
     /// * `new_admin` - The proposed administrator address accepting the role.
     pub fn accept_admin_transfer(env: Env, new_admin: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         new_admin.require_auth();
 
         let proposed = storage::get_proposed_admin(&env).ok_or(NavinError::Unauthorized)?;
@@ -5389,6 +5392,7 @@ impl NavinShipment {
         threshold: u32,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -5454,6 +5458,7 @@ impl NavinShipment {
         action: crate::types::AdminAction,
     ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         proposer.require_auth();
 
         // Check if proposer is in admin list
@@ -5549,6 +5554,7 @@ impl NavinShipment {
         salt: BytesN<32>,
     ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
 
         if !storage::is_admin(&env, &proposer) {
             return Err(NavinError::NotAnAdmin);
@@ -5592,6 +5598,7 @@ impl NavinShipment {
     /// ```
     pub fn approve_action(env: Env, approver: Address, proposal_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         approver.require_auth();
 
         // Check if approver is in admin list
@@ -5661,6 +5668,7 @@ impl NavinShipment {
     /// ```
     pub fn execute_proposal(env: Env, proposal_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         Self::execute_proposal_internal(env, proposal_id)
     }
 
