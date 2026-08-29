@@ -446,3 +446,23 @@ fn test_reactivated_carrier_can_report_breach_again() {
 
     assert_eq!(client.get_shipment(&id).status, ShipmentStatus::Disputed);
 }
+
+/// Transitioning to Disputed via update_status must set escrow_freeze_reason and align with raise_dispute (#683).
+#[test]
+fn test_update_status_disputed_aligns_with_raise_dispute() {
+    let (env, client, admin, token) = setup();
+    let (id, _company, _receiver, carrier) = create_test_shipment(&env, &client, &admin, &token);
+
+    let dispute_hash = BytesN::from_array(&env, &[99u8; 32]);
+    client.update_status(&carrier, &id, &ShipmentStatus::Disputed, &dispute_hash);
+
+    let shipment = client.get_shipment(&id);
+    assert_eq!(shipment.status, ShipmentStatus::Disputed);
+
+    let freeze_reason = client.get_escrow_freeze_reason(&id);
+    assert_eq!(
+        freeze_reason,
+        Some(crate::types::EscrowFreezeReason::DisputeRaised),
+        "update_status to Disputed must set escrow_freeze_reason to DisputeRaised"
+    );
+}

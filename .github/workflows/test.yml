@@ -70,6 +70,22 @@ jobs:
       - name: Run tests
         run: cargo test
 
+  budget-regression:
+    name: Budget Regression Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Enforce budget baselines
+        run: cargo test --package shipment budget_bench -- --nocapture
+
   coverage:
     name: Test Coverage
     runs-on: ubuntu-latest

@@ -249,6 +249,9 @@ pub fn set_config(env: &Env, config: &ContractConfig) -> Result<(), NavinError> 
 /// - `multisig_min_admins` must be >= 2
 /// - `multisig_max_admins` must be >= `multisig_min_admins` and <= 50
 /// - `proposal_expiry_seconds` must be >= 3,600 (1 hour) and <= 2,592,000 (30 days)
+/// - `idempotency_window_seconds` must be >= 30 and <= 86,400 (1 day)
+/// - `creation_quota_max` must be <= 10,000 (0 = disabled)
+/// - `creation_quota_window_seconds` must be >= 60 and <= 86,400 (1 day)
 ///
 /// # Examples
 /// ```rust
@@ -316,6 +319,23 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
     // Validate deadline grace period (0 = disabled, max 7 days)
     if config.deadline_grace_seconds > 604_800 {
         return Err("deadline_grace_seconds must be <= 604,800 (7 days)");
+    }
+
+    // Validate idempotency window (30 seconds minimum, 1 day maximum)
+    if config.idempotency_window_seconds < 30 || config.idempotency_window_seconds > 86_400 {
+        return Err("idempotency_window_seconds must be >= 30 and <= 86,400");
+    }
+
+    // Validate creation quota cap (0 = disabled; when set, must be <= 10,000)
+    if config.creation_quota_max > 10_000 {
+        return Err("creation_quota_max must be <= 10,000");
+    }
+
+    // Validate creation quota window (must be a sensible duration regardless of
+    // whether the quota is currently enabled, to prevent invalid values from
+    // silently persisting in config and taking effect if the quota is later turned on)
+    if config.creation_quota_window_seconds < 60 || config.creation_quota_window_seconds > 86_400 {
+        return Err("creation_quota_window_seconds must be >= 60 and <= 86,400");
     }
 
     Ok(())
@@ -577,6 +597,155 @@ mod tests {
             ..Default::default()
         };
         assert!(validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn test_validate_idempotency_window_seconds() {
+        // Invalid: zero
+        let config = ContractConfig {
+            idempotency_window_seconds: 0,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_config(&config),
+            Err("idempotency_window_seconds must be >= 30 and <= 86,400")
+        );
+
+        // Invalid: one below minimum (29 seconds)
+        let config = ContractConfig {
+            idempotency_window_seconds: 29,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_config(&config),
+            Err("idempotency_window_seconds must be >= 30 and <= 86,400")
+        );
+
+        // Invalid: one above maximum (86,401 seconds)
+        let config = ContractConfig {
+            idempotency_window_seconds: 86_401,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_config(&config),
+            Err("idempotency_window_seconds must be >= 30 and <= 86,400")
+        );
+
+        // Valid: minimum boundary (30 seconds)
+        let config = ContractConfig {
+            idempotency_window_seconds: 30,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+
+        // Valid: maximum boundary (86,400 seconds = 1 day)
+        let config = ContractConfig {
+            idempotency_window_seconds: 86_400,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+
+        // Valid: default value (300 seconds = 5 minutes)
+        let config = ContractConfig {
+            idempotency_window_seconds: 300,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_validate_creation_quota_max() {
+        // Valid: 0 (quota disabled)
+        let config = ContractConfig {
+            creation_quota_max: 0,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+
+        // Valid: maximum boundary (10,000)
+        let config = ContractConfig {
+            creation_quota_max: 10_000,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+
+        // Valid: mid-range value
+        let config = ContractConfig {
+            creation_quota_max: 100,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+
+        // Invalid: one above maximum (10,001)
+        let config = ContractConfig {
+            creation_quota_max: 10_001,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_config(&config),
+            Err("creation_quota_max must be <= 10,000")
+        );
+
+        // Invalid: absurd value
+        let config = ContractConfig {
+            creation_quota_max: u32::MAX,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn test_validate_creation_quota_window_seconds() {
+        // Invalid: zero
+        let config = ContractConfig {
+            creation_quota_window_seconds: 0,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_config(&config),
+            Err("creation_quota_window_seconds must be >= 60 and <= 86,400")
+        );
+
+        // Invalid: one below minimum (59 seconds)
+        let config = ContractConfig {
+            creation_quota_window_seconds: 59,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_config(&config),
+            Err("creation_quota_window_seconds must be >= 60 and <= 86,400")
+        );
+
+        // Invalid: one above maximum (86,401 seconds)
+        let config = ContractConfig {
+            creation_quota_window_seconds: 86_401,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_config(&config),
+            Err("creation_quota_window_seconds must be >= 60 and <= 86,400")
+        );
+
+        // Valid: minimum boundary (60 seconds)
+        let config = ContractConfig {
+            creation_quota_window_seconds: 60,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+
+        // Valid: maximum boundary (86,400 seconds = 1 day)
+        let config = ContractConfig {
+            creation_quota_window_seconds: 86_400,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+
+        // Valid: default value (3,600 seconds = 1 hour)
+        let config = ContractConfig {
+            creation_quota_window_seconds: 3_600,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
     }
 
     // ─────────────────────────────────────────────────────────────────────────
