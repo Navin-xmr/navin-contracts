@@ -2611,6 +2611,11 @@ impl NavinShipment {
             let mut shipment =
                 storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
+            // Sender verification check: Only the shipment's own sender (or contract admin) can deposit escrow
+            if from != shipment.sender && storage::get_admin(&env) != from {
+                return Err(NavinError::Unauthorized);
+            }
+
             require_not_finalized(&shipment)?;
 
             if shipment.status != ShipmentStatus::Created {
@@ -2818,7 +2823,21 @@ impl NavinShipment {
         persist_shipment(&env, &shipment)?;
 
         if shipment.status == ShipmentStatus::Disputed {
+            // Align direct-to-Disputed transition with raise_dispute side-effects:
+            // Set escrow freeze reason, emit dispute_raised & escrow_frozen events, and notify all parties.
             storage::increment_total_disputes(&env);
+            storage::set_escrow_freeze_reason(
+                &env,
+                shipment_id,
+                &crate::types::EscrowFreezeReason::DisputeRaised,
+            );
+            events::emit_dispute_raised(&env, shipment_id, &caller, &data_hash);
+            events::emit_escrow_frozen(
+                &env,
+                shipment_id,
+                crate::types::EscrowFreezeReason::DisputeRaised,
+                &caller,
+            );
         }
 
         storage::set_last_status_update(&env, shipment_id, env.ledger().timestamp());
@@ -2838,6 +2857,13 @@ impl NavinShipment {
         events::emit_notification(
             &env,
             &shipment.receiver,
+            NotificationType::StatusChanged,
+            shipment_id,
+            &data_hash,
+        );
+        events::emit_notification(
+            &env,
+            &shipment.carrier,
             NotificationType::StatusChanged,
             shipment_id,
             &data_hash,
