@@ -1,7 +1,17 @@
 extern crate std;
 
-use crate::{test::setup_shipment_env, NavinError, ShipmentStatus};
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Vec};
+use crate::{storage, test::setup_shipment_env, NavinError, ShipmentStatus};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec};
+
+/// Directly mutate a shipment's status in persistent storage. Used to set up
+/// status-filtered query fixtures without driving the full lifecycle.
+fn set_status(env: &Env, client: &crate::NavinShipmentClient<'static>, id: u64, status: ShipmentStatus) {
+    env.as_contract(&client.address, || {
+        let mut shipment = storage::get_shipment(env, id).unwrap();
+        shipment.status = status;
+        storage::set_shipment(env, &shipment);
+    });
+}
 
 fn create_shipment_for(
     client: &crate::NavinShipmentClient<'static>,
@@ -489,4 +499,129 @@ fn test_get_shipments_by_carrier_page_rejects_zero_limit() {
         &0,
     );
     assert!(matches!(result, Err(Ok(NavinError::InvalidConfig))));
+}
+
+// ── Status-search cursor pagination (issue #705) ──────────────────────────────
+
+/// Cursor must advance across multiple pages, returning each matching shipment
+/// exactly once, and produce `None` once the result set is exhausted.
+#[test]
+fn test_search_shipments_by_status_cursor_advances() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    // Only a subset are flipped to InTransit; the rest stay Created so the
+    // filter is actually exercised against non-matching shipments.
+    let s1 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 101);
+    let _other1 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 102);
+    let s2 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 103);
+    let _other2 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 104);
+    let s3 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 105);
+
+    set_status(&env, &client, s1, ShipmentStatus::InTransit);
+    set_status(&env, &client, s2, ShipmentStatus::InTransit);
+    set_status(&env, &client, s3, ShipmentStatus::InTransit);
+
+    let page1 = client.search_shipments_by_status(&ShipmentStatus::InTransit, &None, &1);
+    assert_eq!(page1.shipment_ids.len(), 1);
+    assert_eq!(page1.shipment_ids.get(0).unwrap(), s1);
+    assert_eq!(page1.next_cursor, Some(s1));
+
+    let page2 =
+        client.search_shipments_by_status(&ShipmentStatus::InTransit, &page1.next_cursor, &1);
+    assert_eq!(page2.shipment_ids.len(), 1);
+    assert_eq!(page2.shipment_ids.get(0).unwrap(), s2);
+    assert_eq!(page2.next_cursor, Some(s2));
+
+    let page3 =
+        client.search_shipments_by_status(&ShipmentStatus::InTransit, &page2.next_cursor, &1);
+    assert_eq!(page3.shipment_ids.len(), 1);
+    assert_eq!(page3.shipment_ids.get(0).unwrap(), s3);
+    assert_eq!(page3.next_cursor, None);
+}
+
+/// Multi-match page larger than one must still advance correctly and stop.
+#[test]
+fn test_search_shipments_by_status_cursor_multi_match_page() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let s1 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 111);
+    let s2 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 112);
+    let s3 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 113);
+    let s4 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 114);
+
+    for id in [s1, s2, s3, s4] {
+        set_status(&env, &client, id, ShipmentStatus::InTransit);
+    }
+
+    // Page size 2: first page returns two, cursor points at the last returned id.
+    let page1 = client.search_shipments_by_status(&ShipmentStatus::InTransit, &None, &2);
+    assert_eq!(page1.shipment_ids.len(), 2);
+    assert_eq!(page1.shipment_ids.get(0).unwrap(), s1);
+    assert_eq!(page1.shipment_ids.get(1).unwrap(), s2);
+    assert_eq!(page1.next_cursor, Some(s2));
+
+    let page2 =
+        client.search_shipments_by_status(&ShipmentStatus::InTransit, &page1.next_cursor, &2);
+    assert_eq!(page2.shipment_ids.len(), 2);
+    assert_eq!(page2.shipment_ids.get(0).unwrap(), s3);
+    assert_eq!(page2.shipment_ids.get(1).unwrap(), s4);
+    assert_eq!(page2.next_cursor, None);
+}
+
+/// End-of-results: a cursor at/after the last id returns an empty page and a
+/// `None` cursor without panicking or looping.
+#[test]
+fn test_search_shipments_by_status_cursor_end_of_results() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let s1 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 121);
+    set_status(&env, &client, s1, ShipmentStatus::InTransit);
+
+    // Cursor already at the only matching id -> no further matches.
+    let after = client.search_shipments_by_status(&ShipmentStatus::InTransit, &Some(s1), &5);
+    assert_eq!(after.shipment_ids.len(), 0);
+    assert_eq!(after.next_cursor, None);
+
+    // Cursor far beyond any shipment id -> loop must terminate immediately.
+    let beyond = client.search_shipments_by_status(&ShipmentStatus::InTransit, &Some(9999), &5);
+    assert_eq!(beyond.shipment_ids.len(), 0);
+    assert_eq!(beyond.next_cursor, None);
+}
+
+/// Filtering by a status with zero matching shipments must return a clean
+/// empty result and a `None` cursor.
+#[test]
+fn test_search_shipments_by_status_zero_match() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let _s1 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 131);
+    let _s2 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 132);
+
+    let result = client.search_shipments_by_status(&ShipmentStatus::Cancelled, &None, &10);
+    assert_eq!(result.shipment_ids.len(), 0);
+    assert_eq!(result.next_cursor, None);
 }
