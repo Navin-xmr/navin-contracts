@@ -4570,10 +4570,15 @@ impl NavinShipment {
     /// Upgrade the contract to a new WASM implementation.
     /// Only the admin can trigger upgrades. State is preserved.
     ///
+    /// Version transitions are sequential only: `target_version` must be
+    /// exactly `current_version + 1`. Rollback and skip-version migrations
+    /// are not supported.
+    ///
     /// # Arguments
     /// * `env` - Execution environment.
     /// * `admin` - Contract admin executing the upgrade.
     /// * `new_wasm_hash` - Hash pointer to the new WASM instance loaded on network.
+    /// * `target_version` - Next contract version; must equal current version + 1.
     ///
     /// # Returns
     /// * `Result<(), NavinError>` - Ok on successful deployment upgrade instance.
@@ -4582,6 +4587,7 @@ impl NavinShipment {
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::Unauthorized` - If caller isn't contract admin instance.
     /// * `NavinError::InvalidHash` - If new_wasm_hash is all zeros.
+    /// * `NavinError::InvalidMigrationEdge` - If target_version is not current + 1.
     /// * `NavinError::CounterOverflow` - If total tracking version identifier pointer triggers overflow.
     ///
     /// # Examples
@@ -4606,7 +4612,7 @@ impl NavinShipment {
 
         let current_version = storage::get_version(&env);
 
-        // Enforce one-way migration guardrails and allowed edges
+        // Only sequential forward upgrades (current + 1) are permitted.
         if !is_allowed_migration(current_version, target_version) {
             return Err(NavinError::InvalidMigrationEdge);
         }
@@ -4628,11 +4634,14 @@ impl NavinShipment {
         Ok(())
     }
 
-    /// Read-only dry-run for a proposed migration to estimate impact and validate edges.
+    /// Read-only dry-run for a proposed sequential upgrade (`target == current + 1`).
+    ///
+    /// Rollback and skip-version migrations are not supported and return
+    /// `InvalidMigrationEdge`. There is no runtime-configurable exception list.
     ///
     /// # Arguments
     /// * `env` - Execution environment.
-    /// * `target_version` - The version to simulate migrating to.
+    /// * `target_version` - The version to simulate migrating to; must be current + 1.
     ///
     /// # Returns
     /// * `Result<MigrationReport, NavinError>` - Summary of the migration impact.
@@ -7043,25 +7052,11 @@ impl NavinShipment {
 
 /// Validates whether a version transition is permitted.
 ///
-/// Standard upgrades are always allowed (current + 1).
-/// Backward migrations or jump migrations must be explicitly defined.
+/// Only sequential forward upgrades are allowed (`target == current + 1`).
+/// Rollback and skip-version migrations are not supported; there is no
+/// runtime-configurable allow-list of extra edges.
 fn is_allowed_migration(current: u32, target: u32) -> bool {
-    // Forward progression is the standard case
-    if target == current + 1 {
-        return true;
-    }
-
-    // Explicitly allowed edges (e.g. for emergency rollback or skip-version migrations)
-    // Format: &[(from_version, to_version)]
-    let allowed_edges: &[(u32, u32)] = &[];
-
-    for &(from, to) in allowed_edges {
-        if from == current && to == target {
-            return true;
-        }
-    }
-
-    false
+    target == current + 1
 }
 
 /// Compute the deterministic SHA-256 digest for a proposal action (issue #297).

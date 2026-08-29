@@ -334,7 +334,7 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             47,
             InvalidInput,
             NoRetry,
-            "Migration version transition is not permitted.",
+            "Migration version transition is not permitted; only current + 1 is allowed.",
         ),
         NavinError::MilestoneLimitExceeded => (
             48,

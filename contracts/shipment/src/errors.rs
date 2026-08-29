@@ -106,7 +106,7 @@ pub enum NavinError {
     DataHashMismatch = 45,
     /// Circuit breaker is open; token transfers are temporarily disabled.
     CircuitBreakerOpen = 46,
-    /// Migration version transition is not allowed.
+    /// Migration version transition is not allowed (only current + 1 is permitted).
     InvalidMigrationEdge = 47,
     /// Maximum allowed milestone events for a shipment has been reached.
     MilestoneLimitExceeded = 48,
