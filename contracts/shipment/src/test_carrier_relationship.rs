@@ -44,6 +44,40 @@ mod tests {
     // ── is_company_carrier_allowed ───────────────────────────────────────────
 
     #[test]
+    fn create_shipment_rejects_unregistered_or_non_whitelisted_carrier() {
+        let (env, client, admin) = setup();
+        let company = Address::generate(&env);
+        client.add_company(&admin, &company);
+
+        let receiver = Address::generate(&env);
+        let unregistered = Address::generate(&env);
+        let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+        let deadline = env.ledger().timestamp() + 3600;
+
+        let result = client.try_create_shipment(
+            &company,
+            &receiver,
+            &unregistered,
+            &data_hash,
+            &Vec::new(&env),
+            &deadline,
+        );
+        assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+
+        let registered_carrier = Address::generate(&env);
+        client.add_carrier(&admin, &registered_carrier);
+        let result = client.try_create_shipment(
+            &company,
+            &receiver,
+            &registered_carrier,
+            &data_hash,
+            &Vec::new(&env),
+            &deadline,
+        );
+        assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+    }
+
+    #[test]
     fn allowed_returns_false_when_not_whitelisted() {
         let (env, client, admin) = setup();
         let (company, carrier) = add_company_and_carrier(&env, &client, &admin);

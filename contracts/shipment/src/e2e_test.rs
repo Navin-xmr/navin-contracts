@@ -479,6 +479,46 @@ fn test_e2e_cancel_refund_path_with_token_balances() {
 // TEST 3 — PARTIAL MILESTONES THEN CANCEL VIA DEADLINE
 // =============================================================================
 #[test]
+fn test_e2e_cancel_shipment_returns_escrow_to_company() {
+    let (env, admin) = setup_env();
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    let (token_id, token) = deploy_token(&env, &admin);
+    let shipment = deploy_shipment(&env, &admin, &token_id);
+
+    shipment.add_company(&admin, &company);
+    shipment.add_carrier(&admin, &carrier);
+
+    token.mint(&admin, &company, &5_000_i128);
+    let deadline = env.ledger().timestamp() + 86_400;
+    let shipment_id = shipment.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &hash(&env, 0xB2),
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    shipment.deposit_escrow(&company, &shipment_id, &2_000_i128);
+    assert_eq!(token.balance(&company), 3_000, "company has 3k after deposit");
+    assert_eq!(token.balance(&shipment.address), 2_000, "contract holds 2k before cancel");
+
+    shipment.cancel_shipment(&company, &shipment_id, &hash(&env, 0xB3));
+
+    assert!(has_event(&env, "escrow_refunded"), "cancel_shipment must emit escrow_refunded");
+    assert_eq!(token.balance(&company), 5_000, "company fully refunded after cancel");
+    assert_eq!(token.balance(&shipment.address), 0, "contract returns escrow to company");
+
+    let state = shipment.get_shipment(&shipment_id);
+    assert_eq!(state.status, ShipmentStatus::Cancelled);
+    assert_eq!(state.escrow_amount, 0);
+}
+
+#[test]
 fn test_e2e_partial_milestones_then_cancel_via_deadline() {
     let (env, admin) = setup_env();
 

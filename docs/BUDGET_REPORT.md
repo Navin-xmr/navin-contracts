@@ -18,6 +18,9 @@ cargo test --package shipment budget_bench -- --nocapture 2>&1 \
 The test suite writes one `[budget]` line per operation to stdout.
 Redirect output and paste the table below.
 
+CI enforces the same thresholds automatically via `cargo test --package shipment budget_bench -- --nocapture`.
+Any operation that regresses by more than 20% for either CPU or memory fails the job; a 10% drift prints a review warning and should be triaged before merge.
+
 ---
 
 ## Baseline figures

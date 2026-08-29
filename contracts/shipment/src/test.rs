@@ -3048,6 +3048,15 @@ fn test_cancel_shipment_with_escrow() {
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
     assert_eq!(shipment.escrow_amount, 0);
+
+    let events = env.events().all();
+    let emitted_refund = events.iter().any(|(_contract, topics, _data)| {
+        topics.iter().any(|v| {
+            let sym: Symbol = soroban_sdk::Symbol::from_val(&env, &v);
+            sym.to_string() == "escrow_refunded"
+        })
+    });
+    assert!(emitted_refund, "cancel_shipment must emit escrow_refunded when returning escrow");
 }
 
 #[test]
