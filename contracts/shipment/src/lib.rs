@@ -1159,6 +1159,11 @@ impl NavinShipment {
             return Err(NavinError::InvalidTokenAddress);
         }
 
+        // Fail fast if the configured token is incompatible before the contract is
+        // initialized for use. Mixed-token shipments still keep the existing
+        // deposit-time validation for tokens introduced after setup.
+        validate_token_decimals(&env, &token_contract)?;
+
         storage::set_admin(&env, &admin);
         storage::set_token_contract(&env, &token_contract);
         storage::set_shipment_counter(&env, 0);
@@ -2278,6 +2283,12 @@ impl NavinShipment {
             return Err(NavinError::InvalidShipmentParticipants);
         }
 
+        require_role(&env, &carrier, Role::Carrier)?;
+        require_active_carrier(&env, &carrier)?;
+        if !storage::is_carrier_whitelisted(&env, &sender, &carrier) {
+            return Err(NavinError::Unauthorized);
+        }
+
         // Idempotency: reject duplicate (sender, data_hash) within the window.
         let mut payload = soroban_sdk::Bytes::new(&env);
         payload.append(&sender.clone().to_xdr(&env));
@@ -2405,6 +2416,11 @@ impl NavinShipment {
         for shipment_input in shipments.iter() {
             if shipment_input.receiver == shipment_input.carrier {
                 return Err(NavinError::InvalidShipmentInput);
+            }
+            require_role(&env, &shipment_input.carrier, Role::Carrier)?;
+            require_active_carrier(&env, &shipment_input.carrier)?;
+            if !storage::is_carrier_whitelisted(&env, &sender, &shipment_input.carrier) {
+                return Err(NavinError::Unauthorized);
             }
             validate_milestones(&env, &shipment_input.payment_milestones)?;
             validate_hash(&shipment_input.data_hash)?;
@@ -4426,6 +4442,22 @@ impl NavinShipment {
 
         let escrow_amount = shipment.escrow_amount;
         let old_status = shipment.status.clone();
+
+        if escrow_amount > 0 {
+            let token_contract =
+                storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
+            let contract_address = env.current_contract_address();
+            invoke_token_transfer(
+                &env,
+                &token_contract,
+                &contract_address,
+                &shipment.sender,
+                escrow_amount,
+            )?;
+            storage::remove_escrow_balance(&env, shipment_id);
+            events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
+        }
+
         shipment.status = ShipmentStatus::Cancelled;
         shipment.escrow_amount = 0;
         shipment.updated_at = env.ledger().timestamp();
@@ -4440,13 +4472,8 @@ impl NavinShipment {
             storage::decrement_active_shipment_count(&env, &shipment.sender);
         }
 
-        if escrow_amount > 0 {
-            storage::remove_escrow_balance(&env, shipment_id);
-            events::emit_escrow_released(&env, shipment_id, &shipment.sender, escrow_amount);
-        }
         finalize_if_settled(&env, &mut shipment);
         persist_shipment(&env, &shipment)?;
-        storage::remove_escrow_balance(&env, shipment_id);
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_shipment_cancelled(&env, shipment_id, &caller, &reason_hash);
