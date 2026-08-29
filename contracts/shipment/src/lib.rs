@@ -83,6 +83,8 @@ mod test_pause;
 #[cfg(test)]
 mod test_precondition_guards;
 #[cfg(test)]
+mod test_admin_pause_guards;
+mod test_multisig_reinit_guard;
 mod test_proposal_digest;
 #[cfg(test)]
 mod test_require_auth_for_args;
@@ -928,6 +930,11 @@ impl NavinShipment {
 
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        // A finalized or archived shipment is a closed record. Its siblings
+        // `set_shipment_metadata` and `add_dispute_evidence_hash` both refuse to
+        // mutate one; notes were the gap, so a settled shipment could keep
+        // accruing them indefinitely.
+        require_not_finalized(&shipment)?;
         let admin = storage::get_admin(&env);
 
         // Authorization: Sender, Receiver, Carrier, or Admin
@@ -3756,6 +3763,56 @@ impl NavinShipment {
             &confirmation_hash,
         );
 
+        // A shipment completed by the final partial release is just as
+        // delivered as one completed by `confirm_delivery`, and downstream
+        // consumers cannot tell which path produced it. Emitting only
+        // `StatusUpdated` here meant a carrier silently lost the reputation
+        // credit — and the parties the notification — purely because the escrow
+        // was drawn down in slices.
+        if shipment.status == ShipmentStatus::Delivered {
+            let now = shipment.updated_at;
+
+            events::emit_delivery_confirmed(&env, shipment_id, &receiver, &confirmation_hash);
+            events::emit_delivery_success(&env, &shipment.carrier, shipment_id, now);
+
+            let total_milestones = shipment.payment_milestones.len();
+            let milestones_hit = shipment.paid_milestones.len();
+            events::emit_carrier_milestone_rate(
+                &env,
+                &shipment.carrier,
+                shipment_id,
+                milestones_hit,
+                total_milestones,
+            );
+
+            if now > shipment.deadline {
+                events::emit_carrier_late_delivery(
+                    &env,
+                    &shipment.carrier,
+                    shipment_id,
+                    shipment.deadline,
+                    now,
+                );
+            } else {
+                events::emit_carrier_on_time_delivery(&env, &shipment.carrier, shipment_id);
+            }
+
+            events::emit_notification(
+                &env,
+                &shipment.sender,
+                NotificationType::DeliveryConfirmed,
+                shipment_id,
+                &confirmation_hash,
+            );
+            events::emit_notification(
+                &env,
+                &shipment.carrier,
+                NotificationType::DeliveryConfirmed,
+                shipment_id,
+                &confirmation_hash,
+            );
+        }
+
         Ok(())
     }
 
@@ -5329,6 +5386,7 @@ impl NavinShipment {
     /// * `new_admin` - Address proposed as the new administrator.
     pub fn transfer_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -5348,6 +5406,7 @@ impl NavinShipment {
     /// * `new_admin` - The proposed administrator address accepting the role.
     pub fn accept_admin_transfer(env: Env, new_admin: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         new_admin.require_auth();
 
         let proposed = storage::get_proposed_admin(&env).ok_or(NavinError::Unauthorized)?;
@@ -5402,6 +5461,7 @@ impl NavinShipment {
         threshold: u32,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
 
         if storage::get_admin(&env) != admin {
@@ -5431,9 +5491,32 @@ impl NavinShipment {
             return Err(NavinError::InvalidConfig);
         }
 
+        // Re-initialisation is allowed — an admin set does need to change — but
+        // only while nothing is in flight. Resetting the counter underneath a
+        // live proposal would hand its id to a different action, so the next
+        // `propose_action` would overwrite a proposal that admins had already
+        // approved, with their approvals still attached.
+        let already_initialized = storage::get_multisig_threshold(&env).is_some();
+        if already_initialized {
+            // Proposal ids are 1-based: `propose_action` stores at `counter + 1`
+            // and then advances the counter to that id.
+            let counter = storage::get_proposal_counter(&env);
+            for id in 1..=counter {
+                if let Some(proposal) = storage::get_proposal(&env, id) {
+                    if !proposal.executed && proposal.expires_at > env.ledger().timestamp() {
+                        return Err(NavinError::MultiSigProposalPending);
+                    }
+                }
+            }
+        }
+
         storage::set_admin_list(&env, &admins);
         storage::set_multisig_threshold(&env, threshold);
-        storage::set_proposal_counter(&env, 0);
+        // Only start the counter on a first initialisation. Carrying it forward
+        // keeps proposal ids monotonic for anything indexing them off-chain.
+        if !already_initialized {
+            storage::set_proposal_counter(&env, 0);
+        }
 
         env.events()
             .publish((symbol_short!("ms_init"),), (admin_count, threshold));
@@ -5467,6 +5550,7 @@ impl NavinShipment {
         action: crate::types::AdminAction,
     ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         proposer.require_auth();
 
         // Check if proposer is in admin list
@@ -5562,6 +5646,7 @@ impl NavinShipment {
         salt: BytesN<32>,
     ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
 
         if !storage::is_admin(&env, &proposer) {
             return Err(NavinError::NotAnAdmin);
@@ -5605,6 +5690,7 @@ impl NavinShipment {
     /// ```
     pub fn approve_action(env: Env, approver: Address, proposal_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         approver.require_auth();
 
         // Check if approver is in admin list
@@ -5674,6 +5760,7 @@ impl NavinShipment {
     /// ```
     pub fn execute_proposal(env: Env, proposal_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         Self::execute_proposal_internal(env, proposal_id)
     }
 

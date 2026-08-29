@@ -9,7 +9,7 @@ use crate::{
 use soroban_sdk::{
     contract, contracterror, contractimpl,
     testutils::{storage::Persistent, Address as _, Events, Ledger},
-    Address, BytesN, Env, IntoVal, Symbol, TryFromVal, TryIntoVal,
+    Address, BytesN, Env, IntoVal, Symbol, TryFromVal, TryIntoVal, Vec,
 };
 
 #[contract]
@@ -12917,10 +12917,16 @@ fn test_append_note_on_terminal_shipment() {
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
 
     let note_hash = BytesN::from_array(&env, &[3u8; 32]);
-    client.append_note_hash(&company, &shipment_id, &note_hash);
+    let result = client.try_append_note_hash(&company, &shipment_id, &note_hash);
 
-    let count = client.get_note_count(&shipment_id);
-    assert_eq!(count, 1);
+    // A finalized shipment is a closed record: notes are refused, exactly as
+    // `set_shipment_metadata` and `add_dispute_evidence_hash` already refuse.
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::ShipmentFinalized)),
+        "notes must not be appendable to a finalized shipment"
+    );
+    assert_eq!(client.get_note_count(&shipment_id), 0);
 }
 
 #[test]
@@ -15795,7 +15801,7 @@ fn test_force_release_reason_hash_persisted_in_event() {
     client.init_multisig(&admin, &admins, &2);
 
     // Create reason hash: deterministic hash for audit trail
-    let reason_hash = BytesN::from_array(&env, &[0xABu8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[0xAB_u8; 32]);
     let action = crate::AdminAction::ForceRelease(shipment_id, reason_hash.clone());
     let proposal_id = client.propose_action(&admin1, &action);
 
@@ -15817,6 +15823,17 @@ fn test_force_release_reason_hash_persisted_in_event() {
         force_released_event.is_some(),
         "force_released event must be emitted after ForceRelease execution"
     );
+
+    // Event is persisted in the event stream and queryable by indexer/client
+    if let Some((_contract, _topics, data)) = force_released_event {
+        let (_id, _admin, emitted_hash, _amount): (u64, Address, BytesN<32>, i128) = data
+            .try_into_val(&env)
+            .expect("force_released event data must decode");
+        assert_eq!(
+            emitted_hash, reason_hash,
+            "force_released event must carry the reason hash"
+        );
+    }
 }
 
 /// ForceRelease rejects zero reason_hash, matching force_cancel_shipment behavior.
@@ -15895,7 +15912,7 @@ fn test_force_refund_reason_hash_persisted_in_event() {
     client.init_multisig(&admin, &admins, &2);
 
     // Create reason hash: deterministic hash for audit trail
-    let reason_hash = BytesN::from_array(&env, &[0xCDu8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[0xCD_u8; 32]);
     let action = crate::AdminAction::ForceRefund(shipment_id, reason_hash.clone());
     let proposal_id = client.propose_action(&admin1, &action);
 
@@ -15917,6 +15934,17 @@ fn test_force_refund_reason_hash_persisted_in_event() {
         force_refunded_event.is_some(),
         "force_refunded event must be emitted after ForceRefund execution"
     );
+
+    // Event is persisted in the event stream and queryable by indexer/client
+    if let Some((_contract, _topics, data)) = force_refunded_event {
+        let (_id, _admin, emitted_hash, _amount): (u64, Address, BytesN<32>, i128) = data
+            .try_into_val(&env)
+            .expect("force_refunded event data must decode");
+        assert_eq!(
+            emitted_hash, reason_hash,
+            "force_refunded event must carry the reason hash"
+        );
+    }
 }
 
 /// ForceRefund rejects zero reason_hash, matching force_cancel_shipment behavior.

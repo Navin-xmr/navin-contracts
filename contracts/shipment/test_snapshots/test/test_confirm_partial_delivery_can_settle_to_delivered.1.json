@@ -591,7 +591,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "u32": 7
+                  "u32": 9
                 }
               }
             },
