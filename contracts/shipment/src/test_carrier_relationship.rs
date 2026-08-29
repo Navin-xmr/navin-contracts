@@ -6,7 +6,7 @@
 #[cfg(test)]
 mod tests {
     use crate::{test_utils, NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env, Symbol, Vec};
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, testutils::Events as _, Address, Env, Symbol, Vec};
 
     #[contract]
     struct MockToken;
@@ -419,15 +419,14 @@ mod tests {
         let events = env.events().all();
 
         // Collect every notification event emitted during the handoff call.
-        let notification_events: soroban_sdk::Vec<_> = events
-            .iter()
-            .filter(|(_contract, topics, _data)| {
-                topics
-                    .get(0)
-                    .and_then(|raw| Symbol::try_from_val(&env, &raw).ok())
-                    == Some(Symbol::new(&env, "notification"))
-            })
-            .collect();
+        let mut notification_events = soroban_sdk::Vec::new(&env);
+        for event in events.iter() {
+            if let Some(raw) = event.1.get(0) {
+                if Symbol::try_from_val(&env, &raw).ok() == Some(Symbol::new(&env, "notification")) {
+                    notification_events.push_back(event);
+                }
+            }
+        }
 
         assert_eq!(
             notification_events.len(),
@@ -457,33 +456,32 @@ mod tests {
         }
 
         // Verify each of the four parties received exactly one notification.
-        let recipients: std::vec::Vec<Address> = notification_events
-            .iter()
-            .map(|(_contract, _topics, data)| {
-                let (recipient, _, _, _): (
-                    Address,
-                    NotificationType,
-                    u64,
-                    soroban_sdk::BytesN<32>,
-                ) = soroban_sdk::TryFromVal::try_from_val(&env, &data).unwrap();
-                recipient
-            })
-            .collect();
+        let mut recipients = soroban_sdk::Vec::new(&env);
+        for (_contract, _topics, data) in notification_events.iter() {
+            let (recipient, _, _, _): (
+                Address,
+                NotificationType,
+                u64,
+                soroban_sdk::BytesN<32>,
+            ) = soroban_sdk::TryFromVal::try_from_val(&env, &data)
+                .expect("notification event data must deserialize");
+            recipients.push_back(recipient);
+        }
 
         assert!(
-            recipients.contains(&company),
+            recipients.first_index_of(&company).is_some(),
             "sender (company) must receive a CarrierHandoff notification"
         );
         assert!(
-            recipients.contains(&receiver),
+            recipients.first_index_of(&receiver).is_some(),
             "receiver must receive a CarrierHandoff notification"
         );
         assert!(
-            recipients.contains(&old_carrier),
+            recipients.first_index_of(&old_carrier).is_some(),
             "old carrier must receive a CarrierHandoff notification"
         );
         assert!(
-            recipients.contains(&new_carrier),
+            recipients.first_index_of(&new_carrier).is_some(),
             "new carrier must receive a CarrierHandoff notification"
         );
     }
