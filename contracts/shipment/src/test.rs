@@ -9,7 +9,7 @@ use crate::{
 use soroban_sdk::{
     contract, contracterror, contractimpl,
     testutils::{storage::Persistent, Address as _, Events, Ledger},
-    Address, BytesN, Env, IntoVal, Symbol, TryFromVal, TryIntoVal,
+    Address, BytesN, Env, IntoVal, Symbol, TryFromVal, TryIntoVal, Vec,
 };
 
 #[contract]
@@ -15687,7 +15687,7 @@ fn test_force_release_reason_hash_persisted_in_event() {
     client.init_multisig(&admin, &admins, &2);
 
     // Create reason hash: deterministic hash for audit trail
-    let reason_hash = BytesN::from_array(&env, &[0xAB u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[0xAB_u8; 32]);
     let action = crate::AdminAction::ForceRelease(shipment_id, reason_hash.clone());
     let proposal_id = client.propose_action(&admin1, &action);
 
@@ -15712,7 +15712,13 @@ fn test_force_release_reason_hash_persisted_in_event() {
 
     // Event is persisted in the event stream and queryable by indexer/client
     if let Some((_contract, _topics, data)) = force_released_event {
-        assert!(!data.is_empty(), "force_released event must have data payload with reason hash");
+        let (_id, _admin, emitted_hash, _amount): (u64, Address, BytesN<32>, i128) = data
+            .try_into_val(&env)
+            .expect("force_released event data must decode");
+        assert_eq!(
+            emitted_hash, reason_hash,
+            "force_released event must carry the reason hash"
+        );
     }
 }
 
@@ -15792,7 +15798,7 @@ fn test_force_refund_reason_hash_persisted_in_event() {
     client.init_multisig(&admin, &admins, &2);
 
     // Create reason hash: deterministic hash for audit trail
-    let reason_hash = BytesN::from_array(&env, &[0xCD u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[0xCD_u8; 32]);
     let action = crate::AdminAction::ForceRefund(shipment_id, reason_hash.clone());
     let proposal_id = client.propose_action(&admin1, &action);
 
@@ -15817,7 +15823,13 @@ fn test_force_refund_reason_hash_persisted_in_event() {
 
     // Event is persisted in the event stream and queryable by indexer/client
     if let Some((_contract, _topics, data)) = force_refunded_event {
-        assert!(!data.is_empty(), "force_refunded event must have data payload with reason hash");
+        let (_id, _admin, emitted_hash, _amount): (u64, Address, BytesN<32>, i128) = data
+            .try_into_val(&env)
+            .expect("force_refunded event data must decode");
+        assert_eq!(
+            emitted_hash, reason_hash,
+            "force_refunded event must carry the reason hash"
+        );
     }
 }
 
