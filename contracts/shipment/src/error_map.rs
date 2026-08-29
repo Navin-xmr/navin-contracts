@@ -210,6 +210,12 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "Caller is not in the admin list.",
         ),
+        NavinError::MultiSigProposalPending => (
+            72,
+            InvalidState,
+            NoRetry,
+            "Cannot re-initialise multi-sig while a proposal is still pending.",
+        ),
         NavinError::InvalidMultiSigConfig => (
             28,
             InvalidInput,

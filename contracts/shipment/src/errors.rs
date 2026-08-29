@@ -161,4 +161,8 @@ pub enum NavinError {
     InvalidAddress = 70,
     /// Maximum allowed recovery action entries for a shipment has been reached.
     RecoveryLimitExceeded = 71,
+    /// `init_multisig` was called again while a proposal is still pending.
+    /// Re-initialising then would reset the proposal counter and hand a live
+    /// proposal's id to a different action.
+    MultiSigProposalPending = 72,
 }
