@@ -12809,10 +12809,16 @@ fn test_append_note_on_terminal_shipment() {
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
 
     let note_hash = BytesN::from_array(&env, &[3u8; 32]);
-    client.append_note_hash(&company, &shipment_id, &note_hash);
+    let result = client.try_append_note_hash(&company, &shipment_id, &note_hash);
 
-    let count = client.get_note_count(&shipment_id);
-    assert_eq!(count, 1);
+    // A finalized shipment is a closed record: notes are refused, exactly as
+    // `set_shipment_metadata` and `add_dispute_evidence_hash` already refuse.
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::ShipmentFinalized)),
+        "notes must not be appendable to a finalized shipment"
+    );
+    assert_eq!(client.get_note_count(&shipment_id), 0);
 }
 
 #[test]

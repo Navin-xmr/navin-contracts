@@ -858,6 +858,11 @@ impl NavinShipment {
 
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        // A finalized or archived shipment is a closed record. Its siblings
+        // `set_shipment_metadata` and `add_dispute_evidence_hash` both refuse to
+        // mutate one; notes were the gap, so a settled shipment could keep
+        // accruing them indefinitely.
+        require_not_finalized(&shipment)?;
         let admin = storage::get_admin(&env);
 
         // Authorization: Sender, Receiver, Carrier, or Admin
