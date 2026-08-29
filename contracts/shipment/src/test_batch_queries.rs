@@ -389,3 +389,104 @@ fn test_search_shipments_by_carrier_cursor_pagination() {
     assert_eq!(page2.shipment_ids.get(0).unwrap(), c2);
     assert_eq!(page2.next_cursor, None);
 }
+
+// ── Carrier-page shipment lookup (issue #702) ──────────────────────────────────
+
+/// Single page should return every shipment assigned to the queried carrier
+/// and nothing for any other carrier.
+#[test]
+fn test_get_shipments_by_carrier_page_single_page() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier_a = Address::generate(&env);
+    let carrier_b = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let a1 = create_shipment_for(&client, &env, &company, &receiver, &carrier_a, 71);
+    let _b1 = create_shipment_for(&client, &env, &company, &receiver, &carrier_b, 72);
+    let a2 = create_shipment_for(&client, &env, &company, &receiver, &carrier_a, 73);
+
+    // Large limit captures both carrier_a shipments in one page.
+    let page = client.get_shipments_by_carrier_page(&carrier_a, &0, &10);
+    assert_eq!(page.len(), 2);
+    assert_eq!(page.get(0).unwrap().id, a1);
+    assert_eq!(page.get(1).unwrap().id, a2);
+
+    // The other carrier sees only its own shipment.
+    let only_b = client.get_shipments_by_carrier_page(&carrier_b, &0, &10);
+    assert_eq!(only_b.len(), 1);
+    assert_eq!(only_b.get(0).unwrap().id, _b1);
+}
+
+/// Pagination boundaries: offset/limit slicing must behave consistently with
+/// the sender-page tests and never return shipments from other carriers.
+#[test]
+fn test_get_shipments_by_carrier_page_pagination() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier_a = Address::generate(&env);
+    let carrier_b = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let a1 = create_shipment_for(&client, &env, &company, &receiver, &carrier_a, 81);
+    let a2 = create_shipment_for(&client, &env, &company, &receiver, &carrier_a, 82);
+    let _b1 = create_shipment_for(&client, &env, &company, &receiver, &carrier_b, 83);
+    let a3 = create_shipment_for(&client, &env, &company, &receiver, &carrier_a, 84);
+
+    // Page 1: first 2 of carrier_a only.
+    let page1 = client.get_shipments_by_carrier_page(&carrier_a, &0, &2);
+    assert_eq!(page1.len(), 2);
+    assert_eq!(page1.get(0).unwrap().id, a1);
+    assert_eq!(page1.get(1).unwrap().id, a2);
+
+    // Page 2: remaining 1, offset past the first two.
+    let page2 = client.get_shipments_by_carrier_page(&carrier_a, &2, &2);
+    assert_eq!(page2.len(), 1);
+    assert_eq!(page2.get(0).unwrap().id, a3);
+
+    // Offset equal to the match count yields an empty page (boundary).
+    let boundary = client.get_shipments_by_carrier_page(&carrier_a, &3, &2);
+    assert_eq!(boundary.len(), 0);
+
+    // Offset beyond the match count also yields an empty page.
+    let past_end = client.get_shipments_by_carrier_page(&carrier_a, &100, &2);
+    assert_eq!(past_end.len(), 0);
+}
+
+/// A carrier with zero shipments must return an empty result.
+#[test]
+fn test_get_shipments_by_carrier_page_empty_result() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier_a = Address::generate(&env);
+    let carrier_b = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let _a1 = create_shipment_for(&client, &env, &company, &receiver, &carrier_a, 91);
+
+    let empty = client.get_shipments_by_carrier_page(&carrier_b, &0, &10);
+    assert_eq!(empty.len(), 0);
+}
+
+/// Zero limit must be rejected the same way as the other paged queries.
+#[test]
+fn test_get_shipments_by_carrier_page_rejects_zero_limit() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let result = client.try_get_shipments_by_carrier_page(
+        &Address::generate(&_env),
+        &0,
+        &0,
+    );
+    assert!(matches!(result, Err(Ok(NavinError::InvalidConfig))));
+}
