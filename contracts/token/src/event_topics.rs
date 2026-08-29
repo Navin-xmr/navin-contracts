@@ -31,11 +31,9 @@
 //! previously hard-coded at the call site. Any change to a value is a
 //! breaking change for off-chain indexers.
 
-/// Schema version carried by every token event as the second topic element.
-/// Bump only when a payload shape changes in a way indexers must branch on.
-pub const EVENT_SCHEMA_VERSION: u32 = 1;
-
-/// String form of [`EVENT_SCHEMA_VERSION`] used as the topic value.
+/// Schema version string carried by every token event as the second topic
+/// element. Bump only when a payload shape changes in a way indexers must
+/// branch on.
 pub const EVENT_SCHEMA_VERSION_STR: &str = "v1";
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────
