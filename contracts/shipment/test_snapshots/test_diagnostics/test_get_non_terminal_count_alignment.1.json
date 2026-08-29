@@ -2921,6 +2921,9 @@
                       "symbol": "InTransit"
                     }
                   ]
+                },
+                {
+                  "u32": 0
                 }
               ]
             },
@@ -2948,6 +2951,9 @@
                           "symbol": "InTransit"
                         }
                       ]
+                    },
+                    {
+                      "u32": 0
                     }
                   ]
                 },
@@ -2980,6 +2986,9 @@
                       "symbol": "AtCheckpoint"
                     }
                   ]
+                },
+                {
+                  "u32": 0
                 }
               ]
             },
@@ -3007,6 +3016,9 @@
                           "symbol": "AtCheckpoint"
                         }
                       ]
+                    },
+                    {
+                      "u32": 0
                     }
                   ]
                 },
@@ -3039,6 +3051,9 @@
                       "symbol": "InTransit"
                     }
                   ]
+                },
+                {
+                  "u32": 0
                 }
               ]
             },
@@ -3066,6 +3081,9 @@
                           "symbol": "InTransit"
                         }
                       ]
+                    },
+                    {
+                      "u32": 0
                     }
                   ]
                 },
@@ -3098,6 +3116,9 @@
                       "symbol": "InTransit"
                     }
                   ]
+                },
+                {
+                  "u32": 0
                 }
               ]
             },
@@ -3125,6 +3146,9 @@
                           "symbol": "InTransit"
                         }
                       ]
+                    },
+                    {
+                      "u32": 0
                     }
                   ]
                 },
@@ -3157,6 +3181,9 @@
                       "symbol": "InTransit"
                     }
                   ]
+                },
+                {
+                  "u32": 0
                 }
               ]
             },
@@ -3184,12 +3211,310 @@
                           "symbol": "InTransit"
                         }
                       ]
+                    },
+                    {
+                      "u32": 0
                     }
                   ]
                 },
                 "durability": "persistent",
                 "val": {
                   "bytes": "0505050505050505050505050505050505050505050505050505050505050505"
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4096
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "StatusHashCount"
+                },
+                {
+                  "u64": 2
+                },
+                {
+                  "vec": [
+                    {
+                      "symbol": "InTransit"
+                    }
+                  ]
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "StatusHashCount"
+                    },
+                    {
+                      "u64": 2
+                    },
+                    {
+                      "vec": [
+                        {
+                          "symbol": "InTransit"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u32": 1
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4096
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "StatusHashCount"
+                },
+                {
+                  "u64": 3
+                },
+                {
+                  "vec": [
+                    {
+                      "symbol": "AtCheckpoint"
+                    }
+                  ]
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "StatusHashCount"
+                    },
+                    {
+                      "u64": 3
+                    },
+                    {
+                      "vec": [
+                        {
+                          "symbol": "AtCheckpoint"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u32": 1
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4096
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "StatusHashCount"
+                },
+                {
+                  "u64": 3
+                },
+                {
+                  "vec": [
+                    {
+                      "symbol": "InTransit"
+                    }
+                  ]
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "StatusHashCount"
+                    },
+                    {
+                      "u64": 3
+                    },
+                    {
+                      "vec": [
+                        {
+                          "symbol": "InTransit"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u32": 1
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4096
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "StatusHashCount"
+                },
+                {
+                  "u64": 4
+                },
+                {
+                  "vec": [
+                    {
+                      "symbol": "InTransit"
+                    }
+                  ]
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "StatusHashCount"
+                    },
+                    {
+                      "u64": 4
+                    },
+                    {
+                      "vec": [
+                        {
+                          "symbol": "InTransit"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u32": 1
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4096
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "StatusHashCount"
+                },
+                {
+                  "u64": 5
+                },
+                {
+                  "vec": [
+                    {
+                      "symbol": "InTransit"
+                    }
+                  ]
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "StatusHashCount"
+                    },
+                    {
+                      "u64": 5
+                    },
+                    {
+                      "vec": [
+                        {
+                          "symbol": "InTransit"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u32": 1
                 }
               }
             },

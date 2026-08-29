@@ -205,8 +205,12 @@ fn test_assert_data_hash_wrong_hash_returns_data_hash_mismatch() {
 
     // A different hash must produce DataHashMismatch.
     let wrong_hash = BytesN::from_array(&env, &[0xBBu8; 32]);
-    let result =
-        client.try_assert_data_hash(&shipment_id, &crate::ShipmentStatus::InTransit, &wrong_hash);
+    let result = client.try_assert_data_hash(
+        &shipment_id,
+        &crate::ShipmentStatus::InTransit,
+        &0,
+        &wrong_hash,
+    );
     assert_eq!(
         result,
         Err(Ok(NavinError::DataHashMismatch)),
@@ -249,6 +253,7 @@ fn test_assert_data_hash_correct_hash_returns_ok() {
     let result = client.try_assert_data_hash(
         &shipment_id,
         &crate::ShipmentStatus::InTransit,
+        &0,
         &transit_hash,
     );
     assert_eq!(
@@ -266,7 +271,8 @@ fn test_assert_data_hash_nonexistent_shipment_returns_not_found() {
     client.initialize(&admin, &_token_contract);
 
     let hash = BytesN::from_array(&env, &[1u8; 32]);
-    let result = client.try_assert_data_hash(&9999u64, &crate::ShipmentStatus::InTransit, &hash);
+    let result =
+        client.try_assert_data_hash(&9999u64, &crate::ShipmentStatus::InTransit, &0, &hash);
     assert_eq!(
         result,
         Err(Ok(NavinError::ShipmentNotFound)),
@@ -301,8 +307,12 @@ fn test_assert_data_hash_unset_status_returns_status_hash_not_found() {
 
     // AtCheckpoint was never set.
     let probe = BytesN::from_array(&env, &[7u8; 32]);
-    let result =
-        client.try_assert_data_hash(&shipment_id, &crate::ShipmentStatus::AtCheckpoint, &probe);
+    let result = client.try_assert_data_hash(
+        &shipment_id,
+        &crate::ShipmentStatus::AtCheckpoint,
+        &0,
+        &probe,
+    );
     assert_eq!(
         result,
         Err(Ok(NavinError::StatusHashNotFound)),

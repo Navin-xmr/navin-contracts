@@ -170,7 +170,8 @@ mod tests {
 
         let shipment_id = 42u64;
         let dummy_hash = soroban_sdk::BytesN::from_array(&_env, &[1u8; 32]);
-        let action_release = crate::types::AdminAction::ForceRelease(shipment_id, dummy_hash.clone());
+        let action_release =
+            crate::types::AdminAction::ForceRelease(shipment_id, dummy_hash.clone());
         let action_refund = crate::types::AdminAction::ForceRefund(shipment_id, dummy_hash);
 
         let digest_release = client.compute_proposal_digest(&1, &action_release);
@@ -793,7 +794,8 @@ mod tests {
         let tampered_id: u64 = 999;
         let dummy_hash = soroban_sdk::BytesN::from_array(&_env, &[1u8; 32]);
 
-        let original_action = crate::types::AdminAction::ForceRelease(original_id, dummy_hash.clone());
+        let original_action =
+            crate::types::AdminAction::ForceRelease(original_id, dummy_hash.clone());
         let tampered_action = crate::types::AdminAction::ForceRelease(tampered_id, dummy_hash);
 
         let proposal_id = client.propose_action(&admin, &original_action);
@@ -823,7 +825,8 @@ mod tests {
         let tampered_id: u64 = 1;
         let dummy_hash = soroban_sdk::BytesN::from_array(&_env, &[1u8; 32]);
 
-        let original_action = crate::types::AdminAction::ForceRefund(original_id, dummy_hash.clone());
+        let original_action =
+            crate::types::AdminAction::ForceRefund(original_id, dummy_hash.clone());
         let tampered_action = crate::types::AdminAction::ForceRefund(tampered_id, dummy_hash);
 
         let proposal_id = client.propose_action(&admin, &original_action);
@@ -852,7 +855,8 @@ mod tests {
 
         let shipment_id: u64 = 7;
         let dummy_hash = soroban_sdk::BytesN::from_array(&_env, &[1u8; 32]);
-        let original_action = crate::types::AdminAction::ForceRelease(shipment_id, dummy_hash.clone());
+        let original_action =
+            crate::types::AdminAction::ForceRelease(shipment_id, dummy_hash.clone());
         let swapped_action = crate::types::AdminAction::ForceRefund(shipment_id, dummy_hash);
 
         let proposal_id = client.propose_action(&admin, &original_action);

@@ -7678,7 +7678,12 @@ fn test_verify_data_hash_returns_invalid_hash() {
         crate::ShipmentStatus::Delivered,
     );
 
-    client.verify_data_hash(&shipment_id, &crate::ShipmentStatus::Delivered, &zero_hash);
+    client.verify_data_hash(
+        &shipment_id,
+        &crate::ShipmentStatus::Delivered,
+        &0,
+        &zero_hash,
+    );
 }
 
 #[test]
@@ -8113,7 +8118,10 @@ fn test_execute_proposal_returns_proposal_already_executed() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     client.approve_action(&admin2, &proposal_id);
     client.execute_proposal(&proposal_id);
@@ -8151,7 +8159,10 @@ fn test_approve_action_returns_proposal_expired() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     // Fast forward time past expiration (7 days)
     super::test_utils::advance_past_multisig_expiry(&env);
@@ -8187,7 +8198,10 @@ fn test_execute_proposal_returns_proposal_expired() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     client.approve_action(&admin2, &proposal_id);
 
@@ -8229,7 +8243,10 @@ fn test_approve_action_returns_already_approved() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     client.approve_action(&admin2, &proposal_id);
     // Try to approve again with the same admin
@@ -8266,7 +8283,10 @@ fn test_same_admin_approve_twice_returns_already_approved() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     // First approval by admin2 succeeds
     let first = client.try_approve_action(&admin2, &proposal_id);
@@ -8305,7 +8325,10 @@ fn test_different_admin_approval_succeeds() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     // Different admin (admin2) approves — should succeed
     let result = client.try_approve_action(&admin2, &proposal_id);
@@ -8344,7 +8367,10 @@ fn test_execute_proposal_returns_insufficient_approvals() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     // Only 1 approval (proposer), but threshold is 3
     client.execute_proposal(&proposal_id);
@@ -8382,7 +8408,10 @@ fn test_propose_action_returns_not_an_admin() {
     );
 
     // Outsider tries to propose
-    client.propose_action(&outsider, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x03u8; 32])));
+    client.propose_action(
+        &outsider,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x03u8; 32])),
+    );
 }
 
 #[test]
@@ -8414,7 +8443,10 @@ fn test_approve_action_returns_not_an_admin() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     // Outsider tries to approve
     client.approve_action(&outsider, &proposal_id);
@@ -8450,8 +8482,10 @@ fn test_non_admin_propose_action_returns_not_an_admin() {
     );
 
     // Outsider (not in admin list) tries to propose
-    let result =
-        client.try_propose_action(&outsider, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x04u8; 32])));
+    let result = client.try_propose_action(
+        &outsider,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x04u8; 32])),
+    );
     assert_eq!(result, Err(Ok(crate::NavinError::NotAnAdmin)));
 }
 
@@ -8484,7 +8518,10 @@ fn test_non_admin_approve_action_returns_not_an_admin() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     // Outsider (not in admin list) tries to approve
     let result = client.try_approve_action(&outsider, &proposal_id);
@@ -8520,7 +8557,10 @@ fn test_admin_propose_action_succeeds() {
     );
 
     // Admin proposes — should succeed
-    let result = client.try_propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x05u8; 32])));
+    let result = client.try_propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x05u8; 32])),
+    );
     assert!(result.is_ok(), "admin must be able to propose action");
 }
 
@@ -8555,7 +8595,10 @@ fn test_admin_approve_action_succeeds() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     // Different admin (admin2) approves — should succeed
     let result = client.try_approve_action(&admin2, &proposal_id);
@@ -13163,7 +13206,7 @@ fn test_get_status_hash_shipment_not_found() {
     let (_env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
-    let result = client.try_get_status_hash(&9999u64, &ShipmentStatus::InTransit);
+    let result = client.try_get_status_hash(&9999u64, &ShipmentStatus::InTransit, &0);
     assert_eq!(
         result,
         Err(Ok(NavinError::ShipmentNotFound)),
@@ -13404,7 +13447,7 @@ fn test_milestone_limit_exceeded() {
 
     // Delivered hash was never recorded.
     let probe = BytesN::from_array(&env, &[5u8; 32]);
-    let result = client.try_verify_data_hash(&shipment_id, &ShipmentStatus::Delivered, &probe);
+    let result = client.try_verify_data_hash(&shipment_id, &ShipmentStatus::Delivered, &0, &probe);
     assert_eq!(
         result,
         Err(Ok(NavinError::StatusHashNotFound)),
@@ -13442,7 +13485,7 @@ fn test_get_status_hash_valid_returns_correct_hash() {
         &transit_hash,
     );
 
-    let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
+    let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit, &0);
     assert_eq!(
         result,
         Ok(Ok(transit_hash)),
@@ -13547,7 +13590,7 @@ fn test_milestone_limit_valid_milestones_work() {
         &transit_hash,
     );
 
-    let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
+    let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit, &0);
     assert_eq!(
         result,
         Ok(Ok(transit_hash)),
@@ -13821,7 +13864,8 @@ fn test_assert_data_hash_incorrect_hash_returns_mismatch() {
     );
 
     let wrong_hash = BytesN::from_array(&env, &[0xBBu8; 32]);
-    let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &wrong_hash);
+    let result =
+        client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &0, &wrong_hash);
     assert_eq!(
         result,
         Err(Ok(NavinError::DataHashMismatch)),
@@ -13995,7 +14039,7 @@ fn test_breach_limit_one_allowed() {
     );
 
     let result =
-        client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+        client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &0, &transit_hash);
     assert_eq!(
         result,
         Ok(Ok(())),
@@ -14010,7 +14054,7 @@ fn test_assert_data_hash_nonexistent_shipment_returns_not_found() {
     client.initialize(&admin, &token_contract);
 
     let hash = BytesN::from_array(&env, &[1u8; 32]);
-    let result = client.try_assert_data_hash(&9999u64, &ShipmentStatus::InTransit, &hash);
+    let result = client.try_assert_data_hash(&9999u64, &ShipmentStatus::InTransit, &0, &hash);
     assert_eq!(
         result,
         Err(Ok(NavinError::ShipmentNotFound)),
@@ -14041,7 +14085,7 @@ fn test_assert_data_hash_unset_status_returns_status_hash_not_found() {
     );
 
     let hash = BytesN::from_array(&env, &[1u8; 32]);
-    let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &hash);
+    let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &0, &hash);
     assert_eq!(
         result,
         Err(Ok(NavinError::StatusHashNotFound)),
@@ -14176,7 +14220,8 @@ fn test_creation_quota_resets_after_window() {
 
     // AtCheckpoint was never set.
     let probe = BytesN::from_array(&env, &[7u8; 32]);
-    let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::AtCheckpoint, &probe);
+    let result =
+        client.try_assert_data_hash(&shipment_id, &ShipmentStatus::AtCheckpoint, &0, &probe);
     assert_eq!(
         result,
         Err(Ok(NavinError::StatusHashNotFound)),
@@ -15626,7 +15671,8 @@ fn test_force_release_single_execution_and_duplicate_rejected() {
     admins.push_back(admin2.clone());
     client.init_multisig(&admin, &admins, &2);
 
-    let action = crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x06u8; 32]));
+    let action =
+        crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x06u8; 32]));
     let proposal_id = client.propose_action(&admin1, &action);
 
     // First execution via approval reaching threshold
@@ -15647,7 +15693,6 @@ fn test_force_release_single_execution_and_duplicate_rejected() {
         "second execute of ForceRelease proposal must return ProposalAlreadyExecuted"
     );
 }
-
 
 // =============================================================================
 // ForceRelease reason_hash validation and audit trail tests
@@ -15751,7 +15796,6 @@ fn test_force_release_zero_reason_hash_rejected() {
     // Execution should fail on zero reason hash validation
     client.approve_action(&admin2, &proposal_id);
 }
-
 
 /// ForceRefund with reason_hash: verifies reason hash is persisted in event stream and queryable.
 /// Ensures audit trail contains the admin-provided reason for the force refund.

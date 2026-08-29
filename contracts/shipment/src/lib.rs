@@ -5760,7 +5760,13 @@ impl NavinShipment {
                 persist_shipment(&env, &shipment)?;
 
                 // Emit the dedicated force-release event with reason hash for audit trail
-                events::emit_force_released(&env, shipment_id, &proposal.proposer, &reason_hash, escrow_amount);
+                events::emit_force_released(
+                    &env,
+                    shipment_id,
+                    &proposal.proposer,
+                    &reason_hash,
+                    escrow_amount,
+                );
             }
             crate::types::AdminAction::ForceRefund(shipment_id, reason_hash) => {
                 // Reason hash is mandatory and must be non-zero for audit trail.
@@ -5813,7 +5819,13 @@ impl NavinShipment {
                 persist_shipment(&env, &shipment)?;
 
                 // Emit the dedicated force-refund event with reason hash for audit trail
-                events::emit_force_refunded(&env, shipment_id, &proposal.proposer, &reason_hash, escrow_amount);
+                events::emit_force_refunded(
+                    &env,
+                    shipment_id,
+                    &proposal.proposer,
+                    &reason_hash,
+                    escrow_amount,
+                );
             }
         }
 
@@ -6179,30 +6191,39 @@ impl NavinShipment {
         Ok(storage::is_paused(&env))
     }
 
-    /// Get the status hash for a shipment at a specific status point.
+    /// Get the data hash recorded for a specific visit of a shipment status.
     /// Read-only function, no authentication required.
+    ///
+    /// Status-hash storage is append-only keyed by
+    /// `(shipment_id, status, visit_index)`, so revisiting a status never
+    /// erases the hash recorded on an earlier visit.
     ///
     /// # Arguments
     /// * `env` - Execution environment.
     /// * `shipment_id` - The ID of the shipment.
     /// * `status` - The status to retrieve the hash for.
+    /// * `visit_index` - The 0-based visit index for that status. Use
+    ///   `get_status_hash_count` to enumerate the number of recorded visits.
     ///
     /// # Returns
-    /// * `Result<BytesN<32>, NavinError>` - The data hash recorded at that status.
+    /// * `Result<BytesN<32>, NavinError>` - The data hash recorded at that
+    ///   (status, visit_index) pair.
     ///
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
-    /// * `NavinError::StatusHashNotFound` - If no hash was recorded for that status.
+    /// * `NavinError::StatusHashNotFound` - If no hash was recorded for that
+    ///   (status, visit_index) pair.
     ///
     /// # Examples
     /// ```rust
-    /// // let hash = contract.get_status_hash(&env, 1, &ShipmentStatus::InTransit)?;
+    /// // let hash = contract.get_status_hash(&env, 1, &ShipmentStatus::InTransit, &0)?;
     /// ```
     pub fn get_status_hash(
         env: Env,
         shipment_id: u64,
         status: ShipmentStatus,
+        visit_index: u32,
     ) -> Result<BytesN<32>, NavinError> {
         require_initialized(&env)?;
 
@@ -6211,17 +6232,53 @@ impl NavinShipment {
             return Err(NavinError::ShipmentNotFound);
         }
 
-        storage::get_status_hash(&env, shipment_id, &status).ok_or(NavinError::StatusHashNotFound)
+        storage::get_status_hash(&env, shipment_id, &status, visit_index)
+            .ok_or(NavinError::StatusHashNotFound)
     }
 
-    /// Verify that a given data hash matches what was recorded on-chain for a
-    /// shipment at a specific status point.
+    /// Return the number of data hashes recorded for a shipment status, i.e.
+    /// how many times the shipment has visited that status.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - The ID of the shipment.
+    /// * `status` - The status whose visit count is queried.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - The number of recorded visits (0 if the
+    ///   status was never visited).
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let count = contract.get_status_hash_count(&env, 1, &ShipmentStatus::InTransit)?;
+    /// ```
+    pub fn get_status_hash_count(
+        env: Env,
+        shipment_id: u64,
+        status: ShipmentStatus,
+    ) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+
+        Ok(storage::get_status_hash_count(&env, shipment_id, &status))
+    }
+
+    /// Verify that a given data hash matches the hash recorded on-chain for a
+    /// shipment at a specific (status, visit_index) point.
     /// Read-only function, no authentication required.
     ///
     /// # Arguments
     /// * `env` - Execution environment.
     /// * `shipment_id` - The ID of the shipment.
     /// * `status` - The status to verify against.
+    /// * `visit_index` - The 0-based visit index for that status.
     /// * `expected_hash` - The hash to verify.
     ///
     /// # Returns
@@ -6231,16 +6288,18 @@ impl NavinShipment {
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::InvalidHash` - If expected_hash is all zeros.
     /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
-    /// * `NavinError::StatusHashNotFound` - If no hash was recorded for that status.
+    /// * `NavinError::StatusHashNotFound` - If no hash was recorded for that
+    ///   (status, visit_index) pair.
     ///
     /// # Examples
     /// ```rust
-    /// // let verified = contract.verify_data_hash(&env, 1, &ShipmentStatus::InTransit, &hash)?;
+    /// // let verified = contract.verify_data_hash(&env, 1, &ShipmentStatus::InTransit, &0, &hash)?;
     /// ```
     pub fn verify_data_hash(
         env: Env,
         shipment_id: u64,
         status: ShipmentStatus,
+        visit_index: u32,
         expected_hash: BytesN<32>,
     ) -> Result<bool, NavinError> {
         require_initialized(&env)?;
@@ -6253,7 +6312,7 @@ impl NavinShipment {
             return Err(NavinError::ShipmentNotFound);
         }
 
-        let stored_hash = storage::get_status_hash(&env, shipment_id, &status)
+        let stored_hash = storage::get_status_hash(&env, shipment_id, &status, visit_index)
             .ok_or(NavinError::StatusHashNotFound)?;
 
         Ok(stored_hash == expected_hash)
@@ -6872,7 +6931,7 @@ impl NavinShipment {
     }
 
     /// Strictly assert that a data hash matches the on-chain hash recorded for a
-    /// specific shipment status transition.
+    /// specific (shipment, status, visit_index) transition.
     ///
     /// Unlike `verify_data_hash` (which returns a boolean), this function returns
     /// `Err(DataHashMismatch)` when the provided hash does not match the stored value.
@@ -6881,6 +6940,7 @@ impl NavinShipment {
     /// * `env` - Execution environment.
     /// * `shipment_id` - The ID of the shipment.
     /// * `status` - The status whose recorded hash is compared.
+    /// * `visit_index` - The 0-based visit index for that status.
     /// * `expected_hash` - The hash to assert against the stored value.
     ///
     /// # Returns
@@ -6890,12 +6950,14 @@ impl NavinShipment {
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::InvalidHash` - If expected_hash is all zeros.
     /// * `NavinError::ShipmentNotFound` - If the shipment does not exist.
-    /// * `NavinError::StatusHashNotFound` - If no hash was recorded for that status.
+    /// * `NavinError::StatusHashNotFound` - If no hash was recorded for that
+    ///   (status, visit_index) pair.
     /// * `NavinError::DataHashMismatch` - If expected_hash does not match the stored hash.
     pub fn assert_data_hash(
         env: Env,
         shipment_id: u64,
         status: ShipmentStatus,
+        visit_index: u32,
         expected_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
@@ -6905,7 +6967,7 @@ impl NavinShipment {
             return Err(NavinError::ShipmentNotFound);
         }
 
-        let stored = storage::get_status_hash(&env, shipment_id, &status)
+        let stored = storage::get_status_hash(&env, shipment_id, &status, visit_index)
             .ok_or(NavinError::StatusHashNotFound)?;
 
         if stored != expected_hash {

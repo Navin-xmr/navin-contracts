@@ -94,8 +94,12 @@ pub enum DataKey {
     MilestoneEventCount(u64),
     /// Temporary idempotency window key — present while the action hash is within its window.
     IdempotencyWindow(BytesN<32>),
-    /// IoT sensor data hash stored per shipment status transition.
-    StatusHash(u64, ShipmentStatus),
+    /// IoT sensor data hash stored per shipment status visit.
+    /// Append-only: (shipment_id, status, visit_index) -> hash, so revisiting a
+    /// status never overwrites a previously recorded hash.
+    StatusHash(u64, ShipmentStatus, u32),
+    /// Total number of recorded hashes (visits) for a (shipment_id, status) pair.
+    StatusHashCount(u64, ShipmentStatus),
     /// Contract pause state flag.
     IsPaused,
     /// Platform fee configuration.

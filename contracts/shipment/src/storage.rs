@@ -1340,9 +1340,10 @@ pub fn get_active_shipment_count(env: &Env, company: &Address) -> u32 {
 /// ```
 pub fn increment_active_shipment_count(env: &Env, company: &Address) {
     let current = get_active_shipment_count(env, company);
-    env.storage()
-        .instance()
-        .set(&DataKey::ActiveShipmentCount(company.clone()), &current.saturating_add(1));
+    env.storage().instance().set(
+        &DataKey::ActiveShipmentCount(company.clone()),
+        &current.saturating_add(1),
+    );
 }
 
 /// Decrement the active shipment count for a company in instance storage.
@@ -1359,9 +1360,10 @@ pub fn increment_active_shipment_count(env: &Env, company: &Address) {
 /// ```
 pub fn decrement_active_shipment_count(env: &Env, company: &Address) {
     let current = get_active_shipment_count(env, company);
-    env.storage()
-        .instance()
-        .set(&DataKey::ActiveShipmentCount(company.clone()), &current.saturating_sub(1));
+    env.storage().instance().set(
+        &DataKey::ActiveShipmentCount(company.clone()),
+        &current.saturating_sub(1),
+    );
 }
 
 // ============= Milestone Event Counter Storage Functions =============
@@ -1548,8 +1550,6 @@ pub fn archive_shipment(env: &Env, shipment_id: u64, shipment: &Shipment) {
     purge_status_hashes(env, shipment_id);
 }
 
-
-
 /// Check if a shipment is archived.
 ///
 /// # Arguments
@@ -1661,8 +1661,8 @@ pub fn purge_recovery_records(env: &Env, shipment_id: u64) {
 
 /// Remove all IoT status hash entries for a shipment from persistent storage.
 ///
-/// One entry may exist for each `ShipmentStatus` variant, written during
-/// `update_status` calls that supply a data hash.
+/// Entries are append-only per (shipment_id, status, visit_index); every
+/// recorded visit plus the per-status count is removed.
 pub fn purge_status_hashes(env: &Env, shipment_id: u64) {
     use ShipmentStatus::*;
     for status in [
@@ -1674,9 +1674,16 @@ pub fn purge_status_hashes(env: &Env, shipment_id: u64) {
         Disputed,
         Cancelled,
     ] {
-        let key = DataKey::StatusHash(shipment_id, status);
-        if env.storage().persistent().has(&key) {
-            env.storage().persistent().remove(&key);
+        let count = get_status_hash_count(env, shipment_id, &status);
+        for i in 0..count {
+            env.storage()
+                .persistent()
+                .remove(&DataKey::StatusHash(shipment_id, status.clone(), i));
+        }
+        if count > 0 {
+            env.storage()
+                .persistent()
+                .remove(&DataKey::StatusHashCount(shipment_id, status));
         }
     }
 }
@@ -1802,27 +1809,63 @@ pub fn set_reentrancy_lock(env: &Env, locked: bool) {
 
 // ============= IoT Hash Verification Storage Functions =============
 
-/// Store the data hash for a specific shipment status transition.
-pub fn set_status_hash(env: &Env, shipment_id: u64, status: &ShipmentStatus, hash: &BytesN<32>) {
+/// Get the total number of data hashes recorded for a shipment status.
+pub fn get_status_hash_count(env: &Env, shipment_id: u64, status: &ShipmentStatus) -> u32 {
     env.storage()
         .persistent()
-        .set(&DataKey::StatusHash(shipment_id, status.clone()), hash);
+        .get(&DataKey::StatusHashCount(shipment_id, status.clone()))
+        .unwrap_or(0)
 }
 
-/// Retrieve the data hash for a specific shipment status transition.
-pub fn get_status_hash(env: &Env, shipment_id: u64, status: &ShipmentStatus) -> Option<BytesN<32>> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::StatusHash(shipment_id, status.clone()))
+/// Increment the status-hash count for a shipment status and return the
+/// 0-based index to use for the newly appended entry.
+pub fn increment_status_hash_count(env: &Env, shipment_id: u64, status: &ShipmentStatus) -> u32 {
+    let current = get_status_hash_count(env, shipment_id, status);
+    let next = current.checked_add(1).expect("Status hash count overflow");
+    env.storage().persistent().set(
+        &DataKey::StatusHashCount(shipment_id, status.clone()),
+        &next,
+    );
+    current // Return 0-based index for storage
+}
+
+/// Append the data hash for a shipment status visit. Returns the 0-based
+/// visit index at which the hash was stored. Revisiting the same status
+/// appends a new entry instead of overwriting the previous one.
+pub fn set_status_hash(
+    env: &Env,
+    shipment_id: u64,
+    status: &ShipmentStatus,
+    hash: &BytesN<32>,
+) -> u32 {
+    let index = increment_status_hash_count(env, shipment_id, status);
+    env.storage().persistent().set(
+        &DataKey::StatusHash(shipment_id, status.clone(), index),
+        hash,
+    );
+    index
+}
+
+/// Retrieve the data hash recorded for a specific visit of a shipment status.
+pub fn get_status_hash(
+    env: &Env,
+    shipment_id: u64,
+    status: &ShipmentStatus,
+    visit_index: u32,
+) -> Option<BytesN<32>> {
+    env.storage().persistent().get(&DataKey::StatusHash(
+        shipment_id,
+        status.clone(),
+        visit_index,
+    ))
 }
 
 // ============= TTL Health Monitoring Functions =============
 
-/// Check if a shipment exists in persistent storage.
-///
-/// This is used for TTL health monitoring to determine which shipments
-/// are still active in persistent storage vs archived.
-
+// Check if a shipment exists in persistent storage.
+//
+// This is used for TTL health monitoring to determine which shipments
+// are still active in persistent storage vs archived.
 
 // ============= Settlement Tracking Functions =============
 

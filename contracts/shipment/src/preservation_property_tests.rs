@@ -67,7 +67,7 @@ fn test_property_existing_datakey_variants_preserved() {
     let _config_checksum = DataKey::ConfigChecksum;
     let _milestone_event_count = DataKey::MilestoneEventCount(1);
     let _idempotency_window = DataKey::IdempotencyWindow(hash.clone());
-    let _status_hash = DataKey::StatusHash(1, ShipmentStatus::Created);
+    let _status_hash = DataKey::StatusHash(1, ShipmentStatus::Created, 0);
     let _is_paused = DataKey::IsPaused;
     let _fee_config = DataKey::FeeConfig;
     let _treasury = DataKey::Treasury;
