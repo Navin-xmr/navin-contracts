@@ -6005,6 +6005,55 @@ impl NavinShipment {
         Ok(config::get_config(&env))
     }
 
+    /// Emit the one-time deadline warning when a shipment enters its warning window.
+    /// This is permissionless so an indexer or scheduled crank can call it.
+    ///
+    /// The warning window is `deadline_grace_seconds` from contract configuration.
+    /// Calls outside that window are harmless no-ops; repeated calls after the first
+    /// warning are also no-ops.
+    pub fn check_deadline_warning(
+        env: Env,
+        shipment_id: u64,
+        data_hash: BytesN<32>,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        if env
+            .storage()
+            .persistent()
+            .get(&DataKey::DeadlineWarningEmitted(shipment_id))
+            .unwrap_or(false)
+        {
+            return Ok(());
+        }
+
+        let now = env.ledger().timestamp();
+        let grace = config::get_config(&env).deadline_grace_seconds;
+        if now >= shipment.deadline || now.saturating_add(grace) < shipment.deadline {
+            return Ok(());
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::DeadlineWarningEmitted(shipment_id), &true);
+        events::emit_notification(
+            &env,
+            &shipment.sender,
+            NotificationType::DeadlineApproaching,
+            shipment_id,
+            &data_hash,
+        );
+        events::emit_notification(
+            &env,
+            &shipment.carrier,
+            NotificationType::DeadlineApproaching,
+            shipment_id,
+            &data_hash,
+        );
+        Ok(())
+    }
+
     /// Cancel a shipment and auto-refund escrow if its delivery deadline has passed.
     /// Permissionless design — can be triggered by any caller (e.g., automated cron/crank).
     ///
