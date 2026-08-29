@@ -4176,7 +4176,7 @@ impl NavinShipment {
         carrier: Address,
         shipment_id: u64,
         milestones: Vec<(Symbol, BytesN<32>)>,
-    ) -> Result<(), NavinError> {
+    ) -> Result<Vec<i128>, NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
         carrier.require_auth();
@@ -4232,6 +4232,10 @@ impl NavinShipment {
         // All validations passed, now process each milestone
         let timestamp = env.ledger().timestamp();
         let mut mut_shipment = shipment;
+        // #696 — per-milestone release amounts (0 for milestones that carry
+        // no payment or were already paid), mirroring the Vec<T> convention
+        // used by the other batch entry points (e.g. create_shipments_batch).
+        let mut release_amounts: Vec<i128> = Vec::new(&env);
 
         for milestone_tuple in milestones.iter() {
             let checkpoint = milestone_tuple.0.clone();
@@ -4259,6 +4263,8 @@ impl NavinShipment {
                 }
             }
 
+            let mut released_this_milestone: i128 = 0;
+
             if let Some(idx) = found_index {
                 let mut already_paid = false;
                 for paid_symbol in mut_shipment.paid_milestones.iter() {
@@ -4271,11 +4277,6 @@ impl NavinShipment {
                 if !already_paid {
                     let payment_milestone =
                         mut_shipment.payment_milestones.get(idx as u32).unwrap();
-                    let release_amount = checked_mul_div_i128(
-                        mut_shipment.total_escrow,
-                        payment_milestone.1 as i128,
-                        100,
-                    )?;
 
                     mut_shipment
                         .milestones_completed
@@ -4283,6 +4284,32 @@ impl NavinShipment {
                     if !mut_shipment.paid_milestones.iter().any(|m| m == checkpoint) {
                         mut_shipment.paid_milestones.push_back(checkpoint.clone());
                     }
+
+                    // #697 — recompute total percentage paid including this
+                    // milestone. When it reaches 100%, release whatever
+                    // escrow actually remains rather than the percentage-
+                    // computed share: integer division in the per-milestone
+                    // calculation below can leave 1-unit dust in escrow that
+                    // would otherwise never be swept, permanently blocking
+                    // finalize_if_settled's `escrow_amount == 0` check. This
+                    // matches the dust-sweep already done by the
+                    // single-milestone record_milestone path.
+                    let mut total_pct_paid: u32 = 0;
+                    for (m_sym, m_pct) in mut_shipment.payment_milestones.iter() {
+                        if mut_shipment.paid_milestones.iter().any(|p| p == m_sym) {
+                            total_pct_paid += m_pct;
+                        }
+                    }
+
+                    let release_amount = if total_pct_paid == 100 {
+                        mut_shipment.escrow_amount
+                    } else {
+                        checked_mul_div_i128(
+                            mut_shipment.total_escrow,
+                            payment_milestone.1 as i128,
+                            100,
+                        )?
+                    };
 
                     events::emit_milestone_payment_released(
                         &env,
@@ -4292,14 +4319,17 @@ impl NavinShipment {
                         &mut_shipment.carrier,
                     );
                     internal_release_escrow(&env, &mut mut_shipment, release_amount)?;
+                    released_this_milestone = release_amount;
                 }
             }
+
+            release_amounts.push_back(released_this_milestone);
         }
 
         finalize_if_settled(&env, &mut mut_shipment);
         storage::set_shipment(&env, &mut_shipment);
 
-        Ok(())
+        Ok(release_amounts)
     }
 
     /// Explicitly release a partial escrow payment for a specific milestone.
@@ -5079,10 +5109,12 @@ impl NavinShipment {
             return Err(NavinError::InvalidStatus);
         }
 
+        // #695 — a dispute can legitimately be raised (and need resolving)
+        // after escrow has already been fully released via milestone
+        // payments, so zero escrow must not block resolution: the status
+        // transition below still needs to happen, just with no token
+        // transfer/settlement to perform.
         let escrow_amount = shipment.escrow_amount;
-        if escrow_amount == 0 {
-            return Err(NavinError::InsufficientFunds);
-        }
 
         shipment.escrow_amount = 0;
         shipment.updated_at = env.ledger().timestamp();
@@ -5099,35 +5131,42 @@ impl NavinShipment {
             }
         };
 
-        // Transfer tokens from this contract to recipient
-        let token_contract = storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
-        let contract_address = env.current_contract_address();
+        // #695 — nothing to move on-chain when escrow is already zero (e.g.
+        // fully released via milestone payments before the dispute was
+        // raised); skip settlement/transfer entirely and just apply the
+        // status transition below.
+        if escrow_amount > 0 {
+            // Transfer tokens from this contract to recipient
+            let token_contract =
+                storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
+            let contract_address = env.current_contract_address();
 
-        // Create settlement record in Pending state
-        let operation = match resolution {
-            DisputeResolution::ReleaseToCarrier => SettlementOperation::Release,
-            DisputeResolution::RefundToCompany => SettlementOperation::Refund,
-        };
-        let settlement_id = create_settlement(
-            &env,
-            shipment_id,
-            operation,
-            escrow_amount,
-            &contract_address,
-            &recipient,
-        )?;
+            // Create settlement record in Pending state
+            let operation = match resolution {
+                DisputeResolution::ReleaseToCarrier => SettlementOperation::Release,
+                DisputeResolution::RefundToCompany => SettlementOperation::Refund,
+            };
+            let settlement_id = create_settlement(
+                &env,
+                shipment_id,
+                operation,
+                escrow_amount,
+                &contract_address,
+                &recipient,
+            )?;
 
-        // Transfer tokens
-        invoke_token_transfer(
-            &env,
-            &token_contract,
-            &contract_address,
-            &recipient,
-            escrow_amount,
-        )?;
+            // Transfer tokens
+            invoke_token_transfer(
+                &env,
+                &token_contract,
+                &contract_address,
+                &recipient,
+                escrow_amount,
+            )?;
 
-        // Mark settlement as completed
-        complete_settlement(&env, settlement_id, shipment_id)?;
+            // Mark settlement as completed
+            complete_settlement(&env, settlement_id, shipment_id)?;
+        }
 
         storage::decrement_status_count(&env, &ShipmentStatus::Disputed);
         storage::increment_status_count(&env, &shipment.status);
@@ -5218,6 +5257,19 @@ impl NavinShipment {
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
         require_not_finalized(&shipment)?;
+
+        // #694 — handoff only checked that new_carrier held the Carrier role
+        // globally, not that this shipment's company had actually whitelisted
+        // them (or that they weren't suspended) — a carrier could hand a
+        // shipment off to any role-holder, bypassing the company's carrier
+        // allowlist entirely. Enforce the same check used everywhere else a
+        // carrier gets attached to a shipment (see is_company_carrier_allowed).
+        if !storage::is_carrier_whitelisted(&env, &shipment.sender, &new_carrier) {
+            return Err(NavinError::Unauthorized);
+        }
+        if storage::is_carrier_suspended(&env, &new_carrier) {
+            return Err(NavinError::CarrierSuspended);
+        }
 
         // Validate hash before storage
         validation::validate_hash(&handoff_hash)?;
