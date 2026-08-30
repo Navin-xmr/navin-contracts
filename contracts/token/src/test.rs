@@ -722,6 +722,13 @@ fn test_paused_blocks_decrease_allowance() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_decimals_requires_initialization() {
+    let (env, client, _) = setup_token_env();
+    client.decimals();
+}
+
+#[test]
 fn test_unpause_restores_transfer() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);

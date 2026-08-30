@@ -75,7 +75,10 @@ impl NavinToken {
     }
 
     /// Get token decimals
-    pub fn decimals(_env: Env) -> Result<u32, TokenError> {
+    pub fn decimals(env: Env) -> Result<u32, TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
         Ok(7)
     }
 
