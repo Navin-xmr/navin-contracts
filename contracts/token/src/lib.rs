@@ -261,6 +261,7 @@ impl NavinToken {
         if !storage::is_initialized(&env) {
             return Err(TokenError::NotInitialized);
         }
+        require_not_paused(&env)?;
 
         owner.require_auth();
 
@@ -301,6 +302,7 @@ impl NavinToken {
         if !storage::is_initialized(&env) {
             return Err(TokenError::NotInitialized);
         }
+        require_not_paused(&env)?;
 
         owner.require_auth();
 

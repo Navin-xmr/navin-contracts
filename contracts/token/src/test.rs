@@ -700,6 +700,28 @@ fn test_paused_blocks_approve() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_paused_blocks_increase_allowance() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let spender = Address::generate(&env);
+
+    client.pause(&admin);
+    client.increase_allowance(&admin, &spender, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_paused_blocks_decrease_allowance() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let spender = Address::generate(&env);
+
+    client.pause(&admin);
+    client.decrease_allowance(&admin, &spender, &100);
+}
+
+#[test]
 fn test_unpause_restores_transfer() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
