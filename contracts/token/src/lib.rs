@@ -625,8 +625,19 @@ impl NavinToken {
             storage::extend_balance_ttl(&env, &address, 1000, 500000);
         }
 
-        env.events()
-            .publish((symbol_short!("batch_tr"),), (from, recipients.len()));
+        // Emit per-leg detail so off-chain observers can reconstruct exactly who
+        // received how much from a batch transfer using events alone: one
+        // `batch_leg` event (from, to, amount) per recipient — mirroring the
+        // shape of `transfer`'s event — followed by a `batch_tr` summary
+        // carrying the full recipient/amount list and the leg count.
+        for (to, amount) in recipients.iter() {
+            env.events()
+                .publish((symbol_short!("batch_leg"),), (from.clone(), to, amount));
+        }
+        env.events().publish(
+            (symbol_short!("batch_tr"),),
+            (from, recipients.clone(), recipients.len()),
+        );
 
         Ok(())
     }

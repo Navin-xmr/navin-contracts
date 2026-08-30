@@ -570,7 +570,10 @@ fn test_snapshot_multiple_milestone_recorded_payloads() {
     ));
 
     let r = client.try_record_milestones_batch(&carrier, &id, &milestones);
-    assert_eq!(r, Ok(Ok(())));
+    assert!(
+        matches!(r, Ok(Ok(_))),
+        "record_milestones_batch should succeed"
+    );
 
     let payloads = find_all_event_data(&env, crate::event_topics::MILESTONE_RECORDED);
     assert_eq!(payloads.len(), 2, "expected two milestone_recorded events");

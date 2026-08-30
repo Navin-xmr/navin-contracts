@@ -3052,8 +3052,7 @@ fn test_cancel_shipment_with_escrow() {
     let events = env.events().all();
     let emitted_refund = events.iter().any(|(_contract, topics, _data)| {
         topics.iter().any(|v| {
-            let sym: Symbol = soroban_sdk::Symbol::from_val(&env, &v);
-            sym.to_string() == "escrow_refunded"
+            Symbol::try_from_val(&env, &v).ok() == Some(Symbol::new(&env, "escrow_refunded"))
         })
     });
     assert!(emitted_refund, "cancel_shipment must emit escrow_refunded when returning escrow");

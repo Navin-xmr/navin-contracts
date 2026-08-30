@@ -807,6 +807,61 @@ fn test_batch_transfer_rejects_self_transfer_leg() {
 }
 
 #[test]
+fn test_batch_transfer_emits_per_recipient_detail() {
+    use soroban_sdk::{testutils::Events as _, TryFromVal, Vec as SdkVec};
+
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+    let r3 = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    recipients.push_back((r1.clone(), 100));
+    recipients.push_back((r2.clone(), 250));
+    recipients.push_back((r3.clone(), 375));
+
+    client.batch_transfer(&admin, &recipients);
+
+    // Reconstruct per-recipient amounts from the `batch_leg` events alone.
+    let leg_topic = Symbol::new(&env, "batch_leg");
+    let mut reconstructed: std::vec::Vec<(Address, i128)> = std::vec::Vec::new();
+    for (_cid, topics, data) in env.events().all().iter() {
+        if topics.get(0).and_then(|t| Symbol::try_from_val(&env, &t).ok()) != Some(leg_topic.clone())
+        {
+            continue;
+        }
+        let (from, to, amount): (Address, Address, i128) =
+            TryFromVal::try_from_val(&env, &data).unwrap();
+        assert_eq!(from, admin, "each leg event records the sender");
+        reconstructed.push((to, amount));
+    }
+
+    assert_eq!(reconstructed.len(), 3, "one detail event per recipient");
+    assert!(reconstructed.contains(&(r1.clone(), 100)));
+    assert!(reconstructed.contains(&(r2.clone(), 250)));
+    assert!(reconstructed.contains(&(r3.clone(), 375)));
+
+    // The `batch_tr` summary still carries the full recipient/amount list.
+    let sum_topic = Symbol::new(&env, "batch_tr");
+    let summary = env
+        .events()
+        .all()
+        .iter()
+        .find(|(_cid, topics, _data)| {
+            topics.get(0).and_then(|t| Symbol::try_from_val(&env, &t).ok()) == Some(sum_topic.clone())
+        })
+        .map(|(_cid, _topics, data)| data)
+        .expect("batch_tr summary event must be emitted");
+    let (from, list, count): (Address, SdkVec<(Address, i128)>, u32) =
+        TryFromVal::try_from_val(&env, &summary).unwrap();
+    assert_eq!(from, admin);
+    assert_eq!(count, 3);
+    assert_eq!(list, recipients);
+}
+
+#[test]
 fn test_transfer_admin_success() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);

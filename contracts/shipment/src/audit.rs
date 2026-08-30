@@ -353,15 +353,20 @@ pub fn query_audit_history_by_actor(env: &Env, actor: &Address) -> soroban_sdk::
 /// # Returns
 /// * `Ok(count)` - Number of entries removed
 /// * `Err(NavinError)` - If not authorized
-#[allow(dead_code)]
 pub fn cleanup_audit_logs(
     env: &Env,
     admin: &Address,
     before_timestamp: u64,
 ) -> Result<u32, NavinError> {
-    // Verify admin authorization
+    // Verify admin authorization. Accept either the primary admin (the
+    // single-admin deployment case) or a member of the multi-sig admin list —
+    // `storage::is_admin` alone only covers the latter and is empty until
+    // `init_multisig` runs, which would make this entrypoint uncallable on a
+    // contract that never enabled multi-sig.
     admin.require_auth();
-    if !crate::storage::is_admin(env, admin) {
+    let authorized =
+        crate::storage::get_admin(env) == *admin || crate::storage::is_admin(env, admin);
+    if !authorized {
         return Err(NavinError::Unauthorized);
     }
 
