@@ -465,6 +465,7 @@ impl NavinToken {
         let new_from_balance = from_balance.checked_sub(amount).ok_or(TokenError::Overflow)?;
         storage::set_total_supply(&env, new_supply);
         storage::set_balance(&env, &from, new_from_balance);
+        storage::extend_balance_ttl(&env, &from, 1000, 500000);
 
         env.events()
             .publish((symbol_short!("burn"),), (from, amount));
@@ -512,6 +513,8 @@ impl NavinToken {
         storage::set_total_supply(&env, new_supply);
         storage::set_balance(&env, &from, new_from_balance);
         storage::set_allowance(&env, &from, &spender, new_allowance, expiration_ledger);
+        storage::extend_balance_ttl(&env, &from, 1000, 500000);
+        storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
 
         env.events()
             .publish((symbol_short!("burn_from"),), (from, spender, amount));
