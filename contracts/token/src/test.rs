@@ -304,18 +304,14 @@ fn test_allowlist_updates_reflected_immediately() {
     let key = Symbol::new(&env, "twitter");
     let value = String::from_str(&env, "@navin");
 
-    // Add key and set metadata
     client.add_allowed_metadata_key(&admin, &key);
     client.set_metadata(&admin, &key, &value);
     assert_eq!(client.get_metadata(&key), Some(value.clone()));
 
-    // Remove key from allowlist
     client.remove_allowed_metadata_key(&admin, &key);
 
-    // Metadata should still exist (removal doesn't delete data)
-    assert_eq!(client.get_metadata(&key), Some(value.clone()));
+    assert_eq!(client.get_metadata(&key), None);
 
-    // But setting new value should fail
     let new_value = String::from_str(&env, "@newnavin");
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         client.set_metadata(&admin, &key, &new_value);
@@ -807,14 +803,26 @@ fn test_batch_transfer_rejects_self_transfer_leg() {
 }
 
 #[test]
-fn test_transfer_admin_success() {
+fn test_transfer_admin_proposes_and_requires_acceptance() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
 
     let new_admin = Address::generate(&env);
     client.transfer_admin(&admin, &new_admin);
 
+    assert_eq!(client.get_admin(), admin);
+
+    client.accept_admin_transfer(&new_admin);
     assert_eq!(client.get_admin(), new_admin);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")]
+fn test_transfer_admin_rejects_self_transfer() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    client.transfer_admin(&admin, &admin);
 }
 
 #[test]

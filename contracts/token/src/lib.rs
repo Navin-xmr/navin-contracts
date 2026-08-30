@@ -330,8 +330,8 @@ impl NavinToken {
         Ok(())
     }
 
-    /// Transfer admin rights to a new address.
-    /// Only the current admin can call this.
+    /// Propose a new admin address. The new admin must accept the transfer
+    /// before the contract's admin is updated.
     pub fn transfer_admin(
         env: Env,
         current_admin: Address,
@@ -347,10 +347,38 @@ impl NavinToken {
             return Err(TokenError::Unauthorized);
         }
 
-        storage::set_admin(&env, &new_admin);
+        if new_admin == current_admin {
+            return Err(TokenError::SameAccount);
+        }
+
+        storage::set_pending_admin(&env, &new_admin);
 
         env.events()
-            .publish((symbol_short!("admin_tr"),), (current_admin, new_admin));
+            .publish((symbol_short!("admin_prop"),), (current_admin, new_admin));
+
+        Ok(())
+    }
+
+    /// Accept a previously proposed admin transfer. The accepting address must
+    /// be the one previously nominated by the current admin.
+    pub fn accept_admin_transfer(env: Env, new_admin: Address) -> Result<(), TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+
+        new_admin.require_auth();
+
+        let pending_admin = storage::get_pending_admin(&env).ok_or(TokenError::Unauthorized)?;
+        if pending_admin != new_admin {
+            return Err(TokenError::Unauthorized);
+        }
+
+        let old_admin = storage::get_admin(&env);
+        storage::set_admin(&env, &new_admin);
+        storage::clear_pending_admin(&env);
+
+        env.events()
+            .publish((symbol_short!("admin_tr"),), (old_admin, new_admin));
 
         Ok(())
     }
