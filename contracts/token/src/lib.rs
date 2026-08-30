@@ -186,6 +186,9 @@ impl NavinToken {
         storage::set_balance(&env, &to, storage::get_balance(&env, &to) + amount);
         storage::set_allowance(&env, &from, &spender, allowance - amount, expiration_ledger);
 
+        storage::extend_balance_ttl_for(&env, &[from.clone(), to.clone()], 1000, 500000);
+        storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
+
         env.events()
             .publish((symbol_short!("tr_from"),), (from, to, spender, amount));
 
