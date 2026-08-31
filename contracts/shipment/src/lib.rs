@@ -120,6 +120,8 @@ mod test_batch_too_large;
 #[cfg(test)]
 mod test_invalid_shipment_input;
 #[cfg(test)]
+mod test_invalid_shipment_participants;
+#[cfg(test)]
 mod test_milestone_sum_invalid;
 
 // ── Fuzz / property-based test harnesses ─────────────────────────────────────
