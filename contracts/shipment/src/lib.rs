@@ -6297,8 +6297,12 @@ impl NavinShipment {
     /// # Errors
     /// * `NavinError::NotExpired` - If the current ledger time hasn't passed the deadline.
     /// * `NavinError::ShipmentAlreadyCompleted` - If the shipment is already in a terminal state.
+    /// * `NavinError::ContractPaused` - If the contract is paused. Like other
+    ///   fund-moving paths, expiry refunds are gated by `require_not_paused`
+    ///   before any state mutation or token transfer.
     pub fn check_deadline(env: Env, shipment_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
 
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
