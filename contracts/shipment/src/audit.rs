@@ -75,7 +75,6 @@ pub struct AuditLogEntry {
 /// # Returns
 /// * `Ok(entry_id)` on success
 /// * `Err(NavinError)` on failure
-#[allow(dead_code)]
 pub fn log_role_assigned(
     env: &Env,
     admin: &Address,
@@ -110,7 +109,6 @@ pub fn log_role_assigned(
 /// # Returns
 /// * `Ok(entry_id)` on success
 /// * `Err(NavinError)` on failure
-#[allow(dead_code)]
 pub fn log_role_revoked(
     env: &Env,
     admin: &Address,
@@ -145,7 +143,6 @@ pub fn log_role_revoked(
 /// # Returns
 /// * `Ok(entry_id)` on success
 /// * `Err(NavinError)` on failure
-#[allow(dead_code)]
 pub fn log_role_suspended(
     env: &Env,
     admin: &Address,
@@ -180,7 +177,6 @@ pub fn log_role_suspended(
 /// # Returns
 /// * `Ok(entry_id)` on success
 /// * `Err(NavinError)` on failure
-#[allow(dead_code)]
 pub fn log_role_reactivated(
     env: &Env,
     admin: &Address,
@@ -214,7 +210,6 @@ pub fn log_role_reactivated(
 /// # Returns
 /// * `Ok(entry_id)` on success
 /// * `Err(NavinError)` on failure
-#[allow(dead_code)]
 pub fn log_admin_transferred(
     env: &Env,
     old_admin: &Address,
@@ -248,7 +243,6 @@ pub fn log_admin_transferred(
 /// # Returns
 /// * `Ok(entry_id)` on success
 /// * `Err(NavinError)` on failure
-#[allow(dead_code)]
 pub fn log_carrier_whitelisted(
     env: &Env,
     admin: &Address,
@@ -281,7 +275,6 @@ pub fn log_carrier_whitelisted(
 ///
 /// # Returns
 /// * Vector of audit entries within the time range
-#[allow(dead_code)]
 pub fn query_audit_history(
     env: &Env,
     start_time: u64,
@@ -309,7 +302,6 @@ pub fn query_audit_history(
 ///
 /// # Returns
 /// * Vector of audit entries for the target
-#[allow(dead_code)]
 pub fn query_audit_history_for_target(
     env: &Env,
     target: &Address,
@@ -336,7 +328,6 @@ pub fn query_audit_history_for_target(
 ///
 /// # Returns
 /// * Vector of audit entries by the actor
-#[allow(dead_code)]
 pub fn query_audit_history_by_actor(env: &Env, actor: &Address) -> soroban_sdk::Vec<AuditLogEntry> {
     let mut results = soroban_sdk::Vec::new(env);
     let total_entries = get_audit_entry_count(env);
@@ -362,15 +353,20 @@ pub fn query_audit_history_by_actor(env: &Env, actor: &Address) -> soroban_sdk::
 /// # Returns
 /// * `Ok(count)` - Number of entries removed
 /// * `Err(NavinError)` - If not authorized
-#[allow(dead_code)]
 pub fn cleanup_audit_logs(
     env: &Env,
     admin: &Address,
     before_timestamp: u64,
 ) -> Result<u32, NavinError> {
-    // Verify admin authorization
+    // Verify admin authorization. Accept either the primary admin (the
+    // single-admin deployment case) or a member of the multi-sig admin list —
+    // `storage::is_admin` alone only covers the latter and is empty until
+    // `init_multisig` runs, which would make this entrypoint uncallable on a
+    // contract that never enabled multi-sig.
     admin.require_auth();
-    if !crate::storage::is_admin(env, admin) {
+    let authorized =
+        crate::storage::get_admin(env) == *admin || crate::storage::is_admin(env, admin);
+    if !authorized {
         return Err(NavinError::Unauthorized);
     }
 
@@ -393,12 +389,12 @@ pub fn cleanup_audit_logs(
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn get_next_audit_entry_id(env: &Env) -> Result<u64, NavinError> {
+pub(crate) fn get_next_audit_entry_id(env: &Env) -> Result<u64, NavinError> {
     let count = get_audit_entry_count(env);
     Ok(count as u64)
 }
 
-fn get_audit_entry_count(env: &Env) -> u32 {
+pub(crate) fn get_audit_entry_count(env: &Env) -> u32 {
     env.storage()
         .persistent()
         .get(&DataKey::AuditEntryCount)
@@ -412,7 +408,7 @@ fn increment_audit_entry_count(env: &Env) {
         .set(&DataKey::AuditEntryCount, &count.saturating_add(1));
 }
 
-fn store_audit_entry(env: &Env, entry: &AuditLogEntry) {
+pub(crate) fn store_audit_entry(env: &Env, entry: &AuditLogEntry) {
     let entry_id = entry.entry_id;
     env.storage()
         .persistent()

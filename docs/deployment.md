@@ -40,6 +40,53 @@ export STELLAR_IDENTITY="my-custom-identity"
 export STELLAR_RPC_URL="https://my-rpc-endpoint.com"
 ```
 
+## Token Contract Initialization
+
+### Token Contract Setup
+
+The token contract (`navin-token`) must be initialized before the shipment contract can reference it. Initialization sets the admin, token name, symbol, and total supply.
+
+**Initialize Parameters:**
+
+- `admin` — Account that will own the token and manage metadata/pause operations
+- `name` — Token name (e.g., "Navin Token")
+- `symbol` — Token ticker (e.g., "NAV")
+- `total_supply` — Initial supply in stroops (smallest unit; 7 decimals). Default: 1,000,000,000.0000000 (10^16 stroops)
+
+**Example initialization command:**
+
+```bash
+stellar contract invoke \
+  --id "$TOKEN_CONTRACT_ID" \
+  --source-account "$STELLAR_IDENTITY" \
+  --rpc-url "$STELLAR_RPC_URL" \
+  --network-passphrase "$STELLAR_NETWORK_PASSPHRASE" \
+  -- \
+  initialize \
+  --admin "$(stellar keys address $STELLAR_IDENTITY)" \
+  --name "Navin Token" \
+  --symbol "NAV" \
+  --total_supply 10000000000000000
+```
+
+### Admin Bootstrap
+
+After initialization, the admin can perform these operations:
+
+1. **Transfer Admin Rights** — Pass control to another address via `transfer_admin(current_admin, new_admin)`
+2. **Pause/Unpause** — Block fund-moving operations with `pause(admin)` and `unpause(admin)`
+3. **Manage Metadata Allowlist** — Register permitted metadata keys:
+   - `add_allowed_metadata_key(admin, key)` — Add a key to the allowlist
+   - `remove_allowed_metadata_key(admin, key)` — Remove a key
+4. **Set Token Metadata** — Store metadata for allowed keys:
+   - `set_metadata(admin, key, value)` — Set a key-value pair
+   - `remove_metadata(admin, key)` — Delete a key
+   - Example: `set_metadata(admin, website, "https://navin.example.com")`
+
+The token contract begins with the admin holding the entire `total_supply` balance.
+
+---
+
 ## Deployment Steps
 
 ### 1. Build Contracts

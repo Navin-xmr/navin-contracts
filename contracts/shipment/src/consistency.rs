@@ -16,9 +16,19 @@
 //! **Batch (cross-shipment) invariants:**
 //! - `BatchSenderMismatch`: all shipments in a batch must share the same `sender`.
 //! - `BatchTimestampMismatch`: all shipments in a batch must share the same `created_at`.
+//!
+//! ## Scan-safety
+//!
+//! The default `check_all_consistency` is capped at `DEFAULT_CONSISTENCY_SAMPLE_LIMIT`
+//! shipments (matching the strategy used by `diagnostics::run_system_health_check`).
+//! Use `check_all_consistency_range` when a full audit over an arbitrary window is needed.
 
 use crate::{storage, types::ShipmentStatus};
 use soroban_sdk::{contracttype, Address, Env, Vec};
+
+/// Default sample cap for consistency scans (budget safety on large sets,
+/// matching `diagnostics::DEFAULT_HEALTH_SAMPLE_LIMIT`).
+pub const DEFAULT_CONSISTENCY_SAMPLE_LIMIT: u64 = 100;
 
 /// A detected violation of a consistency invariant.
 ///
@@ -43,6 +53,10 @@ pub enum ConsistencyViolation {
     BatchSenderMismatch(u64),
     /// Batch member has a different `created_at` than the first shipment in the batch.
     BatchTimestampMismatch(u64),
+    /// Global per-status counter does not match the actual count of shipments
+    /// found in that status during a full scan. The counter may have drifted
+    /// due to missed increments or decrements during status transitions.
+    StatusCountMismatch,
 }
 
 /// Check all per-shipment invariants for a single shipment.
@@ -159,24 +173,137 @@ pub fn check_batch_consistency(env: &Env, ids: &Vec<u64>) -> Vec<ConsistencyViol
     violations
 }
 
-/// Scan all shipments (IDs 1 through the global counter) and return every
-/// consistency violation found.
+/// Reconcile the global per-status counters against the actual count of
+/// shipments in each status, scanning only the window `[start_id, end_id]`.
 ///
-/// This is an O(n) scan and is intended only for admin/operator use, not for
-/// hot-path contract logic.
+/// Returns `StatusCountMismatch` if any counter has drifted within the window.
+/// Because only a subset is scanned the comparison is approximate — use this
+/// when you need a bounded-cost check rather than a full audit.
 ///
 /// # Arguments
 /// * `env` - Execution environment.
-pub fn check_all_consistency(env: &Env) -> Vec<ConsistencyViolation> {
+/// * `start_id` - First shipment ID to include (1-indexed, inclusive).
+/// * `end_id` - Last shipment ID to include (inclusive); clamped to the total count.
+fn check_status_count_consistency_range(
+    env: &Env,
+    start_id: u64,
+    end_id: u64,
+) -> Vec<ConsistencyViolation> {
+    let mut violations: Vec<ConsistencyViolation> = Vec::new(env);
+    let total = storage::get_shipment_count(env);
+
+    if start_id == 0 || start_id > total {
+        return violations;
+    }
+    let end = end_id.min(total);
+
+    use crate::types::ShipmentStatus::*;
+    let mut actual = [
+        (Created, 0u64),
+        (InTransit, 0),
+        (AtCheckpoint, 0),
+        (PartiallyDelivered, 0),
+        (Delivered, 0),
+        (Disputed, 0),
+        (Cancelled, 0),
+        (PartiallyRefunded, 0),
+    ];
+
+    for id in start_id..=end {
+        if let Some(shipment) = storage::get_shipment(env, id) {
+            for (status, count) in actual.iter_mut() {
+                if shipment.status == *status {
+                    *count += 1;
+                }
+            }
+        }
+    }
+
+    // Only flag a mismatch when the window covers the full shipment set; a
+    // partial window cannot reliably confirm global counter accuracy.
+    let is_full_scan = start_id == 1 && end >= total;
+    if is_full_scan {
+        for (status, actual_count) in &actual {
+            let stored = storage::get_status_count(env, status);
+            if stored != *actual_count {
+                violations.push_back(ConsistencyViolation::StatusCountMismatch);
+                break;
+            }
+        }
+    }
+
+    violations
+}
+
+/// Reconcile the global per-status counters against the actual count of
+/// shipments in each status. Returns `StatusCountMismatch` if any counter
+/// has drifted.
+///
+/// This performs a full O(n) scan and is intended only for admin/operator use.
+/// For budget-safe checks prefer `check_all_consistency` (capped) or
+/// `check_all_consistency_range` (paginated).
+///
+/// # Arguments
+/// * `env` - Execution environment.
+pub fn check_status_count_consistency(env: &Env) -> Vec<ConsistencyViolation> {
+    let total = storage::get_shipment_count(env);
+    check_status_count_consistency_range(env, 1, total)
+}
+
+/// Scan shipments in the window `[start_id, start_id + limit - 1]` and return
+/// every consistency violation found in that page.
+///
+/// This is the paginated variant intended for full-set audits: callers step
+/// through the entire shipment space by incrementing `start_id` by `limit`
+/// between calls.
+///
+/// Per-status counter drift (`StatusCountMismatch`) is only reported when the
+/// requested window covers the complete shipment set.
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `start_id` - First shipment ID to scan (1-indexed).
+/// * `limit` - Number of shipments to inspect; clamped to remaining IDs.
+pub fn check_all_consistency_range(
+    env: &Env,
+    start_id: u64,
+    limit: u64,
+) -> Vec<ConsistencyViolation> {
     let total = storage::get_shipment_count(env);
     let mut violations: Vec<ConsistencyViolation> = Vec::new(env);
 
-    for id in 1..=total {
+    if start_id == 0 || start_id > total || limit == 0 {
+        return violations;
+    }
+
+    let end_id = start_id.saturating_add(limit).saturating_sub(1).min(total);
+
+    for id in start_id..=end_id {
         let per_ship = check_shipment_invariants(env, id);
         for v in per_ship.iter() {
             violations.push_back(v);
         }
     }
 
+    // Append status-counter drift check (only meaningful on a full scan).
+    let counter_violations = check_status_count_consistency_range(env, start_id, end_id);
+    for v in counter_violations.iter() {
+        violations.push_back(v);
+    }
+
     violations
+}
+
+/// Scan up to `DEFAULT_CONSISTENCY_SAMPLE_LIMIT` shipments (IDs 1 through
+/// the cap) and return every consistency violation found in the sample.
+///
+/// This keeps compute cost within the Soroban budget regardless of total
+/// shipment count, matching the strategy used by
+/// `diagnostics::run_system_health_check`. For full-set audits, use
+/// `check_all_consistency_range` with explicit pagination instead.
+///
+/// # Arguments
+/// * `env` - Execution environment.
+pub fn check_all_consistency(env: &Env) -> Vec<ConsistencyViolation> {
+    check_all_consistency_range(env, 1, DEFAULT_CONSISTENCY_SAMPLE_LIMIT)
 }

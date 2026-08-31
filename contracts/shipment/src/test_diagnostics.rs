@@ -1033,12 +1033,19 @@ fn test_non_terminal_count_decrements_on_refund() {
     let data_hash = BytesN::from_array(&env, &[10u8; 32]);
 
     let shipment_id = client.create_shipment(
-        &company, &receiver, &carrier,
-        &data_hash, &Vec::new(&env), &deadline,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
     );
 
     let count_before = client.get_non_terminal_count();
-    assert_eq!(count_before, 1, "Non-terminal count should be 1 after creation");
+    assert_eq!(
+        count_before, 1,
+        "Non-terminal count should be 1 after creation"
+    );
 
     // Deposit escrow so refund can proceed
     client.deposit_escrow(&company, &shipment_id, &1_000);
@@ -1047,7 +1054,10 @@ fn test_non_terminal_count_decrements_on_refund() {
     client.refund_escrow(&company, &shipment_id);
 
     let count_after = client.get_non_terminal_count();
-    assert_eq!(count_after, 0, "Non-terminal count must decrement to 0 after refund_escrow");
+    assert_eq!(
+        count_after, 0,
+        "Non-terminal count must decrement to 0 after refund_escrow"
+    );
 }
 
 /// Verify count decrements correctly when only one of many shipments is refunded.
@@ -1064,19 +1074,28 @@ fn test_non_terminal_count_decrements_for_one_of_many_on_refund() {
     let deadline = env.ledger().timestamp() + 3600;
 
     let id1 = client.create_shipment(
-        &company, &receiver, &carrier,
+        &company,
+        &receiver,
+        &carrier,
         &BytesN::from_array(&env, &[20u8; 32]),
-        &Vec::new(&env), &deadline,
+        &Vec::new(&env),
+        &deadline,
     );
     let _id2 = client.create_shipment(
-        &company, &receiver, &carrier,
+        &company,
+        &receiver,
+        &carrier,
         &BytesN::from_array(&env, &[21u8; 32]),
-        &Vec::new(&env), &deadline,
+        &Vec::new(&env),
+        &deadline,
     );
     let _id3 = client.create_shipment(
-        &company, &receiver, &carrier,
+        &company,
+        &receiver,
+        &carrier,
         &BytesN::from_array(&env, &[22u8; 32]),
-        &Vec::new(&env), &deadline,
+        &Vec::new(&env),
+        &deadline,
     );
 
     assert_eq!(client.get_non_terminal_count(), 3);
@@ -1085,7 +1104,8 @@ fn test_non_terminal_count_decrements_for_one_of_many_on_refund() {
     client.refund_escrow(&company, &id1);
 
     assert_eq!(
-        client.get_non_terminal_count(), 2,
+        client.get_non_terminal_count(),
+        2,
         "Only the refunded shipment should reduce the non-terminal count"
     );
 }
@@ -1161,7 +1181,7 @@ fn test_get_shipment_receiver_returns_receiver_for_valid_shipment() {
     let result = client.try_get_shipment_receiver(&shipment_id);
     assert_eq!(
         result,
-        Ok(receiver.clone()),
+        Ok(Ok(receiver.clone())),
         "get_shipment_receiver must return the original receiver address"
     );
     assert_eq!(
@@ -1169,4 +1189,43 @@ fn test_get_shipment_receiver_returns_receiver_for_valid_shipment() {
         receiver,
         "get_shipment_receiver must return the receiver address for a valid shipment"
     );
+}
+
+#[test]
+fn test_health_check_capped_and_paginated() {
+    let (env, client, admin, _token) = prepare_test();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.set_shipment_limit(&admin, &1000);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let _data_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    // Create 150 shipments (exceeding DEFAULT_HEALTH_SAMPLE_LIMIT = 100)
+    for i in 0..150 {
+        let hash_byte = ((i % 250) + 1) as u8;
+        let item_hash = BytesN::from_array(&env, &[hash_byte; 32]);
+        client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &item_hash,
+            &Vec::new(&env),
+            &deadline,
+        );
+    }
+
+    // Default check_contract_health should succeed and report 150 total shipments
+    let health = client.check_contract_health(&admin);
+    assert_eq!(health.total_shipments, 150);
+    // Standard sample loop caps scan at 100
+    assert_eq!(health.active_shipments_counted, 100);
+
+    // Paginated health check can scan the remaining shipments from 101 to 150
+    let page_health = client.check_contract_health_paginated(&admin, &101, &50);
+    assert_eq!(page_health.total_shipments, 150);
+    assert_eq!(page_health.active_shipments_counted, 50);
 }

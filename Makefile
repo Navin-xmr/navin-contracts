@@ -1,13 +1,20 @@
 
-.PHONY: help build test fmt fmt-check lint clean check all generate-schema-shipment
+# Minimum line-coverage percentage the `coverage` target enforces.
+# This is a starting baseline recorded from the first cargo-llvm-cov run —
+# raise it as coverage improves so regressions become visible.
+COVERAGE_BASELINE := 40
+
+.PHONY: help build test fmt fmt-check lint clean check all generate-schema-shipment generate-schema-token coverage
 
 # Default target
 help:
 	@echo "Navin Smart Contracts - Available Commands"
 	@echo ""
 	@echo "  make generate-schema-shipment - Generate shipment contract ABI schema"
+	@echo "  make generate-schema-token    - Generate token contract ABI schema"
 	@echo "  make build        - Build all contracts"
 	@echo "  make test         - Run all tests"
+	@echo "  make coverage     - Measure test coverage with cargo-llvm-cov"
 	@echo "  make fmt          - Format all code"
 	@echo "  make fmt-check    - Check code formatting (for CI)"
 	@echo "  make lint         - Run clippy lints"
@@ -25,6 +32,15 @@ generate-schema-shipment: build
 		> docs/contract-schema.shipment.json
 	@echo "Schema written to docs/contract-schema.shipment.json"
 
+# Generate token contract ABI schema
+generate-schema-token: build
+	@echo "Generating token contract schema..."
+	@stellar contract info interface \
+		--wasm target/wasm32-unknown-unknown/release/navin_token.wasm \
+		--output json-formatted \
+		> docs/contract-schema.token.json
+	@echo "Schema written to docs/contract-schema.token.json"
+
 # Build all contracts for wasm
 build:
 	@echo "Building contracts..."
@@ -35,6 +51,19 @@ build:
 test:
 	@echo "Running tests..."
 	@cargo test
+
+# Measure test coverage with cargo-llvm-cov.
+# Requires: cargo install cargo-llvm-cov (and the llvm-tools rustup component).
+# Produces an lcov report at target/llvm-cov/lcov.info and an HTML report
+# under target/llvm-cov/html/, and fails if line coverage drops below
+# COVERAGE_BASELINE.
+coverage:
+	@echo "Measuring test coverage (cargo-llvm-cov)..."
+	@cargo llvm-cov --workspace --no-report
+	@mkdir -p target/llvm-cov
+	@cargo llvm-cov report --lcov --output-path target/llvm-cov/lcov.info
+	@cargo llvm-cov report --html --output-dir target/llvm-cov/html
+	@cargo llvm-cov report --fail-under-lines $(COVERAGE_BASELINE)
 
 # Format all code
 fmt:

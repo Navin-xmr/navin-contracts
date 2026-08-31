@@ -14,6 +14,21 @@ const MAX_PAST_OFFSET: u64 = 365 * 24 * 60 * 60;
 /// Roughly 10 years.
 const MAX_FUTURE_OFFSET: u64 = 10 * 365 * 24 * 60 * 60;
 
+/// Expected byte length for SHA-256 hashes (`BytesN<32>`).
+pub const HASH_BYTE_LENGTH: usize = 32;
+
+/// Validate a note hash: enforce exact 32-byte length and reject all-zero sentinels.
+///
+/// Soroban enforces `BytesN<32>` at the type level; this helper documents and
+/// re-checks the length boundary before storage.
+pub fn validate_note_hash(hash: &BytesN<32>) -> Result<(), NavinError> {
+    let bytes: [u8; HASH_BYTE_LENGTH] = hash.to_array();
+    if bytes.len() != HASH_BYTE_LENGTH {
+        return Err(NavinError::InvalidHash);
+    }
+    validate_hash(hash)
+}
+
 /// Ensure a `BytesN<32>` hash is not the all-zeros sentinel value.
 ///
 /// This validator performs a sanity check on external hashes (data_hash, reason_hash, etc.)
@@ -80,7 +95,7 @@ pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
         return Err(NavinError::InvalidSymbol);
     }
     if !(12..=20).contains(&len) {
-        return Err(NavinError::InvalidShipmentInput);
+        return Err(NavinError::InvalidSymbol);
     }
 
     Ok(())
@@ -113,26 +128,21 @@ pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
 pub fn validate_symbol_chars(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
     let xdr = symbol.to_xdr(env);
     let raw: [u8; 32] = {
-        // xdr may be 8–20 bytes for valid symbols; zero-extend to 32 for uniform handling.
         let mut buf = [0u8; 32];
         let src_len = (xdr.len() as usize).min(32);
-        for i in 0..src_len {
-            buf[i] = xdr.get(i as u32).unwrap_or(0);
+        for (i, byte) in xdr.iter().take(src_len).enumerate() {
+            buf[i] = byte;
         }
         buf
     };
 
-    // Extract the 4-byte big-endian content length from bytes 4–7.
     let char_count = u32::from_be_bytes([raw[4], raw[5], raw[6], raw[7]]) as usize;
 
-    // Empty symbol — treated the same as InvalidSymbol.
     if char_count == 0 {
         return Err(NavinError::InvalidSymbol);
     }
 
-    // Content bytes start at offset 8.
-    for i in 0..char_count {
-        let byte = raw[8 + i];
+    for &byte in raw[8..8 + char_count].iter() {
         let valid = byte.is_ascii_alphanumeric() || byte == b'_';
         if !valid {
             return Err(NavinError::InvalidSymbol);
@@ -426,14 +436,29 @@ pub fn preflight_check_shipment_available(
         .persistent()
         .get(&crate::types::DataKey::Shipment(shipment_id));
 
-    let shipment = shipment.ok_or(NavinError::ShipmentNotFound)?;
-
-    // Check if shipment is finalized (locked)
-    if shipment.finalized {
-        return Err(NavinError::ShipmentFinalized);
+    match shipment {
+        None => {
+            // Not in persistent storage. Check if it was archived (temporary storage).
+            // If it exists in temporary storage the shipment is archived and unavailable
+            // for mutations; surface ShipmentUnavailable so callers get a distinct,
+            // actionable error rather than the ambiguous ShipmentNotFound.
+            let archived: Option<Shipment> = env
+                .storage()
+                .temporary()
+                .get(&crate::types::DataKey::ArchivedShipment(shipment_id));
+            if archived.is_some() {
+                return Err(NavinError::ShipmentUnavailable);
+            }
+            Err(NavinError::ShipmentNotFound)
+        }
+        Some(shipment) => {
+            // Check if shipment is finalized (locked)
+            if shipment.finalized {
+                return Err(NavinError::ShipmentFinalized);
+            }
+            Ok(shipment)
+        }
     }
-
-    Ok(shipment)
 }
 
 /// Compute a canonical hash for an off-chain payload.
@@ -580,6 +605,20 @@ mod tests {
     use super::*;
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::{testutils::Ledger, BytesN, Env, Symbol};
+
+    #[test]
+    fn test_validate_note_hash_rejects_zero_hash() {
+        let env = Env::default();
+        let zero_hash: BytesN<32> = BytesN::from_array(&env, &[0u8; 32]);
+        assert_eq!(validate_note_hash(&zero_hash), Err(NavinError::InvalidHash));
+    }
+
+    #[test]
+    fn test_validate_note_hash_accepts_valid_32_byte_hash() {
+        let env = Env::default();
+        let hash: BytesN<32> = BytesN::from_array(&env, &[0xAB_u8; 32]);
+        assert_eq!(validate_note_hash(&hash), Ok(()));
+    }
 
     // validate_hash
     #[test]
@@ -1066,7 +1105,7 @@ mod symbol_validation_tests {
         let result = validate_symbol(&env, &oversized_symbol);
         assert_eq!(
             result,
-            Err(NavinError::InvalidShipmentInput),
+            Err(NavinError::InvalidSymbol),
             "Oversized symbol must return InvalidShipmentInput"
         );
     }
@@ -1094,7 +1133,7 @@ mod symbol_validation_tests {
         let value = Symbol::new(&env, &long);
         assert_eq!(
             validate_metadata_symbols(&env, &key, &value),
-            Err(NavinError::InvalidShipmentInput),
+            Err(NavinError::InvalidSymbol),
             "13-char metadata value must be rejected"
         );
     }
@@ -1119,7 +1158,7 @@ mod symbol_validation_tests {
         let value = Symbol::new(&env, "ok");
         assert_eq!(
             validate_metadata_symbols(&env, &key, &value),
-            Err(NavinError::InvalidShipmentInput),
+            Err(NavinError::InvalidSymbol),
             "13-char metadata key must be rejected"
         );
     }
@@ -1146,7 +1185,7 @@ mod symbol_validation_tests {
             let s: std::string::String = "A".repeat(len);
             assert_eq!(
                 validate_metadata_symbols(&env, &key, &Symbol::new(&env, &s)),
-                Err(NavinError::InvalidShipmentInput),
+                Err(NavinError::InvalidSymbol),
                 "metadata value of length {len} must be rejected"
             );
         }

@@ -9,7 +9,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient};
+    use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
     use soroban_sdk::testutils::Ledger as _;
     use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
 
@@ -162,15 +162,25 @@ mod tests {
         assert_eq!(before.digest, after.digest);
     }
 
+    /// Non-zero reason hash used by the force-action digest tests.
+    ///
+    /// `ForceRelease`/`ForceRefund` carry a mandatory audit hash alongside the
+    /// shipment id; these tests vary only the id, so they share one constant.
+    fn test_reason_hash(env: &Env) -> BytesN<32> {
+        BytesN::from_array(env, &[0x11_u8; 32])
+    }
+
     // ── ForceRelease and ForceRefund actions produce distinct digests ─────────
 
     #[test]
     fn force_release_and_force_refund_produce_distinct_digests() {
-        let (_env, client, _admin, _admin2) = setup_multisig();
+        let (env, client, _admin, _admin2) = setup_multisig();
 
         let shipment_id = 42u64;
-        let action_release = crate::types::AdminAction::ForceRelease(shipment_id);
-        let action_refund = crate::types::AdminAction::ForceRefund(shipment_id);
+        let action_release =
+            crate::types::AdminAction::ForceRelease(shipment_id, test_reason_hash(&env));
+        let action_refund =
+            crate::types::AdminAction::ForceRefund(shipment_id, test_reason_hash(&env));
 
         let digest_release = client.compute_proposal_digest(&1, &action_release);
         let digest_refund = client.compute_proposal_digest(&1, &action_refund);
@@ -596,15 +606,12 @@ mod tests {
         );
 
         // After expiration, the proposal storage key should remain safely accessible
-        // for cleanup without causing errors. Attempting to get the expired proposal
-        // should still work for diagnostics (not panic or fail unexpectedly).
+        // for cleanup without causing errors. The expired proposal still exists in
+        // storage (it was never removed), so get_proposal returns it successfully.
         let get_result = client.try_get_proposal(&proposal_id);
-        // Result varies based on implementation - could be NotFound or ProposalExpired
-        // The key point is it doesn't cause a crash or unexpected error type.
-        // In the current implementation it returns the expired proposal successfully.
         assert!(
-            get_result.is_ok() || get_result.is_err(),
-            "Getting expired proposal should handle gracefully"
+            get_result.is_ok(),
+            "Expired proposal should still be accessible via get_proposal for diagnostics"
         );
     }
 
@@ -662,7 +669,10 @@ mod tests {
 
         // Proposal should still be usable
         let get_result = client.try_get_proposal(&proposal_id);
-        assert!(get_result.is_ok(), "Proposal must be accessible just before expiry");
+        assert!(
+            get_result.is_ok(),
+            "Proposal must be accessible just before expiry"
+        );
 
         // Now advance past the expiry threshold
         env.ledger().with_mut(|l| {
@@ -691,7 +701,7 @@ mod tests {
         env.as_contract(&client.address, || {
             let mut cfg = crate::config::get_config(&env);
             cfg.proposal_expiry_seconds = 0;
-            crate::config::set_config(&env, &cfg);
+            let _ = crate::config::set_config(&env, &cfg);
         });
 
         let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
@@ -716,10 +726,7 @@ mod tests {
 
         let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let result = client.try_propose_action(&admin, &action);
-        assert!(
-            result.is_ok(),
-            "positive-duration expiry must be accepted"
-        );
+        assert!(result.is_ok(), "positive-duration expiry must be accepted");
     }
 
     // ── [ISSUE #527] ProposalDigest execution validation checks ──────────────
@@ -789,13 +796,15 @@ mod tests {
     /// produces a digest that does not match the stored digest.
     #[test]
     fn altered_force_release_shipment_id_produces_digest_mismatch() {
-        let (_env, client, admin, _admin2) = setup_multisig();
+        let (env, client, admin, _admin2) = setup_multisig();
 
         let original_id: u64 = 1;
         let tampered_id: u64 = 999;
 
-        let original_action = crate::types::AdminAction::ForceRelease(original_id);
-        let tampered_action = crate::types::AdminAction::ForceRelease(tampered_id);
+        let original_action =
+            crate::types::AdminAction::ForceRelease(original_id, test_reason_hash(&env));
+        let tampered_action =
+            crate::types::AdminAction::ForceRelease(tampered_id, test_reason_hash(&env));
 
         let proposal_id = client.propose_action(&admin, &original_action);
 
@@ -818,13 +827,15 @@ mod tests {
     /// produces a digest that does not match the stored digest.
     #[test]
     fn altered_force_refund_shipment_id_produces_digest_mismatch() {
-        let (_env, client, admin, _admin2) = setup_multisig();
+        let (env, client, admin, _admin2) = setup_multisig();
 
         let original_id: u64 = 42;
         let tampered_id: u64 = 1;
 
-        let original_action = crate::types::AdminAction::ForceRefund(original_id);
-        let tampered_action = crate::types::AdminAction::ForceRefund(tampered_id);
+        let original_action =
+            crate::types::AdminAction::ForceRefund(original_id, test_reason_hash(&env));
+        let tampered_action =
+            crate::types::AdminAction::ForceRefund(tampered_id, test_reason_hash(&env));
 
         let proposal_id = client.propose_action(&admin, &original_action);
 
@@ -848,11 +859,13 @@ mod tests {
     /// This covers cross-variant substitution attacks.
     #[test]
     fn swapped_action_variant_produces_digest_mismatch() {
-        let (_env, client, admin, _admin2) = setup_multisig();
+        let (env, client, admin, _admin2) = setup_multisig();
 
         let shipment_id: u64 = 7;
-        let original_action = crate::types::AdminAction::ForceRelease(shipment_id);
-        let swapped_action = crate::types::AdminAction::ForceRefund(shipment_id);
+        let original_action =
+            crate::types::AdminAction::ForceRelease(shipment_id, test_reason_hash(&env));
+        let swapped_action =
+            crate::types::AdminAction::ForceRefund(shipment_id, test_reason_hash(&env));
 
         let proposal_id = client.propose_action(&admin, &original_action);
 
@@ -959,10 +972,10 @@ mod tests {
     /// Edge case: ensure the digest serialization handles zero-valued IDs correctly.
     #[test]
     fn digest_mismatch_detectable_for_zero_shipment_id_substitution() {
-        let (_env, client, admin, _admin2) = setup_multisig();
+        let (env, client, admin, _admin2) = setup_multisig();
 
-        let original_action = crate::types::AdminAction::ForceRelease(0);
-        let tampered_action = crate::types::AdminAction::ForceRelease(1);
+        let original_action = crate::types::AdminAction::ForceRelease(0, test_reason_hash(&env));
+        let tampered_action = crate::types::AdminAction::ForceRelease(1, test_reason_hash(&env));
 
         let proposal_id = client.propose_action(&admin, &original_action);
         let stored = client.get_proposal_action_digest(&proposal_id);
@@ -978,10 +991,12 @@ mod tests {
     /// Edge case: ensure the digest serialization handles maximum-valued IDs correctly.
     #[test]
     fn digest_mismatch_detectable_for_max_shipment_id_substitution() {
-        let (_env, client, admin, _admin2) = setup_multisig();
+        let (env, client, admin, _admin2) = setup_multisig();
 
-        let original_action = crate::types::AdminAction::ForceRefund(u64::MAX);
-        let tampered_action = crate::types::AdminAction::ForceRefund(u64::MAX - 1);
+        let original_action =
+            crate::types::AdminAction::ForceRefund(u64::MAX, test_reason_hash(&env));
+        let tampered_action =
+            crate::types::AdminAction::ForceRefund(u64::MAX - 1, test_reason_hash(&env));
 
         let proposal_id = client.propose_action(&admin, &original_action);
         let stored = client.get_proposal_action_digest(&proposal_id);
@@ -1040,6 +1055,9 @@ mod tests {
         assert_eq!(
             stored_digest.computed_at, proposal.created_at,
             "digest computed_at must match the proposal created_at field"
+        );
+    }
+
     // ── [ISSUE #XXX] Multi-sig threshold enforcement tests ─────────────────────
 
     /// Test: Proposal execution rejected with insufficient approvals (threshold 3, 1 approval).
@@ -1065,7 +1083,11 @@ mod tests {
 
         // Only 1 approval (proposer's auto-approval)
         let proposal = client.get_proposal(&proposal_id);
-        assert_eq!(proposal.approvals.len(), 1, "Proposer should be auto-approved");
+        assert_eq!(
+            proposal.approvals.len(),
+            1,
+            "Proposer should be auto-approved"
+        );
 
         // Attempt to execute with only 1 approval (need 3)
         let result = client.try_execute_proposal(&proposal_id);
@@ -1136,18 +1158,26 @@ mod tests {
         client.approve_action(&admin3, &proposal_id);
 
         let proposal = client.get_proposal(&proposal_id);
-        assert_eq!(proposal.approvals.len(), 3, "Should have exactly 3 approvals");
+        assert_eq!(
+            proposal.approvals.len(),
+            3,
+            "Should have exactly 3 approvals"
+        );
 
-        // Execution should now succeed
+        // Approval 3 auto-executes the proposal, so explicit execute returns AlreadyExecuted
         let result = client.try_execute_proposal(&proposal_id);
-        assert!(
-            result.is_ok(),
-            "Execution should succeed with 3 approvals when threshold is 3"
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::ProposalAlreadyExecuted)),
+            "Proposal already executed via auto-execute when threshold was reached"
         );
 
         // Verify proposal is marked as executed
         let executed_proposal = client.get_proposal(&proposal_id);
-        assert!(executed_proposal.executed, "Proposal should be marked as executed");
+        assert!(
+            executed_proposal.executed,
+            "Proposal should be marked as executed"
+        );
     }
 
     /// Test: Proposal execution succeeds with more than threshold approvals (threshold 3, 4 approvals).
@@ -1170,19 +1200,28 @@ mod tests {
         let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
-        // Get all possible approvals (more than threshold)
+        // Approve twice more to reach threshold (3 total → auto-execute)
         client.approve_action(&admin2, &proposal_id);
         client.approve_action(&admin3, &proposal_id);
-        client.approve_action(&admin4, &proposal_id);
 
+        // Third approval triggered auto-execute; verify executed state
         let proposal = client.get_proposal(&proposal_id);
-        assert_eq!(proposal.approvals.len(), 4, "Should have 4 approvals");
-
-        // Execution should succeed
-        let result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            proposal.approvals.len(),
+            3,
+            "Should have 3 approvals at threshold"
+        );
         assert!(
-            result.is_ok(),
-            "Execution should succeed with 4 approvals when threshold is 3"
+            proposal.executed,
+            "Proposal should be marked as executed after auto-execute"
+        );
+
+        // Explicit execute returns AlreadyExecuted
+        let result = client.try_execute_proposal(&proposal_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::ProposalAlreadyExecuted)),
+            "Proposal already executed via auto-execute"
         );
     }
 
@@ -1203,7 +1242,7 @@ mod tests {
         client.init_multisig(&admin, &admins, &3);
 
         // Create first proposal (ForceRelease)
-        let action1 = crate::types::AdminAction::ForceRelease(42u64);
+        let action1 = crate::types::AdminAction::ForceRelease(42u64, test_reason_hash(&env));
         let proposal1_id = client.propose_action(&admin, &action1);
 
         // Create second proposal (TransferAdmin)
@@ -1226,11 +1265,12 @@ mod tests {
             "Proposal 1 should fail with 2 approvals"
         );
 
-        // Proposal 2 should succeed (3 == 3)
+        // Proposal 2 auto-executed when 3rd approval reached; explicit execute returns AlreadyExecuted
         let result2 = client.try_execute_proposal(&proposal2_id);
-        assert!(
-            result2.is_ok(),
-            "Proposal 2 should succeed with 3 approvals"
+        assert_eq!(
+            result2,
+            Err(Ok(NavinError::ProposalAlreadyExecuted)),
+            "Proposal 2 already executed via auto-execute"
         );
     }
 
@@ -1238,24 +1278,33 @@ mod tests {
     /// Verifies that a threshold of 1 is valid and immediately executable.
     #[test]
     fn execute_proposal_succeeds_immediately_with_threshold_1() {
-        let (env, client, admin, _admin2) = setup_multisig();
+        let (env, client, admin, admin2) = setup_multisig();
 
-        // Create multi-sig with threshold 1 (single approver)
+        // Multi-sig requires at least 2 admins; set threshold to 1
         let mut admins = Vec::new(&env);
         admins.push_back(admin.clone());
+        admins.push_back(admin2.clone());
         client.init_multisig(&admin, &admins, &1);
 
         let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         let proposal = client.get_proposal(&proposal_id);
-        assert_eq!(proposal.approvals.len(), 1, "Proposer should be auto-approved");
+        assert_eq!(
+            proposal.approvals.len(),
+            1,
+            "Proposer should be auto-approved"
+        );
 
-        // Should be immediately executable
+        // Threshold 1: proposer auto-approval meets threshold → executable.
         let result = client.try_execute_proposal(&proposal_id);
+        assert!(result.is_ok(), "Execution should succeed with threshold 1");
+
+        // Verify proposal is marked as executed
+        let executed_proposal = client.get_proposal(&proposal_id);
         assert!(
-            result.is_ok(),
-            "Execution should succeed immediately with threshold 1"
+            executed_proposal.executed,
+            "Proposal should be marked as executed"
         );
     }
 
@@ -1296,11 +1345,12 @@ mod tests {
         let proposal_after_2 = client.get_proposal(&proposal_id);
         assert_eq!(proposal_after_2.approvals.len(), 3);
 
-        // Now sufficient
+        // Third approval auto-executes the proposal; explicit execute returns AlreadyExecuted
         let result_after_2 = client.try_execute_proposal(&proposal_id);
-        assert!(
-            result_after_2.is_ok(),
-            "Execution should succeed with 3/3 approvals"
+        assert_eq!(
+            result_after_2,
+            Err(Ok(NavinError::ProposalAlreadyExecuted)),
+            "Proposal already executed via auto-execute when threshold was met"
         );
     }
 
@@ -1333,7 +1383,10 @@ mod tests {
 
         // Verify proposal state unchanged
         let proposal_after = client.get_proposal(&proposal_id);
-        assert!(!proposal_after.executed, "Still not executed after failed attempt");
+        assert!(
+            !proposal_after.executed,
+            "Still not executed after failed attempt"
+        );
         assert_eq!(proposal_after.approvals.len(), 1, "Approvals unchanged");
         assert_eq!(
             proposal_after.created_at, proposal_before.created_at,
@@ -1361,7 +1414,7 @@ mod tests {
 
         // Create ForceRelease proposal
         let shipment_id = 42u64;
-        let action = crate::types::AdminAction::ForceRelease(shipment_id);
+        let action = crate::types::AdminAction::ForceRelease(shipment_id, test_reason_hash(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         // Only 1 approval
@@ -1393,7 +1446,7 @@ mod tests {
 
         // Create ForceRefund proposal
         let shipment_id = 99u64;
-        let action = crate::types::AdminAction::ForceRefund(shipment_id);
+        let action = crate::types::AdminAction::ForceRefund(shipment_id, test_reason_hash(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         // Only 1 approval
@@ -1440,5 +1493,109 @@ mod tests {
             "Upgrade should be blocked without sufficient approvals"
         );
     }
-}
 
+    // ── ForceRelease / ForceRefund perform full escrow accounting (#669, #670) ──
+
+    fn setup_shipment_for_force_action(
+        env: &Env,
+        client: &NavinShipmentClient<'static>,
+        admin: &Address,
+    ) -> (Address, u64) {
+        let company = Address::generate(env);
+        let carrier = Address::generate(env);
+        let receiver = Address::generate(env);
+
+        client.add_company(admin, &company);
+        client.add_carrier(admin, &carrier);
+
+        let milestones: Vec<(soroban_sdk::Symbol, u32)> = Vec::new(env);
+        let deadline = env.ledger().timestamp() + 86_400;
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &BytesN::from_array(env, &[7u8; 32]),
+            &milestones,
+            &deadline,
+        );
+
+        client.deposit_escrow(&company, &shipment_id, &1_000_i128);
+        assert_eq!(client.get_active_shipment_count(&company), 1);
+
+        (company, shipment_id)
+    }
+
+    #[test]
+    fn force_release_performs_full_escrow_accounting() {
+        let (env, client, admin, admin2) = setup_multisig();
+        let (company, shipment_id) = setup_shipment_for_force_action(&env, &client, &admin);
+
+        let action = crate::types::AdminAction::ForceRelease(shipment_id, test_reason_hash(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+        // The 2nd approval meets the multisig threshold and auto-executes
+        // the proposal, so there is no separate execute_proposal call.
+        client.approve_action(&admin2, &proposal_id);
+
+        let shipment = client.get_shipment(&shipment_id);
+        assert_eq!(shipment.status, ShipmentStatus::Delivered);
+        assert_eq!(shipment.escrow_amount, 0);
+        assert!(
+            shipment.finalized,
+            "shipment must be finalized after ForceRelease"
+        );
+        assert_eq!(
+            client.get_active_shipment_count(&company),
+            0,
+            "sender's active-shipment slot must be released"
+        );
+    }
+
+    #[test]
+    fn force_refund_performs_full_escrow_accounting() {
+        let (env, client, admin, admin2) = setup_multisig();
+        let (company, shipment_id) = setup_shipment_for_force_action(&env, &client, &admin);
+
+        let action = crate::types::AdminAction::ForceRefund(shipment_id, test_reason_hash(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+        // The 2nd approval meets the multisig threshold and auto-executes
+        // the proposal, so there is no separate execute_proposal call.
+        client.approve_action(&admin2, &proposal_id);
+
+        let shipment = client.get_shipment(&shipment_id);
+        assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+        assert_eq!(shipment.escrow_amount, 0);
+        assert!(
+            shipment.finalized,
+            "shipment must be finalized after ForceRefund"
+        );
+        assert_eq!(
+            client.get_active_shipment_count(&company),
+            0,
+            "sender's active-shipment slot must be released"
+        );
+    }
+
+    #[test]
+    fn force_release_rejects_already_terminal_shipment() {
+        let (env, client, admin, admin2) = setup_multisig();
+        let (_company, shipment_id) = setup_shipment_for_force_action(&env, &client, &admin);
+
+        let first = crate::types::AdminAction::ForceRelease(shipment_id, test_reason_hash(&env));
+        let first_id = client.propose_action(&admin, &first);
+        // The 2nd approval meets the multisig threshold and auto-executes
+        // the proposal, finalizing the shipment.
+        client.approve_action(&admin2, &first_id);
+
+        // A second force action on the now-terminal shipment must be
+        // rejected. Auto-execution happens inside approve_action itself
+        // once the threshold is met, so that is where the rejection surfaces.
+        let second = crate::types::AdminAction::ForceRefund(shipment_id, test_reason_hash(&env));
+        let second_id = client.propose_action(&admin, &second);
+        let result = client.try_approve_action(&admin2, &second_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::ShipmentAlreadyCompleted)),
+            "a second force action on an already-terminal shipment must be rejected"
+        );
+    }
+}

@@ -96,6 +96,51 @@ fn test_auth_tree_add_company() {
     );
 }
 
+/// Re-registering an address that already holds the Company role must fail.
+#[test]
+fn test_add_company_rejects_duplicate_registration() {
+    let (env, client, admin, _token) = setup_env();
+    let company = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    let result = client.try_add_company(&admin, &company);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::RoleAlreadyAssigned)),
+        "duplicate company registration must return RoleAlreadyAssigned"
+    );
+}
+
+/// A failed duplicate company registration must not alter company state.
+#[test]
+fn test_add_company_duplicate_leaves_state_unchanged() {
+    let (env, client, admin, _token) = setup_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let _ = client.try_add_company(&admin, &company);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert!(
+        shipment_id > 0,
+        "company role must remain active after duplicate add"
+    );
+}
+
 /// `add_carrier` must record an auth invocation for admin with correct args.
 #[test]
 fn test_auth_tree_add_carrier() {
@@ -118,6 +163,51 @@ fn test_auth_tree_add_carrier() {
                 sub_invocations: std::vec![],
             }
         )]
+    );
+}
+
+/// Re-registering an address that already holds the Carrier role must fail.
+#[test]
+fn test_add_carrier_rejects_duplicate_registration() {
+    let (env, client, admin, _token) = setup_env();
+    let carrier = Address::generate(&env);
+
+    client.add_carrier(&admin, &carrier);
+    let result = client.try_add_carrier(&admin, &carrier);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::RoleAlreadyAssigned)),
+        "duplicate carrier registration must return RoleAlreadyAssigned"
+    );
+}
+
+/// A failed duplicate carrier registration must not alter carrier state.
+#[test]
+fn test_add_carrier_duplicate_leaves_state_unchanged() {
+    let (env, client, admin, _token) = setup_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let _ = client.try_add_carrier(&admin, &carrier);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert!(
+        shipment_id > 0,
+        "carrier role must remain active after duplicate add"
     );
 }
 
@@ -1081,14 +1171,14 @@ fn test_wrong_role_error_maps_to_unauthorized_category() {
 fn test_role_revocation_query() {
     let (env, client, admin, _token) = setup_env();
     let target = Address::generate(&env);
-    
+
     // Grant role
     client.add_company(&admin, &target);
     assert_eq!(client.get_role(&target), crate::Role::Company);
-    
+
     // Revoke role
     client.revoke_role(&admin, &target);
-    
+
     // Query again
     assert_eq!(client.get_role(&target), crate::Role::Unassigned);
 }
@@ -1187,8 +1277,7 @@ fn test_set_shipment_metadata_rejects_empty_key_symbol() {
 
     let empty_key = Symbol::new(&env, "");
     let valid_value = Symbol::new(&env, "value");
-    let result =
-        client.try_set_shipment_metadata(&company, &shipment_id, &empty_key, &valid_value);
+    let result = client.try_set_shipment_metadata(&company, &shipment_id, &empty_key, &valid_value);
 
     assert_eq!(
         result,
@@ -1223,8 +1312,7 @@ fn test_set_shipment_metadata_rejects_empty_value_symbol() {
 
     let valid_key = Symbol::new(&env, "weight");
     let empty_value = Symbol::new(&env, "");
-    let result =
-        client.try_set_shipment_metadata(&company, &shipment_id, &valid_key, &empty_value);
+    let result = client.try_set_shipment_metadata(&company, &shipment_id, &valid_key, &empty_value);
 
     assert_eq!(
         result,

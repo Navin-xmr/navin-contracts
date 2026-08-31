@@ -182,6 +182,58 @@ mod tests {
         assert_eq!(remaining, 3);
     }
 
+    // ── get_effective_shipment_limit: company override vs global fallback ─────
+
+    #[test]
+    fn effective_limit_falls_back_to_global_when_no_company_override() {
+        let (_env, client, admin, company, _carrier, _token) = setup();
+
+        // Set global limit to 7
+        client.set_shipment_limit(&admin, &7);
+
+        // No company override → should return global
+        assert_eq!(client.get_effective_shipment_limit(&company), 7);
+    }
+
+    #[test]
+    fn effective_limit_returns_company_override_when_set() {
+        let (_env, client, admin, company, _carrier, _token) = setup();
+
+        client.set_shipment_limit(&admin, &50);
+        client.set_company_shipment_limit(&admin, &company, &10);
+
+        // Company override of 10 should be returned, not the global 50
+        assert_eq!(client.get_effective_shipment_limit(&company), 10);
+    }
+
+    #[test]
+    fn effective_limit_reverts_to_global_after_override_removed() {
+        let (_env, client, admin, company, _carrier, _token) = setup();
+
+        client.set_shipment_limit(&admin, &25);
+        client.set_company_shipment_limit(&admin, &company, &5);
+        assert_eq!(client.get_effective_shipment_limit(&company), 5);
+
+        // Remove override by setting to 0
+        client.set_company_shipment_limit(&admin, &company, &0);
+        // After clearing, should fall back to global 25
+        assert_eq!(client.get_effective_shipment_limit(&company), 0);
+    }
+
+    #[test]
+    fn effective_limit_respects_different_companies_with_different_overrides() {
+        let (env, client, admin, company1, _carrier, _token) = setup();
+        let company2 = Address::generate(&env);
+        client.add_company(&admin, &company2);
+
+        client.set_shipment_limit(&admin, &100);
+        client.set_company_shipment_limit(&admin, &company1, &20);
+        client.set_company_shipment_limit(&admin, &company2, &50);
+
+        assert_eq!(client.get_effective_shipment_limit(&company1), 20);
+        assert_eq!(client.get_effective_shipment_limit(&company2), 50);
+    }
+
     // ── set_creation_quota validation ────────────────────────────────────────
 
     #[test]
@@ -1071,7 +1123,10 @@ mod tests {
         env.ledger().with_mut(|l| l.timestamp += 400);
 
         let count_after_create = client.get_active_shipment_count(&company);
-        assert_eq!(count_after_create, 1, "active count must be 1 after creating a shipment");
+        assert_eq!(
+            count_after_create, 1,
+            "active count must be 1 after creating a shipment"
+        );
 
         let reason_hash = make_hash(&env, 0xFF);
         client.cancel_shipment(&company, &id, &reason_hash);
@@ -1144,6 +1199,125 @@ mod tests {
         assert!(
             result.is_ok(),
             "creating a shipment after cancellation must succeed when quota is restored"
+        );
+    }
+
+    // ── issue #638: single and batch creation share one quota implementation ──
+
+    fn batch_input(env: &Env, carrier: &Address, seed: u8) -> crate::types::ShipmentInput {
+        crate::types::ShipmentInput {
+            receiver: Address::generate(env),
+            carrier: carrier.clone(),
+            data_hash: make_hash(env, seed),
+            payment_milestones: Vec::new(env),
+            deadline: future_deadline(env),
+        }
+    }
+
+    fn try_batch(
+        env: &Env,
+        client: &NavinShipmentClient,
+        company: &Address,
+        carrier: &Address,
+        seeds: &[u8],
+    ) -> Result<u32, NavinError> {
+        let mut inputs = Vec::new(env);
+        for seed in seeds {
+            inputs.push_back(batch_input(env, carrier, *seed));
+        }
+        match client.try_create_shipments_batch(company, &inputs) {
+            Ok(Ok(ids)) => Ok(ids.len()),
+            Err(Ok(e)) => Err(e),
+            _ => panic!("unexpected error in try_batch"),
+        }
+    }
+
+    /// A batch that exactly fills the remaining quota must succeed, and the
+    /// next single creation must be rejected — the boundary both paths share.
+    #[test]
+    fn batch_consumes_quota_identically_to_single_creation() {
+        let (env, client, admin, company, carrier, _token) = setup();
+        client.set_creation_quota(&admin, &3, &3600);
+
+        assert_eq!(
+            try_batch(&env, &client, &company, &carrier, &[1, 2, 3]),
+            Ok(3)
+        );
+
+        env.ledger().with_mut(|l| l.timestamp += 400);
+        assert_eq!(
+            create_one(&env, &client, &company, &carrier, 4),
+            Err(NavinError::CreationQuotaExceeded),
+            "quota consumed by a batch must block a subsequent single creation"
+        );
+    }
+
+    /// A batch larger than the remaining quota is rejected in full — no
+    /// partial consumption, and the leftover quota stays usable.
+    #[test]
+    fn oversized_batch_is_rejected_without_consuming_quota() {
+        let (env, client, admin, company, carrier, _token) = setup();
+        client.set_creation_quota(&admin, &3, &3600);
+
+        assert_eq!(
+            try_batch(&env, &client, &company, &carrier, &[1, 2, 3, 4]),
+            Err(NavinError::CreationQuotaExceeded)
+        );
+
+        // The rejected batch must not have consumed any quota.
+        let (used, remaining) = client.get_creation_quota_status(&company);
+        assert_eq!(used, 0, "a rejected batch must not consume quota");
+        assert_eq!(remaining, 3);
+    }
+
+    /// Single creations followed by a batch hit the same ceiling as a batch
+    /// followed by single creations.
+    #[test]
+    fn single_then_batch_hits_the_same_ceiling() {
+        let (env, client, admin, company, carrier, _token) = setup();
+        client.set_creation_quota(&admin, &3, &3600);
+
+        assert!(create_one(&env, &client, &company, &carrier, 1).is_ok());
+        env.ledger().with_mut(|l| l.timestamp += 400);
+
+        // Two remaining: a 2-item batch fits exactly.
+        assert_eq!(try_batch(&env, &client, &company, &carrier, &[2, 3]), Ok(2));
+
+        env.ledger().with_mut(|l| l.timestamp += 400);
+        assert_eq!(
+            try_batch(&env, &client, &company, &carrier, &[4]),
+            Err(NavinError::CreationQuotaExceeded)
+        );
+    }
+
+    /// Window rollover must behave the same for batch creation as it does for
+    /// single creation.
+    #[test]
+    fn batch_quota_resets_after_window_expires() {
+        let (env, client, admin, company, carrier, _token) = setup();
+        client.set_creation_quota(&admin, &2, &3600);
+
+        assert_eq!(try_batch(&env, &client, &company, &carrier, &[1, 2]), Ok(2));
+
+        // Roll past the window.
+        env.ledger().with_mut(|l| l.timestamp += 3601);
+
+        assert_eq!(
+            try_batch(&env, &client, &company, &carrier, &[3, 4]),
+            Ok(2),
+            "batch creation must get a fresh allowance after the window rolls"
+        );
+    }
+
+    /// With the quota disabled, batch creation is unrestricted — the shared
+    /// helper's early return applies to both paths.
+    #[test]
+    fn batch_unrestricted_when_quota_disabled() {
+        let (env, client, _admin, company, carrier, _token) = setup();
+
+        assert_eq!(
+            try_batch(&env, &client, &company, &carrier, &[1, 2, 3, 4, 5]),
+            Ok(5)
         );
     }
 }

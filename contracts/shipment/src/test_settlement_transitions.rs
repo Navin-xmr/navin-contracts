@@ -509,11 +509,9 @@ fn issue_542_at_checkpoint_to_at_checkpoint_is_invalid_in_matrix() {
 #[test]
 fn issue_542_at_checkpoint_to_at_checkpoint_returns_invalid_status() {
     use crate::validate_shipment_transition;
-    let err = validate_shipment_transition(
-        &ShipmentStatus::AtCheckpoint,
-        &ShipmentStatus::AtCheckpoint,
-    )
-    .unwrap_err();
+    let err =
+        validate_shipment_transition(&ShipmentStatus::AtCheckpoint, &ShipmentStatus::AtCheckpoint)
+            .unwrap_err();
     assert_eq!(err, crate::NavinError::InvalidStatus);
 }
 

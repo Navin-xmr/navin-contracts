@@ -100,12 +100,18 @@ pub enum DataKey {
     IsPaused,
     /// Platform fee configuration.
     FeeConfig,
-    /// Designated address for platform fee collection.
+    /// Reserved. The platform treasury address lives in `FeeConfig::treasury`
+    /// (the slot fee-payout code actually reads); this standalone key is kept
+    /// only so the storage-key layout stays stable for already-deployed
+    /// contracts and must not be written or read.
     Treasury,
     /// Rate limit quota tracker per actor (company/carrier).
     ActorQuota(Address),
     /// Circuit breaker state for token transfers.
     CircuitBreakerState,
+    /// Admin-configured circuit breaker thresholds. Absent means the built-in
+    /// default is in effect.
+    CircuitBreakerConfig,
     /// Audit log entry keyed by entry ID.
     AuditEntry(u64),
     /// Total count of audit log entries.
@@ -128,6 +134,14 @@ pub enum DataKey {
     CreationQuotaConfig,
     /// Deterministic action digest stored on proposal creation.
     ProposalDigest(u64),
+    /// Per-shipment recovery action record (shipment_id, index) -> RecoveryRecord.
+    RecoveryRecord(u64, u32),
+    /// Total count of recovery action records for a shipment.
+    RecoveryRecordCount(u64),
+    /// Proposal salt used to prevent replay attacks — salt -> bool.
+    ProposalSalt(BytesN<32>),
+    /// Prerequisite shipment IDs for a dependent — dependent_id -> Vec<u64>.
+    ShipmentDependents(u64),
 }
 
 /// Structured reason codes for escrow freeze events.
@@ -319,7 +333,7 @@ impl ShipmentStatus {
 /// // Struct represents the full shipment payload tracked on-chain.
 /// ```
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Shipment {
     /// Unique shipment identifier.
     pub id: u64,
@@ -537,6 +551,45 @@ pub struct ShipmentStatusCursorPage {
     pub next_cursor: Option<u64>,
 }
 
+/// Cursor page result for searching shipment IDs by sender, carrier, or receiver.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShipmentCursorPage {
+    pub shipment_ids: Vec<u64>,
+    pub next_cursor: Option<u64>,
+}
+
+/// Maximum number of recovery action history records stored per shipment.
+pub const MAX_RECOVERY_RECORDS_PER_SHIPMENT: u32 = 20;
+
+/// Recovery action type for history log audit trail.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum RecoveryActionType {
+    /// Reset shipment state to a valid target status.
+    RecoverShipment,
+    /// Manually unlock stuck escrow.
+    UnlockEscrow,
+    /// Clear finalization flag to allow reprocessing.
+    ClearFinalization,
+    /// Rollback shipment status on external failure.
+    RollbackOnExternalFailure,
+}
+
+/// Queryable recovery action record stored per shipment.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RecoveryRecord {
+    /// Type of recovery action performed.
+    pub action_type: RecoveryActionType,
+    /// Admin address executing the recovery.
+    pub admin: Address,
+    /// Hash of the justification/reason for recovery.
+    pub reason_hash: BytesN<32>,
+    /// Ledger timestamp when recovery was executed.
+    pub timestamp: u64,
+}
+
 /// Storage presence classification used for restore triage.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
@@ -629,9 +682,11 @@ pub enum AdminAction {
     /// Transfer admin role to new address.
     TransferAdmin(Address),
     /// Force release escrow for a shipment to carrier.
-    ForceRelease(u64),
+    /// Includes a reason_hash for audit trail and accountability.
+    ForceRelease(u64, BytesN<32>),
     /// Force refund escrow for a shipment to company.
-    ForceRefund(u64),
+    /// Includes a reason_hash for audit trail and accountability.
+    ForceRefund(u64, BytesN<32>),
 }
 
 /// Multi-signature proposal for critical admin actions.
@@ -683,6 +738,8 @@ pub enum NotificationType {
     DisputeResolved,
     /// Deadline is approaching.
     DeadlineApproaching,
+    /// Carrier handoff occurred — ownership transferred to a new carrier.
+    CarrierHandoff,
 }
 
 /// Aggregated on-chain analytics data.
@@ -812,3 +869,8 @@ pub struct FeeConfig {
     /// The address where collected fees are sent.
     pub treasury: Address,
 }
+
+/// Sample fractional milestone percentages used in tests to verify
+/// integer-division rounding behavior during milestone payouts.
+/// Values (17, 33, 50) sum to exactly 100.
+pub const FRACTIONAL_MILESTONE_PCTS: [u32; 3] = [17, 33, 50];

@@ -213,7 +213,7 @@ fn test_checked_mul_div_truncates_remainder() {
 mod total_escrow_volume_overflow {
     use crate::errors::NavinError;
     use crate::{storage, NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env};
+    use soroban_sdk::{contract, contractimpl, Address, Env};
 
     #[contract]
     struct MockToken;
@@ -411,5 +411,112 @@ mod total_escrow_volume_overflow {
             Err(NavinError::ArithmeticError),
             "negative amount must be rejected even when volume is at i128::MAX"
         );
+    }
+}
+
+// =============================================================================
+// Issue #617 — InvalidAmount boundary tests
+// =============================================================================
+//
+// These tests verify that `NavinError::InvalidAmount` (code #14) is returned
+// when callers supply out-of-range arguments:
+//   • `set_platform_fee` when fee_bps > 1000
+//   • `confirm_partial_delivery` when release_percent == 0 or > 100
+
+mod invalid_amount_validation {
+    extern crate std;
+
+    use crate::errors::NavinError;
+    use crate::{NavinShipment, NavinShipmentClient};
+    use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
+
+    #[soroban_sdk::contract]
+    struct MockPlatformToken;
+
+    #[soroban_sdk::contractimpl]
+    impl MockPlatformToken {
+        pub fn decimals(_env: Env) -> u32 {
+            7
+        }
+        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+    }
+
+    fn setup() -> (Env, NavinShipmentClient<'static>, Address) {
+        let (env, admin) = crate::test_utils::setup_env();
+        let token = env.register(MockPlatformToken, ());
+        let cid = env.register(NavinShipment, ());
+        let client = NavinShipmentClient::new(&env, &cid);
+        client.initialize(&admin, &token);
+        (env, client, admin)
+    }
+
+    fn check_invalid_amount(
+        result: Result<
+            Result<(), soroban_sdk::ConversionError>,
+            Result<NavinError, soroban_sdk::InvokeError>,
+        >,
+    ) {
+        match result {
+            Err(Ok(e)) => assert_eq!(
+                e,
+                NavinError::InvalidAmount,
+                "must return InvalidAmount (code #14)"
+            ),
+            Err(Err(e)) => {
+                let s = std::format!("{:?}", e);
+                assert!(
+                    s.contains("InvalidAmount") || s.contains("Code(14)"),
+                    "expected InvalidAmount in host error, got {:?}",
+                    s
+                );
+            }
+            Ok(_) => panic!("expected InvalidAmount error but call succeeded"),
+        }
+    }
+
+    /// `set_platform_fee` with fee_bps = 1001 must return InvalidAmount.
+    #[test]
+    fn test_set_platform_fee_above_max_bps_returns_invalid_amount() {
+        let (env, client, admin) = setup();
+        env.mock_all_auths();
+        let treasury = Address::generate(&env);
+        let result = client.try_set_platform_fee(&admin, &1001u32, &treasury);
+        check_invalid_amount(result);
+    }
+
+    /// `set_platform_fee` with fee_bps = 1000 must succeed (boundary is inclusive).
+    #[test]
+    fn test_set_platform_fee_at_max_bps_succeeds() {
+        let (env, client, admin) = setup();
+        env.mock_all_auths();
+        let treasury = Address::generate(&env);
+        let result = client.try_set_platform_fee(&admin, &1000u32, &treasury);
+        assert!(
+            matches!(result, Ok(Ok(()))),
+            "fee_bps=1000 must succeed (boundary)"
+        );
+    }
+
+    /// `confirm_partial_delivery` with release_percent = 0 must return InvalidAmount.
+    /// The guard fires before the shipment lookup, so no shipment is needed.
+    #[test]
+    fn test_confirm_partial_delivery_zero_percent_returns_invalid_amount() {
+        let (env, client, _admin) = setup();
+        env.mock_all_auths();
+        let receiver = Address::generate(&env);
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let result = client.try_confirm_partial_delivery(&receiver, &1u64, &hash, &0u32);
+        check_invalid_amount(result);
+    }
+
+    /// `confirm_partial_delivery` with release_percent = 101 must return InvalidAmount.
+    #[test]
+    fn test_confirm_partial_delivery_over_hundred_percent_returns_invalid_amount() {
+        let (env, client, _admin) = setup();
+        env.mock_all_auths();
+        let receiver = Address::generate(&env);
+        let hash = BytesN::from_array(&env, &[2u8; 32]);
+        let result = client.try_confirm_partial_delivery(&receiver, &1u64, &hash, &101u32);
+        check_invalid_amount(result);
     }
 }

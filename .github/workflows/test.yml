@@ -2,12 +2,25 @@ name: Navin Smart Contracts CI
 
 on:
   push:
-    branches: [ "dev" ]
+    branches: ["dev"]
   pull_request:
-    branches: [ "dev" ]
+    branches: ["dev"]
   workflow_dispatch:
 
 jobs:
+  cargo-deny:
+    name: Cargo Deny (Security & License Check)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          log-level: warn
+          command: check advisories licenses
+
   fmt-check:
     name: Format Check
     runs-on: ubuntu-latest
@@ -56,6 +69,49 @@ jobs:
 
       - name: Run tests
         run: cargo test
+
+  budget-regression:
+    name: Budget Regression Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Enforce budget baselines
+        run: cargo test --package shipment budget_bench -- --nocapture
+
+  coverage:
+    name: Test Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Measure coverage
+        run: make coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            target/llvm-cov/lcov.info
+            target/llvm-cov/html
 
   cargo-build:
     name: Cargo Build (Host)
