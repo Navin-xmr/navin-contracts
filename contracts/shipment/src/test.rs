@@ -1310,6 +1310,40 @@ fn test_get_shipment_carrier_fails_for_invalid_id() {
     client.get_shipment_carrier(&999);
 }
 
+#[test]
+fn test_get_shipment_status_returns_created_for_new_shipment() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[14u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    assert_eq!(client.get_shipment_status(&shipment_id), ShipmentStatus::Created);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")]
+fn test_get_shipment_status_fails_for_invalid_id() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+
+    client.initialize(&admin, &token_contract);
+
+    client.get_shipment_status(&999);
+}
+
 // ============= Geofence Event Tests =============
 
 #[test]

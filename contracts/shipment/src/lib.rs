@@ -2690,6 +2690,21 @@ impl NavinShipment {
         Ok(shipment.carrier)
     }
 
+    /// * `Result<ShipmentStatus, NavinError>` - Current status in the shipment lifecycle.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
+    pub fn get_shipment_status(
+        env: Env,
+        shipment_id: u64,
+    ) -> Result<ShipmentStatus, NavinError> {
+        require_initialized(&env)?;
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        Ok(shipment.status)
+    }
+
     /// Return read-only diagnostics that help operators triage restore requirements.
     ///
     /// This query does not mutate state. It classifies the shipment ID as active,
