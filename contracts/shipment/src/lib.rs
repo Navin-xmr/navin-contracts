@@ -2766,7 +2766,8 @@ impl NavinShipment {
     /// # let carrier = Address::generate(&env);
     /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline);
     /// // Deposit 5_000_000 stroops (0.5 tokens) into escrow for the shipment.
-    /// // The company must have pre-approved the token transfer allowance.
+    /// // The company must authorize the direct token transfer with its own
+    /// // `require_auth()` call; this path does not consume a pre-approved allowance.
     /// client.deposit_escrow(&admin, &shipment_id, &5_000_000_i128);
     /// ```
     pub fn deposit_escrow(
