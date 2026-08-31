@@ -29,7 +29,7 @@ extern crate std;
 use crate::{test_utils, NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::{Address as _, Events},
+    testutils::{Address as _, Events, Ledger as _},
     token::StellarAssetClient,
     Address, BytesN, Env, Symbol, TryFromVal, TryIntoVal, Vec,
 };
@@ -937,3 +937,176 @@ fn test_snapshot_company_suspension_event_payload() {
 
 #[test]
 fn test_snapshot_coverage_lifecycle_events() {}
+
+// ── #686: shipment_cancelled emitted from refund_escrow ──────────────────────
+#[test]
+fn test_refund_escrow_emits_both_escrow_refunded_and_shipment_cancelled() {
+    let (env, client, _admin, company, carrier, receiver) = fixture_env();
+    let data_hash = BytesN::from_array(&env, &[18u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &id, &1_000i128);
+
+    client.refund_escrow(&company, &id);
+
+    let refunded = find_event_data(&env, crate::event_topics::ESCROW_REFUNDED);
+    assert!(refunded.is_some(), "escrow_refunded event must be emitted");
+
+    let cancelled = find_event_data(&env, crate::event_topics::SHIPMENT_CANCELLED);
+    assert!(
+        cancelled.is_some(),
+        "shipment_cancelled event must be emitted"
+    );
+
+    let payload = cancelled.unwrap();
+    assert_eq!(
+        payload.len(),
+        6,
+        "shipment_cancelled payload must have 6 fields"
+    );
+    let event_shipment_id: u64 = payload.get(0).unwrap().try_into_val(&env).unwrap();
+    let event_caller: Address = payload.get(1).unwrap().try_into_val(&env).unwrap();
+    assert_eq!(event_shipment_id, id);
+    assert_eq!(event_caller, company);
+}
+
+// ── #687: shipment_cancelled emitted from resolve_dispute's RefundToCompany ───
+#[test]
+fn test_resolve_dispute_refund_to_company_emits_shipment_cancelled() {
+    let (env, client, admin, company, carrier, receiver) = fixture_env();
+    let data_hash = BytesN::from_array(&env, &[19u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &id, &1_000i128);
+    client.update_status(
+        &carrier,
+        &id,
+        &crate::types::ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    let dispute_reason = BytesN::from_array(&env, &[20u8; 32]);
+    client.raise_dispute(&company, &id, &dispute_reason);
+
+    let resolve_reason = BytesN::from_array(&env, &[21u8; 32]);
+    client.resolve_dispute(
+        &admin,
+        &id,
+        &crate::types::DisputeResolution::RefundToCompany,
+        &resolve_reason,
+    );
+
+    let resolved = find_event_data(&env, crate::event_topics::DISPUTE_RESOLVED);
+    assert!(resolved.is_some(), "dispute_resolved must be emitted");
+
+    let cancelled = find_event_data(&env, crate::event_topics::SHIPMENT_CANCELLED);
+    assert!(
+        cancelled.is_some(),
+        "shipment_cancelled must be emitted on RefundToCompany resolution"
+    );
+
+    let payload = cancelled.unwrap();
+    let event_shipment_id: u64 = payload.get(0).unwrap().try_into_val(&env).unwrap();
+    let event_caller: Address = payload.get(1).unwrap().try_into_val(&env).unwrap();
+    let event_reason_hash: BytesN<32> = payload.get(2).unwrap().try_into_val(&env).unwrap();
+    assert_eq!(event_shipment_id, id);
+    assert_eq!(event_caller, admin);
+    assert_eq!(event_reason_hash, resolve_reason);
+}
+
+#[test]
+fn test_resolve_dispute_release_to_carrier_does_not_emit_shipment_cancelled() {
+    let (env, client, admin, company, carrier, receiver) = fixture_env();
+    let data_hash = BytesN::from_array(&env, &[22u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &id, &1_000i128);
+    client.update_status(
+        &carrier,
+        &id,
+        &crate::types::ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    let dispute_reason = BytesN::from_array(&env, &[23u8; 32]);
+    client.raise_dispute(&company, &id, &dispute_reason);
+
+    let resolve_reason = BytesN::from_array(&env, &[24u8; 32]);
+    client.resolve_dispute(
+        &admin,
+        &id,
+        &crate::types::DisputeResolution::ReleaseToCarrier,
+        &resolve_reason,
+    );
+
+    let cancelled = find_event_data(&env, crate::event_topics::SHIPMENT_CANCELLED);
+    assert!(
+        cancelled.is_none(),
+        "shipment_cancelled must NOT be emitted on ReleaseToCarrier resolution"
+    );
+}
+
+// ── #688: check_deadline auto-expiry emits shipment_cancelled ─────────────────
+#[test]
+fn test_check_deadline_auto_expiry_emits_shipment_cancelled_and_expired() {
+    let (env, client, _admin, company, carrier, receiver) = fixture_env();
+    let data_hash = BytesN::from_array(&env, &[25u8; 32]);
+    let deadline = env.ledger().timestamp() + 100;
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &id, &1_000i128);
+
+    // Advance past deadline + default grace period (86400s)
+    let current_ledger_time = env.ledger().timestamp();
+    env.ledger()
+        .set_timestamp(current_ledger_time + 100 + 86400 + 1);
+
+    client.check_deadline(&id);
+
+    let refunded = find_event_data(&env, crate::event_topics::ESCROW_REFUNDED);
+    assert!(refunded.is_some(), "escrow_refunded must be emitted");
+
+    let expired = find_event_data(&env, crate::event_topics::SHIPMENT_EXPIRED);
+    assert!(expired.is_some(), "shipment_expired must be emitted");
+
+    let cancelled = find_event_data(&env, crate::event_topics::SHIPMENT_CANCELLED);
+    assert!(
+        cancelled.is_some(),
+        "shipment_cancelled must be emitted on check_deadline auto-expiry"
+    );
+
+    let payload = cancelled.unwrap();
+    let event_shipment_id: u64 = payload.get(0).unwrap().try_into_val(&env).unwrap();
+    assert_eq!(event_shipment_id, id);
+}
