@@ -314,6 +314,16 @@ fn test_batch_all_present_matches_individual_reads_field_by_field() {
     }
 }
 
+// ── Issue #701: Batch participant validation ───────────────────────────────
+
+/// Issue #701 — create_shipments_batch must reject when sender == receiver
+#[test]
+fn issue_701_batch_rejects_sender_equals_receiver() {
+    use crate::ShipmentInput;
+    use soroban_sdk::Symbol;
+
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
 // ── Receiver-side shipment lookup (issue #644) ────────────────────────────────
 
 #[test]
@@ -327,6 +337,36 @@ fn test_get_shipments_by_receiver_with_pagination() {
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
 
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[1; 32]);
+
+    let mut shipments = Vec::new(&env);
+    shipments.push_back(ShipmentInput {
+        receiver: company.clone(), // sender == receiver (invalid)
+        carrier: carrier.clone(),
+        data_hash: data_hash.clone(),
+        payment_milestones: Vec::new(&env),
+        deadline,
+    });
+
+    let result = client.try_create_shipments_batch(&company, &shipments);
+    assert!(result.is_err(), "batch creation must fail when sender == receiver");
+    assert_eq!(
+        result.err(),
+        Some(Ok(NavinError::InvalidShipmentParticipants)),
+        "expected InvalidShipmentParticipants error"
+    );
+}
+
+/// Issue #701 — create_shipments_batch must reject when sender == carrier
+#[test]
+fn issue_701_batch_rejects_sender_equals_carrier() {
+    use crate::ShipmentInput;
+    use soroban_sdk::Symbol;
+
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
     let r1 = create_shipment_for(&client, &env, &company, &receiver_a, &carrier, 41);
     let _rb = create_shipment_for(&client, &env, &company, &receiver_b, &carrier, 42);
     let r2 = create_shipment_for(&client, &env, &company, &receiver_a, &carrier, 43);
@@ -385,6 +425,36 @@ fn test_search_shipments_by_carrier_cursor_pagination() {
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
 
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[2; 32]);
+
+    let mut shipments = Vec::new(&env);
+    shipments.push_back(ShipmentInput {
+        receiver: receiver.clone(),
+        carrier: company.clone(), // sender == carrier (invalid)
+        data_hash: data_hash.clone(),
+        payment_milestones: Vec::new(&env),
+        deadline,
+    });
+
+    let result = client.try_create_shipments_batch(&company, &shipments);
+    assert!(result.is_err(), "batch creation must fail when sender == carrier");
+    assert_eq!(
+        result.err(),
+        Some(Ok(NavinError::InvalidShipmentParticipants)),
+        "expected InvalidShipmentParticipants error"
+    );
+}
+
+/// Issue #701 — create_shipments_batch must reject when receiver == carrier
+#[test]
+fn issue_701_batch_rejects_receiver_equals_carrier() {
+    use crate::ShipmentInput;
+    use soroban_sdk::Symbol;
+
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
     let c1 = create_shipment_for(&client, &env, &company, &receiver, &carrier_a, 61);
     let _cb = create_shipment_for(&client, &env, &company, &receiver, &carrier_b, 62);
     let c2 = create_shipment_for(&client, &env, &company, &receiver, &carrier_a, 63);
@@ -443,6 +513,33 @@ fn test_get_shipments_by_carrier_page_pagination() {
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[3; 32]);
+
+    let mut shipments = Vec::new(&env);
+    shipments.push_back(ShipmentInput {
+        receiver: receiver.clone(),
+        carrier: receiver.clone(), // receiver == carrier (invalid)
+        data_hash: data_hash.clone(),
+        payment_milestones: Vec::new(&env),
+        deadline,
+    });
+
+    let result = client.try_create_shipments_batch(&company, &shipments);
+    assert!(result.is_err(), "batch creation must fail when receiver == carrier");
+    assert_eq!(
+        result.err(),
+        Some(Ok(NavinError::InvalidShipmentParticipants)),
+        "expected InvalidShipmentParticipants error"
+    );
+}
+
+/// Issue #701 — create_shipments_batch should succeed with distinct participants
+#[test]
+fn issue_701_batch_succeeds_with_distinct_participants() {
+    use crate::ShipmentInput;
+    use soroban_sdk::Symbol;
 
     let a1 = create_shipment_for(&client, &env, &company, &receiver, &carrier_a, 81);
     let a2 = create_shipment_for(&client, &env, &company, &receiver, &carrier_a, 82);
@@ -556,6 +653,30 @@ fn test_search_shipments_by_status_cursor_multi_match_page() {
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
 
+    let deadline = env.ledger().timestamp() + 3600;
+    let data_hash = BytesN::from_array(&env, &[4; 32]);
+
+    let mut shipments = Vec::new(&env);
+    shipments.push_back(ShipmentInput {
+        receiver: receiver.clone(),
+        carrier: carrier.clone(),
+        data_hash: data_hash.clone(),
+        payment_milestones: Vec::new(&env),
+        deadline,
+    });
+
+    let result = client.try_create_shipments_batch(&company, &shipments);
+    assert!(result.is_ok(), "batch creation must succeed with all distinct participants");
+    let ids = result.unwrap();
+    assert_eq!(ids.len(), 1, "batch must return one shipment ID");
+}
+
+/// Issue #701 — atomicity: batch with one invalid participant rejects entire batch
+#[test]
+fn issue_701_batch_atomicity_one_invalid_rejects_all() {
+    use crate::ShipmentInput;
+    use soroban_sdk::Symbol;
+
     let s1 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 111);
     let s2 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 112);
     let s3 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 113);
@@ -618,6 +739,39 @@ fn test_search_shipments_by_status_zero_match() {
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
 
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let mut shipments = Vec::new(&env);
+    
+    // First shipment: valid
+    shipments.push_back(ShipmentInput {
+        receiver: receiver.clone(),
+        carrier: carrier.clone(),
+        data_hash: BytesN::from_array(&env, &[5; 32]),
+        payment_milestones: Vec::new(&env),
+        deadline,
+    });
+    
+    // Second shipment: invalid (sender == receiver)
+    shipments.push_back(ShipmentInput {
+        receiver: company.clone(), // sender == receiver (invalid)
+        carrier: carrier.clone(),
+        data_hash: BytesN::from_array(&env, &[6; 32]),
+        payment_milestones: Vec::new(&env),
+        deadline,
+    });
+
+    let result = client.try_create_shipments_batch(&company, &shipments);
+    assert!(result.is_err(), "batch must be fully rejected when any shipment is invalid");
+    assert_eq!(
+        result.err(),
+        Some(Ok(NavinError::InvalidShipmentParticipants)),
+        "expected InvalidShipmentParticipants error"
+    );
+
+    // Verify no shipments were created
+    let count = client.get_active_shipment_count(&company);
+    assert_eq!(count, 0, "no shipments should be created when batch is rejected");
     let _s1 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 131);
     let _s2 = create_shipment_for(&client, &env, &company, &receiver, &carrier, 132);
 
