@@ -1429,6 +1429,11 @@ impl NavinShipment {
         company.require_auth();
         require_role(&env, &company, Role::Company)?;
 
+        // Check if carrier is actually whitelisted before removing (symmetry with add_carrier_to_whitelist)
+        if !storage::is_carrier_whitelisted(&env, &company, &carrier) {
+            return Err(NavinError::CarrierNotWhitelisted);
+        }
+
         storage::remove_carrier_from_whitelist(&env, &company, &carrier);
 
         env.events().publish(
@@ -1947,6 +1952,12 @@ impl NavinShipment {
         require_not_paused(&env)?;
         sender.require_auth();
         require_role(&env, &sender, Role::Company)?;
+        
+        // Validate participant distinctness: sender, receiver, and carrier must all be different
+        if sender == receiver || sender == carrier || receiver == carrier {
+            return Err(NavinError::InvalidShipmentParticipants);
+        }
+        
         validate_milestones(&env, &payment_milestones)?;
         validate_hash(&data_hash)?;
 
@@ -2099,8 +2110,12 @@ impl NavinShipment {
         }
 
         for shipment_input in shipments.iter() {
-            if shipment_input.receiver == shipment_input.carrier {
-                return Err(NavinError::InvalidShipmentInput);
+            // Validate participant distinctness: sender, receiver, and carrier must all be different
+            if shipment_input.receiver == shipment_input.carrier
+                || sender == shipment_input.receiver
+                || sender == shipment_input.carrier
+            {
+                return Err(NavinError::InvalidShipmentParticipants);
             }
             validate_milestones(&env, &shipment_input.payment_milestones)?;
             validate_hash(&shipment_input.data_hash)?;

@@ -452,6 +452,12 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "Carrier is already on the company's whitelist; duplicate addition is not allowed.",
         ),
+        NavinError::CarrierNotWhitelisted => (
+            69,
+            InvalidState,
+            NoRetry,
+            "Carrier is not on the company's whitelist; cannot remove a non-whitelisted carrier.",
+        ),
     };
 
     ContractErrorInfo {

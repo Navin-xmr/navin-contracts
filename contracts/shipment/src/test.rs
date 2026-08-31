@@ -369,6 +369,108 @@ fn test_create_shipment_unauthorized() {
     );
 }
 
+// ============= Issue #701: Participant Validation Tests =============
+
+/// Issue #701 — create_shipment must reject when sender == receiver
+#[test]
+#[should_panic(expected = "Error(Contract, #57)")]
+fn test_create_shipment_rejects_sender_equals_receiver() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[101u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    client.create_shipment(
+        &company,
+        &company, // sender == receiver (invalid)
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+}
+
+/// Issue #701 — create_shipment must reject when sender == carrier
+#[test]
+#[should_panic(expected = "Error(Contract, #57)")]
+fn test_create_shipment_rejects_sender_equals_carrier() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[102u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &company, // sender == carrier (invalid)
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+}
+
+/// Issue #701 — create_shipment must reject when receiver == carrier
+#[test]
+#[should_panic(expected = "Error(Contract, #57)")]
+fn test_create_shipment_rejects_receiver_equals_carrier() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[103u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &receiver, // receiver == carrier (invalid)
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+}
+
+/// Issue #701 — create_shipment should succeed with distinct participants
+#[test]
+fn test_create_shipment_succeeds_with_distinct_participants() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[104u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert_eq!(shipment_id, 1);
+    
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.sender, company);
+    assert_eq!(shipment.receiver, receiver);
+    assert_eq!(shipment.carrier, carrier);
+}
+
+// ============= End Participant Validation Tests =============
+
 #[test]
 fn test_multiple_shipments_have_unique_ids() {
     let (env, client, admin, token_contract) = setup_shipment_env();

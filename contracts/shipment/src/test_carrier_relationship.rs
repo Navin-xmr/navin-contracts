@@ -396,3 +396,68 @@ mod tests {
         );
     }
 }
+
+/// Issue #699 — remove_carrier_from_whitelist must reject attempts
+/// to remove a carrier that is not currently whitelisted, preventing
+/// spurious removal events that would confuse off-chain monitoring.
+#[test]
+fn issue_699_remove_non_whitelisted_carrier_rejected() {
+    let (env, client, admin) = setup();
+    let (company, carrier) = add_company_and_carrier(&env, &client, &admin);
+
+    // Carrier is not whitelisted yet
+    assert!(!client.is_carrier_whitelisted(&company, &carrier));
+
+    // Attempt to remove should fail with CarrierNotWhitelisted
+    let result = client.try_remove_carrier_from_whitelist(&company, &carrier);
+    assert!(result.is_err(), "removing non-whitelisted carrier should fail");
+    assert_eq!(
+        result.err(),
+        Some(Ok(NavinError::CarrierNotWhitelisted)),
+        "expected CarrierNotWhitelisted error"
+    );
+
+    // State should be unchanged
+    assert!(!client.is_carrier_whitelisted(&company, &carrier));
+}
+
+/// Issue #699 — removing a carrier that was previously whitelisted
+/// but already removed should also be rejected.
+#[test]
+fn issue_699_double_remove_rejected() {
+    let (env, client, admin) = setup();
+    let (company, carrier) = add_company_and_carrier(&env, &client, &admin);
+
+    // First add, then remove successfully
+    client.add_carrier_to_whitelist(&company, &carrier);
+    assert!(client.is_carrier_whitelisted(&company, &carrier));
+    
+    client.remove_carrier_from_whitelist(&company, &carrier);
+    assert!(!client.is_carrier_whitelisted(&company, &carrier));
+
+    // Second removal attempt should fail
+    let result = client.try_remove_carrier_from_whitelist(&company, &carrier);
+    assert!(result.is_err(), "second removal should fail");
+    assert_eq!(
+        result.err(),
+        Some(Ok(NavinError::CarrierNotWhitelisted)),
+        "expected CarrierNotWhitelisted error on duplicate removal"
+    );
+}
+
+/// Issue #699 — normal removal of a whitelisted carrier should
+/// still work correctly (ensuring the guard doesn't break valid usage).
+#[test]
+fn issue_699_valid_removal_succeeds() {
+    let (env, client, admin) = setup();
+    let (company, carrier) = add_company_and_carrier(&env, &client, &admin);
+
+    // Add carrier to whitelist
+    client.add_carrier_to_whitelist(&company, &carrier);
+    assert!(client.is_carrier_whitelisted(&company, &carrier));
+
+    // Remove should succeed
+    let result = client.try_remove_carrier_from_whitelist(&company, &carrier);
+    assert!(result.is_ok(), "valid removal should succeed");
+    assert!(!client.is_carrier_whitelisted(&company, &carrier));
+}

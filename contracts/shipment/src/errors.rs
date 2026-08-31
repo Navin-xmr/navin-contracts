@@ -155,4 +155,9 @@ pub enum NavinError {
     /// off-chain monitors can distinguish a no-op from a real failure
     /// without falling back on the generic `AlreadyInitialized` code.
     CarrierAlreadyWhitelisted = 68,
+    /// Issue #699 — caller attempted to remove a carrier from a company's
+    /// whitelist that was never whitelisted. This mirrors the symmetric
+    /// check in add_carrier_to_whitelist, ensuring removal events are
+    /// only emitted for actual removals, not spurious no-ops.
+    CarrierNotWhitelisted = 69,
 }
