@@ -13383,6 +13383,8 @@ fn test_create_shipment_valid_milestones_accepted() {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Issue #596 — InvalidMigrationEdge (code 47)
+// Issue #758 — rollback and skip-version migrations are intentionally
+// unsupported. There is no runtime-configurable allowed-edges list.
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -13435,8 +13437,19 @@ fn test_upgrade_skip_version_rejected_detailed() {
     let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
     client.initialize(&admin, &token_contract);
 
-    // Skip from 1 to 3 — should fail with InvalidMigrationEdge
+    // Skip from 1 to 3 — intentionally unsupported (no allowed-edges list)
     let result = client.try_upgrade(&admin, &new_wasm_hash, &3);
+    assert_eq!(result, Err(Ok(NavinError::InvalidMigrationEdge)));
+}
+
+#[test]
+fn test_upgrade_same_version_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
+    client.initialize(&admin, &token_contract);
+
+    // Staying at the current version is not a sequential forward upgrade.
+    let result = client.try_upgrade(&admin, &new_wasm_hash, &1);
     assert_eq!(result, Err(Ok(NavinError::InvalidMigrationEdge)));
 }
 
@@ -13455,8 +13468,17 @@ fn test_dry_run_migration_downgrade_rejected_detailed() {
     let (_env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
-    // Rollback from 1 to 0 — should fail
+    // Rollback from 1 to 0 — intentionally unsupported
     let result = client.try_dry_run_migration(&0);
+    assert_eq!(result, Err(Ok(NavinError::InvalidMigrationEdge)));
+}
+
+#[test]
+fn test_dry_run_migration_same_version_rejected() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let result = client.try_dry_run_migration(&1);
     assert_eq!(result, Err(Ok(NavinError::InvalidMigrationEdge)));
 }
 
