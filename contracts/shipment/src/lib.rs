@@ -2049,6 +2049,33 @@ impl NavinShipment {
         Ok(audit::query_audit_history(&env, start_time, end_time))
     }
 
+    /// Prune audit-trail entries older than `before_timestamp`. Admin only.
+    ///
+    /// The audit log is append-only and otherwise unbounded, so this is the
+    /// only way to reclaim storage from stale `AuditEntry` records on a live
+    /// contract.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Contract admin executing the cleanup.
+    /// * `before_timestamp` - Entries with a timestamp strictly less than this
+    ///   are removed.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - Number of entries removed.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If called by a non-admin.
+    pub fn cleanup_audit_logs(
+        env: Env,
+        admin: Address,
+        before_timestamp: u64,
+    ) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        audit::cleanup_audit_logs(&env, &admin, before_timestamp)
+    }
+
     /// Revoke a previously assigned role from an address.
     ///
     /// Only the admin can revoke roles. The admin cannot revoke their own role;
@@ -2739,7 +2766,8 @@ impl NavinShipment {
     /// # let carrier = Address::generate(&env);
     /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline);
     /// // Deposit 5_000_000 stroops (0.5 tokens) into escrow for the shipment.
-    /// // The company must have pre-approved the token transfer allowance.
+    /// // The company must authorize the direct token transfer with its own
+    /// // `require_auth()` call; this path does not consume a pre-approved allowance.
     /// client.deposit_escrow(&admin, &shipment_id, &5_000_000_i128);
     /// ```
     pub fn deposit_escrow(
@@ -4102,6 +4130,14 @@ impl NavinShipment {
                 return Err(NavinError::MilestoneAlreadyPaid);
             }
 
+            // Enforce sequential ordering: every earlier payment milestone must
+            // already be completed before this one can trigger a payout. This is
+            // the same guard release_milestone_payment applies, so a carrier
+            // cannot skip ahead through the record-milestone path either.
+            if idx > 0 && (mut_shipment.milestones_completed.len() as usize) < idx {
+                return Err(NavinError::InvalidStatus);
+            }
+
             let milestone = mut_shipment.payment_milestones.get(idx as u32).unwrap();
 
             mut_shipment
@@ -4275,6 +4311,15 @@ impl NavinShipment {
                 }
 
                 if !already_paid {
+                    // Enforce sequential ordering, matching release_milestone_payment
+                    // and record_milestone: payment milestone `idx` can only pay out
+                    // once all `idx` earlier payment milestones are completed. Within
+                    // a batch, earlier milestones processed in this same call count,
+                    // since each completed one is pushed to milestones_completed below.
+                    if idx > 0 && (mut_shipment.milestones_completed.len() as usize) < idx {
+                        return Err(NavinError::InvalidStatus);
+                    }
+
                     let payment_milestone =
                         mut_shipment.payment_milestones.get(idx as u32).unwrap();
 
@@ -6192,7 +6237,6 @@ impl NavinShipment {
         };
 
         storage::set_fee_config(&env, &config);
-        storage::set_treasury(&env, &treasury);
 
         events::emit_fee_config_updated(&env, &admin, fee_bps, &treasury);
 
