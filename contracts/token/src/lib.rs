@@ -42,6 +42,10 @@ impl NavinToken {
             return Err(TokenError::AlreadyInitialized);
         }
 
+        if name.is_empty() || symbol.is_empty() {
+            return Err(TokenError::InvalidAmount);
+        }
+
         if total_supply <= 0 {
             return Err(TokenError::InvalidAmount);
         }
@@ -103,7 +107,10 @@ impl NavinToken {
         Ok(storage::get_balance(&env, &address))
     }
 
-    /// Transfer tokens from caller to recipient
+    /// Transfer tokens from caller to recipient.
+    ///
+    /// Self-transfers (`from == to`) are permitted and treated as a harmless
+    /// no-op to match the standard SEP-41/Soroban token interface semantics.
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128) -> Result<(), TokenError> {
         if !storage::is_initialized(&env) {
             return Err(TokenError::NotInitialized);
@@ -114,10 +121,6 @@ impl NavinToken {
 
         if amount <= 0 {
             return Err(TokenError::InvalidAmount);
-        }
-
-        if from == to {
-            return Err(TokenError::SameAccount);
         }
 
         let from_balance = storage::get_balance(&env, &from);
@@ -143,7 +146,10 @@ impl NavinToken {
         Ok(())
     }
 
-    /// Transfer tokens from one address to another with approval
+    /// Transfer tokens from one address to another with approval.
+    ///
+    /// Self-transfers (`from == to`) are permitted and treated as a harmless
+    /// no-op to match the standard SEP-41/Soroban token interface semantics.
     pub fn transfer_from(
         env: Env,
         spender: Address,
@@ -160,10 +166,6 @@ impl NavinToken {
 
         if amount <= 0 {
             return Err(TokenError::InvalidAmount);
-        }
-
-        if from == to {
-            return Err(TokenError::SameAccount);
         }
 
         let allowance = storage::get_allowance(&env, &from, &spender);
@@ -198,6 +200,9 @@ impl NavinToken {
     /// expiration_ledger)` shape. Pass `MAX_EXPIRATION_LEDGER` for an
     /// allowance that effectively never expires. `amount == 0` clears the
     /// allowance regardless of `expiration_ledger`.
+    ///
+    /// Self-approval (`from == spender`) is permitted and treated as a
+    /// harmless no-op, matching the standard SEP-41/Soroban token interface.
     pub fn approve(
         env: Env,
         from: Address,
@@ -214,10 +219,6 @@ impl NavinToken {
 
         if amount < 0 {
             return Err(TokenError::InvalidAmount);
-        }
-
-        if from == spender {
-            return Err(TokenError::SameAccount);
         }
 
         if amount > 0 && expiration_ledger < env.ledger().sequence() {
@@ -249,6 +250,8 @@ impl NavinToken {
 
     /// Increase the allowance for a spender by a delta.
     /// This avoids the classic ERC-20 race condition present in `approve`.
+    /// Self-approval (`owner == spender`) is allowed as a no-op to match the
+    /// standard SEP-41/Soroban token interface semantics.
     pub fn increase_allowance(
         env: Env,
         owner: Address,
@@ -263,10 +266,6 @@ impl NavinToken {
 
         if delta <= 0 {
             return Err(TokenError::InvalidAmount);
-        }
-
-        if owner == spender {
-            return Err(TokenError::SameAccount);
         }
 
         let current = storage::get_allowance(&env, &owner, &spender);
@@ -289,6 +288,8 @@ impl NavinToken {
 
     /// Decrease the allowance for a spender by a delta.
     /// Returns `InsufficientAllowance` if the delta exceeds the current allowance.
+    /// Self-approval (`owner == spender`) is allowed as a no-op to match the
+    /// standard SEP-41/Soroban token interface semantics.
     pub fn decrease_allowance(
         env: Env,
         owner: Address,
@@ -303,10 +304,6 @@ impl NavinToken {
 
         if delta <= 0 {
             return Err(TokenError::InvalidAmount);
-        }
-
-        if owner == spender {
-            return Err(TokenError::SameAccount);
         }
 
         let current = storage::get_allowance(&env, &owner, &spender);
@@ -330,8 +327,8 @@ impl NavinToken {
         Ok(())
     }
 
-    /// Transfer admin rights to a new address.
-    /// Only the current admin can call this.
+    /// Propose a new admin address. The new admin must accept the transfer
+    /// before the contract's admin is updated.
     pub fn transfer_admin(
         env: Env,
         current_admin: Address,
@@ -347,10 +344,38 @@ impl NavinToken {
             return Err(TokenError::Unauthorized);
         }
 
-        storage::set_admin(&env, &new_admin);
+        if new_admin == current_admin {
+            return Err(TokenError::SameAccount);
+        }
+
+        storage::set_pending_admin(&env, &new_admin);
 
         env.events()
-            .publish((symbol_short!("admin_tr"),), (current_admin, new_admin));
+            .publish((symbol_short!("admin_prop"),), (current_admin, new_admin));
+
+        Ok(())
+    }
+
+    /// Accept a previously proposed admin transfer. The accepting address must
+    /// be the one previously nominated by the current admin.
+    pub fn accept_admin_transfer(env: Env, new_admin: Address) -> Result<(), TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+
+        new_admin.require_auth();
+
+        let pending_admin = storage::get_pending_admin(&env).ok_or(TokenError::Unauthorized)?;
+        if pending_admin != new_admin {
+            return Err(TokenError::Unauthorized);
+        }
+
+        let old_admin = storage::get_admin(&env);
+        storage::set_admin(&env, &new_admin);
+        storage::clear_pending_admin(&env);
+
+        env.events()
+            .publish((symbol_short!("admin_tr"),), (old_admin, new_admin));
 
         Ok(())
     }
@@ -458,8 +483,10 @@ impl NavinToken {
         }
 
         let current_supply = storage::get_total_supply(&env);
-        storage::set_total_supply(&env, current_supply - amount);
-        storage::set_balance(&env, &from, from_balance - amount);
+        let new_supply = current_supply.checked_sub(amount).ok_or(TokenError::Overflow)?;
+        let new_from_balance = from_balance.checked_sub(amount).ok_or(TokenError::Overflow)?;
+        storage::set_total_supply(&env, new_supply);
+        storage::set_balance(&env, &from, new_from_balance);
 
         env.events()
             .publish((symbol_short!("burn"),), (from, amount));
@@ -501,9 +528,12 @@ impl NavinToken {
             .map(|v| v.expiration_ledger)
             .unwrap_or(0);
         let current_supply = storage::get_total_supply(&env);
-        storage::set_total_supply(&env, current_supply - amount);
-        storage::set_balance(&env, &from, from_balance - amount);
-        storage::set_allowance(&env, &from, &spender, allowance - amount, expiration_ledger);
+        let new_supply = current_supply.checked_sub(amount).ok_or(TokenError::Overflow)?;
+        let new_from_balance = from_balance.checked_sub(amount).ok_or(TokenError::Overflow)?;
+        let new_allowance = allowance.checked_sub(amount).ok_or(TokenError::Overflow)?;
+        storage::set_total_supply(&env, new_supply);
+        storage::set_balance(&env, &from, new_from_balance);
+        storage::set_allowance(&env, &from, &spender, new_allowance, expiration_ledger);
 
         env.events()
             .publish((symbol_short!("burn_from"),), (from, spender, amount));
@@ -561,12 +591,14 @@ impl NavinToken {
 
     /// Transfer to multiple recipients in a single call (issue #656). The
     /// whole batch is validated up front — if any leg would fail (a
-    /// non-positive amount, a self-transfer, or insufficient total
-    /// balance), the entire call returns Err and Soroban reverts every
-    /// storage change made during this invocation, so no partial transfer
-    /// can ever be observed. An empty `recipients` list is rejected as
-    /// InvalidAmount, mirroring how a non-positive amount is rejected
-    /// everywhere else in this contract.
+    /// non-positive amount or insufficient total balance), the entire call
+    /// returns Err and Soroban reverts every storage change made during this
+    /// invocation, so no partial transfer can ever be observed. An empty
+    /// `recipients` list is rejected as InvalidAmount, mirroring how a
+    /// non-positive amount is rejected everywhere else in this contract.
+    ///
+    /// Self-transfers within the batch are permitted and treated as harmless
+    /// no-ops, matching the standard SEP-41/Soroban token interface.
     pub fn batch_transfer(
         env: Env,
         from: Address,
@@ -589,9 +621,10 @@ impl NavinToken {
                 return Err(TokenError::InvalidAmount);
             }
             if to == from {
-                return Err(TokenError::SameAccount);
+                // Self-transfer is a no-op in the standard token interface.
+                continue;
             }
-            total = total.checked_add(amount).ok_or(TokenError::InvalidAmount)?;
+            total = total.checked_add(amount).ok_or(TokenError::Overflow)?;
         }
 
         let from_balance = storage::get_balance(&env, &from);
@@ -599,13 +632,40 @@ impl NavinToken {
             return Err(TokenError::InsufficientBalance);
         }
 
-        storage::set_balance(&env, &from, from_balance - total);
+        let mut touched = Vec::new(&env);
+        touched.push_back(from.clone());
+
+        storage::set_balance(
+            &env,
+            &from,
+            from_balance.checked_sub(total).ok_or(TokenError::Overflow)?,
+        );
         for (to, amount) in recipients.iter() {
-            storage::set_balance(&env, &to, storage::get_balance(&env, &to) + amount);
+            let recipient_balance = storage::get_balance(&env, &to);
+            let new_recipient_balance = recipient_balance
+                .checked_add(amount)
+                .ok_or(TokenError::Overflow)?;
+            storage::set_balance(&env, &to, new_recipient_balance);
+            touched.push_back(to.clone());
         }
 
-        env.events()
-            .publish((symbol_short!("batch_tr"),), (from, recipients.len()));
+        for address in touched.iter() {
+            storage::extend_balance_ttl(&env, &address, 1000, 500000);
+        }
+
+        // Emit per-leg detail so off-chain observers can reconstruct exactly who
+        // received how much from a batch transfer using events alone: one
+        // `batch_leg` event (from, to, amount) per recipient — mirroring the
+        // shape of `transfer`'s event — followed by a `batch_tr` summary
+        // carrying the full recipient/amount list and the leg count.
+        for (to, amount) in recipients.iter() {
+            env.events()
+                .publish((symbol_short!("batch_leg"),), (from.clone(), to, amount));
+        }
+        env.events().publish(
+            (symbol_short!("batch_tr"),),
+            (from, recipients.clone(), recipients.len()),
+        );
 
         Ok(())
     }

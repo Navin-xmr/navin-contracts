@@ -172,21 +172,6 @@ pub fn set_shipment_counter(env: &Env, counter: u64) {
 /// # Arguments
 /// * `env` - The execution environment.
 ///
-/// # Returns
-/// * `u64` - The incremented shipment count.
-///
-/// # Examples
-/// ```rust
-/// // let next_id = storage::increment_shipment_counter(&env);
-/// ```
-#[allow(dead_code)]
-pub fn increment_shipment_counter(env: &Env) -> u64 {
-    let cur = get_shipment_counter(env);
-    let next = cur.checked_add(1).unwrap_or(cur);
-    set_shipment_counter(env, next);
-    next
-}
-
 /// Alternate name requested: returns the shipment count (wrapper).
 ///
 /// # Arguments
@@ -202,23 +187,6 @@ pub fn increment_shipment_counter(env: &Env) -> u64 {
 #[allow(dead_code)]
 pub fn get_shipment_count(env: &Env) -> u64 {
     get_shipment_counter(env)
-}
-
-/// Alternate name requested: increment shipment count and return new value.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-///
-/// # Returns
-/// * `u64` - The incremented shipment count.
-///
-/// # Examples
-/// ```rust
-/// // let next_id = storage::increment_shipment_count(&env);
-/// ```
-#[allow(dead_code)]
-pub fn increment_shipment_count(env: &Env) -> u64 {
-    increment_shipment_counter(env)
 }
 
 /// Add a carrier to a company's whitelist in instance storage.
@@ -500,7 +468,7 @@ pub fn is_company_suspended(env: &Env, company: &Address) -> bool {
         .unwrap_or(false)
 }
 
-/// Get shipment by ID
+/// Canonical single source of truth helper to retrieve a shipment by ID from persistent or temporary storage.
 pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
     // First check persistent storage
     if let Some(shipment) = env
@@ -517,7 +485,7 @@ pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
         .get(&DataKey::ArchivedShipment(shipment_id))
 }
 
-/// Check whether shipment payload exists in persistent storage.
+/// Canonical single source of truth helper to check whether shipment payload exists in persistent storage.
 pub fn has_persistent_shipment(env: &Env, shipment_id: u64) -> bool {
     env.storage()
         .persistent()
@@ -1327,17 +1295,6 @@ pub fn set_fee_config(env: &Env, config: &FeeConfig) {
     env.storage().instance().set(&DataKey::FeeConfig, config);
 }
 
-/// Get the platform treasury address from instance storage.
-#[allow(dead_code)]
-pub fn get_treasury(env: &Env) -> Option<Address> {
-    env.storage().instance().get(&DataKey::Treasury)
-}
-
-/// Set the platform treasury address in instance storage.
-pub fn set_treasury(env: &Env, treasury: &Address) {
-    env.storage().instance().set(&DataKey::Treasury, treasury);
-}
-
 /// Get the current active shipment count for a company from instance storage.
 ///
 /// # Arguments
@@ -1358,23 +1315,6 @@ pub fn get_active_shipment_count(env: &Env, company: &Address) -> u32 {
         .unwrap_or(0)
 }
 
-/// Set the active shipment count for a company in instance storage.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `company` - The company address.
-/// * `count` - The new active shipment count.
-///
-/// # Examples
-/// ```rust
-/// // storage::set_active_shipment_count(&env, &company_addr, 5);
-/// ```
-pub fn set_active_shipment_count(env: &Env, company: &Address, count: u32) {
-    env.storage()
-        .instance()
-        .set(&DataKey::ActiveShipmentCount(company.clone()), &count);
-}
-
 /// Increment the active shipment count for a company in instance storage.
 ///
 /// Uses saturating addition to prevent overflow.
@@ -1389,7 +1329,9 @@ pub fn set_active_shipment_count(env: &Env, company: &Address, count: u32) {
 /// ```
 pub fn increment_active_shipment_count(env: &Env, company: &Address) {
     let current = get_active_shipment_count(env, company);
-    set_active_shipment_count(env, company, current.saturating_add(1));
+    env.storage()
+        .instance()
+        .set(&DataKey::ActiveShipmentCount(company.clone()), &current.saturating_add(1));
 }
 
 /// Decrement the active shipment count for a company in instance storage.
@@ -1406,7 +1348,9 @@ pub fn increment_active_shipment_count(env: &Env, company: &Address) {
 /// ```
 pub fn decrement_active_shipment_count(env: &Env, company: &Address) {
     let current = get_active_shipment_count(env, company);
-    set_active_shipment_count(env, company, current.saturating_sub(1));
+    env.storage()
+        .instance()
+        .set(&DataKey::ActiveShipmentCount(company.clone()), &current.saturating_sub(1));
 }
 
 // ============= Milestone Event Counter Storage Functions =============
@@ -1593,25 +1537,7 @@ pub fn archive_shipment(env: &Env, shipment_id: u64, shipment: &Shipment) {
     purge_status_hashes(env, shipment_id);
 }
 
-/// Get an archived shipment from temporary storage.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `shipment_id` - The ID of the archived shipment.
-///
-/// # Returns
-/// * `Option<Shipment>` - The archived shipment if it exists.
-///
-/// # Examples
-/// ```rust
-/// // let shipment = storage::get_archived_shipment(&env, 1);
-/// ```
-#[allow(dead_code)]
-pub fn get_archived_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
-    env.storage()
-        .temporary()
-        .get(&DataKey::ArchivedShipment(shipment_id))
-}
+
 
 /// Check if a shipment is archived.
 ///
@@ -1885,24 +1811,7 @@ pub fn get_status_hash(env: &Env, shipment_id: u64, status: &ShipmentStatus) -> 
 ///
 /// This is used for TTL health monitoring to determine which shipments
 /// are still active in persistent storage vs archived.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `shipment_id` - The ID of the shipment.
-///
-/// # Returns
-/// * `bool` - True if the shipment exists in persistent storage.
-///
-/// # Examples
-/// ```rust
-/// // let exists = storage::shipment_exists_in_persistent(&env, 1);
-/// ```
-#[allow(dead_code)]
-pub fn shipment_exists_in_persistent(env: &Env, shipment_id: u64) -> bool {
-    env.storage()
-        .persistent()
-        .has(&DataKey::Shipment(shipment_id))
-}
+
 
 // ============= Settlement Tracking Functions =============
 

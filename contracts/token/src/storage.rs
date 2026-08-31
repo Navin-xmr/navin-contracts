@@ -4,6 +4,7 @@ use soroban_sdk::{contracttype, Address, Env, String, Symbol, Vec};
 #[contracttype]
 pub enum DataKey {
     Admin,
+    PendingAdmin,
     Name,
     Symbol,
     TotalSupply,
@@ -35,6 +36,21 @@ pub fn is_initialized(env: &Env) -> bool {
 /// Get the admin address
 pub fn get_admin(env: &Env) -> Address {
     env.storage().instance().get(&DataKey::Admin).unwrap()
+}
+
+/// Get the pending admin address, if one is awaiting acceptance.
+pub fn get_pending_admin(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::PendingAdmin)
+}
+
+/// Set the pending admin address.
+pub fn set_pending_admin(env: &Env, admin: &Address) {
+    env.storage().instance().set(&DataKey::PendingAdmin, admin);
+}
+
+/// Clear any pending admin transfer.
+pub fn clear_pending_admin(env: &Env) {
+    env.storage().instance().remove(&DataKey::PendingAdmin);
 }
 
 /// Set the admin address
@@ -187,21 +203,24 @@ pub fn set_paused(env: &Env, paused: bool) {
 /// Check if a metadata key is in the allowed list
 pub fn is_metadata_key_allowed(env: &Env, key: &Symbol) -> bool {
     env.storage()
-        .instance()
+        .persistent()
         .has(&DataKey::AllowedMetadataKey(key.clone()))
 }
 
 /// Add a key to the allowed metadata keys list
 pub fn add_allowed_metadata_key(env: &Env, key: &Symbol) {
+    let metadata_key = DataKey::AllowedMetadataKey(key.clone());
+    env.storage().persistent().set(&metadata_key, &true);
     env.storage()
-        .instance()
-        .set(&DataKey::AllowedMetadataKey(key.clone()), &true);
+        .persistent()
+        .extend_ttl(&metadata_key, 1000, 500000);
 }
 
 /// Remove a key from the allowed metadata keys list
 pub fn remove_allowed_metadata_key(env: &Env, key: &Symbol) {
+    remove_metadata(env, key);
     env.storage()
-        .instance()
+        .persistent()
         .remove(&DataKey::AllowedMetadataKey(key.clone()));
 }
 
@@ -221,28 +240,33 @@ pub fn get_allowed_metadata_keys(env: &Env) -> Vec<Symbol> {
 
 /// Set a metadata key-value pair
 pub fn set_metadata(env: &Env, key: &Symbol, value: &String) {
+    let metadata_key = DataKey::Metadata(key.clone());
+    env.storage().persistent().set(&metadata_key, value);
     env.storage()
-        .instance()
-        .set(&DataKey::Metadata(key.clone()), value);
+        .persistent()
+        .extend_ttl(&metadata_key, 1000, 500000);
 }
 
 /// Get a metadata value by key
 pub fn get_metadata(env: &Env, key: &Symbol) -> Option<String> {
+    if !is_metadata_key_allowed(env, key) {
+        return None;
+    }
     env.storage()
-        .instance()
+        .persistent()
         .get(&DataKey::Metadata(key.clone()))
 }
 
 /// Remove a metadata key-value pair
 pub fn remove_metadata(env: &Env, key: &Symbol) {
     env.storage()
-        .instance()
+        .persistent()
         .remove(&DataKey::Metadata(key.clone()));
 }
 
 /// Check if a metadata key exists
 pub fn has_metadata(env: &Env, key: &Symbol) -> bool {
     env.storage()
-        .instance()
+        .persistent()
         .has(&DataKey::Metadata(key.clone()))
 }

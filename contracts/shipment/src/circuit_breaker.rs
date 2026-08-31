@@ -895,3 +895,171 @@ mod tests {
         });
     }
 }
+
+// ── End-to-end reset_circuit_breaker coverage (issue #704) ─────────────────────
+//
+// The public `reset_circuit_breaker` entry point was previously untested. Soroban
+// rolls back all storage writes when a contract call returns Err, so the breaker
+// cannot be tripped by repeatedly calling a failing transfer through the client.
+// We therefore inject the Open state directly (matching the existing
+// cross-contract integration pattern) and then exercise the admin reset path
+// through the contract client.
+
+#[cfg(test)]
+mod reset_integration_tests {
+    use crate::{
+        CircuitBreakerState, NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus,
+    };
+    use soroban_sdk::{
+        contract, contractimpl,
+        testutils::Address as _,
+        Address, BytesN, Env, Vec,
+    };
+
+    /// Token whose `transfer` always succeeds, so post-reset transfers go through.
+    #[contract]
+    struct WorkingToken;
+
+    #[contractimpl]
+    impl WorkingToken {
+        pub fn decimals(_env: Env) -> u32 {
+            7
+        }
+        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+    }
+
+    fn setup() -> (Env, NavinShipmentClient<'static>, Address) {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let token = env.register(WorkingToken {}, ());
+        let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+        client.initialize(&admin, &token);
+
+        // `reset_circuit_breaker` authorizes via `is_admin`, which consults the
+        // admin list (populated through `init_multisig` in production). Seed it
+        // so the admin is recognized as an admin for the test.
+        let mut admins = soroban_sdk::Vec::new(&env);
+        admins.push_back(admin.clone());
+        env.as_contract(&client.address, || {
+            crate::storage::set_admin_list(&env, &admins);
+        });
+
+        (env, client, admin)
+    }
+
+    /// Inject an already-tripped (Open) circuit breaker directly into storage.
+    fn inject_open_breaker(env: &Env, client: &NavinShipmentClient<'static>) {
+        env.as_contract(&client.address, || {
+            let tracker = crate::circuit_breaker::CircuitBreakerTracker {
+                state: CircuitBreakerState::Open,
+                failure_count: 5,
+                opened_at: env.ledger().timestamp(),
+                half_open_requests: 0,
+            };
+            env.storage()
+                .persistent()
+                .set(&crate::types::DataKey::CircuitBreakerState, &tracker);
+        });
+    }
+
+    #[test]
+    fn test_reset_circuit_breaker_closes_breaker() {
+        let (env, client, admin) = setup();
+        env.mock_all_auths();
+        inject_open_breaker(&env, &client);
+
+        // Sanity: breaker reports Open before the reset.
+        let (state_before, _, _) = client.get_circuit_breaker_status();
+        assert_eq!(state_before, CircuitBreakerState::Open);
+
+        client.reset_circuit_breaker(&admin);
+
+        let (state_after, failures, _) = client.get_circuit_breaker_status();
+        assert_eq!(state_after, CircuitBreakerState::Closed);
+        assert_eq!(failures, 0);
+    }
+
+    #[test]
+    fn test_reset_circuit_breaker_rejects_non_admin() {
+        let (env, client, admin) = setup();
+        env.mock_all_auths();
+        inject_open_breaker(&env, &client);
+
+        let non_admin = Address::generate(&env);
+        assert_ne!(non_admin, admin);
+
+        let result = client.try_reset_circuit_breaker(&non_admin);
+        assert!(
+            matches!(result, Err(Ok(NavinError::Unauthorized))),
+            "non-admin reset must be rejected with Unauthorized"
+        );
+
+        // Breaker must remain Open after the rejected attempt.
+        let (state, _, _) = client.get_circuit_breaker_status();
+        assert_eq!(state, CircuitBreakerState::Open);
+    }
+
+    #[test]
+    fn test_reset_circuit_breaker_allows_subsequent_transfer() {
+        let (env, client, admin) = setup();
+        env.mock_all_auths();
+
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+        client.add_carrier_to_whitelist(&company, &carrier);
+
+        inject_open_breaker(&env, &client);
+
+        // Reset the breaker; it should now permit transfers again.
+        client.reset_circuit_breaker(&admin);
+        let (state, _, _) = client.get_circuit_breaker_status();
+        assert_eq!(state, CircuitBreakerState::Closed);
+
+        // Build a shipment with escrow and drive it to Delivered.
+        let deadline = env.ledger().timestamp() + 3600;
+        let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+        let receiver = Address::generate(&env);
+        let id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &data_hash,
+            &Vec::new(&env),
+            &deadline,
+        );
+
+        env.as_contract(&client.address, || {
+            let mut s = crate::storage::get_shipment(&env, id).unwrap();
+            s.escrow_amount = 100;
+            s.total_escrow = 100;
+            crate::storage::set_shipment(&env, &s);
+            crate::storage::set_escrow(&env, id, 100);
+        });
+
+        crate::test_utils::advance_past_rate_limit(&env);
+        client.update_status(
+            &carrier,
+            &id,
+            &ShipmentStatus::InTransit,
+            &BytesN::from_array(&env, &[8u8; 32]),
+        );
+        crate::test_utils::advance_past_rate_limit(&env);
+        client.update_status(
+            &carrier,
+            &id,
+            &ShipmentStatus::Delivered,
+            &BytesN::from_array(&env, &[9u8; 32]),
+        );
+
+        // Escrow release must now succeed (breaker closed + working token).
+        client.release_escrow(&admin, &id);
+
+        let shipment = client.get_shipment(&id);
+        assert_eq!(
+            shipment.escrow_amount, 0,
+            "escrow must be released after reset"
+        );
+    }
+}

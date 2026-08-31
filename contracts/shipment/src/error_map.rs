@@ -210,6 +210,12 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "Caller is not in the admin list.",
         ),
+        NavinError::MultiSigProposalPending => (
+            72,
+            InvalidState,
+            NoRetry,
+            "Cannot re-initialise multi-sig while a proposal is still pending.",
+        ),
         NavinError::InvalidMultiSigConfig => (
             28,
             InvalidInput,
@@ -473,6 +479,18 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             LimitExceeded,
             NoRetry,
             "Maximum allowed recovery action entries for a shipment has been reached.",
+        ),
+        NavinError::RoleMismatch => (
+            72,
+            Unauthorized,
+            NoRetry,
+            "Target does not hold the role being revoked; the call named a              specific role and the address holds a different one.",
+        ),
+        NavinError::InvalidSymbolEncoding => (
+            73,
+            InvalidInput,
+            NoRetry,
+            "Symbol could not be decoded: the declared content length exceeds              the decode buffer. Use an event type of 24 characters or fewer.",
         ),
     };
 

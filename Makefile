@@ -4,13 +4,14 @@
 # raise it as coverage improves so regressions become visible.
 COVERAGE_BASELINE := 40
 
-.PHONY: help build test fmt fmt-check lint clean check all generate-schema-shipment coverage
+.PHONY: help build test fmt fmt-check lint clean check all generate-schema-shipment generate-schema-token coverage
 
 # Default target
 help:
 	@echo "Navin Smart Contracts - Available Commands"
 	@echo ""
 	@echo "  make generate-schema-shipment - Generate shipment contract ABI schema"
+	@echo "  make generate-schema-token    - Generate token contract ABI schema"
 	@echo "  make build        - Build all contracts"
 	@echo "  make test         - Run all tests"
 	@echo "  make coverage     - Measure test coverage with cargo-llvm-cov"
@@ -30,6 +31,15 @@ generate-schema-shipment: build
 		--output json-formatted \
 		> docs/contract-schema.shipment.json
 	@echo "Schema written to docs/contract-schema.shipment.json"
+
+# Generate token contract ABI schema
+generate-schema-token: build
+	@echo "Generating token contract schema..."
+	@stellar contract info interface \
+		--wasm target/wasm32-unknown-unknown/release/navin_token.wasm \
+		--output json-formatted \
+		> docs/contract-schema.token.json
+	@echo "Schema written to docs/contract-schema.token.json"
 
 # Build all contracts for wasm
 build:

@@ -161,4 +161,19 @@ pub enum NavinError {
     InvalidAddress = 70,
     /// Maximum allowed recovery action entries for a shipment has been reached.
     RecoveryLimitExceeded = 71,
+    /// Issue #749 — the target of a role-specific revocation does not hold
+    /// the role being revoked. Raised instead of silently revoking whatever
+    /// role the address happens to have, which previously let
+    /// `remove_guardian` strip an unrelated Company role.
+    RoleMismatch = 72,
+    /// Issue #750 — a `Symbol` could not be decoded from its XDR encoding
+    /// because the declared content length does not fit the buffer. Returned
+    /// instead of panicking on an out-of-range slice.
+    InvalidSymbolEncoding = 73,
+    /// `init_multisig` was called again while a proposal is still pending.
+    /// Re-initialising then would reset the proposal counter and hand a live
+    /// proposal's id to a different action. (Issue #753 re-added this variant
+    /// after a merge collision on discriminant 72 with `RoleMismatch` dropped
+    /// it from the enum.)
+    MultiSigProposalPending = 74,
 }
