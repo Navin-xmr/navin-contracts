@@ -11267,9 +11267,9 @@ fn test_release_refund_force_cancel_settlement_regression() {
     assert_eq!(crate::storage::get_status_count(&env, &ShipmentStatus::Cancelled), 2);
 }
 
-/// The dedicated force_cancelled event is emitted (not shipment_cancelled).
+/// Both force_cancelled and shipment_cancelled events are emitted on force-cancel.
 #[test]
-fn test_force_cancel_emits_dedicated_event_not_shipment_cancelled() {
+fn test_force_cancel_emits_both_events() {
     use soroban_sdk::TryFromVal;
     let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
 
@@ -11297,10 +11297,47 @@ fn test_force_cancel_emits_dedicated_event_not_shipment_cancelled() {
     });
 
     assert!(has_force_cancelled, "force_cancelled event must be emitted");
-    assert!(
-        !has_shipment_cancelled,
-        "shipment_cancelled must NOT be emitted on force-cancel"
-    );
+    assert!(has_shipment_cancelled, "shipment_cancelled event must be emitted on force-cancel for topic consistency");
+}
+
+/// Payload shape regression test for both events emitted on force-cancel.
+#[test]
+fn test_force_cancel_both_events_payload_shape() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
+
+    let reason_hash = BytesN::from_array(&env, &[0xEAu8; 32]);
+    client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
+
+    let events = env.events().all();
+
+    // Find and verify shipment_cancelled payload: (shipment_id, caller, reason_hash, schema_version, event_counter, idempotency_key) = 6 fields
+    let shipment_cancelled_payload = events.iter().find_map(|(_c, topics, data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                if topic == Symbol::new(&env, "shipment_cancelled") {
+                    return soroban_sdk::Vec::<soroban_sdk::Val>::try_from_val(&env, &data).ok();
+                }
+            }
+        }
+        None
+    }).expect("shipment_cancelled event not found");
+
+    assert_eq!(shipment_cancelled_payload.len(), 6, "shipment_cancelled payload must have exactly 6 fields");
+
+    // Find and verify force_cancelled payload: (shipment_id, admin, reason_hash, escrow_refunded) = 4 fields
+    let force_cancelled_payload = events.iter().find_map(|(_c, topics, data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                if topic == Symbol::new(&env, "force_cancelled") {
+                    return soroban_sdk::Vec::<soroban_sdk::Val>::try_from_val(&env, &data).ok();
+                }
+            }
+        }
+        None
+    }).expect("force_cancelled event not found");
+
+    assert_eq!(force_cancelled_payload.len(), 4, "force_cancelled payload must have exactly 4 fields");
 }
 
 // ============= Shipment Note Tests =============

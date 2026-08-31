@@ -4694,6 +4694,9 @@ impl NavinShipment {
             ShipmentStatus::Cancelled,
         )?;
 
+        // Emit shipment_cancelled for event-topic consistency (all Cancelled transitions).
+        events::emit_shipment_cancelled(&env, shipment_id, &admin, &reason_hash);
+
         // Emit the dedicated force-cancel event — distinct from shipment_cancelled.
         events::emit_force_cancelled(&env, shipment_id, &admin, &reason_hash, escrow_amount);
 
