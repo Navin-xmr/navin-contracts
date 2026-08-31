@@ -100,7 +100,10 @@ pub enum DataKey {
     IsPaused,
     /// Platform fee configuration.
     FeeConfig,
-    /// Designated address for platform fee collection.
+    /// Reserved. The platform treasury address lives in `FeeConfig::treasury`
+    /// (the slot fee-payout code actually reads); this standalone key is kept
+    /// only so the storage-key layout stays stable for already-deployed
+    /// contracts and must not be written or read.
     Treasury,
     /// Rate limit quota tracker per actor (company/carrier).
     ActorQuota(Address),

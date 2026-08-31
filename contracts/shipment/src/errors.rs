@@ -170,4 +170,10 @@ pub enum NavinError {
     /// because the declared content length does not fit the buffer. Returned
     /// instead of panicking on an out-of-range slice.
     InvalidSymbolEncoding = 73,
+    /// `init_multisig` was called again while a proposal is still pending.
+    /// Re-initialising then would reset the proposal counter and hand a live
+    /// proposal's id to a different action. (Issue #753 re-added this variant
+    /// after a merge collision on discriminant 72 with `RoleMismatch` dropped
+    /// it from the enum.)
+    MultiSigProposalPending = 74,
 }

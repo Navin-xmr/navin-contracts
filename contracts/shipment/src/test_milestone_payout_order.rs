@@ -323,6 +323,150 @@ fn test_unknown_milestone_rejected() {
     assert_eq!(result, Err(Ok(NavinError::InvalidShipmentInput)));
 }
 
+// ── Issue #757: ordering must be enforced on the record-milestone siblings ─────
+
+/// `record_milestone` must reject a later payment milestone whose earlier
+/// siblings have not been completed — the same guard `release_milestone_payment`
+/// applies.
+#[test]
+fn test_record_milestone_out_of_order_rejected() {
+    let (env, client, admin) = setup();
+    let (id, _company, carrier) = create_milestone_shipment(&env, &client, &admin);
+
+    let result =
+        client.try_record_milestone(&carrier, &id, &symbol_short!("beta"), &data_hash(&env, 0x11));
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::InvalidStatus)),
+        "recording beta before alpha must be rejected on the record_milestone path"
+    );
+
+    // Nothing was paid out.
+    assert_eq!(client.get_shipment(&id).milestones_completed.len(), 0);
+    assert_eq!(client.get_shipment(&id).escrow_amount, 10_000);
+}
+
+/// `record_milestone` still pays out when milestones arrive in declared order.
+#[test]
+fn test_record_milestone_in_order_succeeds() {
+    let (env, client, admin) = setup();
+    let (id, _company, carrier) = create_milestone_shipment(&env, &client, &admin);
+
+    client.record_milestone(&carrier, &id, &symbol_short!("alpha"), &data_hash(&env, 0x11));
+    client.record_milestone(&carrier, &id, &symbol_short!("beta"), &data_hash(&env, 0x22));
+    client.record_milestone(&carrier, &id, &symbol_short!("gamma"), &data_hash(&env, 0x33));
+
+    let shipment = client.get_shipment(&id);
+    assert_eq!(shipment.milestones_completed.len(), 3);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+/// After alpha is recorded, gamma is still blocked but beta is allowed —
+/// mirroring `test_release_third_blocked_after_one_paid`.
+#[test]
+fn test_record_milestone_third_blocked_after_one_recorded() {
+    let (env, client, admin) = setup();
+    let (id, _company, carrier) = create_milestone_shipment(&env, &client, &admin);
+
+    client.record_milestone(&carrier, &id, &symbol_short!("alpha"), &data_hash(&env, 0x11));
+
+    let blocked =
+        client.try_record_milestone(&carrier, &id, &symbol_short!("gamma"), &data_hash(&env, 0x33));
+    assert_eq!(blocked, Err(Ok(NavinError::InvalidStatus)));
+
+    assert!(client
+        .try_record_milestone(&carrier, &id, &symbol_short!("beta"), &data_hash(&env, 0x22))
+        .is_ok());
+}
+
+/// `record_milestones_batch` must reject an out-of-order batch atomically —
+/// no leg is committed when a later milestone precedes its siblings.
+#[test]
+fn test_record_milestones_batch_out_of_order_rejected() {
+    let (env, client, admin) = setup();
+    let (id, _company, carrier) = create_milestone_shipment(&env, &client, &admin);
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back((symbol_short!("alpha"), data_hash(&env, 0x11)));
+    milestones.push_back((symbol_short!("gamma"), data_hash(&env, 0x33)));
+
+    let result = client.try_record_milestones_batch(&carrier, &id, &milestones);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::InvalidStatus)),
+        "a batch that skips beta must be rejected"
+    );
+
+    // Atomic: alpha's leg must not have been applied either.
+    let shipment = client.get_shipment(&id);
+    assert_eq!(shipment.milestones_completed.len(), 0);
+    assert_eq!(shipment.escrow_amount, 10_000);
+}
+
+/// A single-element batch for a later milestone is rejected, same as the
+/// single-milestone entrypoint.
+#[test]
+fn test_record_milestones_batch_single_out_of_order_rejected() {
+    let (env, client, admin) = setup();
+    let (id, _company, carrier) = create_milestone_shipment(&env, &client, &admin);
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back((symbol_short!("beta"), data_hash(&env, 0x22)));
+
+    let result = client.try_record_milestones_batch(&carrier, &id, &milestones);
+    assert_eq!(result, Err(Ok(NavinError::InvalidStatus)));
+}
+
+/// An in-order batch pays every leg and fully drains the escrow.
+#[test]
+fn test_record_milestones_batch_in_order_succeeds() {
+    let (env, client, admin) = setup();
+    let (id, _company, carrier) = create_milestone_shipment(&env, &client, &admin);
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back((symbol_short!("alpha"), data_hash(&env, 0x11)));
+    milestones.push_back((symbol_short!("beta"), data_hash(&env, 0x22)));
+    milestones.push_back((symbol_short!("gamma"), data_hash(&env, 0x33)));
+
+    let released = client.record_milestones_batch(&carrier, &id, &milestones);
+    assert_eq!(released.len(), 3);
+
+    let shipment = client.get_shipment(&id);
+    assert_eq!(shipment.milestones_completed.len(), 3);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+/// The three entrypoints agree: beta-before-alpha is rejected identically
+/// whether it is attempted through `release_milestone_payment`,
+/// `record_milestone`, or `record_milestones_batch`.
+#[test]
+fn test_ordering_consistent_across_all_three_entrypoints() {
+    let (env, client, admin) = setup();
+
+    let via_release = {
+        let (id, _c, carrier) = create_milestone_shipment(&env, &client, &admin);
+        client.try_release_milestone_payment(&carrier, &id, &symbol_short!("beta"))
+    };
+    let via_record = {
+        let (id, _c, carrier) = create_milestone_shipment(&env, &client, &admin);
+        client
+            .try_record_milestone(&carrier, &id, &symbol_short!("beta"), &data_hash(&env, 0x22))
+            .map(|r| r.map(|_| ()))
+    };
+    let via_batch = {
+        let (id, _c, carrier) = create_milestone_shipment(&env, &client, &admin);
+        let mut milestones = Vec::new(&env);
+        milestones.push_back((symbol_short!("beta"), data_hash(&env, 0x22)));
+        client
+            .try_record_milestones_batch(&carrier, &id, &milestones)
+            .map(|r| r.map(|_| ()))
+    };
+
+    assert_eq!(via_release, Err(Ok(NavinError::InvalidStatus)));
+    assert_eq!(via_record, Err(Ok(NavinError::InvalidStatus)));
+    assert_eq!(via_batch, Err(Ok(NavinError::InvalidStatus)));
+}
+
 #[test]
 fn test_validation_rejects_zero_percentage_milestone() {
     let (env, client, admin) = setup();
