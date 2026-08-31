@@ -459,7 +459,8 @@ mod tests {
         let mut notification_events = soroban_sdk::Vec::new(&env);
         for event in events.iter() {
             if let Some(raw) = event.1.get(0) {
-                if Symbol::try_from_val(&env, &raw).ok() == Some(Symbol::new(&env, "notification")) {
+                if Symbol::try_from_val(&env, &raw).ok() == Some(Symbol::new(&env, "notification"))
+                {
                     notification_events.push_back(event);
                 }
             }
@@ -495,13 +496,9 @@ mod tests {
         // Verify each of the four parties received exactly one notification.
         let mut recipients = soroban_sdk::Vec::new(&env);
         for (_contract, _topics, data) in notification_events.iter() {
-            let (recipient, _, _, _): (
-                Address,
-                NotificationType,
-                u64,
-                soroban_sdk::BytesN<32>,
-            ) = soroban_sdk::TryFromVal::try_from_val(&env, &data)
-                .expect("notification event data must deserialize");
+            let (recipient, _, _, _): (Address, NotificationType, u64, soroban_sdk::BytesN<32>) =
+                soroban_sdk::TryFromVal::try_from_val(&env, &data)
+                    .expect("notification event data must deserialize");
             recipients.push_back(recipient);
         }
 
