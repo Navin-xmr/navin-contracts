@@ -1,5 +1,8 @@
 use crate::{audit, NavinShipment, NavinShipmentClient, ShipmentStatus};
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Symbol, Vec};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger as _},
+    Address, BytesN, Env, Symbol, Vec,
+};
 
 #[soroban_sdk::contract]
 struct MockToken;
@@ -771,5 +774,81 @@ fn test_rollback_on_external_failure_before_initialize_returns_error() {
     assert_eq!(
         client.try_rollback_on_external_failure(&admin, &1u64, &ShipmentStatus::Created, &reason),
         Err(Ok(crate::NavinError::NotInitialized))
+    );
+}
+
+// ── #689: check_deadline emits notifications for sender and carrier ─────────
+
+#[test]
+fn test_check_deadline_emits_notifications_for_sender_and_carrier() {
+    use soroban_sdk::testutils::Events as _;
+    use soroban_sdk::{TryFromVal, TryIntoVal};
+
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 100;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    // Advance past deadline + default grace period (86400s)
+    let current_time = env.ledger().timestamp();
+    env.ledger().set_timestamp(current_time + 100 + 86400 + 1);
+
+    client.check_deadline(&shipment_id);
+
+    // Collect all notification events emitted for this contract
+    let mut sender_notified = false;
+    let mut carrier_notified = false;
+
+    for (_contract, topics, data) in env.events().all().into_iter() {
+        if let Some(topic_val) = topics.get(0) {
+            if let Ok(sym) = Symbol::try_from_val(&env, &topic_val) {
+                if sym == Symbol::new(&env, crate::event_topics::NOTIFICATION) {
+                    if let Ok(payload) =
+                        soroban_sdk::Vec::<soroban_sdk::Val>::try_from_val(&env, &data)
+                    {
+                        let recipient: Address =
+                            payload.get(0).unwrap().try_into_val(&env).unwrap();
+                        let notif_type: crate::types::NotificationType =
+                            payload.get(1).unwrap().try_into_val(&env).unwrap();
+                        let notif_shipment_id: u64 =
+                            payload.get(2).unwrap().try_into_val(&env).unwrap();
+
+                        if notif_shipment_id == shipment_id
+                            && notif_type == crate::types::NotificationType::StatusChanged
+                        {
+                            if recipient == company {
+                                sender_notified = true;
+                            } else if recipient == carrier {
+                                carrier_notified = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    assert!(
+        sender_notified,
+        "sender (company) must receive notification on auto-expiry"
+    );
+    assert!(
+        carrier_notified,
+        "carrier must receive notification on auto-expiry"
     );
 }

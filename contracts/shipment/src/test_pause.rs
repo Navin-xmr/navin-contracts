@@ -947,6 +947,99 @@ mod tests {
         client.refund_escrow(&company, &shipment_id);
     }
 
+    // ── check_deadline pause guard (#756) ────────────────────────────────────
+
+    /// Permissionless `check_deadline` still refunds expired escrow when the
+    /// contract is not paused.
+    #[test]
+    fn test_check_deadline_succeeds_when_unpaused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+        client.add_carrier_to_whitelist(&company, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let milestones = Vec::new(&env);
+        let deadline = future_deadline(&env, 86400);
+
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+        let escrow_amount: i128 = 1_000;
+        client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+        assert_eq!(client.get_escrow_balance(&shipment_id), escrow_amount);
+
+        // Pause then unpause — permissionless expiry must still succeed.
+        client.pause(&admin);
+        client.unpause(&admin);
+        assert!(!client.is_paused());
+
+        advance_ledger_time(&env, 86_401);
+        client.check_deadline(&shipment_id);
+
+        let shipment = client.get_shipment(&shipment_id);
+        assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+        assert_eq!(shipment.escrow_amount, 0);
+        assert_eq!(client.get_escrow_balance(&shipment_id), 0);
+    }
+
+    /// `check_deadline` is a fund-moving path: while paused it must reject
+    /// before mutating state or transferring escrow.
+    #[test]
+    fn test_check_deadline_fails_when_paused() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+        client.add_carrier_to_whitelist(&company, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let milestones = Vec::new(&env);
+        let deadline = future_deadline(&env, 86400);
+
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+        let escrow_amount: i128 = 1_000;
+        client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+        advance_ledger_time(&env, 86_401);
+
+        let status_before = client.get_shipment(&shipment_id).status;
+        let escrow_before = client.get_escrow_balance(&shipment_id);
+        let amount_before = client.get_shipment(&shipment_id).escrow_amount;
+        assert_eq!(escrow_before, escrow_amount);
+        assert_eq!(amount_before, escrow_amount);
+
+        client.pause(&admin);
+        assert!(client.is_paused());
+
+        let result = client.try_check_deadline(&shipment_id);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+
+        let shipment = client.get_shipment(&shipment_id);
+        assert_eq!(
+            shipment.status, status_before,
+            "paused check_deadline must not change shipment status"
+        );
+        assert_eq!(
+            shipment.escrow_amount, amount_before,
+            "paused check_deadline must not clear shipment escrow_amount"
+        );
+        assert_eq!(
+            client.get_escrow_balance(&shipment_id),
+            escrow_before,
+            "paused check_deadline must not move escrow funds"
+        );
+    }
+
     /// Test: Circuit breaker state persists across pause/unpause cycles.
     /// Verify that pause/unpause doesn't reset circuit breaker state.
     #[test]

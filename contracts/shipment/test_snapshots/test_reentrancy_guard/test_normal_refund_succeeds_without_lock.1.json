@@ -479,7 +479,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "u32": 3
+                  "u32": 4
                 }
               }
             },
@@ -1589,6 +1589,45 @@
                 },
                 {
                   "bytes": "be2783ffc6c5488225abf4883c701912e2bac867bbd575bcda93211ed29833fc"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000003",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "shipment_cancelled"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "u64": 1
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                },
+                {
+                  "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                },
+                {
+                  "u32": 2
+                },
+                {
+                  "u32": 4
+                },
+                {
+                  "bytes": "e6da5c75c02abab38c7776dd82e112fd0675d7a121e46d8e531c7ee35f1bceb3"
                 }
               ]
             }

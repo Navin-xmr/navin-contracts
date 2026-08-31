@@ -1295,17 +1295,6 @@ pub fn set_fee_config(env: &Env, config: &FeeConfig) {
     env.storage().instance().set(&DataKey::FeeConfig, config);
 }
 
-/// Get the platform treasury address from instance storage.
-#[allow(dead_code)]
-pub fn get_treasury(env: &Env) -> Option<Address> {
-    env.storage().instance().get(&DataKey::Treasury)
-}
-
-/// Set the platform treasury address in instance storage.
-pub fn set_treasury(env: &Env, treasury: &Address) {
-    env.storage().instance().set(&DataKey::Treasury, treasury);
-}
-
 /// Get the current active shipment count for a company from instance storage.
 ///
 /// # Arguments

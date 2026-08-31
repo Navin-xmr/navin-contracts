@@ -210,4 +210,58 @@ mod tests {
 
         assert_eq!(client.query_audit_history_for_target(&untouched).len(), 0);
     }
+
+    // ── Issue #762: cleanup_audit_logs must be reachable as an entrypoint ─────
+
+    #[test]
+    fn test_cleanup_audit_logs_prunes_old_entries() {
+        let (env, client, admin) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+
+        // First entry at t0.
+        client.add_company(&admin, &company);
+        let cutoff = env.ledger().timestamp() + 1;
+
+        // Second entry strictly after the cutoff.
+        crate::test_utils::advance_ledger_time(&env, 100);
+        client.add_carrier(&admin, &carrier);
+
+        assert_eq!(client.query_audit_history(&0, &u64::MAX).len(), 2);
+
+        let removed = client.cleanup_audit_logs(&admin, &cutoff);
+        assert_eq!(removed, 1, "only the pre-cutoff entry should be pruned");
+
+        let remaining = client.query_audit_history(&0, &u64::MAX);
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining.get(0).unwrap().target, carrier);
+    }
+
+    #[test]
+    fn test_cleanup_audit_logs_rejects_non_admin() {
+        let (env, client, admin) = setup_test_env();
+        let company = Address::generate(&env);
+        let intruder = Address::generate(&env);
+
+        client.add_company(&admin, &company);
+
+        let result =
+            client.try_cleanup_audit_logs(&intruder, &(env.ledger().timestamp() + 1));
+        assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
+
+        // The entry is untouched.
+        assert_eq!(client.query_audit_history(&0, &u64::MAX).len(), 1);
+    }
+
+    #[test]
+    fn test_cleanup_audit_logs_noop_when_nothing_is_old_enough() {
+        let (env, client, admin) = setup_test_env();
+        let company = Address::generate(&env);
+
+        client.add_company(&admin, &company);
+
+        let removed = client.cleanup_audit_logs(&admin, &1);
+        assert_eq!(removed, 0);
+        assert_eq!(client.query_audit_history(&0, &u64::MAX).len(), 1);
+    }
 }
