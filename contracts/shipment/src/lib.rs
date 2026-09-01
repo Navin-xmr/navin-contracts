@@ -120,7 +120,11 @@ mod test_batch_too_large;
 #[cfg(test)]
 mod test_invalid_shipment_input;
 #[cfg(test)]
+mod test_invalid_shipment_participants;
+#[cfg(test)]
 mod test_milestone_sum_invalid;
+#[cfg(test)]
+mod test_invalid_shipment_deadline;
 
 // ── Fuzz / property-based test harnesses ─────────────────────────────────────
 #[cfg(test)]
@@ -2390,7 +2394,7 @@ impl NavinShipment {
 
         let now = env.ledger().timestamp();
         if deadline <= now {
-            return Err(NavinError::InvalidTimestamp);
+            return Err(NavinError::InvalidShipmentDeadline);
         }
 
         // Check company active shipment limit
@@ -2523,7 +2527,7 @@ impl NavinShipment {
             validate_hash(&shipment_input.data_hash)?;
 
             if shipment_input.deadline <= now {
-                return Err(NavinError::InvalidTimestamp);
+                return Err(NavinError::InvalidShipmentDeadline);
             }
 
             let shipment_id = storage::get_shipment_counter(&env)
@@ -4720,6 +4724,9 @@ impl NavinShipment {
             SettlementOperation::Refund,
             ShipmentStatus::Cancelled,
         )?;
+
+        // Emit shipment_cancelled for event-topic consistency (all Cancelled transitions).
+        events::emit_shipment_cancelled(&env, shipment_id, &admin, &reason_hash);
 
         // Emit the dedicated force-cancel event — distinct from shipment_cancelled.
         events::emit_force_cancelled(&env, shipment_id, &admin, &reason_hash, escrow_amount);
