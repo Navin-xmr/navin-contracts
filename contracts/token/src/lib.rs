@@ -79,7 +79,10 @@ impl NavinToken {
     }
 
     /// Get token decimals
-    pub fn decimals(_env: Env) -> Result<u32, TokenError> {
+    pub fn decimals(env: Env) -> Result<u32, TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
         Ok(7)
     }
 
@@ -188,6 +191,9 @@ impl NavinToken {
         storage::set_balance(&env, &to, storage::get_balance(&env, &to) + amount);
         storage::set_allowance(&env, &from, &spender, allowance - amount, expiration_ledger);
 
+        storage::extend_balance_ttl_for(&env, &[from.clone(), to.clone()], 1000, 500000);
+        storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
+
         env.events()
             .publish((symbol_short!("tr_from"),), (from, to, spender, amount));
 
@@ -261,6 +267,7 @@ impl NavinToken {
         if !storage::is_initialized(&env) {
             return Err(TokenError::NotInitialized);
         }
+        require_not_paused(&env)?;
 
         owner.require_auth();
 
@@ -299,6 +306,7 @@ impl NavinToken {
         if !storage::is_initialized(&env) {
             return Err(TokenError::NotInitialized);
         }
+        require_not_paused(&env)?;
 
         owner.require_auth();
 
@@ -487,6 +495,7 @@ impl NavinToken {
         let new_from_balance = from_balance.checked_sub(amount).ok_or(TokenError::Overflow)?;
         storage::set_total_supply(&env, new_supply);
         storage::set_balance(&env, &from, new_from_balance);
+        storage::extend_balance_ttl(&env, &from, 1000, 500000);
 
         env.events()
             .publish((symbol_short!("burn"),), (from, amount));
@@ -534,6 +543,8 @@ impl NavinToken {
         storage::set_total_supply(&env, new_supply);
         storage::set_balance(&env, &from, new_from_balance);
         storage::set_allowance(&env, &from, &spender, new_allowance, expiration_ledger);
+        storage::extend_balance_ttl(&env, &from, 1000, 500000);
+        storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
 
         env.events()
             .publish((symbol_short!("burn_from"),), (from, spender, amount));
