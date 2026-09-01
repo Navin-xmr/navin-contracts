@@ -87,6 +87,8 @@ mod test_admin_pause_guards;
 mod test_multisig_reinit_guard;
 mod test_proposal_digest;
 #[cfg(test)]
+mod test_refund_escrow_ttl;
+#[cfg(test)]
 mod test_require_auth_for_args;
 #[cfg(test)]
 mod test_settlement;
@@ -394,6 +396,7 @@ fn settle_escrow(
 
     finalize_if_settled(env, shipment);
     persist_shipment(env, shipment)?;
+    // Single TTL extension for refund_escrow and other settlement callers (#759).
     extend_shipment_ttl(env, shipment.id);
 
     Ok(())
