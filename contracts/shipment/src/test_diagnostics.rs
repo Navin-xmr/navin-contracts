@@ -228,6 +228,9 @@ fn test_each_field_mutation_produces_unique_checksum() {
         |c| c.max_notes_per_shipment -= 1,
         |c| c.max_evidence_per_dispute -= 1,
         |c| c.max_breaches_per_shipment -= 1,
+        |c| c.idempotency_window_seconds += 60,
+        |c| c.creation_quota_max += 10,
+        |c| c.creation_quota_window_seconds += 300,
     ];
 
     let base_cfg = client.get_contract_config();
@@ -249,6 +252,33 @@ fn test_each_field_mutation_produces_unique_checksum() {
             "checksum must be restored"
         );
     }
+}
+
+/// Checksum changes when idempotency/quota fields are mutated via update_config.
+#[test]
+fn test_config_checksum_reflects_idempotency_and_quota_fields() {
+    let (_env, client, admin, _token) = prepare_test();
+
+    let before = client.get_config_checksum();
+
+    let mut cfg = client.get_contract_config();
+    cfg.idempotency_window_seconds = 600;
+    client.update_config(&admin, &cfg);
+    assert_ne!(client.get_config_checksum(), before);
+
+    // Revert and test creation_quota_max
+    let mut cfg = client.get_contract_config();
+    cfg.idempotency_window_seconds = 300;
+    cfg.creation_quota_max = 50;
+    client.update_config(&admin, &cfg);
+    assert_ne!(client.get_config_checksum(), before);
+
+    // Revert and test creation_quota_window_seconds
+    let mut cfg = client.get_contract_config();
+    cfg.creation_quota_max = 0;
+    cfg.creation_quota_window_seconds = 7200;
+    client.update_config(&admin, &cfg);
+    assert_ne!(client.get_config_checksum(), before);
 }
 
 // ── Regression tests added for issue #379 ────────────────────────────────────
