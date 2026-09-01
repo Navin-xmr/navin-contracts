@@ -10,6 +10,8 @@
 
 ## Table of Contents
 
+### Shipment Contract
+
 1. [Event Format](#event-format)
 2. [Soroban Type Reference](#soroban-type-reference)
 3. [Events Index](#events-index)
@@ -39,6 +41,32 @@
    - [notification](#notification)
 10. [Lifecycle Sequence Diagram](#lifecycle-sequence-diagram)
 11. [TypeScript Type Definitions](#typescript-type-definitions)
+
+### Token Contract
+
+12. [Token Transfer Events](#token-transfer-events)
+    - [init](#token-init)
+    - [transfer](#token-transfer)
+    - [tr_from](#token-transfer-from)
+    - [approve](#token-approve)
+    - [inc_alw](#token-increase-allowance)
+    - [dec_alw](#token-decrease-allowance)
+13. [Token Supply Events](#token-supply-events)
+    - [mint](#token-mint)
+    - [burn](#token-burn)
+    - [adm_burn](#token-admin-burn)
+    - [burn_from](#token-burn-from)
+14. [Token Admin Events](#token-admin-events)
+    - [admin_tr](#token-admin-transfer)
+    - [paused](#token-paused)
+    - [unpaused](#token-unpaused)
+15. [Token Metadata Events](#token-metadata-events)
+    - [meta_add](#token-metadata-add)
+    - [meta_rm](#token-metadata-remove)
+    - [meta_set](#token-metadata-set)
+    - [meta_del](#token-metadata-delete)
+16. [Token Batch Events](#token-batch-events)
+    - [batch_tr](#token-batch-transfer)
 
 ---
 
@@ -75,74 +103,74 @@ This enables safe parser upgrades and indexer deduplication during contract evol
 
 ## Soroban Type Reference
 
-| Soroban Type   | Horizon JSON representation | Notes                                           |
-|----------------|-----------------------------|-------------------------------------------------|
-| `u64`          | `{"u64": "1234"}`           | Shipment IDs, timestamps, amounts               |
-| `i128`         | `{"i128": {"hi": 0, "lo": 1000}}` | Escrow amounts in stroops (1 XLM = 10⁷ stroops) |
-| `Address`      | `{"address": "G…"}`         | Stellar account or contract address             |
-| `BytesN<32>`   | `{"bytes": "hex…"}`         | 32-byte SHA-256 hash (64 hex chars)             |
-| `Symbol`       | `{"symbol": "…"}`           | Short string identifier (max 32 chars)          |
-| `ShipmentStatus` | `{"enum": N}`             | Enum variant index (see table below)            |
-| `BreachType`   | `{"enum": N}`               | Enum variant index (see table below)            |
-| `NotificationType` | `{"enum": N}`           | Enum variant index (see table below)            |
+| Soroban Type       | Horizon JSON representation       | Notes                                           |
+| ------------------ | --------------------------------- | ----------------------------------------------- |
+| `u64`              | `{"u64": "1234"}`                 | Shipment IDs, timestamps, amounts               |
+| `i128`             | `{"i128": {"hi": 0, "lo": 1000}}` | Escrow amounts in stroops (1 XLM = 10⁷ stroops) |
+| `Address`          | `{"address": "G…"}`               | Stellar account or contract address             |
+| `BytesN<32>`       | `{"bytes": "hex…"}`               | 32-byte SHA-256 hash (64 hex chars)             |
+| `Symbol`           | `{"symbol": "…"}`                 | Short string identifier (max 32 chars)          |
+| `ShipmentStatus`   | `{"enum": N}`                     | Enum variant index (see table below)            |
+| `BreachType`       | `{"enum": N}`                     | Enum variant index (see table below)            |
+| `NotificationType` | `{"enum": N}`                     | Enum variant index (see table below)            |
 
 ### ShipmentStatus Variants
 
-| Variant index | Name           | Description                                   |
-|---------------|----------------|-----------------------------------------------|
-| 0             | `Created`      | Shipment registered, not yet picked up        |
-| 1             | `InTransit`    | En route between checkpoints                  |
-| 2             | `AtCheckpoint` | At an intermediate checkpoint                 |
-| 3             | `Delivered`    | Delivered to receiver                         |
-| 4             | `Disputed`     | Under active dispute                          |
-| 5             | `Cancelled`    | Cancelled (terminal)                          |
+| Variant index | Name           | Description                            |
+| ------------- | -------------- | -------------------------------------- |
+| 0             | `Created`      | Shipment registered, not yet picked up |
+| 1             | `InTransit`    | En route between checkpoints           |
+| 2             | `AtCheckpoint` | At an intermediate checkpoint          |
+| 3             | `Delivered`    | Delivered to receiver                  |
+| 4             | `Disputed`     | Under active dispute                   |
+| 5             | `Cancelled`    | Cancelled (terminal)                   |
 
 ### BreachType Variants
 
-| Variant index | Name               | Description                              |
-|---------------|--------------------|------------------------------------------|
-| 0             | `TemperatureHigh`  | Temperature exceeded upper limit          |
-| 1             | `TemperatureLow`   | Temperature dropped below lower limit     |
-| 2             | `HumidityHigh`     | Humidity exceeded upper limit             |
-| 3             | `Impact`           | Physical shock or drop detected           |
-| 4             | `TamperDetected`   | Tamper detection triggered                |
+| Variant index | Name              | Description                           |
+| ------------- | ----------------- | ------------------------------------- |
+| 0             | `TemperatureHigh` | Temperature exceeded upper limit      |
+| 1             | `TemperatureLow`  | Temperature dropped below lower limit |
+| 2             | `HumidityHigh`    | Humidity exceeded upper limit         |
+| 3             | `Impact`          | Physical shock or drop detected       |
+| 4             | `TamperDetected`  | Tamper detection triggered            |
 
 ### NotificationType Variants
 
-| Variant index | Name                  | Description                             |
-|---------------|-----------------------|-----------------------------------------|
-| 0             | `ShipmentCreated`     | New shipment was created                |
-| 1             | `StatusChanged`       | Shipment status transitioned            |
-| 2             | `DeliveryConfirmed`   | Delivery confirmed by receiver          |
-| 3             | `EscrowReleased`      | Escrowed funds released to carrier      |
-| 4             | `DisputeRaised`       | A dispute was opened                    |
-| 5             | `DisputeResolved`     | A dispute was resolved                  |
-| 6             | `DeadlineApproaching` | Shipment deadline is near               |
+| Variant index | Name                  | Description                        |
+| ------------- | --------------------- | ---------------------------------- |
+| 0             | `ShipmentCreated`     | New shipment was created           |
+| 1             | `StatusChanged`       | Shipment status transitioned       |
+| 2             | `DeliveryConfirmed`   | Delivery confirmed by receiver     |
+| 3             | `EscrowReleased`      | Escrowed funds released to carrier |
+| 4             | `DisputeRaised`       | A dispute was opened               |
+| 5             | `DisputeResolved`     | A dispute was resolved             |
+| 6             | `DeadlineApproaching` | Shipment deadline is near          |
 
 ---
 
 ## Events Index
 
-| Event symbol             | Category   | Emitted by (contract function)                                     |
-|--------------------------|------------|--------------------------------------------------------------------|
-| `shipment_created`       | Lifecycle  | `create_shipment`, `create_shipments_batch`                        |
-| `status_updated`         | Lifecycle  | `update_status`                                                    |
-| `milestone_recorded`     | Lifecycle  | `record_milestone`, `carrier_handoff`                              |
-| `delivery_success`       | Lifecycle  | `confirm_delivery`                                                 |
-| `shipment_cancelled`     | Lifecycle  | `cancel_shipment`                                                  |
-| `shipment_expired`       | Lifecycle  | `expire_shipment`                                                  |
-| `escrow_deposited`       | Escrow     | `deposit_escrow`                                                   |
-| `escrow_released`        | Escrow     | `confirm_delivery`, `cancel_shipment`, `resolve_dispute`, `multi_sig_execute` |
-| `escrow_refunded`        | Escrow     | `cancel_shipment`, `resolve_dispute`, `expire_shipment`, `multi_sig_execute` |
-| `carrier_handoff`        | Carrier    | `carrier_handoff`                                                  |
-| `condition_breach`       | Carrier    | `report_condition_breach`                                          |
-| `carrier_breach`         | Carrier    | `report_condition_breach`                                          |
-| `carrier_dispute_loss`   | Carrier    | `resolve_dispute`                                                  |
-| `dispute_raised`         | Dispute    | `raise_dispute`                                                    |
-| `admin_proposed`         | Admin      | `propose_admin`                                                    |
-| `admin_transferred`      | Admin      | `accept_admin`, `multi_sig_execute`                                |
-| `contract_upgraded`      | Admin      | `upgrade_contract`, `multi_sig_execute`                            |
-| `notification`           | System     | Multiple — see [notification](#notification)                       |
+| Event symbol           | Category  | Emitted by (contract function)                                                |
+| ---------------------- | --------- | ----------------------------------------------------------------------------- |
+| `shipment_created`     | Lifecycle | `create_shipment`, `create_shipments_batch`                                   |
+| `status_updated`       | Lifecycle | `update_status`                                                               |
+| `milestone_recorded`   | Lifecycle | `record_milestone`, `carrier_handoff`                                         |
+| `delivery_success`     | Lifecycle | `confirm_delivery`                                                            |
+| `shipment_cancelled`   | Lifecycle | `cancel_shipment`                                                             |
+| `shipment_expired`     | Lifecycle | `expire_shipment`                                                             |
+| `escrow_deposited`     | Escrow    | `deposit_escrow`                                                              |
+| `escrow_released`      | Escrow    | `confirm_delivery`, `cancel_shipment`, `resolve_dispute`, `multi_sig_execute` |
+| `escrow_refunded`      | Escrow    | `cancel_shipment`, `resolve_dispute`, `expire_shipment`, `multi_sig_execute`  |
+| `carrier_handoff`      | Carrier   | `carrier_handoff`                                                             |
+| `condition_breach`     | Carrier   | `report_condition_breach`                                                     |
+| `carrier_breach`       | Carrier   | `report_condition_breach`                                                     |
+| `carrier_dispute_loss` | Carrier   | `resolve_dispute`                                                             |
+| `dispute_raised`       | Dispute   | `raise_dispute`                                                               |
+| `admin_proposed`       | Admin     | `propose_admin`                                                               |
+| `admin_transferred`    | Admin     | `accept_admin`, `multi_sig_execute`                                           |
+| `contract_upgraded`    | Admin     | `upgrade_contract`, `multi_sig_execute`                                       |
+| `notification`         | System    | Multiple — see [notification](#notification)                                  |
 
 ---
 
@@ -156,12 +184,12 @@ Emitted when a company registers a new shipment on-chain.
 **Emitted by:** `create_shipment`, `create_shipments_batch`
 **Caller role:** Company
 
-| # | Field        | Soroban Type | Description                                          |
-|---|--------------|--------------|------------------------------------------------------|
-| 1 | `shipment_id`| `u64`        | Unique on-chain shipment identifier (auto-incremented) |
-| 2 | `sender`     | `Address`    | Company address that created the shipment            |
-| 3 | `receiver`   | `Address`    | Intended recipient of the goods                      |
-| 4 | `data_hash`  | `BytesN<32>` | SHA-256 hash of the full off-chain shipment payload  |
+| #   | Field         | Soroban Type | Description                                            |
+| --- | ------------- | ------------ | ------------------------------------------------------ |
+| 1   | `shipment_id` | `u64`        | Unique on-chain shipment identifier (auto-incremented) |
+| 2   | `sender`      | `Address`    | Company address that created the shipment              |
+| 3   | `receiver`    | `Address`    | Intended recipient of the goods                        |
+| 4   | `data_hash`   | `BytesN<32>` | SHA-256 hash of the full off-chain shipment payload    |
 
 **Backend action:** Create the initial shipment record in the database; link `shipment_id` to the off-chain payload.
 **Frontend action:** Display real-time shipment creation notification.
@@ -178,12 +206,12 @@ Emitted on every valid lifecycle state transition.
 **Emitted by:** `update_status`
 **Caller role:** Carrier or Admin
 
-| # | Field        | Soroban Type     | Description                                         |
-|---|--------------|------------------|-----------------------------------------------------|
-| 1 | `shipment_id`| `u64`            | Shipment whose status changed                       |
-| 2 | `old_status` | `ShipmentStatus` | Previous lifecycle state                            |
-| 3 | `new_status` | `ShipmentStatus` | New lifecycle state after transition                |
-| 4 | `data_hash`  | `BytesN<32>`     | SHA-256 hash of the updated off-chain status payload|
+| #   | Field         | Soroban Type     | Description                                          |
+| --- | ------------- | ---------------- | ---------------------------------------------------- |
+| 1   | `shipment_id` | `u64`            | Shipment whose status changed                        |
+| 2   | `old_status`  | `ShipmentStatus` | Previous lifecycle state                             |
+| 3   | `new_status`  | `ShipmentStatus` | New lifecycle state after transition                 |
+| 4   | `data_hash`   | `BytesN<32>`     | SHA-256 hash of the updated off-chain status payload |
 
 **Valid transitions:**
 
@@ -216,12 +244,12 @@ Emitted when a carrier reports a transit checkpoint. The full milestone payload 
 **Emitted by:** `record_milestone`, `carrier_handoff`
 **Caller role:** Carrier
 
-| # | Field        | Soroban Type | Description                                              |
-|---|--------------|--------------|----------------------------------------------------------|
-| 1 | `shipment_id`| `u64`        | Shipment this milestone belongs to                       |
-| 2 | `checkpoint` | `Symbol`     | Human-readable checkpoint name (e.g. `"warehouse"`, `"port"`) |
-| 3 | `data_hash`  | `BytesN<32>` | SHA-256 hash of the full off-chain milestone payload     |
-| 4 | `reporter`   | `Address`    | Carrier address that recorded the milestone              |
+| #   | Field         | Soroban Type | Description                                                   |
+| --- | ------------- | ------------ | ------------------------------------------------------------- |
+| 1   | `shipment_id` | `u64`        | Shipment this milestone belongs to                            |
+| 2   | `checkpoint`  | `Symbol`     | Human-readable checkpoint name (e.g. `"warehouse"`, `"port"`) |
+| 3   | `data_hash`   | `BytesN<32>` | SHA-256 hash of the full off-chain milestone payload          |
+| 4   | `reporter`    | `Address`    | Carrier address that recorded the milestone                   |
 
 **Backend action:** Store the full milestone record and verify hash integrity.
 **Frontend action:** Add a new point to the shipment tracking map.
@@ -238,15 +266,16 @@ Emitted when the receiver confirms that a shipment has been successfully deliver
 **Emitted by:** `confirm_delivery`
 **Caller role:** Receiver
 
-| # | Field           | Soroban Type | Description                                       |
-|---|-----------------|--------------|---------------------------------------------------|
-| 1 | `carrier`       | `Address`    | Carrier that completed the delivery               |
-| 2 | `shipment_id`   | `u64`        | Shipment that was delivered                       |
-| 3 | `delivery_time` | `u64`        | Ledger timestamp (Unix seconds) at delivery       |
+| #   | Field           | Soroban Type | Description                                 |
+| --- | --------------- | ------------ | ------------------------------------------- |
+| 1   | `carrier`       | `Address`    | Carrier that completed the delivery         |
+| 2   | `shipment_id`   | `u64`        | Shipment that was delivered                 |
+| 3   | `delivery_time` | `u64`        | Ledger timestamp (Unix seconds) at delivery |
 
 **Backend action:** Increment the carrier's on-time delivery counter in the reputation index. If `delivery_time ≤ shipment.deadline`, this counts as an on-time delivery.
 
 **Co-emitted events:**
+
 - `escrow_released` — escrowed funds (or milestone portion) paid to carrier
 - Two `notification` events (to `sender` and `receiver`) with `NotificationType::DeliveryConfirmed`
 
@@ -260,11 +289,11 @@ Emitted when a company or admin cancels a shipment.
 **Emitted by:** `cancel_shipment`
 **Caller role:** Company (own shipments) or Admin
 
-| # | Field         | Soroban Type | Description                                        |
-|---|---------------|--------------|----------------------------------------------------|
-| 1 | `shipment_id` | `u64`        | Cancelled shipment identifier                      |
-| 2 | `caller`      | `Address`    | Company or Admin address that cancelled            |
-| 3 | `reason_hash` | `BytesN<32>` | SHA-256 hash of the off-chain cancellation reason  |
+| #   | Field         | Soroban Type | Description                                       |
+| --- | ------------- | ------------ | ------------------------------------------------- |
+| 1   | `shipment_id` | `u64`        | Cancelled shipment identifier                     |
+| 2   | `caller`      | `Address`    | Company or Admin address that cancelled           |
+| 3   | `reason_hash` | `BytesN<32>` | SHA-256 hash of the off-chain cancellation reason |
 
 **Backend action:** Mark shipment as cancelled; refund any escrowed funds to the company.
 
@@ -280,9 +309,9 @@ Emitted when a shipment misses its deadline and is auto-cancelled via the `expir
 **Emitted by:** `expire_shipment`
 **Caller role:** Anyone (permissionless) — the function checks `now > shipment.deadline`
 
-| # | Field         | Soroban Type | Description                               |
-|---|---------------|--------------|-------------------------------------------|
-| 1 | `shipment_id` | `u64`        | Expired shipment identifier               |
+| #   | Field         | Soroban Type | Description                 |
+| --- | ------------- | ------------ | --------------------------- |
+| 1   | `shipment_id` | `u64`        | Expired shipment identifier |
 
 **Backend action:** Mark shipment expired/cancelled; trigger refund flow.
 
@@ -300,11 +329,11 @@ Emitted when a company locks funds into escrow for a shipment.
 **Emitted by:** `deposit_escrow`
 **Caller role:** Company
 
-| # | Field         | Soroban Type | Description                              |
-|---|---------------|--------------|------------------------------------------|
-| 1 | `shipment_id` | `u64`        | Shipment the escrow is associated with   |
-| 2 | `from`        | `Address`    | Company address that deposited the funds |
-| 3 | `amount`      | `i128`       | Amount deposited in stroops              |
+| #   | Field         | Soroban Type | Description                              |
+| --- | ------------- | ------------ | ---------------------------------------- |
+| 1   | `shipment_id` | `u64`        | Shipment the escrow is associated with   |
+| 2   | `from`        | `Address`    | Company address that deposited the funds |
+| 3   | `amount`      | `i128`       | Amount deposited in stroops              |
 
 **Constraint:** Escrow can only be deposited when `shipment.status == Created` and no prior escrow is held.
 
@@ -321,11 +350,11 @@ Emitted when escrowed funds are paid out to the carrier.
 **Emitted by:** `confirm_delivery` (via `internal_release_escrow`), `cancel_shipment` (sender refund path), `resolve_dispute`, `multi_sig_execute`
 **Recipient:** Carrier (in normal delivery/dispute-win path); Sender (in cancel path where sender is recipient)
 
-| # | Field         | Soroban Type | Description                              |
-|---|---------------|--------------|------------------------------------------|
-| 1 | `shipment_id` | `u64`        | Shipment the escrow was held for         |
-| 2 | `to`          | `Address`    | Address receiving the released funds     |
-| 3 | `amount`      | `i128`       | Amount released in stroops               |
+| #   | Field         | Soroban Type | Description                          |
+| --- | ------------- | ------------ | ------------------------------------ |
+| 1   | `shipment_id` | `u64`        | Shipment the escrow was held for     |
+| 2   | `to`          | `Address`    | Address receiving the released funds |
+| 3   | `amount`      | `i128`       | Amount released in stroops           |
 
 **Backend action:** Finalize payment record; trigger settlement.
 **Frontend action:** Confirm payment completion to both parties.
@@ -340,11 +369,11 @@ Emitted when escrowed funds are returned to the company (e.g., cancellation, exp
 **Emitted by:** `cancel_shipment`, `resolve_dispute` (RefundToCompany path), `expire_shipment`, `multi_sig_execute`
 **Recipient:** Company (shipment sender)
 
-| # | Field         | Soroban Type | Description                              |
-|---|---------------|--------------|------------------------------------------|
-| 1 | `shipment_id` | `u64`        | Shipment the escrow was held for         |
-| 2 | `to`          | `Address`    | Company address receiving the refund     |
-| 3 | `amount`      | `i128`       | Amount refunded in stroops               |
+| #   | Field         | Soroban Type | Description                          |
+| --- | ------------- | ------------ | ------------------------------------ |
+| 1   | `shipment_id` | `u64`        | Shipment the escrow was held for     |
+| 2   | `to`          | `Address`    | Company address receiving the refund |
+| 3   | `amount`      | `i128`       | Amount refunded in stroops           |
 
 **Backend action:** Update escrow ledger and notify company.
 **Frontend action:** Show refund status on shipment detail page.
@@ -361,12 +390,12 @@ Emitted when custody of a shipment is transferred between carriers.
 **Emitted by:** `carrier_handoff`
 **Caller role:** Current carrier
 
-| # | Field          | Soroban Type | Description                                   |
-|---|----------------|--------------|-----------------------------------------------|
-| 1 | `shipment_id`  | `u64`        | Shipment being handed off                     |
-| 2 | `from_carrier` | `Address`    | Current carrier handing off the shipment      |
-| 3 | `to_carrier`   | `Address`    | New carrier receiving the shipment            |
-| 4 | `handoff_hash` | `BytesN<32>` | SHA-256 hash of the off-chain handoff data    |
+| #   | Field          | Soroban Type | Description                                |
+| --- | -------------- | ------------ | ------------------------------------------ |
+| 1   | `shipment_id`  | `u64`        | Shipment being handed off                  |
+| 2   | `from_carrier` | `Address`    | Current carrier handing off the shipment   |
+| 3   | `to_carrier`   | `Address`    | New carrier receiving the shipment         |
+| 4   | `handoff_hash` | `BytesN<32>` | SHA-256 hash of the off-chain handoff data |
 
 **Backend action:** Update carrier assignment; trigger carrier change notifications.
 **Frontend action:** Display carrier transition in the shipment tracking UI.
@@ -383,12 +412,12 @@ Emitted when a carrier detects an out-of-range sensor reading. The full sensor p
 **Emitted by:** `report_condition_breach`
 **Caller role:** Carrier
 
-| # | Field         | Soroban Type | Description                                         |
-|---|---------------|--------------|-----------------------------------------------------|
-| 1 | `shipment_id` | `u64`        | Shipment where the breach occurred                  |
-| 2 | `carrier`     | `Address`    | Carrier that reported the breach                    |
-| 3 | `breach_type` | `BreachType` | Category of the condition breach                    |
-| 4 | `data_hash`   | `BytesN<32>` | SHA-256 hash of the off-chain sensor data payload   |
+| #   | Field         | Soroban Type | Description                                       |
+| --- | ------------- | ------------ | ------------------------------------------------- |
+| 1   | `shipment_id` | `u64`        | Shipment where the breach occurred                |
+| 2   | `carrier`     | `Address`    | Carrier that reported the breach                  |
+| 3   | `breach_type` | `BreachType` | Category of the condition breach                  |
+| 4   | `data_hash`   | `BytesN<32>` | SHA-256 hash of the off-chain sensor data payload |
 
 **Backend action:** Record the breach event; trigger alerts to company and receiver.
 **Frontend action:** Flag the shipment with a condition-breach warning badge.
@@ -405,11 +434,11 @@ Emitted alongside `condition_breach` as a carrier-keyed analytics signal. The ba
 **Emitted by:** `report_condition_breach`
 **Caller role:** Carrier
 
-| # | Field         | Soroban Type | Description                                     |
-|---|---------------|--------------|-------------------------------------------------|
-| 1 | `carrier`     | `Address`    | Carrier that reported (and caused) the breach   |
-| 2 | `shipment_id` | `u64`        | Shipment where the breach occurred              |
-| 3 | `breach_type` | `BreachType` | Category of the condition breach                |
+| #   | Field         | Soroban Type | Description                                   |
+| --- | ------------- | ------------ | --------------------------------------------- |
+| 1   | `carrier`     | `Address`    | Carrier that reported (and caused) the breach |
+| 2   | `shipment_id` | `u64`        | Shipment where the breach occurred            |
+| 3   | `breach_type` | `BreachType` | Category of the condition breach              |
 
 **Backend action:** Increment breach counter in the carrier's reputation record.
 
@@ -425,10 +454,10 @@ Emitted when a dispute is resolved against the carrier (i.e., the admin chooses 
 **Emitted by:** `resolve_dispute`
 **Caller role:** Admin
 
-| # | Field         | Soroban Type | Description                                  |
-|---|---------------|--------------|----------------------------------------------|
-| 1 | `carrier`     | `Address`    | Carrier that lost the dispute                |
-| 2 | `shipment_id` | `u64`        | Shipment the dispute was raised on           |
+| #   | Field         | Soroban Type | Description                        |
+| --- | ------------- | ------------ | ---------------------------------- |
+| 1   | `carrier`     | `Address`    | Carrier that lost the dispute      |
+| 2   | `shipment_id` | `u64`        | Shipment the dispute was raised on |
 
 **Backend action:** Increment dispute-loss counter in the carrier reputation index.
 
@@ -444,11 +473,11 @@ Emitted when a party formally disputes a shipment. The full dispute description 
 **Emitted by:** `raise_dispute`
 **Caller role:** Company or Carrier
 
-| # | Field         | Soroban Type | Description                                      |
-|---|---------------|--------------|--------------------------------------------------|
-| 1 | `shipment_id` | `u64`        | Shipment under dispute                           |
-| 2 | `raised_by`   | `Address`    | Address that initiated the dispute               |
-| 3 | `reason_hash` | `BytesN<32>` | SHA-256 hash of the off-chain dispute evidence   |
+| #   | Field         | Soroban Type | Description                                    |
+| --- | ------------- | ------------ | ---------------------------------------------- |
+| 1   | `shipment_id` | `u64`        | Shipment under dispute                         |
+| 2   | `raised_by`   | `Address`    | Address that initiated the dispute             |
+| 3   | `reason_hash` | `BytesN<32>` | SHA-256 hash of the off-chain dispute evidence |
 
 **Backend action:** Create a dispute case and alert the admin.
 **Frontend action:** Open the dispute resolution workflow for both parties.
@@ -467,10 +496,10 @@ Emitted when the current admin nominates a new administrator via the two-step tr
 **Emitted by:** `propose_admin`
 **Caller role:** Admin
 
-| # | Field            | Soroban Type | Description                        |
-|---|------------------|--------------|------------------------------------|
-| 1 | `current_admin`  | `Address`    | Address of the nominating admin    |
-| 2 | `proposed_admin` | `Address`    | Address being nominated            |
+| #   | Field            | Soroban Type | Description                     |
+| --- | ---------------- | ------------ | ------------------------------- |
+| 1   | `current_admin`  | `Address`    | Address of the nominating admin |
+| 2   | `proposed_admin` | `Address`    | Address being nominated         |
 
 **Backend action:** Record the pending admin transfer.
 
@@ -484,10 +513,10 @@ Emitted when the proposed admin accepts the role (completing the two-step handov
 **Emitted by:** `accept_admin`, `multi_sig_execute`
 **Caller role:** Proposed admin (for `accept_admin`); any admin (for `multi_sig_execute` after threshold reached)
 
-| # | Field       | Soroban Type | Description                      |
-|---|-------------|--------------|----------------------------------|
-| 1 | `old_admin` | `Address`    | Previous admin address           |
-| 2 | `new_admin` | `Address`    | Newly confirmed admin address    |
+| #   | Field       | Soroban Type | Description                   |
+| --- | ----------- | ------------ | ----------------------------- |
+| 1   | `old_admin` | `Address`    | Previous admin address        |
+| 2   | `new_admin` | `Address`    | Newly confirmed admin address |
 
 **Backend action:** Update admin record and invalidate any pending proposals from the old admin.
 
@@ -501,11 +530,11 @@ Emitted when the contract WASM is upgraded.
 **Emitted by:** `upgrade_contract`, `multi_sig_execute`
 **Caller role:** Admin
 
-| # | Field           | Soroban Type | Description                      |
-|---|-----------------|--------------|----------------------------------|
-| 1 | `admin`         | `Address`    | Admin that triggered the upgrade |
-| 2 | `new_wasm_hash` | `BytesN<32>` | Hash of the deployed WASM        |
-| 3 | `version`       | `u32`        | Contract version after upgrade   |
+| #   | Field           | Soroban Type | Description                      |
+| --- | --------------- | ------------ | -------------------------------- |
+| 1   | `admin`         | `Address`    | Admin that triggered the upgrade |
+| 2   | `new_wasm_hash` | `BytesN<32>` | Hash of the deployed WASM        |
+| 3   | `version`       | `u32`        | Contract version after upgrade   |
 
 **Backend action:** Record the new version and WASM hash in the deployment registry.
 
@@ -521,25 +550,25 @@ A system-level fan-out event emitted alongside most lifecycle events. The backen
 **Emitted by:** `create_shipment`, `create_shipments_batch`, `update_status`, `confirm_delivery`, `raise_dispute`, `resolve_dispute`, `expire_shipment`
 **Caller role:** Varies (emitted automatically by the contract)
 
-| # | Field               | Soroban Type       | Description                              |
-|---|---------------------|--------------------|------------------------------------------|
-| 1 | `recipient`         | `Address`          | Address to receive the notification      |
-| 2 | `notification_type` | `NotificationType` | Type of notification event               |
-| 3 | `shipment_id`       | `u64`              | Related shipment ID                      |
-| 4 | `data_hash`         | `BytesN<32>`       | SHA-256 hash of the notification payload |
+| #   | Field               | Soroban Type       | Description                              |
+| --- | ------------------- | ------------------ | ---------------------------------------- |
+| 1   | `recipient`         | `Address`          | Address to receive the notification      |
+| 2   | `notification_type` | `NotificationType` | Type of notification event               |
+| 3   | `shipment_id`       | `u64`              | Related shipment ID                      |
+| 4   | `data_hash`         | `BytesN<32>`       | SHA-256 hash of the notification payload |
 
 **Backend action:** Look up the notification preferences for `recipient` and dispatch the appropriate alert channel (push, email, in-app).
 
 **Emission map:**
 
-| Trigger function   | Recipients                  | NotificationType     |
-|--------------------|-----------------------------|----------------------|
-| `create_shipment`  | receiver, carrier           | `ShipmentCreated`    |
-| `update_status`    | sender, receiver            | `StatusChanged`      |
-| `confirm_delivery` | sender, receiver            | `DeliveryConfirmed`  |
-| `raise_dispute`    | sender, receiver, carrier   | `DisputeRaised`      |
-| `resolve_dispute`  | sender, receiver, carrier   | `DisputeResolved`    |
-| `expire_shipment`  | sender, receiver            | `StatusChanged`      |
+| Trigger function   | Recipients                | NotificationType    |
+| ------------------ | ------------------------- | ------------------- |
+| `create_shipment`  | receiver, carrier         | `ShipmentCreated`   |
+| `update_status`    | sender, receiver          | `StatusChanged`     |
+| `confirm_delivery` | sender, receiver          | `DeliveryConfirmed` |
+| `raise_dispute`    | sender, receiver, carrier | `DisputeRaised`     |
+| `resolve_dispute`  | sender, receiver, carrier | `DisputeResolved`   |
+| `expire_shipment`  | sender, receiver          | `StatusChanged`     |
 
 ---
 
@@ -915,3 +944,342 @@ function parseNavinEvent(raw: {
   throw new Error(`parseNavinEvent: implement decoding for topic "${topic}"`);
 }
 ```
+
+---
+
+# Token Contract — Event Schema Reference
+
+The token contract (`navin-token`) emits events for all transfer, supply, and administrative operations. This section documents each event type.
+
+---
+
+## Token Transfer Events
+
+### `init`
+
+Emitted when the token is initialized with a name, symbol, and total supply.
+
+**Topic:** `"init"`
+**Emitted by:** `initialize`
+**Caller role:** Deployment script or admin
+
+| #   | Field          | Soroban Type | Description                            |
+| --- | -------------- | ------------ | -------------------------------------- |
+| 1   | `admin`        | `Address`    | Admin account that will manage token   |
+| 2   | `total_supply` | `i128`       | Initial supply in stroops (7 decimals) |
+
+**Backend action:** Record token initialization and set admin.
+
+---
+
+### `transfer`
+
+Emitted when tokens are transferred from one address to another via `transfer()`.
+
+**Topic:** `"transfer"`
+**Emitted by:** `transfer`
+**Caller role:** Token holder
+
+| #   | Field    | Soroban Type | Description                   |
+| --- | -------- | ------------ | ----------------------------- |
+| 1   | `from`   | `Address`    | Source account                |
+| 2   | `to`     | `Address`    | Destination account           |
+| 3   | `amount` | `i128`       | Amount transferred in stroops |
+
+**Backend action:** Update token balance ledger; emit settlement events if recipient is a contract.
+
+---
+
+### `tr_from`
+
+Emitted when tokens are transferred using an allowance via `transfer_from()`.
+
+**Topic:** `"tr_from"`
+**Emitted by:** `transfer_from`
+**Caller role:** Account with allowance from source
+
+| #   | Field     | Soroban Type | Description                    |
+| --- | --------- | ------------ | ------------------------------ |
+| 1   | `from`    | `Address`    | Source account                 |
+| 2   | `to`      | `Address`    | Destination account            |
+| 3   | `spender` | `Address`    | Account spending the allowance |
+| 4   | `amount`  | `i128`       | Amount transferred in stroops  |
+
+**Backend action:** Deduct from allowance ledger; update balances.
+
+---
+
+### `approve`
+
+Emitted when an account approves a spender to transfer tokens on its behalf.
+
+**Topic:** `"approve"`
+**Emitted by:** `approve`
+**Caller role:** Token holder
+
+| #   | Field               | Soroban Type | Description                                   |
+| --- | ------------------- | ------------ | --------------------------------------------- |
+| 1   | `from`              | `Address`    | Account granting allowance                    |
+| 2   | `spender`           | `Address`    | Account approved to spend                     |
+| 3   | `amount`            | `i128`       | Allowance amount in stroops                   |
+| 4   | `expiration_ledger` | `u32`        | Ledger sequence after which allowance expires |
+
+**Backend action:** Record allowance grant; track expiration for cleanup.
+
+---
+
+### `inc_alw`
+
+Emitted when an allowance is increased via `increase_allowance()`.
+
+**Topic:** `"inc_alw"`
+**Emitted by:** `increase_allowance`
+**Caller role:** Account that granted the original allowance
+
+| #   | Field           | Soroban Type | Description                       |
+| --- | --------------- | ------------ | --------------------------------- |
+| 1   | `owner`         | `Address`    | Account that owns tokens          |
+| 2   | `spender`       | `Address`    | Account with increased allowance  |
+| 3   | `delta`         | `i128`       | Amount allowance was increased by |
+| 4   | `new_allowance` | `i128`       | New total allowance in stroops    |
+
+**Backend action:** Update allowance in the ledger; avoid ERC-20 race condition tracking.
+
+---
+
+### `dec_alw`
+
+Emitted when an allowance is decreased via `decrease_allowance()`.
+
+**Topic:** `"dec_alw"`
+**Emitted by:** `decrease_allowance`
+**Caller role:** Account that granted the original allowance
+
+| #   | Field           | Soroban Type | Description                       |
+| --- | --------------- | ------------ | --------------------------------- |
+| 1   | `owner`         | `Address`    | Account that owns tokens          |
+| 2   | `spender`       | `Address`    | Account with decreased allowance  |
+| 3   | `delta`         | `i128`       | Amount allowance was decreased by |
+| 4   | `new_allowance` | `i128`       | New total allowance in stroops    |
+
+**Backend action:** Update allowance ledger; ensure no negative allowances.
+
+---
+
+## Token Supply Events
+
+### `mint`
+
+Emitted when the admin mints new tokens via `mint()`.
+
+**Topic:** `"mint"`
+**Emitted by:** `mint`
+**Caller role:** Admin
+
+| #   | Field    | Soroban Type | Description                |
+| --- | -------- | ------------ | -------------------------- |
+| 1   | `to`     | `Address`    | Recipient of minted tokens |
+| 2   | `amount` | `i128`       | Amount minted in stroops   |
+
+**Backend action:** Increase total supply; credit recipient balance; update token statistics.
+
+---
+
+### `burn`
+
+Emitted when a holder burns their own tokens via `burn()`.
+
+**Topic:** `"burn"`
+**Emitted by:** `burn`
+**Caller role:** Token holder
+
+| #   | Field    | Soroban Type | Description              |
+| --- | -------- | ------------ | ------------------------ |
+| 1   | `from`   | `Address`    | Account burning tokens   |
+| 2   | `amount` | `i128`       | Amount burned in stroops |
+
+**Backend action:** Decrease total supply; debit holder balance.
+
+---
+
+### `adm_burn`
+
+Emitted when the admin burns tokens from an arbitrary account via `admin_burn()`. Used for clawback operations.
+
+**Topic:** `"adm_burn"`
+**Emitted by:** `admin_burn`
+**Caller role:** Admin
+
+| #   | Field    | Soroban Type | Description              |
+| --- | -------- | ------------ | ------------------------ |
+| 1   | `from`   | `Address`    | Account being burned     |
+| 2   | `amount` | `i128`       | Amount burned in stroops |
+
+**Backend action:** Record clawback event; decrease supply and target balance; audit trail.
+
+---
+
+### `burn_from`
+
+Emitted when tokens are burned using an allowance via `burn_from()`.
+
+**Topic:** `"burn_from"`
+**Emitted by:** `burn_from`
+**Caller role:** Account with allowance
+
+| #   | Field     | Soroban Type | Description                     |
+| --- | --------- | ------------ | ------------------------------- |
+| 1   | `from`    | `Address`    | Account whose tokens are burned |
+| 2   | `spender` | `Address`    | Account executing the burn      |
+| 3   | `amount`  | `i128`       | Amount burned in stroops        |
+
+**Backend action:** Consume allowance; reduce supply; debit source balance.
+
+---
+
+## Token Admin Events
+
+### `admin_tr`
+
+Emitted when admin rights are transferred to a new address via `transfer_admin()`.
+
+**Topic:** `"admin_tr"`
+**Emitted by:** `transfer_admin`
+**Caller role:** Current admin
+
+| #   | Field           | Soroban Type | Description     |
+| --- | --------------- | ------------ | --------------- |
+| 1   | `current_admin` | `Address`    | Departing admin |
+| 2   | `new_admin`     | `Address`    | Incoming admin  |
+
+**Backend action:** Update admin record in control registry.
+
+---
+
+### `paused`
+
+Emitted when the admin pauses the contract via `pause()`, blocking transfer operations.
+
+**Topic:** `"paused"`
+**Emitted by:** `pause`
+**Caller role:** Admin
+
+| #   | Field   | Soroban Type | Description       |
+| --- | ------- | ------------ | ----------------- |
+| 1   | `admin` | `Address`    | Admin that paused |
+
+**Backend action:** Mark contract as paused; block fund-moving operations; alert users.
+
+---
+
+### `unpaused`
+
+Emitted when the admin unpauses the contract via `unpause()`, re-enabling transfers.
+
+**Topic:** `"unpaused"`
+**Emitted by:** `unpause`
+**Caller role:** Admin
+
+| #   | Field   | Soroban Type | Description         |
+| --- | ------- | ------------ | ------------------- |
+| 1   | `admin` | `Address`    | Admin that unpaused |
+
+**Backend action:** Mark contract as unpaused; resume normal operations.
+
+---
+
+## Token Metadata Events
+
+### `meta_add`
+
+Emitted when the admin adds a key to the metadata allowlist via `add_allowed_metadata_key()`.
+
+**Topic:** `"meta_add"`
+**Emitted by:** `add_allowed_metadata_key`
+**Caller role:** Admin
+
+| #   | Field   | Soroban Type | Description                |
+| --- | ------- | ------------ | -------------------------- |
+| 1   | `admin` | `Address`    | Admin making change        |
+| 2   | `key`   | `Symbol`     | Metadata key being allowed |
+
+**Backend action:** Record allowlisted key; enable setting metadata for this key.
+
+---
+
+### `meta_rm`
+
+Emitted when the admin removes a key from the metadata allowlist via `remove_allowed_metadata_key()`.
+
+**Topic:** `"meta_rm"`
+**Emitted by:** `remove_allowed_metadata_key`
+**Caller role:** Admin
+
+| #   | Field   | Soroban Type | Description                   |
+| --- | ------- | ------------ | ----------------------------- |
+| 1   | `admin` | `Address`    | Admin making change           |
+| 2   | `key`   | `Symbol`     | Metadata key being disallowed |
+
+**Backend action:** Remove key from allowlist; prevent future metadata writes for this key.
+
+---
+
+### `meta_set`
+
+Emitted when the admin sets a metadata value via `set_metadata()`.
+
+**Topic:** `"meta_set"`
+**Emitted by:** `set_metadata`
+**Caller role:** Admin
+
+| #   | Field   | Soroban Type | Description              |
+| --- | ------- | ------------ | ------------------------ |
+| 1   | `admin` | `Address`    | Admin setting metadata   |
+| 2   | `key`   | `Symbol`     | Metadata key             |
+| 3   | `value` | `String`     | Metadata value being set |
+
+**Backend action:** Store metadata in database; make available in public token info APIs.
+
+---
+
+### `meta_del`
+
+Emitted when the admin removes a metadata entry via `remove_metadata()`.
+
+**Topic:** `"meta_del"`
+**Emitted by:** `remove_metadata`
+**Caller role:** Admin
+
+| #   | Field   | Soroban Type | Description                |
+| --- | ------- | ------------ | -------------------------- |
+| 1   | `admin` | `Address`    | Admin removing metadata    |
+| 2   | `key`   | `Symbol`     | Metadata key being deleted |
+
+**Backend action:** Remove metadata from database; no longer expose in public APIs.
+
+---
+
+## Token Batch Events
+
+### `batch_tr`
+
+Emitted when multiple transfers are executed atomically in a single call via `batch_transfer()`.
+
+**Topic:** `"batch_tr"`
+**Emitted by:** `batch_transfer`
+**Caller role:** Token holder
+
+| #   | Field             | Soroban Type | Description                   |
+| --- | ----------------- | ------------ | ----------------------------- |
+| 1   | `from`            | `Address`    | Source account                |
+| 2   | `recipient_count` | `u64`        | Number of recipients in batch |
+
+**Backend action:** Record atomic batch settlement; all transfers succeed or all revert.
+
+---
+
+## Token Contract Reference
+
+- **Location:** `contracts/token/src/lib.rs`
+- **Schema:** `docs/contract-schema.token.json`
+- **Initialization:** See `docs/deployment.md` → Token Contract Initialization

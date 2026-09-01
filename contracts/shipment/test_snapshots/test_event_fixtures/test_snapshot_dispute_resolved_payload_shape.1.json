@@ -1065,7 +1065,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "u32": 4
+                  "u32": 5
                 }
               }
             },
@@ -2545,6 +2545,45 @@
           "v0": {
             "topics": [
               {
+                "symbol": "shipment_cancelled"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "u64": 1
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                },
+                {
+                  "bytes": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
+                },
+                {
+                  "u32": 2
+                },
+                {
+                  "u32": 4
+                },
+                {
+                  "bytes": "e6da5c75c02abab38c7776dd82e112fd0675d7a121e46d8e531c7ee35f1bceb3"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000006",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
                 "symbol": "dispute_resolved"
               }
             ],
@@ -2570,10 +2609,10 @@
                   "u32": 2
                 },
                 {
-                  "u32": 4
+                  "u32": 5
                 },
                 {
-                  "bytes": "c8816fc397baf292e6ce325ab8567b719c675dec9e4e2cddedf070b3c1279571"
+                  "bytes": "977610b2dc24c1e92ae97c7d881f770d8787a77ec4a5cc5a8d721ec55cad9da0"
                 }
               ]
             }

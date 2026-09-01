@@ -1,0 +1,105 @@
+[
+  {
+    "udt_union_v0": {
+      "doc": "Token contract error types",
+      "lib": "",
+      "name": "TokenError",
+      "cases": [
+        {
+          "unit_v0": {
+            "name": "NotInitialized"
+          }
+        },
+        {
+          "unit_v0": {
+            "name": "AlreadyInitialized"
+          }
+        },
+        {
+          "unit_v0": {
+            "name": "InvalidAmount"
+          }
+        },
+        {
+          "unit_v0": {
+            "name": "InsufficientBalance"
+          }
+        },
+        {
+          "unit_v0": {
+            "name": "InsufficientAllowance"
+          }
+        },
+        {
+          "unit_v0": {
+            "name": "Unauthorized"
+          }
+        },
+        {
+          "unit_v0": {
+            "name": "SameAccount"
+          }
+        },
+        {
+          "unit_v0": {
+            "name": "Overflow"
+          }
+        },
+        {
+          "unit_v0": {
+            "name": "ContractPaused"
+          }
+        },
+        {
+          "unit_v0": {
+            "name": "InvalidExpirationLedger"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "udt_union_v0": {
+      "doc": "Metadata management error types",
+      "lib": "",
+      "name": "MetadataError",
+      "cases": [
+        {
+          "unit_v0": {
+            "name": "NotInitialized"
+          }
+        },
+        {
+          "unit_v0": {
+            "name": "Unauthorized"
+          }
+        },
+        {
+          "unit_v0": {
+            "name": "InvalidKey"
+          }
+        },
+        {
+          "unit_v0": {
+            "name": "KeyAlreadyExists"
+          }
+        },
+        {
+          "unit_v0": {
+            "name": "KeyNotFound"
+          }
+        },
+        {
+          "unit_v0": {
+            "name": "KeyNotAllowed"
+          }
+        },
+        {
+          "unit_v0": {
+            "name": "InvalidValue"
+          }
+        }
+      ]
+    }
+  }
+]
