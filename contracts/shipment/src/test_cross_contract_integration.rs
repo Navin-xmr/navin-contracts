@@ -742,6 +742,15 @@ fn test_batch_creation_does_not_call_token_contract() {
 }
 
 #[test]
+fn test_external_integration_failed_error_code() {
+    let err = crate::NavinError::ExternalIntegrationFailed;
+    assert_eq!(err as u32, 64);
+    let info = crate::error_map::error_info(err);
+    assert_eq!(info.code, 64);
+    assert_eq!(info.category, crate::error_map::ErrorCategory::Transient);
+}
+
+#[test]
 fn test_recovery_behavior_deterministic_across_reruns() {}
 
 // ── Zero-address treasury validation ───────────────────────────────────────────
@@ -930,5 +939,37 @@ fn test_confirm_delivery_without_escrow_succeeds_with_failing_token() {
         ctx.client.get_shipment(&id).status,
         ShipmentStatus::Delivered,
         "confirm_delivery without escrow must succeed even with a failing token"
+    );
+}
+
+/// Non-sender company attempting to deposit escrow for a shipment must be rejected with Unauthorized (#684).
+#[test]
+fn test_non_sender_company_cannot_deposit_escrow() {
+    let ctx = setup_ok();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x80),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+
+    // Register a second distinct company
+    let other_company = Address::generate(&ctx.env);
+    ctx.client.add_company(&ctx.admin, &other_company);
+
+    let err = ctx
+        .client
+        .try_deposit_escrow(&other_company, &id, &1000i128)
+        .unwrap_err()
+        .unwrap();
+
+    assert_eq!(
+        err,
+        NavinError::Unauthorized,
+        "Non-sender company deposit into another company's shipment must be rejected with Unauthorized"
     );
 }

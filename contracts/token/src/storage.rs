@@ -4,6 +4,7 @@ use soroban_sdk::{contracttype, Address, Env, String, Symbol, Vec};
 #[contracttype]
 pub enum DataKey {
     Admin,
+    PendingAdmin,
     Name,
     Symbol,
     TotalSupply,
@@ -15,6 +16,18 @@ pub enum DataKey {
     AllowedMetadataKeys,
     /// Token metadata key-value pairs
     Metadata(Symbol),
+    /// Contract-wide pause flag (issue #657)
+    Paused,
+}
+
+/// An allowance amount plus the ledger sequence it expires on (issue #659),
+/// matching the standard Soroban token interface's `approve`/`allowance`
+/// shape. `u32::MAX` is used as the "never expires" sentinel.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AllowanceValue {
+    pub amount: i128,
+    pub expiration_ledger: u32,
 }
 
 /// Check if the contract has been initialized
@@ -25,6 +38,21 @@ pub fn is_initialized(env: &Env) -> bool {
 /// Get the admin address
 pub fn get_admin(env: &Env) -> Address {
     env.storage().instance().get(&DataKey::Admin).unwrap()
+}
+
+/// Get the pending admin address, if one is awaiting acceptance.
+pub fn get_pending_admin(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::PendingAdmin)
+}
+
+/// Set the pending admin address.
+pub fn set_pending_admin(env: &Env, admin: &Address) {
+    env.storage().instance().set(&DataKey::PendingAdmin, admin);
+}
+
+/// Clear any pending admin transfer.
+pub fn clear_pending_admin(env: &Env) {
+    env.storage().instance().remove(&DataKey::PendingAdmin);
 }
 
 /// Set the admin address
@@ -62,35 +90,112 @@ pub fn set_total_supply(env: &Env, supply: i128) {
     env.storage().instance().set(&DataKey::TotalSupply, &supply);
 }
 
-/// Get the balance of an address
+/// Get the balance of an address from persistent storage.
 pub fn get_balance(env: &Env, address: &Address) -> i128 {
     env.storage()
-        .instance()
+        .persistent()
         .get(&DataKey::Balance(address.clone()))
         .unwrap_or(0)
 }
 
-/// Set the balance of an address
+/// Set the balance of an address in persistent storage.
 pub fn set_balance(env: &Env, address: &Address, balance: i128) {
     env.storage()
-        .instance()
+        .persistent()
         .set(&DataKey::Balance(address.clone()), &balance);
 }
 
-/// Get the allowance of a spender for an owner's tokens
+/// Get the allowance of a spender for an owner's tokens. Returns 0 once the
+/// current ledger sequence has passed the stored `expiration_ledger`
+/// (issue #659) without requiring an explicit reset.
 pub fn get_allowance(env: &Env, owner: &Address, spender: &Address) -> i128 {
-    env.storage()
-        .instance()
-        .get(&DataKey::Allowance(owner.clone(), spender.clone()))
-        .unwrap_or(0)
+    let stored: Option<AllowanceValue> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::Allowance(owner.clone(), spender.clone()));
+
+    match stored {
+        Some(value) if env.ledger().sequence() <= value.expiration_ledger => value.amount,
+        _ => 0,
+    }
 }
 
-/// Set the allowance of a spender for an owner's tokens
-pub fn set_allowance(env: &Env, owner: &Address, spender: &Address, allowance: i128) {
-    env.storage().instance().set(
+/// Get the raw stored allowance entry (amount + expiration_ledger), not
+/// zeroed out on expiry. Used where the caller needs to distinguish "no
+/// allowance was ever set" from "the allowance expired".
+pub fn get_allowance_raw(env: &Env, owner: &Address, spender: &Address) -> Option<AllowanceValue> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Allowance(owner.clone(), spender.clone()))
+}
+
+/// Set the allowance of a spender for an owner's tokens, along with the
+/// ledger sequence it expires on (issue #659).
+pub fn set_allowance(
+    env: &Env,
+    owner: &Address,
+    spender: &Address,
+    amount: i128,
+    expiration_ledger: u32,
+) {
+    env.storage().persistent().set(
         &DataKey::Allowance(owner.clone(), spender.clone()),
-        &allowance,
+        &AllowanceValue {
+            amount,
+            expiration_ledger,
+        },
     );
+}
+
+/// Extend TTL for a single allowance entry.
+pub fn extend_allowance_ttl(
+    env: &Env,
+    owner: &Address,
+    spender: &Address,
+    threshold: u32,
+    extend_to: u32,
+) {
+    let key = DataKey::Allowance(owner.clone(), spender.clone());
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, threshold, extend_to);
+    }
+}
+
+/// Extend TTL for a single balance entry.
+pub fn extend_balance_ttl(env: &Env, address: &Address, threshold: u32, extend_to: u32) {
+    let key = DataKey::Balance(address.clone());
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, threshold, extend_to);
+    }
+}
+
+/// Extend TTL for several balance entries at once.
+pub fn extend_balance_ttl_for(env: &Env, addresses: &[Address], threshold: u32, extend_to: u32) {
+    for address in addresses {
+        extend_balance_ttl(env, address, threshold, extend_to);
+    }
+}
+
+// ============================================================================
+// Pause Storage Functions (issue #657)
+// ============================================================================
+
+/// Check whether the contract is currently paused. Defaults to false
+/// (unpaused) before pause() has ever been called.
+pub fn is_paused(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::Paused)
+        .unwrap_or(false)
+}
+
+/// Set the contract's paused flag.
+pub fn set_paused(env: &Env, paused: bool) {
+    env.storage().instance().set(&DataKey::Paused, &paused);
 }
 
 // ============================================================================
@@ -100,12 +205,14 @@ pub fn set_allowance(env: &Env, owner: &Address, spender: &Address, allowance: i
 /// Check if a metadata key is in the allowed list
 pub fn is_metadata_key_allowed(env: &Env, key: &Symbol) -> bool {
     env.storage()
-        .instance()
+        .persistent()
         .has(&DataKey::AllowedMetadataKey(key.clone()))
 }
 
 /// Add a key to the allowed metadata keys list
 pub fn add_allowed_metadata_key(env: &Env, key: &Symbol) {
+    let metadata_key = DataKey::AllowedMetadataKey(key.clone());
+    env.storage().persistent().set(&metadata_key, &true);
     env.storage()
         .instance()
         .set(&DataKey::AllowedMetadataKey(key.clone()), &true);
@@ -121,8 +228,9 @@ pub fn add_allowed_metadata_key(env: &Env, key: &Symbol) {
 
 /// Remove a key from the allowed metadata keys list
 pub fn remove_allowed_metadata_key(env: &Env, key: &Symbol) {
+    remove_metadata(env, key);
     env.storage()
-        .instance()
+        .persistent()
         .remove(&DataKey::AllowedMetadataKey(key.clone()));
 
     let mut keys = get_allowed_metadata_keys(env);
@@ -148,28 +256,33 @@ pub fn get_allowed_metadata_keys(env: &Env) -> Vec<Symbol> {
 
 /// Set a metadata key-value pair
 pub fn set_metadata(env: &Env, key: &Symbol, value: &String) {
+    let metadata_key = DataKey::Metadata(key.clone());
+    env.storage().persistent().set(&metadata_key, value);
     env.storage()
-        .instance()
-        .set(&DataKey::Metadata(key.clone()), value);
+        .persistent()
+        .extend_ttl(&metadata_key, 1000, 500000);
 }
 
 /// Get a metadata value by key
 pub fn get_metadata(env: &Env, key: &Symbol) -> Option<String> {
+    if !is_metadata_key_allowed(env, key) {
+        return None;
+    }
     env.storage()
-        .instance()
+        .persistent()
         .get(&DataKey::Metadata(key.clone()))
 }
 
 /// Remove a metadata key-value pair
 pub fn remove_metadata(env: &Env, key: &Symbol) {
     env.storage()
-        .instance()
+        .persistent()
         .remove(&DataKey::Metadata(key.clone()));
 }
 
 /// Check if a metadata key exists
 pub fn has_metadata(env: &Env, key: &Symbol) -> bool {
     env.storage()
-        .instance()
+        .persistent()
         .has(&DataKey::Metadata(key.clone()))
 }

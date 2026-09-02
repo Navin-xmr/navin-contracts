@@ -95,7 +95,7 @@ pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
         return Err(NavinError::InvalidSymbol);
     }
     if !(12..=20).contains(&len) {
-        return Err(NavinError::InvalidShipmentInput);
+        return Err(NavinError::InvalidSymbol);
     }
 
     Ok(())
@@ -1105,7 +1105,7 @@ mod symbol_validation_tests {
         let result = validate_symbol(&env, &oversized_symbol);
         assert_eq!(
             result,
-            Err(NavinError::InvalidShipmentInput),
+            Err(NavinError::InvalidSymbol),
             "Oversized symbol must return InvalidShipmentInput"
         );
     }
@@ -1133,7 +1133,7 @@ mod symbol_validation_tests {
         let value = Symbol::new(&env, &long);
         assert_eq!(
             validate_metadata_symbols(&env, &key, &value),
-            Err(NavinError::InvalidShipmentInput),
+            Err(NavinError::InvalidSymbol),
             "13-char metadata value must be rejected"
         );
     }
@@ -1158,7 +1158,7 @@ mod symbol_validation_tests {
         let value = Symbol::new(&env, "ok");
         assert_eq!(
             validate_metadata_symbols(&env, &key, &value),
-            Err(NavinError::InvalidShipmentInput),
+            Err(NavinError::InvalidSymbol),
             "13-char metadata key must be rejected"
         );
     }
@@ -1185,7 +1185,7 @@ mod symbol_validation_tests {
             let s: std::string::String = "A".repeat(len);
             assert_eq!(
                 validate_metadata_symbols(&env, &key, &Symbol::new(&env, &s)),
-                Err(NavinError::InvalidShipmentInput),
+                Err(NavinError::InvalidSymbol),
                 "metadata value of length {len} must be rejected"
             );
         }

@@ -9,7 +9,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient};
+    use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
     use soroban_sdk::testutils::Ledger as _;
     use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
 
@@ -162,15 +162,25 @@ mod tests {
         assert_eq!(before.digest, after.digest);
     }
 
+    /// Non-zero reason hash used by the force-action digest tests.
+    ///
+    /// `ForceRelease`/`ForceRefund` carry a mandatory audit hash alongside the
+    /// shipment id; these tests vary only the id, so they share one constant.
+    fn test_reason_hash(env: &Env) -> BytesN<32> {
+        BytesN::from_array(env, &[0x11_u8; 32])
+    }
+
     // ── ForceRelease and ForceRefund actions produce distinct digests ─────────
 
     #[test]
     fn force_release_and_force_refund_produce_distinct_digests() {
-        let (_env, client, _admin, _admin2) = setup_multisig();
+        let (env, client, _admin, _admin2) = setup_multisig();
 
         let shipment_id = 42u64;
-        let action_release = crate::types::AdminAction::ForceRelease(shipment_id);
-        let action_refund = crate::types::AdminAction::ForceRefund(shipment_id);
+        let action_release =
+            crate::types::AdminAction::ForceRelease(shipment_id, test_reason_hash(&env));
+        let action_refund =
+            crate::types::AdminAction::ForceRefund(shipment_id, test_reason_hash(&env));
 
         let digest_release = client.compute_proposal_digest(&1, &action_release);
         let digest_refund = client.compute_proposal_digest(&1, &action_refund);
@@ -786,13 +796,15 @@ mod tests {
     /// produces a digest that does not match the stored digest.
     #[test]
     fn altered_force_release_shipment_id_produces_digest_mismatch() {
-        let (_env, client, admin, _admin2) = setup_multisig();
+        let (env, client, admin, _admin2) = setup_multisig();
 
         let original_id: u64 = 1;
         let tampered_id: u64 = 999;
 
-        let original_action = crate::types::AdminAction::ForceRelease(original_id);
-        let tampered_action = crate::types::AdminAction::ForceRelease(tampered_id);
+        let original_action =
+            crate::types::AdminAction::ForceRelease(original_id, test_reason_hash(&env));
+        let tampered_action =
+            crate::types::AdminAction::ForceRelease(tampered_id, test_reason_hash(&env));
 
         let proposal_id = client.propose_action(&admin, &original_action);
 
@@ -815,13 +827,15 @@ mod tests {
     /// produces a digest that does not match the stored digest.
     #[test]
     fn altered_force_refund_shipment_id_produces_digest_mismatch() {
-        let (_env, client, admin, _admin2) = setup_multisig();
+        let (env, client, admin, _admin2) = setup_multisig();
 
         let original_id: u64 = 42;
         let tampered_id: u64 = 1;
 
-        let original_action = crate::types::AdminAction::ForceRefund(original_id);
-        let tampered_action = crate::types::AdminAction::ForceRefund(tampered_id);
+        let original_action =
+            crate::types::AdminAction::ForceRefund(original_id, test_reason_hash(&env));
+        let tampered_action =
+            crate::types::AdminAction::ForceRefund(tampered_id, test_reason_hash(&env));
 
         let proposal_id = client.propose_action(&admin, &original_action);
 
@@ -845,11 +859,13 @@ mod tests {
     /// This covers cross-variant substitution attacks.
     #[test]
     fn swapped_action_variant_produces_digest_mismatch() {
-        let (_env, client, admin, _admin2) = setup_multisig();
+        let (env, client, admin, _admin2) = setup_multisig();
 
         let shipment_id: u64 = 7;
-        let original_action = crate::types::AdminAction::ForceRelease(shipment_id);
-        let swapped_action = crate::types::AdminAction::ForceRefund(shipment_id);
+        let original_action =
+            crate::types::AdminAction::ForceRelease(shipment_id, test_reason_hash(&env));
+        let swapped_action =
+            crate::types::AdminAction::ForceRefund(shipment_id, test_reason_hash(&env));
 
         let proposal_id = client.propose_action(&admin, &original_action);
 
@@ -956,10 +972,10 @@ mod tests {
     /// Edge case: ensure the digest serialization handles zero-valued IDs correctly.
     #[test]
     fn digest_mismatch_detectable_for_zero_shipment_id_substitution() {
-        let (_env, client, admin, _admin2) = setup_multisig();
+        let (env, client, admin, _admin2) = setup_multisig();
 
-        let original_action = crate::types::AdminAction::ForceRelease(0);
-        let tampered_action = crate::types::AdminAction::ForceRelease(1);
+        let original_action = crate::types::AdminAction::ForceRelease(0, test_reason_hash(&env));
+        let tampered_action = crate::types::AdminAction::ForceRelease(1, test_reason_hash(&env));
 
         let proposal_id = client.propose_action(&admin, &original_action);
         let stored = client.get_proposal_action_digest(&proposal_id);
@@ -975,10 +991,12 @@ mod tests {
     /// Edge case: ensure the digest serialization handles maximum-valued IDs correctly.
     #[test]
     fn digest_mismatch_detectable_for_max_shipment_id_substitution() {
-        let (_env, client, admin, _admin2) = setup_multisig();
+        let (env, client, admin, _admin2) = setup_multisig();
 
-        let original_action = crate::types::AdminAction::ForceRefund(u64::MAX);
-        let tampered_action = crate::types::AdminAction::ForceRefund(u64::MAX - 1);
+        let original_action =
+            crate::types::AdminAction::ForceRefund(u64::MAX, test_reason_hash(&env));
+        let tampered_action =
+            crate::types::AdminAction::ForceRefund(u64::MAX - 1, test_reason_hash(&env));
 
         let proposal_id = client.propose_action(&admin, &original_action);
         let stored = client.get_proposal_action_digest(&proposal_id);
@@ -1224,7 +1242,7 @@ mod tests {
         client.init_multisig(&admin, &admins, &3);
 
         // Create first proposal (ForceRelease)
-        let action1 = crate::types::AdminAction::ForceRelease(42u64);
+        let action1 = crate::types::AdminAction::ForceRelease(42u64, test_reason_hash(&env));
         let proposal1_id = client.propose_action(&admin, &action1);
 
         // Create second proposal (TransferAdmin)
@@ -1396,7 +1414,7 @@ mod tests {
 
         // Create ForceRelease proposal
         let shipment_id = 42u64;
-        let action = crate::types::AdminAction::ForceRelease(shipment_id);
+        let action = crate::types::AdminAction::ForceRelease(shipment_id, test_reason_hash(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         // Only 1 approval
@@ -1428,7 +1446,7 @@ mod tests {
 
         // Create ForceRefund proposal
         let shipment_id = 99u64;
-        let action = crate::types::AdminAction::ForceRefund(shipment_id);
+        let action = crate::types::AdminAction::ForceRefund(shipment_id, test_reason_hash(&env));
         let proposal_id = client.propose_action(&admin, &action);
 
         // Only 1 approval
@@ -1473,6 +1491,111 @@ mod tests {
             result,
             Err(Ok(NavinError::InsufficientApprovals)),
             "Upgrade should be blocked without sufficient approvals"
+        );
+    }
+
+    // ── ForceRelease / ForceRefund perform full escrow accounting (#669, #670) ──
+
+    fn setup_shipment_for_force_action(
+        env: &Env,
+        client: &NavinShipmentClient<'static>,
+        admin: &Address,
+    ) -> (Address, u64) {
+        let company = Address::generate(env);
+        let carrier = Address::generate(env);
+        let receiver = Address::generate(env);
+
+        client.add_company(admin, &company);
+        client.add_carrier(admin, &carrier);
+
+        let milestones: Vec<(soroban_sdk::Symbol, u32)> = Vec::new(env);
+        let deadline = env.ledger().timestamp() + 86_400;
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &BytesN::from_array(env, &[7u8; 32]),
+            &milestones,
+            &deadline,
+        );
+
+        client.deposit_escrow(&company, &shipment_id, &1_000_i128);
+        assert_eq!(client.get_active_shipment_count(&company), 1);
+
+        (company, shipment_id)
+    }
+
+    #[test]
+    fn force_release_performs_full_escrow_accounting() {
+        let (env, client, admin, admin2) = setup_multisig();
+        let (company, shipment_id) = setup_shipment_for_force_action(&env, &client, &admin);
+
+        let action = crate::types::AdminAction::ForceRelease(shipment_id, test_reason_hash(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+        // The 2nd approval meets the multisig threshold and auto-executes
+        // the proposal, so there is no separate execute_proposal call.
+        client.approve_action(&admin2, &proposal_id);
+
+        let shipment = client.get_shipment(&shipment_id);
+        assert_eq!(shipment.status, ShipmentStatus::Delivered);
+        assert_eq!(shipment.escrow_amount, 0);
+        assert!(
+            shipment.finalized,
+            "shipment must be finalized after ForceRelease"
+        );
+        assert_eq!(
+            client.get_active_shipment_count(&company),
+            0,
+            "sender's active-shipment slot must be released"
+        );
+    }
+
+    #[test]
+    fn force_refund_performs_full_escrow_accounting() {
+        let (env, client, admin, admin2) = setup_multisig();
+        let (company, shipment_id) = setup_shipment_for_force_action(&env, &client, &admin);
+
+        let action = crate::types::AdminAction::ForceRefund(shipment_id, test_reason_hash(&env));
+        let proposal_id = client.propose_action(&admin, &action);
+        // The 2nd approval meets the multisig threshold and auto-executes
+        // the proposal, so there is no separate execute_proposal call.
+        client.approve_action(&admin2, &proposal_id);
+
+        let shipment = client.get_shipment(&shipment_id);
+        assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+        assert_eq!(shipment.escrow_amount, 0);
+        assert!(
+            shipment.finalized,
+            "shipment must be finalized after ForceRefund"
+        );
+        assert_eq!(
+            client.get_active_shipment_count(&company),
+            0,
+            "sender's active-shipment slot must be released"
+        );
+    }
+
+    #[test]
+    fn force_release_rejects_already_terminal_shipment() {
+        let (env, client, admin, admin2) = setup_multisig();
+        let (_company, shipment_id) = setup_shipment_for_force_action(&env, &client, &admin);
+
+        let first = crate::types::AdminAction::ForceRelease(shipment_id, test_reason_hash(&env));
+        let first_id = client.propose_action(&admin, &first);
+        // The 2nd approval meets the multisig threshold and auto-executes
+        // the proposal, finalizing the shipment.
+        client.approve_action(&admin2, &first_id);
+
+        // A second force action on the now-terminal shipment must be
+        // rejected. Auto-execution happens inside approve_action itself
+        // once the threshold is met, so that is where the rejection surfaces.
+        let second = crate::types::AdminAction::ForceRefund(shipment_id, test_reason_hash(&env));
+        let second_id = client.propose_action(&admin, &second);
+        let result = client.try_approve_action(&admin2, &second_id);
+        assert_eq!(
+            result,
+            Err(Ok(NavinError::ShipmentAlreadyCompleted)),
+            "a second force action on an already-terminal shipment must be rejected"
         );
     }
 }

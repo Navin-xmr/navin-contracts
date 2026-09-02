@@ -1122,6 +1122,66 @@ pub fn emit_force_cancelled(
     crate::storage::increment_event_count(env, shipment_id);
 }
 
+/// Emits a `force_released` event when an admin or multi-sig forcibly releases escrow for a shipment to carrier.
+///
+/// This is a dedicated, immutable audit trail for emergency admin-only escrow releases
+/// that bypass the normal shipment state machine.
+///
+/// # Arguments
+/// * `env` - The contract environment.
+/// * `shipment_id` - The shipment ID for which escrow is being released.
+/// * `admin` - The admin address authorizing the force release.
+/// * `reason_hash` - Mandatory SHA-256 hash of the off-chain reason document.
+/// * `escrow_released` - Amount released to the carrier.
+pub fn emit_force_released(
+    env: &Env,
+    shipment_id: u64,
+    admin: &Address,
+    reason_hash: &BytesN<32>,
+    escrow_released: i128,
+) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::FORCE_RELEASED),),
+        (
+            shipment_id,
+            admin.clone(),
+            reason_hash.clone(),
+            escrow_released,
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
+
+/// Emits a `force_refunded` event when an admin or multi-sig forcibly refunds escrow for a shipment to company.
+///
+/// This is a dedicated, immutable audit trail for emergency admin-only escrow refunds
+/// that bypass the normal shipment state machine.
+///
+/// # Arguments
+/// * `env` - The contract environment.
+/// * `shipment_id` - The shipment ID for which escrow is being refunded.
+/// * `admin` - The admin address authorizing the force refund.
+/// * `reason_hash` - Mandatory SHA-256 hash of the off-chain reason document.
+/// * `escrow_refunded` - Amount refunded to the company.
+pub fn emit_force_refunded(
+    env: &Env,
+    shipment_id: u64,
+    admin: &Address,
+    reason_hash: &BytesN<32>,
+    escrow_refunded: i128,
+) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::FORCE_REFUNDED),),
+        (
+            shipment_id,
+            admin.clone(),
+            reason_hash.clone(),
+            escrow_refunded,
+        ),
+    );
+    crate::storage::increment_event_count(env, shipment_id);
+}
+
 /// Emits a `note_appended` event when a new hash-only note is added to a shipment.
 ///
 /// This follows the Hash-and-Emit pattern for shipment commentary. The actual

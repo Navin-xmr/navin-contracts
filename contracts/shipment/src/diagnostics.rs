@@ -84,7 +84,10 @@ pub fn run_system_health_check_range(env: &Env, start_id: u64, limit: u64) -> Sy
                     // Any present key is a false-positive inconsistency that
                     // inflates rent costs over time.
                     let is_archived = !has_persist && is_terminal;
-                    if is_archived && has_orphaned_counters(env, id) && !storage_inconsistencies.contains(id) {
+                    if is_archived
+                        && has_orphaned_counters(env, id)
+                        && !storage_inconsistencies.contains(id)
+                    {
                         storage_inconsistencies.push_back(id);
                     }
                 }
@@ -178,4 +181,3 @@ fn has_orphaned_counters(env: &Env, shipment_id: u64) -> bool {
     }
     false
 }
-

@@ -579,8 +579,7 @@ mod tests {
         assert_eq!(not_found, Err(Ok(NavinError::ShipmentNotFound)));
 
         // Existing shipment, unset status → StatusHashNotFound.
-        let hash_not_found =
-            client.try_get_status_hash(&shipment_id, &ShipmentStatus::Delivered);
+        let hash_not_found = client.try_get_status_hash(&shipment_id, &ShipmentStatus::Delivered);
         assert_eq!(hash_not_found, Err(Ok(NavinError::StatusHashNotFound)));
 
         // The two errors must be distinct values.

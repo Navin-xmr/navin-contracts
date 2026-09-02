@@ -137,6 +137,84 @@ fn test_batch_multiple_valid_entries_all_succeed() {
 }
 
 #[test]
+fn test_create_single_shipment_rejects_sender_receiver_duplicate() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xA1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let result = client.try_create_shipment(
+        &company,
+        &company,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::InvalidShipmentParticipants)),
+        "sender == receiver must return InvalidShipmentParticipants"
+    );
+}
+
+#[test]
+fn test_create_single_shipment_rejects_sender_carrier_duplicate() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let receiver = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xA2u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let company = Address::generate(&env);
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let result = client.try_create_shipment(
+        &company,
+        &receiver,
+        &company,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::InvalidShipmentParticipants)),
+        "sender == carrier must return InvalidShipmentParticipants"
+    );
+}
+
+#[test]
+fn test_create_single_shipment_rejects_receiver_carrier_duplicate() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let shared = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xA3u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let result = client.try_create_shipment(
+        &company,
+        &shared,
+        &shared,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::InvalidShipmentParticipants)),
+        "receiver == carrier must return InvalidShipmentParticipants"
+    );
+}
+
+#[test]
 fn test_create_single_shipment_distinct_participants_succeeds() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -149,10 +227,17 @@ fn test_create_single_shipment_distinct_participants_succeeds() {
     client.add_company(&admin, &company);
 
     let result = client.try_create_shipment(
-        &company, &receiver, &carrier, &data_hash,
-        &soroban_sdk::Vec::new(&env), &deadline,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
-    assert!(result.is_ok(), "single shipment with valid participants must succeed");
+    assert!(
+        result.is_ok(),
+        "single shipment with valid participants must succeed"
+    );
 }
 
 #[test]

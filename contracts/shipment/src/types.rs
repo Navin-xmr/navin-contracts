@@ -100,12 +100,18 @@ pub enum DataKey {
     IsPaused,
     /// Platform fee configuration.
     FeeConfig,
-    /// Designated address for platform fee collection.
+    /// Reserved. The platform treasury address lives in `FeeConfig::treasury`
+    /// (the slot fee-payout code actually reads); this standalone key is kept
+    /// only so the storage-key layout stays stable for already-deployed
+    /// contracts and must not be written or read.
     Treasury,
     /// Rate limit quota tracker per actor (company/carrier).
     ActorQuota(Address),
     /// Circuit breaker state for token transfers.
     CircuitBreakerState,
+    /// Admin-configured circuit breaker thresholds. Absent means the built-in
+    /// default is in effect.
+    CircuitBreakerConfig,
     /// Audit log entry keyed by entry ID.
     AuditEntry(u64),
     /// Total count of audit log entries.
@@ -132,6 +138,10 @@ pub enum DataKey {
     RecoveryRecord(u64, u32),
     /// Total count of recovery action records for a shipment.
     RecoveryRecordCount(u64),
+    /// Proposal salt used to prevent replay attacks — salt -> bool.
+    ProposalSalt(BytesN<32>),
+    /// Prerequisite shipment IDs for a dependent — dependent_id -> Vec<u64>.
+    ShipmentDependents(u64),
 }
 
 /// Structured reason codes for escrow freeze events.
@@ -672,9 +682,11 @@ pub enum AdminAction {
     /// Transfer admin role to new address.
     TransferAdmin(Address),
     /// Force release escrow for a shipment to carrier.
-    ForceRelease(u64),
+    /// Includes a reason_hash for audit trail and accountability.
+    ForceRelease(u64, BytesN<32>),
     /// Force refund escrow for a shipment to company.
-    ForceRefund(u64),
+    /// Includes a reason_hash for audit trail and accountability.
+    ForceRefund(u64, BytesN<32>),
 }
 
 /// Multi-signature proposal for critical admin actions.
@@ -726,6 +738,8 @@ pub enum NotificationType {
     DisputeResolved,
     /// Deadline is approaching.
     DeadlineApproaching,
+    /// Carrier handoff occurred — ownership transferred to a new carrier.
+    CarrierHandoff,
 }
 
 /// Aggregated on-chain analytics data.

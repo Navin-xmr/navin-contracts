@@ -1202,7 +1202,7 @@ fn test_health_check_capped_and_paginated() {
     client.add_carrier(&admin, &carrier);
 
     let deadline = env.ledger().timestamp() + 3600;
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let _data_hash = BytesN::from_array(&env, &[1u8; 32]);
 
     // Create 150 shipments (exceeding DEFAULT_HEALTH_SAMPLE_LIMIT = 100)
     for i in 0..150 {

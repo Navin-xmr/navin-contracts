@@ -1,5 +1,8 @@
 use crate::{audit, NavinShipment, NavinShipmentClient, ShipmentStatus};
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Symbol, Vec};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger as _},
+    Address, BytesN, Env, Symbol, Vec,
+};
 
 #[soroban_sdk::contract]
 struct MockToken;
@@ -77,6 +80,8 @@ fn test_finalization_on_cancel_with_zero_escrow() {
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -154,6 +159,8 @@ fn create_and_finalize(
 
     client.initialize(admin, token_contract);
     client.add_company(admin, &company);
+    client.add_carrier(admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -501,9 +508,15 @@ fn test_archive_clears_all_per_shipment_counters() {
         // Two evidence hashes (index 0 and 1)
         let evidence0 = BytesN::from_array(&env, &[0x44u8; 32]);
         let evidence1 = BytesN::from_array(&env, &[0x55u8; 32]);
-        env.storage().persistent().set(&DataKey::DisputeEvidence(shipment_id, 0), &evidence0);
-        env.storage().persistent().set(&DataKey::DisputeEvidence(shipment_id, 1), &evidence1);
-        env.storage().persistent().set(&DataKey::DisputeEvidenceCount(shipment_id), &2u32);
+        env.storage()
+            .persistent()
+            .set(&DataKey::DisputeEvidence(shipment_id, 0), &evidence0);
+        env.storage()
+            .persistent()
+            .set(&DataKey::DisputeEvidence(shipment_id, 1), &evidence1);
+        env.storage()
+            .persistent()
+            .set(&DataKey::DisputeEvidenceCount(shipment_id), &2u32);
 
         // One recovery record (index 0)
         let record = RecoveryRecord {
@@ -512,8 +525,12 @@ fn test_archive_clears_all_per_shipment_counters() {
             reason_hash: BytesN::from_array(&env, &[0x77u8; 32]),
             timestamp: env.ledger().timestamp(),
         };
-        env.storage().persistent().set(&DataKey::RecoveryRecord(shipment_id, 0), &record);
-        env.storage().persistent().set(&DataKey::RecoveryRecordCount(shipment_id), &1u32);
+        env.storage()
+            .persistent()
+            .set(&DataKey::RecoveryRecord(shipment_id, 0), &record);
+        env.storage()
+            .persistent()
+            .set(&DataKey::RecoveryRecordCount(shipment_id), &1u32);
     });
 
     assert_eq!(client.get_dispute_evidence_count(&shipment_id), 2);
@@ -522,7 +539,10 @@ fn test_archive_clears_all_per_shipment_counters() {
     // Cancel to reach a terminal state
     let cancel_hash = BytesN::from_array(&env, &[0x66u8; 32]);
     client.cancel_shipment(&company, &shipment_id, &cancel_hash);
-    assert_eq!(client.get_shipment(&shipment_id).status, ShipmentStatus::Cancelled);
+    assert_eq!(
+        client.get_shipment(&shipment_id).status,
+        ShipmentStatus::Cancelled
+    );
 
     // Sanity: health is clean before archival
     let pre_health = client.check_contract_health(&admin);
@@ -547,79 +567,113 @@ fn test_archive_clears_all_per_shipment_counters() {
 
         // Primary shipment record must be gone
         assert!(
-            !env.storage().persistent().has(&DataKey::Shipment(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::Shipment(shipment_id)),
             "Shipment key must be removed after archive"
         );
 
         // Counters / scalar keys
         assert!(
-            !env.storage().persistent().has(&DataKey::EventCount(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::EventCount(shipment_id)),
             "EventCount must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::MilestoneEventCount(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::MilestoneEventCount(shipment_id)),
             "MilestoneEventCount must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::BreachEventCount(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::BreachEventCount(shipment_id)),
             "BreachEventCount must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::LastStatusUpdate(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::LastStatusUpdate(shipment_id)),
             "LastStatusUpdate must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::ConfirmationHash(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::ConfirmationHash(shipment_id)),
             "ConfirmationHash must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::Escrow(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::Escrow(shipment_id)),
             "Escrow key must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::EscrowFreezeReasonByShipment(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::EscrowFreezeReasonByShipment(shipment_id)),
             "EscrowFreezeReasonByShipment must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::ActiveSettlement(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::ActiveSettlement(shipment_id)),
             "ActiveSettlement must be cleared after archive"
         );
 
         // Note count + per-index entries
         assert!(
-            !env.storage().persistent().has(&DataKey::ShipmentNoteCount(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::ShipmentNoteCount(shipment_id)),
             "ShipmentNoteCount must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::ShipmentNote(shipment_id, 0)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::ShipmentNote(shipment_id, 0)),
             "ShipmentNote[0] must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::ShipmentNote(shipment_id, 1)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::ShipmentNote(shipment_id, 1)),
             "ShipmentNote[1] must be cleared after archive"
         );
 
         // Evidence count + per-index entries
         assert!(
-            !env.storage().persistent().has(&DataKey::DisputeEvidenceCount(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::DisputeEvidenceCount(shipment_id)),
             "DisputeEvidenceCount must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::DisputeEvidence(shipment_id, 0)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::DisputeEvidence(shipment_id, 0)),
             "DisputeEvidence[0] must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::DisputeEvidence(shipment_id, 1)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::DisputeEvidence(shipment_id, 1)),
             "DisputeEvidence[1] must be cleared after archive"
         );
 
         // Recovery record count + per-index entries
         assert!(
-            !env.storage().persistent().has(&DataKey::RecoveryRecordCount(shipment_id)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::RecoveryRecordCount(shipment_id)),
             "RecoveryRecordCount must be cleared after archive"
         );
         assert!(
-            !env.storage().persistent().has(&DataKey::RecoveryRecord(shipment_id, 0)),
+            !env.storage()
+                .persistent()
+                .has(&DataKey::RecoveryRecord(shipment_id, 0)),
             "RecoveryRecord[0] must be cleared after archive"
         );
     });
@@ -674,5 +728,127 @@ fn test_archive_with_no_optional_counters_is_clean() {
         0,
         "no inconsistencies expected after bare archive: {:?}",
         health.storage_inconsistencies
+    );
+}
+
+// ── #677-#680: recovery wrappers return NotInitialized instead of panicking ──
+
+#[test]
+fn test_recover_shipment_before_initialize_returns_error() {
+    let (env, client, admin, _token) = setup_shipment_env();
+    let reason = BytesN::from_array(&env, &[0xC3; 32]);
+
+    assert_eq!(
+        client.try_recover_shipment(&admin, &1u64, &ShipmentStatus::Cancelled, &reason),
+        Err(Ok(crate::NavinError::NotInitialized))
+    );
+}
+
+#[test]
+fn test_unlock_escrow_before_initialize_returns_error() {
+    let (env, client, admin, _token) = setup_shipment_env();
+    let reason = BytesN::from_array(&env, &[0xC4; 32]);
+
+    assert_eq!(
+        client.try_unlock_escrow(&admin, &1u64, &reason),
+        Err(Ok(crate::NavinError::NotInitialized))
+    );
+}
+
+#[test]
+fn test_clear_finalization_before_initialize_returns_error() {
+    let (env, client, admin, _token) = setup_shipment_env();
+    let reason = BytesN::from_array(&env, &[0xC5; 32]);
+
+    assert_eq!(
+        client.try_clear_finalization(&admin, &1u64, &reason),
+        Err(Ok(crate::NavinError::NotInitialized))
+    );
+}
+
+#[test]
+fn test_rollback_on_external_failure_before_initialize_returns_error() {
+    let (env, client, admin, _token) = setup_shipment_env();
+    let reason = BytesN::from_array(&env, &[0xC6; 32]);
+
+    assert_eq!(
+        client.try_rollback_on_external_failure(&admin, &1u64, &ShipmentStatus::Created, &reason),
+        Err(Ok(crate::NavinError::NotInitialized))
+    );
+}
+
+// ── #689: check_deadline emits notifications for sender and carrier ─────────
+
+#[test]
+fn test_check_deadline_emits_notifications_for_sender_and_carrier() {
+    use soroban_sdk::testutils::Events as _;
+    use soroban_sdk::{TryFromVal, TryIntoVal};
+
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 100;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    // Advance past deadline + default grace period (86400s)
+    let current_time = env.ledger().timestamp();
+    env.ledger().set_timestamp(current_time + 100 + 86400 + 1);
+
+    client.check_deadline(&shipment_id);
+
+    // Collect all notification events emitted for this contract
+    let mut sender_notified = false;
+    let mut carrier_notified = false;
+
+    for (_contract, topics, data) in env.events().all().into_iter() {
+        if let Some(topic_val) = topics.get(0) {
+            if let Ok(sym) = Symbol::try_from_val(&env, &topic_val) {
+                if sym == Symbol::new(&env, crate::event_topics::NOTIFICATION) {
+                    if let Ok(payload) =
+                        soroban_sdk::Vec::<soroban_sdk::Val>::try_from_val(&env, &data)
+                    {
+                        let recipient: Address =
+                            payload.get(0).unwrap().try_into_val(&env).unwrap();
+                        let notif_type: crate::types::NotificationType =
+                            payload.get(1).unwrap().try_into_val(&env).unwrap();
+                        let notif_shipment_id: u64 =
+                            payload.get(2).unwrap().try_into_val(&env).unwrap();
+
+                        if notif_shipment_id == shipment_id
+                            && notif_type == crate::types::NotificationType::StatusChanged
+                        {
+                            if recipient == company {
+                                sender_notified = true;
+                            } else if recipient == carrier {
+                                carrier_notified = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    assert!(
+        sender_notified,
+        "sender (company) must receive notification on auto-expiry"
+    );
+    assert!(
+        carrier_notified,
+        "carrier must receive notification on auto-expiry"
     );
 }

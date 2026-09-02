@@ -9,7 +9,7 @@ use crate::{
 use soroban_sdk::{
     contract, contracterror, contractimpl,
     testutils::{storage::Persistent, Address as _, Events, Ledger},
-    Address, BytesN, Env, IntoVal, Symbol, TryFromVal, TryIntoVal,
+    Address, BytesN, Env, FromVal, IntoVal, Symbol, TryFromVal, TryIntoVal, Vec,
 };
 
 #[contract]
@@ -363,6 +363,150 @@ fn test_create_shipment_unauthorized() {
         &outsider,
         &receiver,
         &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+}
+
+// ============= Issue #701: Participant Validation Tests =============
+
+/// Issue #701 — create_shipment must reject when sender == receiver
+#[test]
+#[should_panic(expected = "Error(Contract, #57)")]
+fn test_create_shipment_rejects_sender_equals_receiver() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[101u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    client.create_shipment(
+        &company,
+        &company, // sender == receiver (invalid)
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+}
+
+/// Issue #701 — create_shipment must reject when sender == carrier
+#[test]
+#[should_panic(expected = "Error(Contract, #57)")]
+fn test_create_shipment_rejects_sender_equals_carrier() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[102u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &company, // sender == carrier (invalid)
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+}
+
+/// Issue #701 — create_shipment must reject when receiver == carrier
+#[test]
+#[should_panic(expected = "Error(Contract, #57)")]
+fn test_create_shipment_rejects_receiver_equals_carrier() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[103u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    client.create_shipment(
+        &company,
+        &receiver,
+        &receiver, // receiver == carrier (invalid)
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+}
+
+/// Issue #701 — create_shipment should succeed with distinct participants
+#[test]
+fn test_create_shipment_succeeds_with_distinct_participants() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[104u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert_eq!(shipment_id, 1);
+    
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.sender, company);
+    assert_eq!(shipment.receiver, receiver);
+    assert_eq!(shipment.carrier, carrier);
+}
+
+// ============= End Participant Validation Tests =============
+
+#[test]
+#[should_panic(expected = "Error(Contract, #57)")]
+fn test_create_shipment_rejects_sender_equals_receiver() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+    client.add_company(&admin, &company);
+    // sender and receiver are the same address — must be rejected
+    client.create_shipment(
+        &company,
+        &company,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #57)")]
+fn test_create_shipment_rejects_sender_equals_carrier() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[8u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+    client.add_company(&admin, &company);
+    // sender and carrier are the same address — must be rejected
+    client.create_shipment(
+        &company,
+        &receiver,
+        &company,
         &data_hash,
         &soroban_sdk::Vec::new(&env),
         &deadline,
@@ -1268,6 +1412,40 @@ fn test_get_shipment_carrier_fails_for_invalid_id() {
     client.get_shipment_carrier(&999);
 }
 
+#[test]
+fn test_get_shipment_status_returns_created_for_new_shipment() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[14u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    assert_eq!(client.get_shipment_status(&shipment_id), ShipmentStatus::Created);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")]
+fn test_get_shipment_status_fails_for_invalid_id() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+
+    client.initialize(&admin, &token_contract);
+
+    client.get_shipment_status(&999);
+}
+
 // ============= Geofence Event Tests =============
 
 #[test]
@@ -1553,6 +1731,8 @@ fn setup_shipment_with_status(
 
     client.initialize(admin, token_contract);
     client.add_company(admin, &company);
+    client.add_carrier(admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -2989,6 +3169,8 @@ fn test_cancel_shipment_with_escrow() {
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -3003,9 +3185,27 @@ fn test_cancel_shipment_with_escrow() {
 
     client.cancel_shipment(&company, &shipment_id, &reason_hash);
 
+    let events = env.events().all();
+    let emitted_refund = events.iter().any(|(_contract, topics, _data)| {
+        topics
+            .iter()
+            .any(|v| Symbol::from_val(&env, &v) == Symbol::new(&env, "escrow_refunded"))
+    });
+    assert!(
+        emitted_refund,
+        "cancel_shipment must emit escrow_refunded when returning escrow"
+    );
+
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
     assert_eq!(shipment.escrow_amount, 0);
+
+    let events = env.events().all();
+    let emitted_refund = events.iter().any(|(_contract, topics, _data)| {
+        topics.iter().any(|v| {
+            Symbol::try_from_val(&env, &v).ok() == Some(Symbol::new(&env, "escrow_refunded"))
+        })
+    });
 }
 
 #[test]
@@ -3020,6 +3220,8 @@ fn test_cancel_shipment_without_escrow() {
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -3034,6 +3236,19 @@ fn test_cancel_shipment_without_escrow() {
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
     assert_eq!(shipment.escrow_amount, 0);
+    assert!(shipment.finalized);
+    assert_eq!(client.get_escrow_balance(&shipment_id), 0);
+
+    let events = env.events().all();
+    let emitted_refund = events.iter().any(|(_contract, topics, _data)| {
+        topics
+            .iter()
+            .any(|v| Symbol::from_val(&env, &v) == Symbol::new(&env, "escrow_refunded"))
+    });
+    assert!(
+        !emitted_refund,
+        "cancel_shipment must not refund escrow when none is held"
+    );
 }
 
 #[test]
@@ -3048,6 +3263,8 @@ fn test_cancel_shipment_by_admin() {
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -3061,6 +3278,9 @@ fn test_cancel_shipment_by_admin() {
 
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
+    assert_eq!(shipment.escrow_amount, 0);
+    assert!(shipment.finalized);
+    assert_eq!(client.get_escrow_balance(&shipment_id), 0);
 }
 
 #[test]
@@ -3161,6 +3381,8 @@ fn test_escrow_cancel_path_create_deposit_cancel_refund() {
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -3177,6 +3399,14 @@ fn test_escrow_cancel_path_create_deposit_cancel_refund() {
     let shipment = client.get_shipment(&shipment_id);
     assert_eq!(shipment.status, crate::ShipmentStatus::Cancelled);
     assert_eq!(shipment.escrow_amount, 0);
+    assert!(shipment.finalized);
+    assert_eq!(client.get_escrow_balance(&shipment_id), 0);
+    env.as_contract(&client.address, || {
+        assert!(
+            !crate::storage::has_escrow_entry(&env, shipment_id),
+            "escrow storage must be cleaned up exactly once on the cancel-refund path"
+        );
+    });
 }
 
 #[test]
@@ -5083,7 +5313,8 @@ fn test_force_release_action() {
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
 
     // Propose force release
-    let action = crate::AdminAction::ForceRelease(shipment_id);
+    let reason_hash = BytesN::from_array(&env, &[0x01u8; 32]);
+    let action = crate::AdminAction::ForceRelease(shipment_id, reason_hash);
     let proposal_id = client.propose_action(&admin1, &action);
 
     // Approve and execute
@@ -5131,7 +5362,8 @@ fn test_force_refund_action() {
     client.deposit_escrow(&company, &shipment_id, &escrow_amount);
 
     // Propose force refund
-    let action = crate::AdminAction::ForceRefund(shipment_id);
+    let reason_hash = BytesN::from_array(&env, &[0x07u8; 32]);
+    let action = crate::AdminAction::ForceRefund(shipment_id, reason_hash);
     let proposal_id = client.propose_action(&admin1, &action);
 
     // Approve and execute
@@ -6641,6 +6873,538 @@ fn test_add_dispute_evidence_unauthorized() {
 }
 
 #[test]
+fn test_get_dispute_evidence_hash_with_out_of_bounds_index() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let evidence_hash = BytesN::from_array(&env, &[77u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Raise dispute and add evidence
+    client.raise_dispute(&company, &shipment_id, &data_hash);
+    client.add_dispute_evidence_hash(&company, &shipment_id, &evidence_hash);
+
+    // Valid index 0 should work
+    assert_eq!(
+        client.get_dispute_evidence_hash(&shipment_id, &0),
+        Some(evidence_hash)
+    );
+
+    // Index 1 is out of bounds (only 1 evidence at index 0)
+    let result = client.try_get_dispute_evidence_hash(&shipment_id, &1);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::EvidenceNotFound)),
+        "out-of-bounds index should return EvidenceNotFound"
+    );
+
+    // Add another evidence
+    let second_evidence = BytesN::from_array(&env, &[88u8; 32]);
+    client.add_dispute_evidence_hash(&company, &shipment_id, &second_evidence);
+
+    // Now index 1 should work
+    assert_eq!(
+        client.get_dispute_evidence_hash(&shipment_id, &1),
+        Some(second_evidence)
+    );
+
+    // But index 2 should fail
+    let result = client.try_get_dispute_evidence_hash(&shipment_id, &2);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::EvidenceNotFound)),
+        "index equal to or beyond evidence count should return EvidenceNotFound"
+    );
+}
+
+#[test]
+fn test_get_dispute_evidence_hash_with_non_existent_shipment() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+
+    client.initialize(&admin, &token_contract);
+
+    // Try to get evidence for a shipment that doesn't exist
+    let result = client.try_get_dispute_evidence_hash(&999u64, &0);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ShipmentNotFound)),
+        "querying evidence on non-existent shipment should return ShipmentNotFound"
+    );
+}
+
+#[test]
+fn test_get_dispute_evidence_hash_validates_error_code_67() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Raise dispute but don't add any evidence
+    client.raise_dispute(&company, &shipment_id, &data_hash);
+
+    // Try to get evidence at index 0 from empty evidence list
+    let result = client.try_get_dispute_evidence_hash(&shipment_id, &0);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::EvidenceNotFound)),
+        "EvidenceNotFound error (code 67) should be returned for empty evidence list"
+    );
+
+    // Verify the error code is correct
+    let evidence_not_found_err = crate::NavinError::EvidenceNotFound;
+    assert_eq!(evidence_not_found_err as u32, 67);
+}
+
+// ============= Circular Dependency Tests =============
+
+#[test]
+fn test_circular_dependency_self_dependency() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Attempting to make a shipment depend on itself should fail with CircularDependency
+    let result = client.try_add_shipment_dependency(&company, &shipment_id, &shipment_id);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::CircularDependency)),
+        "self-dependency should be rejected with CircularDependency error"
+    );
+}
+
+#[test]
+fn test_circular_dependency_two_shipment_cycle() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let data_hash_b = BytesN::from_array(&env, &[2u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    // Create two shipments
+    let shipment_a = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let shipment_b = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash_b,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // A depends on B should work
+    let result = client.try_add_shipment_dependency(&company, &shipment_a, &shipment_b);
+    assert!(result.is_ok(), "adding dependency A->B should succeed");
+
+    // B depends on A creates a cycle and should fail
+    let result = client.try_add_shipment_dependency(&company, &shipment_b, &shipment_a);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::CircularDependency)),
+        "circular dependency A->B->A should be rejected"
+    );
+}
+
+#[test]
+fn test_circular_dependency_three_shipment_cycle() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let data_hash_b = BytesN::from_array(&env, &[2u8; 32]);
+    let data_hash_c = BytesN::from_array(&env, &[3u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    // Create three shipments
+    let shipment_a = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let shipment_b = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash_b,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let shipment_c = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash_c,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Build chain: A -> B -> C
+    let result = client.try_add_shipment_dependency(&company, &shipment_a, &shipment_b);
+    assert!(result.is_ok(), "A depends on B should succeed");
+
+    let result = client.try_add_shipment_dependency(&company, &shipment_b, &shipment_c);
+    assert!(result.is_ok(), "B depends on C should succeed");
+
+    // Attempting C -> A completes the cycle and should fail
+    let result = client.try_add_shipment_dependency(&company, &shipment_c, &shipment_a);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::CircularDependency)),
+        "circular dependency A->B->C->A should be detected and rejected"
+    );
+}
+
+#[test]
+fn test_circular_dependency_error_code_55() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let data_hash_b = BytesN::from_array(&env, &[2u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_a = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let shipment_b = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash_b,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Create initial dependency
+    client.add_shipment_dependency(&company, &shipment_a, &shipment_b);
+
+    // Try to create cycle
+    let result = client.try_add_shipment_dependency(&company, &shipment_b, &shipment_a);
+
+    // Verify the error is CircularDependency with code 55
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::CircularDependency)),
+        "CircularDependency error should be returned"
+    );
+
+    let circular_dep_err = crate::NavinError::CircularDependency;
+    assert_eq!(
+        circular_dep_err as u32, 55,
+        "CircularDependency error code must be 55"
+    );
+}
+
+// ============= Dependencies Not Met Tests =============
+
+#[test]
+fn test_dependencies_not_met_transition_blocked() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let data_hash_b = BytesN::from_array(&env, &[2u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    // Create two shipments
+    let shipment_prereq = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let shipment_dependent = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash_b,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Make shipment_dependent depend on shipment_prereq
+    client.add_shipment_dependency(&company, &shipment_dependent, &shipment_prereq);
+
+    // Try to transition dependent shipment to InTransit before prerequisite is completed
+    let result = client.try_update_status(
+        &carrier,
+        &shipment_dependent,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::DependenciesNotMet)),
+        "transition should fail when prerequisite shipment is not completed"
+    );
+}
+
+#[test]
+fn test_dependencies_not_met_multiple_prerequisites() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let data_hash_b = BytesN::from_array(&env, &[2u8; 32]);
+    let data_hash_c = BytesN::from_array(&env, &[3u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    // Create three shipments
+    let prereq_a = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let prereq_b = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash_b,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let dependent = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash_c,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // dependent depends on both prereq_a and prereq_b
+    client.add_shipment_dependency(&company, &dependent, &prereq_a);
+    client.add_shipment_dependency(&company, &dependent, &prereq_b);
+
+    // Try to transition with only one prerequisite met
+    client.update_status(&carrier, &prereq_a, &ShipmentStatus::InTransit, &data_hash);
+    super::test_utils::advance_past_rate_limit(&env);
+    client.update_status(&carrier, &prereq_a, &ShipmentStatus::Delivered, &data_hash);
+
+    // Attempt transition with prereq_b still incomplete
+    let result =
+        client.try_update_status(&carrier, &dependent, &ShipmentStatus::InTransit, &data_hash);
+
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::DependenciesNotMet)),
+        "transition should fail when any prerequisite is incomplete"
+    );
+}
+
+#[test]
+fn test_dependencies_met_transition_succeeds() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let data_hash_b = BytesN::from_array(&env, &[2u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    // Create two shipments
+    let shipment_prereq = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let shipment_dependent = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash_b,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Make shipment_dependent depend on shipment_prereq
+    client.add_shipment_dependency(&company, &shipment_dependent, &shipment_prereq);
+
+    // Complete the prerequisite shipment
+    client.update_status(
+        &carrier,
+        &shipment_prereq,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+    super::test_utils::advance_past_rate_limit(&env);
+    client.update_status(
+        &carrier,
+        &shipment_prereq,
+        &ShipmentStatus::Delivered,
+        &data_hash,
+    );
+
+    // Now transitioning the dependent shipment should succeed
+    client.update_status(
+        &carrier,
+        &shipment_dependent,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    let dependent_status = client.get_shipment(&shipment_dependent).status;
+    assert_eq!(
+        dependent_status,
+        ShipmentStatus::InTransit,
+        "dependent shipment should successfully transition after prerequisite is completed"
+    );
+}
+
+#[test]
+fn test_dependencies_not_met_error_code_54() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let data_hash_b = BytesN::from_array(&env, &[2u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_prereq = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let shipment_dependent = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash_b,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Create dependency
+    client.add_shipment_dependency(&company, &shipment_dependent, &shipment_prereq);
+
+    // Try transition before prerequisite is complete
+    let result = client.try_update_status(
+        &carrier,
+        &shipment_dependent,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::DependenciesNotMet)),
+        "DependenciesNotMet error should be returned when prerequisites are incomplete"
+    );
+
+    let deps_not_met_err = crate::NavinError::DependenciesNotMet;
+    assert_eq!(
+        deps_not_met_err as u32, 54,
+        "DependenciesNotMet error code must be 54"
+    );
+}
+
+#[test]
 #[should_panic(expected = "Error(Contract, #30)")]
 fn test_shipment_limit_reached() {
     let (env, client, admin, token_contract) = setup_shipment_env();
@@ -6703,6 +7467,141 @@ fn test_batch_limit_reached() {
     }
 
     client.create_shipments_batch(&company, &shipments);
+}
+
+// ============= Proposal Salt Reuse Tests =============
+
+#[test]
+fn test_proposal_salt_reused_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+
+    // Set up multisig
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &1);
+
+    let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
+    let salt = BytesN::from_array(&env, &[1u8; 32]);
+    let action = crate::AdminAction::Upgrade(new_wasm_hash);
+
+    // First proposal with specific salt should succeed
+    let proposal_id_1 = client.propose_action_with_salt(&admin, &action, &salt);
+    assert_eq!(proposal_id_1, 1);
+
+    // Attempt second proposal with the same salt should fail with ProposalSaltReused
+    let result = client.try_propose_action_with_salt(&admin, &action, &salt);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalSaltReused)),
+        "reused salt should be rejected with ProposalSaltReused error"
+    );
+}
+
+#[test]
+fn test_proposal_unique_salts_accepted() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+
+    // Set up multisig
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &1);
+
+    let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
+    let salt_1 = BytesN::from_array(&env, &[1u8; 32]);
+    let salt_2 = BytesN::from_array(&env, &[2u8; 32]);
+    let action = crate::AdminAction::Upgrade(new_wasm_hash);
+
+    // First proposal with salt_1
+    let proposal_id_1 = client.propose_action_with_salt(&admin, &action, &salt_1);
+    assert_eq!(proposal_id_1, 1);
+
+    // Second proposal with different salt_2 should succeed
+    let proposal_id_2 = client.propose_action_with_salt(&admin, &action, &salt_2);
+    assert_eq!(proposal_id_2, 2);
+
+    // Both proposals should exist
+    let proposal_1 = client.get_proposal(&proposal_id_1);
+    let proposal_2 = client.get_proposal(&proposal_id_2);
+    assert_eq!(proposal_1.id, proposal_id_1);
+    assert_eq!(proposal_2.id, proposal_id_2);
+}
+
+#[test]
+fn test_proposal_salt_reuse_error_code_56() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+
+    // Set up multisig
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &1);
+
+    let new_wasm_hash = BytesN::from_array(&env, &[42u8; 32]);
+    let salt = BytesN::from_array(&env, &[99u8; 32]);
+    let action = crate::AdminAction::Upgrade(new_wasm_hash);
+
+    // Create first proposal
+    let _ = client.propose_action_with_salt(&admin, &action, &salt);
+
+    // Attempt to create second proposal with same salt
+    let result = client.try_propose_action_with_salt(&admin, &action, &salt);
+
+    // Verify the error is ProposalSaltReused with code 56
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalSaltReused)),
+        "ProposalSaltReused error should be returned"
+    );
+
+    let salt_reused_err = crate::NavinError::ProposalSaltReused;
+    assert_eq!(
+        salt_reused_err as u32, 56,
+        "ProposalSaltReused error code must be 56"
+    );
+}
+
+#[test]
+fn test_proposal_salt_different_actions_same_salt() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+
+    // Set up multisig
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &1);
+
+    let new_admin = Address::generate(&env);
+    let salt = BytesN::from_array(&env, &[77u8; 32]);
+
+    let action_1 = crate::AdminAction::Upgrade(BytesN::from_array(&env, &[42u8; 32]));
+    let action_2 = crate::AdminAction::TransferAdmin(new_admin);
+
+    // First proposal with salt
+    let proposal_id_1 = client.propose_action_with_salt(&admin, &action_1, &salt);
+    assert_eq!(proposal_id_1, 1);
+
+    // Attempt second proposal with same salt but different action should also fail
+    // Salt reuse is checked regardless of action content
+    let result = client.try_propose_action_with_salt(&admin, &action_2, &salt);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalSaltReused)),
+        "salt reuse should be rejected even with different actions"
+    );
 }
 
 #[test]
@@ -7183,84 +8082,83 @@ fn test_deposit_escrow_returns_escrow_already_deposited() {
 
 // ============= Error #19: MilestoneAlreadyPaid Tests =============
 
-// NOTE: This test is commented out because the feature may not be fully implemented yet
-// #[test]
-// #[should_panic(expected = "Error(Contract, #19)")]
-// fn test_record_milestone_returns_milestone_already_paid() {
-//     let (env, client, admin, token_contract) = setup_shipment_env();
-//     let company = Address::generate(&env);
-//     let receiver = Address::generate(&env);
-//     let carrier = Address::generate(&env);
-//     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-//     let checkpoint = soroban_sdk::Symbol::new(&env, "port_arrival");
-//     let deadline = env.ledger().timestamp() + 3600;
-//
-//     let mut milestones = soroban_sdk::Vec::new(&env);
-//     milestones.push_back((checkpoint.clone(), 100u32));
-//
-//     client.initialize(&admin, &token_contract);
-//     client.add_company(&admin, &company);
-//     client.add_carrier(&admin, &carrier);
-//
-//     let shipment_id = client.create_shipment(
-//         &company,
-//         &receiver,
-//         &carrier,
-//         &data_hash,
-//         &milestones,
-//         &deadline,
-//     );
-//
-//     client.deposit_escrow(&company, &shipment_id, &1000);
-//
-//     env.as_contract(&client.address, || {
-//         let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
-//         shipment.status = crate::ShipmentStatus::InTransit;
-//         crate::storage::set_shipment(&env, &shipment);
-//     });
-//
-//     client.record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
-//     // Try to record the same milestone again
-//     client.record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
-// }
+#[test]
+fn test_record_milestone_returns_milestone_already_paid() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let checkpoint = soroban_sdk::Symbol::new(&env, "port_arrival");
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let mut milestones = soroban_sdk::Vec::new(&env);
+    milestones.push_back((checkpoint.clone(), 100u32));
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+
+    client.deposit_escrow(&company, &shipment_id, &1000);
+
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::ShipmentStatus::InTransit;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+
+    client.record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
+
+    // Try to record the same milestone again — must be rejected
+    let result = client.try_record_milestone(&carrier, &shipment_id, &checkpoint, &data_hash);
+    assert_eq!(result, Err(Ok(NavinError::MilestoneAlreadyPaid)));
+}
 
 // ============= Error #20: MetadataLimitExceeded Tests =============
 
-// NOTE: This test is commented out because the feature may not be fully implemented yet
-// #[test]
-// #[should_panic(expected = "Error(Contract, #20)")]
-// fn test_set_shipment_metadata_returns_metadata_limit_exceeded() {
-//     let (env, client, admin, token_contract) = setup_shipment_env();
-//     let company = Address::generate(&env);
-//     let receiver = Address::generate(&env);
-//     let carrier = Address::generate(&env);
-//     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-//     let deadline = env.ledger().timestamp() + 3600;
-//
-//     client.initialize(&admin, &token_contract);
-//     client.add_company(&admin, &company);
-//
-//     let shipment_id = client.create_shipment(
-//         &company,
-//         &receiver,
-//         &carrier,
-//         &data_hash,
-//         &soroban_sdk::Vec::new(&env),
-//         &deadline,
-//     );
-//
-//     // Add 5 metadata entries first (limit is 5)
-//     for i in 0..5 {
-//         let key = soroban_sdk::Symbol::new(&env, "key");
-//         let value = soroban_sdk::Symbol::new(&env, "value");
-//         client.set_shipment_metadata(&company, &shipment_id, &key, &value);
-//     }
-//
-//     // Try to add 6th metadata entry (should fail)
-//     let key = soroban_sdk::Symbol::new(&env, "key6");
-//     let value = soroban_sdk::Symbol::new(&env, "value6");
-//     client.set_shipment_metadata(&company, &shipment_id, &key, &value);
-// }
+#[test]
+fn test_set_shipment_metadata_returns_metadata_limit_exceeded() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Add 5 unique metadata entries to reach the limit
+    for i in 0..5 {
+        let key = soroban_sdk::Symbol::new(&env, &std::format!("key{i}"));
+        let value = soroban_sdk::Symbol::new(&env, &std::format!("val{i}"));
+        client.set_shipment_metadata(&company, &shipment_id, &key, &value);
+    }
+
+    // Try to add a 6th metadata entry (should fail)
+    let key = soroban_sdk::Symbol::new(&env, "key6");
+    let value = soroban_sdk::Symbol::new(&env, "val6");
+    let result = client.try_set_shipment_metadata(&company, &shipment_id, &key, &value);
+    assert_eq!(result, Err(Ok(NavinError::MetadataLimitExceeded)));
+}
 
 // ============= Error #21: RateLimitExceeded Tests =============
 
@@ -7341,6 +8239,38 @@ fn test_execute_proposal_returns_proposal_not_found() {
     client.execute_proposal(&999);
 }
 
+#[test]
+fn test_approve_action_returns_proposal_not_found_variant() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+
+    client.initialize(&admin, &token_contract);
+    client.init_multisig(&admin, &admins, &2);
+
+    let result = client.try_approve_action(&admin2, &999);
+    assert_eq!(result, Err(Ok(NavinError::ProposalNotFound)));
+}
+
+#[test]
+fn test_execute_proposal_returns_proposal_not_found_variant() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    client.initialize(&admin, &token_contract);
+    client.init_multisig(&admin, &admins, &2);
+
+    let result = client.try_execute_proposal(&999);
+    assert_eq!(result, Err(Ok(NavinError::ProposalNotFound)));
+}
+
 // ============= Error #23: ProposalAlreadyExecuted Tests =============
 
 #[test]
@@ -7371,7 +8301,10 @@ fn test_execute_proposal_returns_proposal_already_executed() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     client.approve_action(&admin2, &proposal_id);
     client.execute_proposal(&proposal_id);
@@ -7409,7 +8342,10 @@ fn test_approve_action_returns_proposal_expired() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     // Fast forward time past expiration (7 days)
     super::test_utils::advance_past_multisig_expiry(&env);
@@ -7445,7 +8381,10 @@ fn test_execute_proposal_returns_proposal_expired() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     client.approve_action(&admin2, &proposal_id);
 
@@ -7487,11 +8426,96 @@ fn test_approve_action_returns_already_approved() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     client.approve_action(&admin2, &proposal_id);
     // Try to approve again with the same admin
     client.approve_action(&admin2, &proposal_id);
+}
+
+/// Approve the same proposal twice with the same admin — must return AlreadyApproved error.
+#[test]
+fn test_same_admin_approve_twice_returns_already_approved() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+    let admin3 = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3);
+
+    client.initialize(&admin, &token_contract);
+    client.init_multisig(&admin, &admins, &3);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
+
+    // First approval by admin2 succeeds
+    let first = client.try_approve_action(&admin2, &proposal_id);
+    assert!(first.is_ok(), "first approval by admin2 must succeed");
+
+    // Second approval by the same admin2 must fail with AlreadyApproved
+    let duplicate = client.try_approve_action(&admin2, &proposal_id);
+    assert_eq!(duplicate, Err(Ok(crate::NavinError::AlreadyApproved)));
+}
+
+/// Two different admins can approve the same proposal — confirms multi-sig flow works.
+#[test]
+fn test_different_admin_approval_succeeds() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+
+    client.initialize(&admin, &token_contract);
+    client.init_multisig(&admin, &admins, &2);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
+
+    // Different admin (admin2) approves — should succeed
+    let result = client.try_approve_action(&admin2, &proposal_id);
+    assert!(result.is_ok(), "approval by a different admin must succeed");
 }
 
 // ============= Error #26: InsufficientApprovals Tests =============
@@ -7526,7 +8550,10 @@ fn test_execute_proposal_returns_insufficient_approvals() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     // Only 1 approval (proposer), but threshold is 3
     client.execute_proposal(&proposal_id);
@@ -7564,7 +8591,10 @@ fn test_propose_action_returns_not_an_admin() {
     );
 
     // Outsider tries to propose
-    client.propose_action(&outsider, &crate::AdminAction::ForceRelease(shipment_id));
+    client.propose_action(
+        &outsider,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x03u8; 32])),
+    );
 }
 
 #[test]
@@ -7596,10 +8626,166 @@ fn test_approve_action_returns_not_an_admin() {
         &deadline,
     );
 
-    let proposal_id = client.propose_action(&admin, &crate::AdminAction::ForceRelease(shipment_id));
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
 
     // Outsider tries to approve
     client.approve_action(&outsider, &proposal_id);
+}
+
+/// Non-admin (not in admin list) attempts propose_action — must return NotAnAdmin.
+#[test]
+fn test_non_admin_propose_action_returns_not_an_admin() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+    let outsider = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    client.initialize(&admin, &token_contract);
+    client.init_multisig(&admin, &admins, &2);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Outsider (not in admin list) tries to propose
+    let result = client.try_propose_action(
+        &outsider,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x04u8; 32])),
+    );
+    assert_eq!(result, Err(Ok(crate::NavinError::NotAnAdmin)));
+}
+
+/// Non-admin (not in admin list) attempts approve_action — must return NotAnAdmin.
+#[test]
+fn test_non_admin_approve_action_returns_not_an_admin() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+    let outsider = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    client.initialize(&admin, &token_contract);
+    client.init_multisig(&admin, &admins, &2);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
+
+    // Outsider (not in admin list) tries to approve
+    let result = client.try_approve_action(&outsider, &proposal_id);
+    assert_eq!(result, Err(Ok(crate::NavinError::NotAnAdmin)));
+}
+
+/// Admin (in admin list) can propose_action — verifies admin operations succeed.
+#[test]
+fn test_admin_propose_action_succeeds() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2);
+
+    client.initialize(&admin, &token_contract);
+    client.init_multisig(&admin, &admins, &2);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    // Admin proposes — should succeed
+    let result = client.try_propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x05u8; 32])),
+    );
+    assert!(result.is_ok(), "admin must be able to propose action");
+}
+
+/// Different admin (in admin list) can approve_action — verifies admin operations succeed.
+#[test]
+fn test_admin_approve_action_succeeds() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let admin2 = Address::generate(&env);
+    let admin3 = Address::generate(&env);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3.clone());
+
+    client.initialize(&admin, &token_contract);
+    // Use threshold 3 so auto-execute doesn't trigger (admin proposes, admin2 approves = 2 < 3)
+    client.init_multisig(&admin, &admins, &3);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let proposal_id = client.propose_action(
+        &admin,
+        &crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x02u8; 32])),
+    );
+
+    // Different admin (admin2) approves — should succeed
+    let result = client.try_approve_action(&admin2, &proposal_id);
+    assert!(result.is_ok(), "admin must be able to approve action");
 }
 
 // ============= Error #28: InvalidMultiSigConfig Tests =============
@@ -8995,7 +10181,12 @@ fn test_shipment_unavailable_for_archived_delivered_shipment() {
     );
 
     super::test_utils::advance_past_rate_limit(&env);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
     client.confirm_delivery(&receiver, &shipment_id, &data_hash);
     client.archive_shipment(&admin, &shipment_id);
 
@@ -9137,12 +10328,22 @@ fn test_update_status_on_archived_shipment_fails_with_finalized() {
     );
 
     super::test_utils::advance_past_rate_limit(&env);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
     client.confirm_delivery(&receiver, &shipment_id, &data_hash);
     client.archive_shipment(&admin, &shipment_id);
 
     // Must fail — ShipmentFinalized (#38) from require_not_finalized.
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::AtCheckpoint, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &data_hash,
+    );
 }
 
 /// Attempting cancel_shipment on an archived shipment must fail.
@@ -9159,6 +10360,7 @@ fn test_cancel_shipment_on_archived_shipment_fails_with_finalized() {
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -9170,7 +10372,12 @@ fn test_cancel_shipment_on_archived_shipment_fails_with_finalized() {
     );
 
     super::test_utils::advance_past_rate_limit(&env);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
     client.confirm_delivery(&receiver, &shipment_id, &data_hash);
     client.archive_shipment(&admin, &shipment_id);
 
@@ -9203,7 +10410,12 @@ fn test_archived_shipment_still_readable_after_archival() {
     );
 
     super::test_utils::advance_past_rate_limit(&env);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &data_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
     client.confirm_delivery(&receiver, &shipment_id, &data_hash);
     client.archive_shipment(&admin, &shipment_id);
 
@@ -10166,9 +11378,129 @@ fn test_force_cancel_shipment_refunds_escrow() {
     assert_eq!(shipment.escrow_amount, 0);
 }
 
-/// The dedicated force_cancelled event is emitted (not shipment_cancelled).
 #[test]
-fn test_force_cancel_emits_dedicated_event_not_shipment_cancelled() {
+fn test_release_refund_force_cancel_settlement_regression() {
+    use soroban_sdk::TryFromVal;
+
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0x1Cu8; 32]);
+    let deadline = env.ledger().timestamp() + 7200;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let escrow_amount: i128 = 5_000;
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+
+    assert_eq!(client.get_escrow_balance(&shipment_id), escrow_amount);
+    assert_eq!(
+        crate::storage::get_status_count(&env, &ShipmentStatus::Created),
+        1
+    );
+
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::ShipmentStatus::Delivered;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+    client.release_escrow(&receiver, &shipment_id);
+
+    let released = client.get_shipment(&shipment_id);
+    assert_eq!(released.status, ShipmentStatus::Delivered);
+    assert_eq!(released.escrow_amount, 0);
+    assert_eq!(
+        crate::storage::get_status_count(&env, &ShipmentStatus::Delivered),
+        1
+    );
+    assert!(env.events().all().iter().any(|(_contract, topics, _data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "escrow_released");
+            }
+        }
+        false
+    }));
+
+    let refund_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0x1Du8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &(env.ledger().timestamp() + 7200),
+    );
+    client.deposit_escrow(&company, &refund_id, &escrow_amount);
+    client.refund_escrow(&company, &refund_id);
+
+    let refunded = client.get_shipment(&refund_id);
+    assert_eq!(refunded.status, ShipmentStatus::Cancelled);
+    assert_eq!(refunded.escrow_amount, 0);
+    assert_eq!(
+        crate::storage::get_status_count(&env, &ShipmentStatus::Cancelled),
+        1
+    );
+    assert!(env.events().all().iter().any(|(_contract, topics, _data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "escrow_refunded");
+            }
+        }
+        false
+    }));
+
+    let force_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0x1Eu8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &(env.ledger().timestamp() + 7200),
+    );
+    client.deposit_escrow(&company, &force_id, &escrow_amount);
+
+    let reason_hash = BytesN::from_array(&env, &[0x1Fu8; 32]);
+    client.force_cancel_shipment(&admin, &force_id, &reason_hash);
+
+    let forced = client.get_shipment(&force_id);
+    assert_eq!(forced.status, ShipmentStatus::Cancelled);
+    assert_eq!(forced.escrow_amount, 0);
+    assert!(env.events().all().iter().any(|(_contract, topics, _data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "force_cancelled");
+            }
+        }
+        false
+    }));
+    assert!(env.events().all().iter().any(|(_contract, topics, _data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "escrow_refunded");
+            }
+        }
+        false
+    }));
+    assert_eq!(
+        crate::storage::get_status_count(&env, &ShipmentStatus::Cancelled),
+        2
+    );
+}
+
+/// Both force_cancelled and shipment_cancelled events are emitted on force-cancel.
+#[test]
+fn test_force_cancel_emits_both_events() {
     use soroban_sdk::TryFromVal;
     let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
 
@@ -10196,10 +11528,47 @@ fn test_force_cancel_emits_dedicated_event_not_shipment_cancelled() {
     });
 
     assert!(has_force_cancelled, "force_cancelled event must be emitted");
-    assert!(
-        !has_shipment_cancelled,
-        "shipment_cancelled must NOT be emitted on force-cancel"
-    );
+    assert!(has_shipment_cancelled, "shipment_cancelled event must be emitted on force-cancel for topic consistency");
+}
+
+/// Payload shape regression test for both events emitted on force-cancel.
+#[test]
+fn test_force_cancel_both_events_payload_shape() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
+
+    let reason_hash = BytesN::from_array(&env, &[0xEAu8; 32]);
+    client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
+
+    let events = env.events().all();
+
+    // Find and verify shipment_cancelled payload: (shipment_id, caller, reason_hash, schema_version, event_counter, idempotency_key) = 6 fields
+    let shipment_cancelled_payload = events.iter().find_map(|(_c, topics, data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                if topic == Symbol::new(&env, "shipment_cancelled") {
+                    return soroban_sdk::Vec::<soroban_sdk::Val>::try_from_val(&env, &data).ok();
+                }
+            }
+        }
+        None
+    }).expect("shipment_cancelled event not found");
+
+    assert_eq!(shipment_cancelled_payload.len(), 6, "shipment_cancelled payload must have exactly 6 fields");
+
+    // Find and verify force_cancelled payload: (shipment_id, admin, reason_hash, escrow_refunded) = 4 fields
+    let force_cancelled_payload = events.iter().find_map(|(_c, topics, data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                if topic == Symbol::new(&env, "force_cancelled") {
+                    return soroban_sdk::Vec::<soroban_sdk::Val>::try_from_val(&env, &data).ok();
+                }
+            }
+        }
+        None
+    }).expect("force_cancelled event not found");
+
+    assert_eq!(force_cancelled_payload.len(), 4, "force_cancelled payload must have exactly 4 fields");
 }
 
 // ============= Shipment Note Tests =============
@@ -10231,18 +11600,12 @@ fn test_shipment_notes_success() {
     // Sender can append
     client.append_note_hash(&company, &shipment_id, &note_hash1.clone());
     assert_eq!(client.get_note_count(&shipment_id), 1);
-    assert_eq!(
-        client.get_note_hash(&shipment_id, &0),
-        Some(note_hash1.clone())
-    );
+    assert_eq!(client.get_note_hash(&shipment_id, &0), note_hash1.clone());
 
     // Carrier can append
     client.append_note_hash(&carrier, &shipment_id, &note_hash2.clone());
     assert_eq!(client.get_note_count(&shipment_id), 2);
-    assert_eq!(
-        client.get_note_hash(&shipment_id, &1),
-        Some(note_hash2.clone())
-    );
+    assert_eq!(client.get_note_hash(&shipment_id, &1), note_hash2.clone());
 
     // Admin can append
     let note_hash3 = BytesN::from_array(&env, &[12u8; 32]);
@@ -10250,18 +11613,9 @@ fn test_shipment_notes_success() {
     assert_eq!(client.get_note_count(&shipment_id), 3);
 
     // Verify storage consistency
-    assert_eq!(
-        client.get_note_hash(&shipment_id, &0),
-        Some(note_hash1.clone())
-    );
-    assert_eq!(
-        client.get_note_hash(&shipment_id, &1),
-        Some(note_hash2.clone())
-    );
-    assert_eq!(
-        client.get_note_hash(&shipment_id, &2),
-        Some(note_hash3.clone())
-    );
+    assert_eq!(client.get_note_hash(&shipment_id, &0), note_hash1.clone());
+    assert_eq!(client.get_note_hash(&shipment_id, &1), note_hash2.clone());
+    assert_eq!(client.get_note_hash(&shipment_id, &2), note_hash3.clone());
 
     // Verify event count was incremented in storage (proves event emission was triggered)
     assert_eq!(client.get_event_count(&shipment_id), 4);
@@ -10449,9 +11803,9 @@ fn test_notes_preserve_append_order() {
     client.append_note_hash(&admin, &shipment_id, &note_c);
 
     assert_eq!(client.get_note_count(&shipment_id), 3);
-    assert_eq!(client.get_note_hash(&shipment_id, &0), Some(note_a.clone()));
-    assert_eq!(client.get_note_hash(&shipment_id, &1), Some(note_b.clone()));
-    assert_eq!(client.get_note_hash(&shipment_id, &2), Some(note_c.clone()));
+    assert_eq!(client.get_note_hash(&shipment_id, &0), note_a.clone());
+    assert_eq!(client.get_note_hash(&shipment_id, &1), note_b.clone());
+    assert_eq!(client.get_note_hash(&shipment_id, &2), note_c.clone());
 }
 
 #[test]
@@ -10490,7 +11844,7 @@ fn test_get_note_hash_out_of_bounds() {
     client.append_note_hash(&company, &shipment_id, &note_a);
 
     // Query valid index
-    assert_eq!(client.get_note_hash(&shipment_id, &0), Some(note_a));
+    assert_eq!(client.get_note_hash(&shipment_id, &0), note_a);
 
     // Query index equal to count (1)
     let result_equal = client.try_get_note_hash(&shipment_id, &1);
@@ -10543,9 +11897,9 @@ fn test_note_order_stable_after_reads() {
     client.append_note_hash(&admin, &shipment_id, &note_c);
 
     assert_eq!(client.get_note_count(&shipment_id), 3);
-    assert_eq!(client.get_note_hash(&shipment_id, &0), Some(note_a.clone()));
-    assert_eq!(client.get_note_hash(&shipment_id, &1), Some(note_b.clone()));
-    assert_eq!(client.get_note_hash(&shipment_id, &2), Some(note_c.clone()));
+    assert_eq!(client.get_note_hash(&shipment_id, &0), note_a.clone());
+    assert_eq!(client.get_note_hash(&shipment_id, &1), note_b.clone());
+    assert_eq!(client.get_note_hash(&shipment_id, &2), note_c.clone());
 }
 
 #[test]
@@ -10590,14 +11944,9 @@ fn test_reorder_notes_fails() {
     // and it never overwrites existing indices.
     let swapped_first = client.get_note_hash(&shipment_id, &0);
     let swapped_second = client.get_note_hash(&shipment_id, &1);
+    assert_eq!(swapped_first, note_b, "index 0 should be note_b after swap");
     assert_eq!(
-        swapped_first,
-        Some(note_b),
-        "index 0 should be note_b after swap"
-    );
-    assert_eq!(
-        swapped_second,
-        Some(note_a),
+        swapped_second, note_a,
         "index 1 should be note_a after swap"
     );
 
@@ -10607,7 +11956,7 @@ fn test_reorder_notes_fails() {
     client.append_note_hash(&admin, &shipment_id, &note_c);
     assert_eq!(
         client.get_note_hash(&shipment_id, &2),
-        Some(note_c),
+        note_c,
         "new note must go to index 2, preserving existing order"
     );
 }
@@ -10657,7 +12006,7 @@ fn test_note_hash_retrieval_matches_append_sequence() {
     for i in 0u32..5 {
         assert_eq!(
             client.get_note_hash(&shipment_id, &i),
-            Some(note_hashes[i as usize].clone()),
+            note_hashes[i as usize].clone(),
             "index {i} must return the hash appended at position {i}"
         );
     }
@@ -10704,7 +12053,7 @@ fn test_note_hash_indices_are_strictly_sequential() {
         );
         assert_eq!(
             client.get_note_hash(&shipment_id, &expected_count),
-            Some(hash),
+            hash,
             "newly appended note must be retrievable at the next sequential index"
         );
     }
@@ -11844,10 +13193,16 @@ fn test_append_note_on_terminal_shipment() {
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
 
     let note_hash = BytesN::from_array(&env, &[3u8; 32]);
-    client.append_note_hash(&company, &shipment_id, &note_hash);
+    let result = client.try_append_note_hash(&company, &shipment_id, &note_hash);
 
-    let count = client.get_note_count(&shipment_id);
-    assert_eq!(count, 1);
+    // A finalized shipment is a closed record: notes are refused, exactly as
+    // `set_shipment_metadata` and `add_dispute_evidence_hash` already refuse.
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::ShipmentFinalized)),
+        "notes must not be appendable to a finalized shipment"
+    );
+    assert_eq!(client.get_note_count(&shipment_id), 0);
 }
 
 #[test]
@@ -12296,12 +13651,15 @@ fn test_create_shipment_valid_milestones_accepted() {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Issue #596 — InvalidMigrationEdge (code 47)
+// Issue #758 — rollback and skip-version migrations are intentionally
+// unsupported. There is no runtime-configurable allowed-edges list.
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
 fn test_upgrade_valid_forward_migration_succeeds() {
     let (env, client, admin, token_contract) = setup_shipment_env();
-    let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
     client.initialize(&admin, &token_contract);
 
     // Version starts at 1
@@ -12311,8 +13669,13 @@ fn test_upgrade_valid_forward_migration_succeeds() {
     let result = client.try_upgrade(&admin, &new_wasm_hash, &2);
     assert_eq!(result, Ok(Ok(())));
 
-    // Version should now be 2
-    assert_eq!(client.get_version(), 2);
+    // The upgrade swaps the running wasm for real, so the version can no
+    // longer be read through the (now stale) client ABI — read storage
+    // directly instead, as other post-upgrade tests in this file do.
+    let contract_id = client.address.clone();
+    env.as_contract(&contract_id, || {
+        assert_eq!(crate::storage::get_version(&env), 2);
+    });
 }
 
 #[test]
@@ -12321,8 +13684,15 @@ fn test_upgrade_downgrade_rejected() {
     let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
     client.initialize(&admin, &token_contract);
 
-    // First do a valid migration 1→2
-    client.upgrade(&admin, &new_wasm_hash, &2);
+    // Put the contract at version 2 directly — a real `upgrade` call would
+    // swap the running wasm for real, which would break every subsequent
+    // client call in this test (the client's ABI no longer matches the
+    // deployed code). The edge-rejection check being tested here runs
+    // before any wasm is touched, so a direct storage write is equivalent
+    // and keeps the client usable for the second call.
+    env.as_contract(&client.address, || {
+        crate::storage::set_version(&env, 2);
+    });
 
     // Now try to downgrade 2→1 — should fail with InvalidMigrationEdge
     let result = client.try_upgrade(&admin, &new_wasm_hash, &1);
@@ -12335,8 +13705,19 @@ fn test_upgrade_skip_version_rejected_detailed() {
     let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
     client.initialize(&admin, &token_contract);
 
-    // Skip from 1 to 3 — should fail with InvalidMigrationEdge
+    // Skip from 1 to 3 — intentionally unsupported (no allowed-edges list)
     let result = client.try_upgrade(&admin, &new_wasm_hash, &3);
+    assert_eq!(result, Err(Ok(NavinError::InvalidMigrationEdge)));
+}
+
+#[test]
+fn test_upgrade_same_version_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
+    client.initialize(&admin, &token_contract);
+
+    // Staying at the current version is not a sequential forward upgrade.
+    let result = client.try_upgrade(&admin, &new_wasm_hash, &1);
     assert_eq!(result, Err(Ok(NavinError::InvalidMigrationEdge)));
 }
 
@@ -12355,8 +13736,17 @@ fn test_dry_run_migration_downgrade_rejected_detailed() {
     let (_env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
-    // Rollback from 1 to 0 — should fail
+    // Rollback from 1 to 0 — intentionally unsupported
     let result = client.try_dry_run_migration(&0);
+    assert_eq!(result, Err(Ok(NavinError::InvalidMigrationEdge)));
+}
+
+#[test]
+fn test_dry_run_migration_same_version_rejected() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let result = client.try_dry_run_migration(&1);
     assert_eq!(result, Err(Ok(NavinError::InvalidMigrationEdge)));
 }
 
@@ -12406,8 +13796,8 @@ fn test_milestone_limit_exceeded() {
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
+    let _data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let _deadline = env.ledger().timestamp() + 3600;
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
@@ -12441,6 +13831,7 @@ fn test_get_status_hash_valid_returns_correct_hash() {
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
+    client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
@@ -12456,7 +13847,12 @@ fn test_get_status_hash_valid_returns_correct_hash() {
     );
 
     let transit_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
     let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
     assert_eq!(
@@ -12537,8 +13933,8 @@ fn test_milestone_limit_valid_milestones_work() {
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
+    let _data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let _deadline = env.ledger().timestamp() + 3600;
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
@@ -12556,7 +13952,12 @@ fn test_milestone_limit_valid_milestones_work() {
     );
 
     let transit_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
     let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
     assert_eq!(
@@ -12619,7 +14020,12 @@ fn test_assert_delivery_hash_incorrect_hash_returns_mismatch() {
 
     super::test_utils::advance_past_rate_limit(&env);
     let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
     let confirmation_hash = BytesN::from_array(&env, &[3u8; 32]);
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
@@ -12762,7 +14168,12 @@ fn test_breach_limit_exceeded() {
 
     super::test_utils::advance_past_rate_limit(&env);
     let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
     let confirmation_hash = BytesN::from_array(&env, &[3u8; 32]);
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
@@ -12814,7 +14225,12 @@ fn test_assert_data_hash_incorrect_hash_returns_mismatch() {
     );
 
     let transit_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
     let wrong_hash = BytesN::from_array(&env, &[0xBBu8; 32]);
     let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &wrong_hash);
@@ -12983,9 +14399,15 @@ fn test_breach_limit_one_allowed() {
     );
 
     let transit_hash = BytesN::from_array(&env, &[0xCCu8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
 
-    let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    let result =
+        client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &transit_hash);
     assert_eq!(
         result,
         Ok(Ok(())),
@@ -13015,6 +14437,7 @@ fn test_assert_data_hash_unset_status_returns_status_hash_not_found() {
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
+    client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
@@ -13044,6 +14467,7 @@ fn test_breach_limit_exceeded_3() {
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
+    client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
@@ -13102,7 +14526,7 @@ fn test_creation_quota_exceeded() {
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let _data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
     client.initialize(&admin, &token_contract);
@@ -13146,7 +14570,7 @@ fn test_creation_quota_resets_after_window() {
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 86400;
+    let _deadline = env.ledger().timestamp() + 86400;
     let deadline = env.ledger().timestamp() + 3600;
 
     client.initialize(&admin, &token_contract);
@@ -13176,8 +14600,14 @@ fn test_creation_quota_resets_after_window() {
 /// must all be distinct error codes.
 #[test]
 fn test_data_hash_mismatch_is_distinct_from_other_hash_errors() {
-    assert_ne!(NavinError::DataHashMismatch as u32, NavinError::StatusHashNotFound as u32);
-    assert_ne!(NavinError::DataHashMismatch as u32, NavinError::ShipmentNotFound as u32);
+    assert_ne!(
+        NavinError::DataHashMismatch as u32,
+        NavinError::StatusHashNotFound as u32
+    );
+    assert_ne!(
+        NavinError::DataHashMismatch as u32,
+        NavinError::ShipmentNotFound as u32
+    );
     assert_eq!(NavinError::DataHashMismatch as u32, 45);
 }
 
@@ -13221,12 +14651,24 @@ fn test_release_escrow_blocked_when_circuit_breaker_open() {
         &soroban_sdk::Vec::new(&env),
         &deadline,
     );
+    client.deposit_escrow(&company, &shipment_id, &1_000_i128);
 
     super::test_utils::advance_past_rate_limit(&env);
     let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
+    super::test_utils::advance_past_rate_limit(&env);
     let confirm_hash = BytesN::from_array(&env, &[3u8; 32]);
-    client.confirm_delivery(&receiver, &shipment_id, &confirm_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::Delivered,
+        &confirm_hash,
+    );
 
     env.as_contract(&client.address, || {
         let tracker = crate::circuit_breaker::CircuitBreakerTracker {
@@ -13294,13 +14736,14 @@ fn test_creation_quota_exceeded_2() {
 
     // Quota should have reset — new shipment allowed
     let hash = BytesN::from_array(&env, &[4u8; 32]);
+    let fresh_deadline = env.ledger().timestamp() + 3600;
     let result = client.try_create_shipment(
         &company,
         &receiver,
         &carrier,
         &hash,
         &soroban_sdk::Vec::new(&env),
-        &deadline,
+        &fresh_deadline,
     );
     assert!(result.is_ok());
 }
@@ -13311,7 +14754,7 @@ fn test_creation_quota_valid_creations_work() {
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let _data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
 
     client.initialize(&admin, &token_contract);
@@ -13348,8 +14791,6 @@ fn test_creation_quota_disabled_allows_unlimited() {
     let company = Address::generate(&env);
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
@@ -13359,13 +14800,14 @@ fn test_creation_quota_disabled_allows_unlimited() {
     // Create 10 shipments — all should succeed
     for seed in 1u8..=10 {
         let hash = BytesN::from_array(&env, &[seed; 32]);
+        let iter_deadline = env.ledger().timestamp() + 3600;
         client.create_shipment(
             &company,
             &receiver,
             &carrier,
             &hash,
             &soroban_sdk::Vec::new(&env),
-            &deadline,
+            &iter_deadline,
         );
         env.ledger().with_mut(|l| l.timestamp += 400);
     }
@@ -13383,7 +14825,6 @@ fn test_creation_quota_resets_exactly_at_window_boundary() {
     let receiver = Address::generate(&env);
     let carrier = Address::generate(&env);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 7200;
     let deadline = env.ledger().timestamp() + 3600;
 
     client.initialize(&admin, &token_contract);
@@ -13398,13 +14839,25 @@ fn test_creation_quota_resets_exactly_at_window_boundary() {
         &soroban_sdk::Vec::new(&env),
         &deadline,
     );
+    client.deposit_escrow(&company, &shipment_id, &1_000_i128);
 
     // Advance to Delivered so release_escrow is eligible.
     super::test_utils::advance_past_rate_limit(&env);
     let transit_hash = BytesN::from_array(&env, &[2u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
+    super::test_utils::advance_past_rate_limit(&env);
     let confirm_hash = BytesN::from_array(&env, &[3u8; 32]);
-    client.confirm_delivery(&receiver, &shipment_id, &confirm_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::Delivered,
+        &confirm_hash,
+    );
 
     // Inject circuit-breaker Open state directly into storage.
     env.as_contract(&client.address, || {
@@ -13451,12 +14904,24 @@ fn test_release_escrow_succeeds_when_circuit_breaker_closed() {
         &soroban_sdk::Vec::new(&env),
         &deadline,
     );
+    client.deposit_escrow(&company, &shipment_id, &1_000_i128);
 
     super::test_utils::advance_past_rate_limit(&env);
     let transit_hash = BytesN::from_array(&env, &[5u8; 32]);
-    client.update_status(&carrier, &shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &transit_hash,
+    );
+    super::test_utils::advance_past_rate_limit(&env);
     let confirm_hash = BytesN::from_array(&env, &[6u8; 32]);
-    client.confirm_delivery(&receiver, &shipment_id, &confirm_hash);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::Delivered,
+        &confirm_hash,
+    );
 
     let result = client.try_release_escrow(&receiver, &shipment_id);
     assert!(
@@ -13640,7 +15105,7 @@ fn test_create_shipment_empty_milestone_name_rejected() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #17)")]
+#[should_panic(expected = "Error(Contract, #65)")]
 fn test_create_shipment_too_long_milestone_name_rejected() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -13692,6 +15157,154 @@ fn test_create_shipment_valid_milestone_name_accepted() {
         &deadline,
     );
     assert!(id > 0);
+}
+
+// ── get_circuit_breaker_status tests (issue #640) ─────────────────────────────
+
+#[test]
+fn test_get_circuit_breaker_status_closed_by_default() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let (state, failure_count, recovery_remaining) = client.get_circuit_breaker_status();
+    assert_eq!(state, crate::CircuitBreakerState::Closed);
+    assert_eq!(failure_count, 0);
+    assert_eq!(recovery_remaining, 0);
+}
+
+#[test]
+fn test_get_circuit_breaker_status_open() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    // Inject Open state directly — Soroban rolls back storage on error so we
+    // cannot accumulate real failures through contract calls.
+    let opened_at = env.ledger().timestamp();
+    env.as_contract(&client.address, || {
+        let tracker = crate::circuit_breaker::CircuitBreakerTracker {
+            state: crate::circuit_breaker::CircuitBreakerState::Open,
+            failure_count: 5,
+            opened_at,
+            half_open_requests: 0,
+        };
+        env.storage()
+            .persistent()
+            .set(&crate::types::DataKey::CircuitBreakerState, &tracker);
+    });
+
+    let (state, failure_count, recovery_remaining) = client.get_circuit_breaker_status();
+    assert_eq!(state, crate::CircuitBreakerState::Open);
+    assert_eq!(failure_count, 5);
+    // Default recovery_timeout is 300 s; we just opened it so ~300 s remain.
+    assert!(recovery_remaining > 0 && recovery_remaining <= 300);
+}
+
+#[test]
+fn test_get_circuit_breaker_status_half_open() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    // Inject HalfOpen state.
+    env.as_contract(&client.address, || {
+        let tracker = crate::circuit_breaker::CircuitBreakerTracker {
+            state: crate::circuit_breaker::CircuitBreakerState::HalfOpen,
+            failure_count: 5,
+            opened_at: env.ledger().timestamp(),
+            half_open_requests: 1,
+        };
+        env.storage()
+            .persistent()
+            .set(&crate::types::DataKey::CircuitBreakerState, &tracker);
+    });
+
+    let (state, failure_count, recovery_remaining) = client.get_circuit_breaker_status();
+    assert_eq!(state, crate::CircuitBreakerState::HalfOpen);
+    assert_eq!(failure_count, 5);
+    // HalfOpen means recovery window has already passed — no time remaining.
+    assert_eq!(recovery_remaining, 0);
+}
+
+// ── is_company_suspended tests (issue #642) ───────────────────────────────────
+
+#[test]
+fn test_is_company_suspended_active_by_default() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    assert!(!client.is_company_suspended(&company));
+}
+
+#[test]
+fn test_is_company_suspended_returns_true_when_suspended() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    client.suspend_company(&admin, &company);
+    assert!(client.is_company_suspended(&company));
+}
+
+#[test]
+fn test_is_company_suspended_returns_false_after_reactivation() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    client.suspend_company(&admin, &company);
+    assert!(client.is_company_suspended(&company));
+
+    client.reactivate_company(&admin, &company);
+    assert!(!client.is_company_suspended(&company));
+}
+
+// ── get_platform_fee_config tests (issue #641) ────────────────────────────────
+
+#[test]
+fn test_get_platform_fee_config_none_before_set() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let config = client.get_platform_fee_config();
+    assert!(config.is_none());
+}
+
+#[test]
+fn test_get_platform_fee_config_reflects_set_platform_fee() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let treasury = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.set_platform_fee(&admin, &50_u32, &treasury);
+
+    let config = client
+        .get_platform_fee_config()
+        .expect("fee config should be set");
+    assert_eq!(config.fee_bps, 50);
+    assert_eq!(config.treasury, treasury);
+}
+
+#[test]
+fn test_get_platform_fee_config_reflects_updated_value() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let treasury1 = Address::generate(&env);
+    let treasury2 = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    client.set_platform_fee(&admin, &100_u32, &treasury1);
+    client.set_platform_fee(&admin, &200_u32, &treasury2);
+
+    let config = client
+        .get_platform_fee_config()
+        .expect("fee config should be set");
+    assert_eq!(config.fee_bps, 200);
+    assert_eq!(config.treasury, treasury2);
 }
 
 // =============================================================================
@@ -14007,4 +15620,947 @@ fn test_execute_proposal_with_exact_threshold_approvals_succeeds() {
 #[test]
 fn test_insufficient_approvals_error_code_is_26() {
     assert_eq!(crate::NavinError::InsufficientApprovals as u32, 26);
+}
+
+// ── New Tests for Error Variants ──────────────────────────────────────────────
+
+#[test]
+fn test_get_note_hash_out_of_bounds_returns_notenotfound() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    let result = client.try_get_note_hash(&id, &999);
+    assert_eq!(result, Err(Ok(crate::NavinError::NoteNotFound)));
+}
+
+#[test]
+fn test_get_note_hash_non_existent_shipment_returns_notenotfound() {
+    let (_env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let result = client.try_get_note_hash(&999, &0);
+    assert_eq!(result, Err(Ok(crate::NavinError::NoteNotFound)));
+}
+
+#[test]
+fn test_metadata_symbol_collision_rejected() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    let sym = Symbol::new(&env, "identical");
+    let result = client.try_set_shipment_metadata(&company, &id, &sym, &sym);
+    assert_eq!(result, Err(Ok(crate::NavinError::MetadataSymbolCollision)));
+
+    let sym1 = Symbol::new(&env, "key");
+    let sym2 = Symbol::new(&env, "value");
+    client.set_shipment_metadata(&company, &id, &sym1, &sym2);
+    assert!(client.get_shipment(&id).metadata.is_some());
+}
+
+#[test]
+fn test_invalid_symbol_error_variant() {
+    let env = Env::default();
+
+    // length < 1 (which means length 0, 8 bytes in XDR)
+    let empty_symbol = Symbol::new(&env, "");
+    let result1 = crate::validation::validate_symbol(&env, &empty_symbol);
+    assert_eq!(result1, Err(crate::NavinError::InvalidSymbol));
+
+    // length > 12 characters (24+ bytes in XDR)
+    let long_symbol = Symbol::new(&env, "toolongsymbolname");
+    let result2 = crate::validation::validate_symbol(&env, &long_symbol);
+    assert_eq!(result2, Err(crate::NavinError::InvalidSymbol));
+}
+
+// =============================================================================
+// Issue #607 — ProposalExpired error variant
+// =============================================================================
+// Tests that expired proposals cannot be approved or executed, that the error
+// code 24 is returned correctly, and that non-expired proposals work normally.
+// =============================================================================
+
+/// Helper to set up a multisig environment with a pending (not-yet-executed)
+/// proposal that has NOT yet expired.  Returns
+/// `(env, client, admin1, admin2, admin3, proposal_id)`.
+fn setup_multisig_with_pending_proposal() -> (
+    soroban_sdk::Env,
+    NavinShipmentClient<'static>,
+    soroban_sdk::Address,
+    soroban_sdk::Address,
+    soroban_sdk::Address,
+    u64,
+) {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = soroban_sdk::Address::generate(&env);
+    let admin2 = soroban_sdk::Address::generate(&env);
+    let admin3 = soroban_sdk::Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3.clone());
+
+    // Threshold 3 so the proposal stays pending after proposal + 1 approval
+    client.init_multisig(&admin, &admins, &3);
+
+    let new_admin = soroban_sdk::Address::generate(&env);
+    let action = crate::AdminAction::TransferAdmin(new_admin);
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    (env, client, admin1, admin2, admin3, proposal_id)
+}
+
+/// Attempting to approve an expired proposal must return `ProposalExpired`
+/// (error code 24) via `try_approve_action`.
+#[test]
+fn test_approve_expired_proposal_returns_proposal_expired() {
+    let (env, client, _admin1, admin2, _admin3, proposal_id) =
+        setup_multisig_with_pending_proposal();
+
+    // Advance time past the proposal expiry window (7 days + 1 second)
+    super::test_utils::advance_past_multisig_expiry(&env);
+
+    let result = client.try_approve_action(&admin2, &proposal_id);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalExpired)),
+        "approving an expired proposal must return ProposalExpired"
+    );
+}
+
+/// Attempting to execute an expired proposal (even if threshold was met
+/// before expiry) must return `ProposalExpired` (error code 24).
+#[test]
+fn test_execute_expired_proposal_returns_proposal_expired() {
+    let (env, client, _admin1, admin2, _admin3, proposal_id) =
+        setup_multisig_with_pending_proposal();
+
+    // admin2 approves — still below threshold (need 3)
+    client.approve_action(&admin2, &proposal_id);
+
+    // Advance time past expiry
+    super::test_utils::advance_past_multisig_expiry(&env);
+
+    let result = client.try_execute_proposal(&proposal_id);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalExpired)),
+        "executing an expired proposal must return ProposalExpired"
+    );
+}
+
+/// `ProposalExpired` must carry error code 24.
+#[test]
+fn test_proposal_expired_error_code_is_24() {
+    assert_eq!(
+        crate::NavinError::ProposalExpired as u32,
+        24,
+        "ProposalExpired discriminant must be 24"
+    );
+}
+
+/// A proposal that is within its expiry window can still be approved normally.
+/// Verifies the non-expired happy path (Acceptance Criterion: non-expired
+/// proposals work normally).
+#[test]
+fn test_non_expired_proposal_can_be_approved() {
+    let (_env, client, _admin1, admin2, _admin3, proposal_id) =
+        setup_multisig_with_pending_proposal();
+
+    // No time advance — proposal is fresh
+    let result = client.try_approve_action(&admin2, &proposal_id);
+    assert!(
+        result.is_ok(),
+        "approving a non-expired proposal must succeed: {:?}",
+        result
+    );
+
+    let proposal = client.get_proposal(&proposal_id);
+    assert_eq!(
+        proposal.approvals.len(),
+        2,
+        "admin2 approval must be recorded"
+    );
+    assert!(
+        !proposal.executed,
+        "proposal must not auto-execute with only 2/3 approvals"
+    );
+}
+
+/// A non-expired proposal that reaches the approval threshold is auto-executed
+/// without error.  This confirms the full non-expired happy path including
+/// execution.
+#[test]
+fn test_non_expired_proposal_executes_at_threshold() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = soroban_sdk::Address::generate(&env);
+    let admin2 = soroban_sdk::Address::generate(&env);
+    let new_admin = soroban_sdk::Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+
+    // Threshold 2 — executes on admin2 approval
+    client.init_multisig(&admin, &admins, &2);
+
+    let action = crate::AdminAction::TransferAdmin(new_admin.clone());
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // admin2 approves → reaches threshold → auto-executes
+    let result = client.try_approve_action(&admin2, &proposal_id);
+    assert!(
+        result.is_ok(),
+        "approving non-expired proposal at threshold must succeed"
+    );
+
+    // Confirm the action was actually executed
+    assert_eq!(
+        client.get_admin(),
+        new_admin,
+        "admin must be transferred after auto-execution"
+    );
+}
+
+/// An expired proposal must not be approvable at any point — not even a third
+/// admin who had never approved before.
+#[test]
+fn test_all_approvals_fail_after_expiry() {
+    let (env, client, _admin1, admin2, admin3, proposal_id) =
+        setup_multisig_with_pending_proposal();
+
+    // admin2 approves while proposal is still valid (1 more approval but still below 3)
+    client.approve_action(&admin2, &proposal_id);
+
+    // Advance time past expiry
+    super::test_utils::advance_past_multisig_expiry(&env);
+
+    // admin3 (fresh approver) tries to approve after expiry
+    let result = client.try_approve_action(&admin3, &proposal_id);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalExpired)),
+        "a fresh approver must still receive ProposalExpired after expiry"
+    );
+}
+
+// =============================================================================
+// Issue #608 — ProposalAlreadyExecuted error variant
+// =============================================================================
+// Tests that duplicate proposal executions are rejected, that the error code
+// 23 is returned correctly, and that single execution succeeds.
+// =============================================================================
+
+/// `ProposalAlreadyExecuted` must carry error code 23.
+#[test]
+fn test_proposal_already_executed_error_code_is_23() {
+    assert_eq!(
+        crate::NavinError::ProposalAlreadyExecuted as u32,
+        23,
+        "ProposalAlreadyExecuted discriminant must be 23"
+    );
+}
+
+/// Executing a proposal a second time must return `ProposalAlreadyExecuted`
+/// (error code 23) via `try_execute_proposal`.
+#[test]
+fn test_execute_already_executed_proposal_returns_error() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = soroban_sdk::Address::generate(&env);
+    let admin2 = soroban_sdk::Address::generate(&env);
+    let new_admin = soroban_sdk::Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+
+    client.init_multisig(&admin, &admins, &2);
+
+    let action = crate::AdminAction::TransferAdmin(new_admin.clone());
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // First approval reaches threshold → auto-executes
+    client.approve_action(&admin2, &proposal_id);
+
+    // Verify it executed
+    let proposal = client.get_proposal(&proposal_id);
+    assert!(proposal.executed, "proposal must be marked as executed");
+
+    // Attempt a second execute call
+    let result = client.try_execute_proposal(&proposal_id);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalAlreadyExecuted)),
+        "second execute call must return ProposalAlreadyExecuted"
+    );
+}
+
+/// Approving an already-executed proposal must also return
+/// `ProposalAlreadyExecuted` (error code 23).
+#[test]
+fn test_approve_already_executed_proposal_returns_error() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = soroban_sdk::Address::generate(&env);
+    let admin2 = soroban_sdk::Address::generate(&env);
+    let admin3 = soroban_sdk::Address::generate(&env);
+    let new_admin = soroban_sdk::Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    admins.push_back(admin3.clone());
+
+    // Threshold 2 — executes when admin2 approves
+    client.init_multisig(&admin, &admins, &2);
+
+    let action = crate::AdminAction::TransferAdmin(new_admin);
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // Reaches threshold, auto-executes
+    client.approve_action(&admin2, &proposal_id);
+
+    // admin3 tries to approve the already-executed proposal
+    let result = client.try_approve_action(&admin3, &proposal_id);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalAlreadyExecuted)),
+        "approving an already-executed proposal must return ProposalAlreadyExecuted"
+    );
+}
+
+/// A single execution succeeds and correctly applies the proposed action.
+/// Uses TransferAdmin to avoid replacing the WASM (which would break
+/// subsequent `get_proposal` reads).
+#[test]
+fn test_single_execution_succeeds_and_applies_action() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = soroban_sdk::Address::generate(&env);
+    let admin2 = soroban_sdk::Address::generate(&env);
+    let new_admin = soroban_sdk::Address::generate(&env);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+
+    client.init_multisig(&admin, &admins, &2);
+
+    let action = crate::AdminAction::TransferAdmin(new_admin.clone());
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // Proposal not yet executed
+    let proposal_before = client.get_proposal(&proposal_id);
+    assert!(!proposal_before.executed);
+
+    // admin2 approval reaches threshold → auto-executes
+    client.approve_action(&admin2, &proposal_id);
+
+    // Confirm execution state
+    let proposal_after = client.get_proposal(&proposal_id);
+    assert!(
+        proposal_after.executed,
+        "proposal must be marked executed after threshold is reached"
+    );
+
+    // Confirm the admin was actually transferred
+    assert_eq!(
+        client.get_admin(),
+        new_admin,
+        "admin must be the new admin after successful single execution"
+    );
+}
+
+/// ForceRelease proposal: single execution releases escrow correctly.
+/// Verifies that the `ProposalAlreadyExecuted` guard works for non-Upgrade actions.
+#[test]
+fn test_force_release_single_execution_and_duplicate_rejected() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = soroban_sdk::Address::generate(&env);
+    let admin2 = soroban_sdk::Address::generate(&env);
+
+    let company = soroban_sdk::Address::generate(&env);
+    let receiver = soroban_sdk::Address::generate(&env);
+    let carrier = soroban_sdk::Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &5000);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    let action =
+        crate::AdminAction::ForceRelease(shipment_id, BytesN::from_array(&env, &[0x06u8; 32]));
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // First execution via approval reaching threshold
+    client.approve_action(&admin2, &proposal_id);
+
+    // Escrow must be released
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(
+        shipment.escrow_amount, 0,
+        "escrow must be zero after ForceRelease"
+    );
+
+    // Duplicate execute must fail
+    let result = client.try_execute_proposal(&proposal_id);
+    assert_eq!(
+        result,
+        Err(Ok(crate::NavinError::ProposalAlreadyExecuted)),
+        "second execute of ForceRelease proposal must return ProposalAlreadyExecuted"
+    );
+}
+
+// =============================================================================
+// ForceRelease reason_hash validation and audit trail tests
+// =============================================================================
+
+/// ForceRelease with reason_hash: verifies reason hash is persisted in event stream and queryable.
+/// Ensures audit trail contains the admin-provided reason for the force release.
+#[test]
+fn test_force_release_reason_hash_persisted_in_event() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &5000);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    // Create reason hash: deterministic hash for audit trail
+    let reason_hash = BytesN::from_array(&env, &[0xABu8; 32]);
+    let action = crate::AdminAction::ForceRelease(shipment_id, reason_hash.clone());
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // Execute the proposal
+    client.approve_action(&admin2, &proposal_id);
+
+    // Verify force_released event was emitted with reason_hash
+    let events = env.events().all();
+    let force_released_event = events.iter().find(|(_contract, topics, _data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "force_released");
+            }
+        }
+        false
+    });
+
+    assert!(
+        force_released_event.is_some(),
+        "force_released event must be emitted after ForceRelease execution"
+    );
+
+    // Event is persisted in the event stream and queryable by indexer/client
+    if let Some((_contract, _topics, data)) = force_released_event {
+        let (_id, _admin, emitted_hash, _amount): (u64, Address, BytesN<32>, i128) = data
+            .try_into_val(&env)
+            .expect("force_released event data must decode");
+        assert_eq!(
+            emitted_hash, reason_hash,
+            "force_released event must carry the reason hash"
+        );
+    }
+}
+
+/// ForceRelease rejects zero reason_hash, matching force_cancel_shipment behavior.
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_force_release_zero_reason_hash_rejected() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &5000);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    // Attempt with zero reason_hash — should fail validation
+    let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+    let action = crate::AdminAction::ForceRelease(shipment_id, zero_hash);
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // Execution should fail on zero reason hash validation
+    client.approve_action(&admin2, &proposal_id);
+}
+
+/// ForceRefund with reason_hash: verifies reason hash is persisted in event stream and queryable.
+/// Ensures audit trail contains the admin-provided reason for the force refund.
+#[test]
+fn test_force_refund_reason_hash_persisted_in_event() {
+    use soroban_sdk::TryFromVal;
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &5000);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    // Create reason hash: deterministic hash for audit trail
+    let reason_hash = BytesN::from_array(&env, &[0xCDu8; 32]);
+    let action = crate::AdminAction::ForceRefund(shipment_id, reason_hash.clone());
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // Execute the proposal
+    client.approve_action(&admin2, &proposal_id);
+
+    // Verify force_refunded event was emitted with reason_hash
+    let events = env.events().all();
+    let force_refunded_event = events.iter().find(|(_contract, topics, _data)| {
+        if let Some(raw) = topics.get(0) {
+            if let Ok(topic) = Symbol::try_from_val(&env, &raw) {
+                return topic == Symbol::new(&env, "force_refunded");
+            }
+        }
+        false
+    });
+
+    assert!(
+        force_refunded_event.is_some(),
+        "force_refunded event must be emitted after ForceRefund execution"
+    );
+
+    // Event is persisted in the event stream and queryable by indexer/client
+    if let Some((_contract, _topics, data)) = force_refunded_event {
+        let (_id, _admin, emitted_hash, _amount): (u64, Address, BytesN<32>, i128) = data
+            .try_into_val(&env)
+            .expect("force_refunded event data must decode");
+        assert_eq!(
+            emitted_hash, reason_hash,
+            "force_refunded event must carry the reason hash"
+        );
+    }
+}
+
+/// ForceRefund rejects zero reason_hash, matching force_cancel_shipment behavior.
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_force_refund_zero_reason_hash_rejected() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &5000);
+
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin1.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    // Attempt with zero reason_hash — should fail validation
+    let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+    let action = crate::AdminAction::ForceRefund(shipment_id, zero_hash);
+    let proposal_id = client.propose_action(&admin1, &action);
+
+    // Execution should fail on zero reason hash validation
+    client.approve_action(&admin2, &proposal_id);
+}
+
+// ===========================================================================
+// Security regressions: #748, #749, #750, #751
+// ===========================================================================
+
+/// #748 — `initialize` must require auth from the address it installs as admin.
+///
+/// Deploy and initialize are separate transactions, so an attacker can watch
+/// for an uninitialized contract and call `initialize` naming themselves.
+/// `AlreadyInitialized` then locks the real deployer out with no recovery.
+#[test]
+fn test_initialize_requires_admin_auth() {
+    let env = Env::default();
+    let token_contract = env.register(MockToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    let attacker = Address::generate(&env);
+
+    // No auth mocked: the call must not succeed on the attacker's say-so.
+    let result = client.try_initialize(&attacker, &token_contract);
+    assert!(
+        result.is_err(),
+        "initialize must not succeed without auth from the admin being installed"
+    );
+}
+
+/// #748 — with the admin's authorization present, initialization still works.
+#[test]
+fn test_initialize_succeeds_with_admin_auth() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let token_contract = env.register(MockToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    let admin = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+    assert_eq!(client.get_admin(), admin);
+}
+
+/// #748 — the authorization recorded is the admin's own, so a third party
+/// cannot front-run initialization by signing for themselves while naming
+/// someone else.
+#[test]
+fn test_initialize_auth_is_attributed_to_the_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let token_contract = env.register(MockToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+    let admin = Address::generate(&env);
+
+    client.initialize(&admin, &token_contract);
+
+    let auths = env.auths();
+    assert!(
+        auths.iter().any(|(addr, _)| *addr == admin),
+        "initialize must require auth from the admin address itself"
+    );
+}
+
+/// #749 — `remove_guardian` must not strip an unrelated role.
+///
+/// Before the fix this silently revoked the target's Company role, because
+/// `revoke_role` removes whatever role the address happens to hold.
+#[test]
+fn test_remove_guardian_rejects_a_company_target() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let company = Address::generate(&env);
+    client.add_company(&admin, &company);
+
+    let result = client.try_remove_guardian(&admin, &company);
+    assert_eq!(result, Err(Ok(crate::NavinError::RoleMismatch)));
+
+    // The critical assertion: the Company role survived the failed call.
+    assert!(
+        client.try_get_role(&company).is_ok(),
+        "a rejected remove_guardian must leave the target's real role intact"
+    );
+}
+
+/// #749 — the mirror case for operators.
+#[test]
+fn test_remove_operator_rejects_a_guardian_target() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let guardian = Address::generate(&env);
+    client.add_guardian(&admin, &guardian);
+
+    let result = client.try_remove_operator(&admin, &guardian);
+    assert_eq!(result, Err(Ok(crate::NavinError::RoleMismatch)));
+}
+
+/// #749 — removing an address that holds no role at all is also a mismatch,
+/// rather than a silent success.
+#[test]
+fn test_remove_guardian_rejects_an_unassigned_target() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let nobody = Address::generate(&env);
+
+    assert_eq!(
+        client.try_remove_guardian(&admin, &nobody),
+        Err(Ok(crate::NavinError::RoleMismatch))
+    );
+}
+
+/// #749 — the happy path still works: a real guardian is still removable.
+#[test]
+fn test_remove_guardian_still_removes_a_guardian() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let guardian = Address::generate(&env);
+    client.add_guardian(&admin, &guardian);
+
+    client.remove_guardian(&admin, &guardian);
+
+    assert_eq!(
+        client.try_remove_guardian(&admin, &guardian),
+        Err(Ok(crate::NavinError::RoleMismatch)),
+        "the role is gone, so a second removal is now a mismatch"
+    );
+}
+
+/// #750 — a long `event_type` must not panic.
+///
+/// A Soroban `Symbol` allows up to 32 characters; the XDR decode wrote into a
+/// 32-byte buffer and sliced `8 + char_count`, so 25-32 characters ran past
+/// the end. A panic aborts the whole invocation, so a merely-long event type
+/// took down the call that emitted it.
+#[test]
+fn test_compute_idempotency_key_rejects_oversized_symbols() {
+    let (env, client, _admin, _token) = setup_initialized_shipment_env();
+
+    // 25 characters — the first length that overflowed the buffer.
+    let long_symbol = Symbol::new(&env, "abcdefghijklmnopqrstuvwxy");
+    let result = client.try_compute_idempotency_key(&1u64, &long_symbol, &0u32);
+    assert!(
+        result.is_err(),
+        "an oversized symbol must return an error rather than panicking"
+    );
+}
+
+/// #750 — the maximum-length symbol is handled the same way.
+#[test]
+fn test_compute_idempotency_key_handles_max_length_symbol() {
+    let (env, client, _admin, _token) = setup_initialized_shipment_env();
+
+    // 32 characters — the SDK's maximum.
+    let max_symbol = Symbol::new(&env, "abcdefghijklmnopqrstuvwxyz012345");
+    let result = client.try_compute_idempotency_key(&1u64, &max_symbol, &0u32);
+    assert!(result.is_err(), "must not panic at the maximum symbol length");
+}
+
+/// #750 — ordinary symbols still produce a stable key.
+#[test]
+fn test_compute_idempotency_key_still_works_for_short_symbols() {
+    let (env, client, _admin, _token) = setup_initialized_shipment_env();
+
+    let symbol = Symbol::new(&env, "created");
+    let first = client.compute_idempotency_key(&1u64, &symbol, &0u32);
+    let second = client.compute_idempotency_key(&1u64, &symbol, &0u32);
+
+    assert_eq!(first, second, "the key must be deterministic");
+
+    let other = client.compute_idempotency_key(&2u64, &symbol, &0u32);
+    assert_ne!(first, other, "a different shipment must yield a different key");
+}
+
+/// #751 — a company must not chain a shipment it does not own.
+///
+/// This was a cross-tenant denial of service: the victim's shipment could be
+/// pinned behind a prerequisite that never delivers, with no way to undo it.
+#[test]
+fn test_add_shipment_dependency_rejects_a_foreign_shipment() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+
+    let victim = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &victim);
+    client.add_company(&admin, &attacker);
+
+    let victim_shipment = client.create_shipment(
+        &victim, &receiver, &carrier, &data_hash,
+        &soroban_sdk::Vec::new(&env), &deadline,
+    );
+    let attacker_shipment = client.create_shipment(
+        &attacker, &receiver, &carrier, &data_hash,
+        &soroban_sdk::Vec::new(&env), &deadline,
+    );
+
+    // The attack: pin the victim's shipment behind the attacker's.
+    assert_eq!(
+        client.try_add_shipment_dependency(&attacker, &victim_shipment, &attacker_shipment),
+        Err(Ok(crate::NavinError::Unauthorized))
+    );
+}
+
+/// #751 — nor may a company chain its own shipment behind a stranger's, which
+/// would leak the stranger's delivery state through its own liveness.
+#[test]
+fn test_add_shipment_dependency_rejects_a_foreign_prerequisite() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+
+    let owner = Address::generate(&env);
+    let other = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &owner);
+    client.add_company(&admin, &other);
+
+    let own = client.create_shipment(
+        &owner, &receiver, &carrier, &data_hash,
+        &soroban_sdk::Vec::new(&env), &deadline,
+    );
+    let foreign = client.create_shipment(
+        &other, &receiver, &carrier, &data_hash,
+        &soroban_sdk::Vec::new(&env), &deadline,
+    );
+
+    assert_eq!(
+        client.try_add_shipment_dependency(&owner, &own, &foreign),
+        Err(Ok(crate::NavinError::Unauthorized))
+    );
+}
+
+/// #751 — an address with no Company role cannot create dependencies at all,
+/// even between shipments it somehow references.
+#[test]
+fn test_add_shipment_dependency_requires_the_company_role() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+
+    let company = Address::generate(&env);
+    let outsider = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+    let a = client.create_shipment(
+        &company, &receiver, &carrier, &data_hash,
+        &soroban_sdk::Vec::new(&env), &deadline,
+    );
+    let b = client.create_shipment(
+        &company, &receiver, &carrier, &data_hash,
+        &soroban_sdk::Vec::new(&env), &deadline,
+    );
+
+    assert!(
+        client.try_add_shipment_dependency(&outsider, &a, &b).is_err(),
+        "require_auth alone is not authorization - the Company role is required"
+    );
+}
+
+/// #751 — the legitimate case still works.
+#[test]
+fn test_add_shipment_dependency_allows_own_shipments() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(&admin, &company);
+    let dependent = client.create_shipment(
+        &company, &receiver, &carrier, &data_hash,
+        &soroban_sdk::Vec::new(&env), &deadline,
+    );
+    let prereq = client.create_shipment(
+        &company, &receiver, &carrier, &data_hash,
+        &soroban_sdk::Vec::new(&env), &deadline,
+    );
+
+    client.add_shipment_dependency(&company, &dependent, &prereq);
 }

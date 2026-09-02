@@ -119,6 +119,12 @@ pub const CONTRACT_UNPAUSED: &str = "contract_unpaused";
 /// Emitted when an admin forcibly cancels a shipment (privileged path).
 pub const FORCE_CANCELLED: &str = "force_cancelled";
 
+/// Emitted when an admin forcibly releases escrow for a shipment to carrier (privileged path).
+pub const FORCE_RELEASED: &str = "force_released";
+
+/// Emitted when an admin forcibly refunds escrow for a shipment to company (privileged path).
+pub const FORCE_REFUNDED: &str = "force_refunded";
+
 /// Emitted when the platform fee configuration is updated.
 pub const FEE_CONFIG_UPDATED: &str = "fee_config_updated";
 
@@ -233,6 +239,108 @@ pub const ETA_UPDATED: &str = "eta_updated";
 pub const PROPOSAL_DIGEST: &str = "proposal_digest";
 pub const CONFIG_UPDATED: &str = "config_updated";
 pub const QUOTA_SET: &str = "quota_set";
+
+/// Topics whose hash domain is *not* the shipment default, paired with the
+/// domain they belong to.
+///
+/// Shipment-lifecycle topics are intentionally absent: they resolve through the
+/// fallback, which keeps their previously emitted keys byte-identical.
+const NON_DEFAULT_HASH_DOMAINS: &[(&str, u8)] = &[
+    // Escrow operations
+    (ESCROW_DEPOSITED, HASH_DOMAIN_ESCROW),
+    (ESCROW_RELEASED, HASH_DOMAIN_ESCROW),
+    (ESCROW_REFUNDED, HASH_DOMAIN_ESCROW),
+    (MILESTONE_PAYMENT_RELEASED, HASH_DOMAIN_ESCROW),
+    (ESCROW_FROZEN, HASH_DOMAIN_ESCROW),
+    // Disputes
+    (DISPUTE_RAISED, HASH_DOMAIN_DISPUTE),
+    (DISPUTE_RESOLVED, HASH_DOMAIN_DISPUTE),
+    (EVIDENCE_ADDED, HASH_DOMAIN_DISPUTE),
+    // Condition / sensor breaches
+    (CONDITION_BREACH, HASH_DOMAIN_CONDITION),
+    (CARRIER_BREACH, HASH_DOMAIN_CONDITION),
+    (GEOFENCE_EVENT, HASH_DOMAIN_CONDITION),
+    // Carrier reputation and lifecycle
+    (CARRIER_DISPUTE_LOSS, HASH_DOMAIN_CARRIER),
+    (CARRIER_LATE_DELIVERY, HASH_DOMAIN_CARRIER),
+    (CARRIER_ON_TIME_DELIVERY, HASH_DOMAIN_CARRIER),
+    (CARRIER_HANDOFF, HASH_DOMAIN_CARRIER),
+    (CARRIER_HANDOFF_COMPLETED, HASH_DOMAIN_CARRIER),
+    (CARRIER_MILESTONE_RATE, HASH_DOMAIN_CARRIER),
+    (CARRIER_SUSPENDED, HASH_DOMAIN_CARRIER),
+    (CARRIER_REACTIVATED, HASH_DOMAIN_CARRIER),
+    // Admin / governance
+    (ADMIN_PROPOSED, HASH_DOMAIN_ADMIN),
+    (ADMIN_TRANSFERRED, HASH_DOMAIN_ADMIN),
+    (CONTRACT_UPGRADED, HASH_DOMAIN_ADMIN),
+    (MIGRATION_REPORTED, HASH_DOMAIN_ADMIN),
+    (CONTRACT_PAUSED, HASH_DOMAIN_ADMIN),
+    (CONTRACT_UNPAUSED, HASH_DOMAIN_ADMIN),
+    (FORCE_CANCELLED, HASH_DOMAIN_ADMIN),
+    (CONTRACT_INITIALIZED, HASH_DOMAIN_ADMIN),
+    (SHIPMENT_LIMIT_UPDATED, HASH_DOMAIN_ADMIN),
+    (COMPANY_LIMIT_UPDATED, HASH_DOMAIN_ADMIN),
+    (PROPOSAL_DIGEST, HASH_DOMAIN_ADMIN),
+    (CONFIG_UPDATED, HASH_DOMAIN_ADMIN),
+    (QUOTA_SET, HASH_DOMAIN_ADMIN),
+    // RBAC
+    (ROLE_REVOKED, HASH_DOMAIN_RBAC),
+    (ROLE_CHANGED, HASH_DOMAIN_RBAC),
+    // Notifications
+    (NOTIFICATION, HASH_DOMAIN_NOTIFICATION),
+    // Shipment notes
+    (NOTE_APPENDED, HASH_DOMAIN_NOTE),
+    // Platform-level fee events
+    (PLATFORM_FEE_COLLECTED, HASH_DOMAIN_PLATFORM),
+    (FEE_CONFIG_UPDATED, HASH_DOMAIN_PLATFORM),
+];
+
+/// Resolves the hash domain tag for an event topic `Symbol`.
+///
+/// This is the on-chain entry point: `Symbol` cannot be read back as a `&str`
+/// inside the guest, so each candidate topic is re-interned and compared.
+/// Only non-default domains are in the table, so shipment-lifecycle events —
+/// the hot path — fall through without a match.
+pub fn hash_domain_for_symbol(env: &soroban_sdk::Env, event_type: &soroban_sdk::Symbol) -> u8 {
+    for (topic, domain) in NON_DEFAULT_HASH_DOMAINS {
+        if *event_type == soroban_sdk::Symbol::new(env, topic) {
+            return *domain;
+        }
+    }
+    HASH_DOMAIN_SHIPMENT
+}
+
+/// Resolves the hash domain tag for an event topic name.
+///
+/// Shares [`NON_DEFAULT_HASH_DOMAINS`] with [`hash_domain_for_symbol`], so the
+/// on-chain and off-chain answers cannot drift. Off-chain indexers recomputing
+/// idempotency keys should mirror this mapping.
+///
+/// Unknown topics fall back to [`HASH_DOMAIN_SHIPMENT`], which keeps the
+/// function total and preserves keys previously emitted for shipment events.
+///
+/// Only reachable from `#[cfg(test)]` code today (it exercises the `&str`
+/// twin of [`hash_domain_for_symbol`] to prove the two mappings agree) — kept
+/// as the documented reference implementation for off-chain indexers, who
+/// work with plain strings rather than a live `Symbol`.
+#[cfg(test)]
+pub fn hash_domain_for_event(event_type: &str) -> u8 {
+    let mut i = 0;
+    while i < NON_DEFAULT_HASH_DOMAINS.len() {
+        let (topic, domain) = NON_DEFAULT_HASH_DOMAINS[i];
+        if str_eq(topic, event_type) {
+            return domain;
+        }
+        i += 1;
+    }
+    HASH_DOMAIN_SHIPMENT
+}
+
+/// `str` equality usable in this no_std context.
+#[cfg(test)]
+fn str_eq(a: &str, b: &str) -> bool {
+    a.as_bytes() == b.as_bytes()
+}
 
 #[cfg(test)]
 mod tests {

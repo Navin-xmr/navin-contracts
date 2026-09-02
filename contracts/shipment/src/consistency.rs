@@ -276,10 +276,7 @@ pub fn check_all_consistency_range(
         return violations;
     }
 
-    let end_id = start_id
-        .saturating_add(limit)
-        .saturating_sub(1)
-        .min(total);
+    let end_id = start_id.saturating_add(limit).saturating_sub(1).min(total);
 
     for id in start_id..=end_id {
         let per_ship = check_shipment_invariants(env, id);

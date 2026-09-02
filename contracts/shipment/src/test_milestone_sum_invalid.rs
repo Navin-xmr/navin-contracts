@@ -10,9 +10,7 @@ use soroban_sdk::{testutils::Address as _, Address, BytesN, Symbol};
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-fn base_shipment_parts(
-    env: &soroban_sdk::Env,
-) -> (Address, Address, Address, BytesN<32>, u64) {
+fn base_shipment_parts(env: &soroban_sdk::Env) -> (Address, Address, Address, BytesN<32>, u64) {
     let company = Address::generate(env);
     let receiver = Address::generate(env);
     let carrier = Address::generate(env);
@@ -37,7 +35,12 @@ fn test_milestone_sum_over_100_returns_error() {
     milestones.push_back((Symbol::new(&env, "stage2"), 60u32));
 
     let result = client.try_create_shipment(
-        &company, &receiver, &carrier, &data_hash, &milestones, &deadline,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
     );
     assert_eq!(
         result,
@@ -60,7 +63,12 @@ fn test_milestone_sum_under_100_returns_error() {
     milestones.push_back((Symbol::new(&env, "beta"), 30u32));
 
     let result = client.try_create_shipment(
-        &company, &receiver, &carrier, &data_hash, &milestones, &deadline,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
     );
     assert_eq!(
         result,
@@ -82,7 +90,12 @@ fn test_milestone_single_entry_not_100_returns_error() {
     milestones.push_back((Symbol::new(&env, "only"), 99u32));
 
     let result = client.try_create_shipment(
-        &company, &receiver, &carrier, &data_hash, &milestones, &deadline,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
     );
     assert_eq!(
         result,
@@ -99,18 +112,27 @@ fn test_milestone_zero_sum_returns_error() {
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
 
-    // Two milestones both at 0 — sum = 0
+    // Two milestones both at 0 — sum = 0. A per-item percentage of 0 is
+    // rejected by the individual-value guard (InvalidPaymentMilestones)
+    // before the sum is ever computed, so this never reaches
+    // MilestoneSumInvalid — unlike the over/under/single-entry cases above,
+    // which all use in-range (1-100) individual percentages.
     let mut milestones = soroban_sdk::Vec::new(&env);
     milestones.push_back((Symbol::new(&env, "zero1"), 0u32));
     milestones.push_back((Symbol::new(&env, "zero2"), 0u32));
 
     let result = client.try_create_shipment(
-        &company, &receiver, &carrier, &data_hash, &milestones, &deadline,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
     );
     assert_eq!(
         result,
-        Err(Ok(NavinError::MilestoneSumInvalid)),
-        "sum 0 must return MilestoneSumInvalid"
+        Err(Ok(NavinError::InvalidPaymentMilestones)),
+        "a zero-percent milestone must be rejected as InvalidPaymentMilestones"
     );
 }
 
@@ -130,7 +152,12 @@ fn test_milestone_sum_exactly_100_succeeds() {
     milestones.push_back((Symbol::new(&env, "final"), 75u32));
 
     let result = client.try_create_shipment(
-        &company, &receiver, &carrier, &data_hash, &milestones, &deadline,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
     );
     assert!(result.is_ok(), "sum 100 must create shipment successfully");
 }
@@ -150,9 +177,17 @@ fn test_milestone_three_parts_summing_100_succeeds() {
     milestones.push_back((Symbol::new(&env, "part3"), 50u32));
 
     let result = client.try_create_shipment(
-        &company, &receiver, &carrier, &data_hash, &milestones, &deadline,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
     );
-    assert!(result.is_ok(), "three milestones summing to 100 must succeed");
+    assert!(
+        result.is_ok(),
+        "three milestones summing to 100 must succeed"
+    );
 }
 
 #[test]
@@ -167,9 +202,17 @@ fn test_no_milestones_creates_shipment_without_error() {
     let milestones = soroban_sdk::Vec::new(&env);
 
     let result = client.try_create_shipment(
-        &company, &receiver, &carrier, &data_hash, &milestones, &deadline,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
     );
-    assert!(result.is_ok(), "empty milestones must create shipment without error");
+    assert!(
+        result.is_ok(),
+        "empty milestones must create shipment without error"
+    );
 }
 
 #[test]
@@ -185,7 +228,12 @@ fn test_error_code_is_18() {
     milestones.push_back((Symbol::new(&env, "m2"), 60u32));
 
     let result = client.try_create_shipment(
-        &company, &receiver, &carrier, &data_hash, &milestones, &deadline,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
     );
     assert_eq!(
         result,
