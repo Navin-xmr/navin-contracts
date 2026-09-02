@@ -12,6 +12,8 @@ pub enum DataKey {
     Allowance(Address, Address),
     /// Allowed metadata keys (admin-registered allowlist)
     AllowedMetadataKey(Symbol),
+    /// Ordered index of all allowed metadata keys
+    AllowedMetadataKeys,
     /// Token metadata key-value pairs
     Metadata(Symbol),
     /// Contract-wide pause flag (issue #657)
@@ -212,8 +214,16 @@ pub fn add_allowed_metadata_key(env: &Env, key: &Symbol) {
     let metadata_key = DataKey::AllowedMetadataKey(key.clone());
     env.storage().persistent().set(&metadata_key, &true);
     env.storage()
-        .persistent()
-        .extend_ttl(&metadata_key, 1000, 500000);
+        .instance()
+        .set(&DataKey::AllowedMetadataKey(key.clone()), &true);
+
+    let mut keys = get_allowed_metadata_keys(env);
+    if !keys.contains(key) {
+        keys.push_back(key.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::AllowedMetadataKeys, &keys);
+    }
 }
 
 /// Remove a key from the allowed metadata keys list
@@ -222,16 +232,22 @@ pub fn remove_allowed_metadata_key(env: &Env, key: &Symbol) {
     env.storage()
         .persistent()
         .remove(&DataKey::AllowedMetadataKey(key.clone()));
+
+    let mut keys = get_allowed_metadata_keys(env);
+    if let Some(index) = keys.first_index_of(key) {
+        keys.remove(index);
+        env.storage()
+            .instance()
+            .set(&DataKey::AllowedMetadataKeys, &keys);
+    }
 }
 
 /// Get all allowed metadata keys
-#[allow(dead_code)]
 pub fn get_allowed_metadata_keys(env: &Env) -> Vec<Symbol> {
-    // Note: This is a simplified implementation. In production, you might want
-    // to use a different approach for iterating over all allowed keys.
-    // For now, we'll return an empty Vec as iteration over dynamic keys
-    // requires a separate index.
-    Vec::new(env)
+    env.storage()
+        .instance()
+        .get(&DataKey::AllowedMetadataKeys)
+        .unwrap_or_else(|| Vec::new(env))
 }
 
 // ============================================================================

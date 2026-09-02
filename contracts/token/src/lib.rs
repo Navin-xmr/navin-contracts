@@ -848,6 +848,21 @@ impl NavinToken {
         Ok(storage::is_metadata_key_allowed(&env, &key))
     }
 
+    /// Get all metadata keys in the admin-registered allowlist.
+    ///
+    /// # Returns
+    /// * `Vec<Symbol>` - The currently allowed metadata keys in insertion order.
+    ///
+    /// # Errors
+    /// * `MetadataError::NotInitialized` - If contract is not initialized.
+    pub fn get_allowed_metadata_keys(env: Env) -> Result<Vec<Symbol>, MetadataError> {
+        if !storage::is_initialized(&env) {
+            return Err(MetadataError::NotInitialized);
+        }
+
+        Ok(storage::get_allowed_metadata_keys(&env))
+    }
+
     // ========================================================================
     // Token Metadata Management (Admin Only)
     // ========================================================================
