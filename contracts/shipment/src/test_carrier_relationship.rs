@@ -538,6 +538,63 @@ mod tests {
             "carrier must be re-addable after being removed from the whitelist"
         );
     }
+
+    #[test]
+    fn suspended_carrier_rejected_on_update_eta() {
+        let (env, client, admin) = setup();
+        let (company, carrier) = add_company_and_carrier(&env, &client, &admin);
+        client.add_carrier_to_whitelist(&company, &carrier);
+
+        let receiver = Address::generate(&env);
+        let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+        let deadline = env.ledger().timestamp() + 3600;
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &data_hash,
+            &Vec::new(&env),
+            &deadline,
+        );
+
+        client.suspend_carrier(&admin, &carrier);
+
+        let new_eta = env.ledger().timestamp() + 7200;
+        let eta_hash = BytesN::from_array(&env, &[2u8; 32]);
+        let result = client.try_update_eta(&carrier, &shipment_id, &new_eta, &eta_hash);
+        assert_eq!(
+            result,
+            Err(Ok(crate::NavinError::CarrierSuspended)),
+            "suspended carrier must be rejected on update_eta"
+        );
+    }
+
+    #[test]
+    fn active_carrier_can_update_eta() {
+        let (env, client, _admin) = setup();
+        let (company, carrier) = add_company_and_carrier(&env, &client, &_admin);
+        client.add_carrier_to_whitelist(&company, &carrier);
+
+        let receiver = Address::generate(&env);
+        let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+        let deadline = env.ledger().timestamp() + 3600;
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &data_hash,
+            &Vec::new(&env),
+            &deadline,
+        );
+
+        let new_eta = env.ledger().timestamp() + 7200;
+        let eta_hash = BytesN::from_array(&env, &[2u8; 32]);
+        let result = client.try_update_eta(&carrier, &shipment_id, &new_eta, &eta_hash);
+        assert!(
+            result.is_ok(),
+            "active carrier must be allowed to update_eta"
+        );
+    }
 }
 
 /// Issue #699 — remove_carrier_from_whitelist must reject attempts

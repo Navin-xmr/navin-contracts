@@ -1329,9 +1329,10 @@ pub fn get_active_shipment_count(env: &Env, company: &Address) -> u32 {
 /// ```
 pub fn increment_active_shipment_count(env: &Env, company: &Address) {
     let current = get_active_shipment_count(env, company);
-    env.storage()
-        .instance()
-        .set(&DataKey::ActiveShipmentCount(company.clone()), &current.saturating_add(1));
+    env.storage().instance().set(
+        &DataKey::ActiveShipmentCount(company.clone()),
+        &current.saturating_add(1),
+    );
 }
 
 /// Decrement the active shipment count for a company in instance storage.
@@ -1348,9 +1349,10 @@ pub fn increment_active_shipment_count(env: &Env, company: &Address) {
 /// ```
 pub fn decrement_active_shipment_count(env: &Env, company: &Address) {
     let current = get_active_shipment_count(env, company);
-    env.storage()
-        .instance()
-        .set(&DataKey::ActiveShipmentCount(company.clone()), &current.saturating_sub(1));
+    env.storage().instance().set(
+        &DataKey::ActiveShipmentCount(company.clone()),
+        &current.saturating_sub(1),
+    );
 }
 
 // ============= Milestone Event Counter Storage Functions =============
@@ -1536,8 +1538,6 @@ pub fn archive_shipment(env: &Env, shipment_id: u64, shipment: &Shipment) {
     // IoT status hashes: one entry per ShipmentStatus variant.
     purge_status_hashes(env, shipment_id);
 }
-
-
 
 /// Check if a shipment is archived.
 ///
@@ -1811,7 +1811,6 @@ pub fn get_status_hash(env: &Env, shipment_id: u64, status: &ShipmentStatus) -> 
 ///
 /// This is used for TTL health monitoring to determine which shipments
 /// are still active in persistent storage vs archived.
-
 
 // ============= Settlement Tracking Functions =============
 

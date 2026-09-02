@@ -19,22 +19,6 @@
 use crate::{errors::NavinError, events, storage, types::*};
 use soroban_sdk::{Address, BytesN, Env};
 
-/// Recovery reason types for audit trail
-#[allow(dead_code)]
-#[derive(Clone, Debug, PartialEq)]
-pub enum RecoveryReason {
-    /// Shipment stuck in intermediate state
-    StuckState,
-    /// Incorrect status assigned
-    IncorrectStatus,
-    /// Wedged escrow requiring manual intervention
-    WedgedEscrow,
-    /// Failed transition recovery
-    FailedTransition,
-    /// Other operational issue
-    Other,
-}
-
 /// Recover a shipment from a stuck state by resetting to a valid target state.
 ///
 /// # Arguments

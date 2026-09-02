@@ -15,7 +15,6 @@ pub mod error_map;
 mod errors;
 mod event_topics;
 mod events;
-mod rate_limit;
 mod recovery;
 mod storage;
 mod stress_test;
@@ -30,8 +29,6 @@ mod test_cross_contract_integration;
 mod test_mixed_token_shipments;
 #[cfg(test)]
 mod test_reentrancy_guard;
-#[cfg(test)]
-mod test_replay_protection;
 
 #[cfg(test)]
 mod test_event_fixtures;
@@ -48,6 +45,8 @@ mod test_token_compatibility;
 mod types;
 mod validation;
 
+#[cfg(test)]
+mod test_admin_pause_guards;
 #[cfg(test)]
 mod test_archive_restore_consistency;
 #[cfg(test)]
@@ -76,15 +75,13 @@ mod test_hash_domain_separation;
 mod test_iot_verification;
 #[cfg(test)]
 mod test_milestone_payout_order;
+mod test_multisig_reinit_guard;
 #[cfg(test)]
 mod test_panic_free_invariants;
 #[cfg(test)]
 mod test_pause;
 #[cfg(test)]
 mod test_precondition_guards;
-#[cfg(test)]
-mod test_admin_pause_guards;
-mod test_multisig_reinit_guard;
 mod test_proposal_digest;
 #[cfg(test)]
 mod test_refund_escrow_ttl;
@@ -388,7 +385,8 @@ fn settle_escrow(
         storage::increment_status_count(env, &next_status);
 
         if old_status != ShipmentStatus::Cancelled
-            && (next_status == ShipmentStatus::Cancelled || next_status == ShipmentStatus::Delivered)
+            && (next_status == ShipmentStatus::Cancelled
+                || next_status == ShipmentStatus::Delivered)
         {
             storage::decrement_active_shipment_count(env, &shipment.sender);
         }
@@ -1922,11 +1920,7 @@ impl NavinShipment {
     /// a mismatch is reported as `RoleMismatch` rather than being masked by an
     /// authorization error — the caller needs to know which of the two went
     /// wrong.
-    fn require_exact_role(
-        env: &Env,
-        target: &Address,
-        expected: &Role,
-    ) -> Result<(), NavinError> {
+    fn require_exact_role(env: &Env, target: &Address, expected: &Role) -> Result<(), NavinError> {
         let current = storage::get_role(env, target).unwrap_or(Role::Unassigned);
         if current != *expected {
             return Err(NavinError::RoleMismatch);
@@ -4040,6 +4034,7 @@ impl NavinShipment {
         require_initialized(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
+        require_active_carrier(&env, &carrier)?;
 
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
@@ -5857,10 +5852,9 @@ impl NavinShipment {
             return Err(NavinError::CircularDependency);
         }
 
-        let dependent = storage::get_shipment(&env, dependent_id)
-            .ok_or(NavinError::ShipmentNotFound)?;
-        let prereq = storage::get_shipment(&env, prereq_id)
-            .ok_or(NavinError::ShipmentNotFound)?;
+        let dependent =
+            storage::get_shipment(&env, dependent_id).ok_or(NavinError::ShipmentNotFound)?;
+        let prereq = storage::get_shipment(&env, prereq_id).ok_or(NavinError::ShipmentNotFound)?;
 
         // Both sides must belong to the caller. Checking only the dependent
         // would still allow chaining your own shipment behind a stranger's,
@@ -6101,7 +6095,13 @@ impl NavinShipment {
                 persist_shipment(&env, &shipment)?;
 
                 // Emit the dedicated force-release event with reason hash for audit trail
-                events::emit_force_released(&env, shipment_id, &proposal.proposer, &reason_hash, escrow_amount);
+                events::emit_force_released(
+                    &env,
+                    shipment_id,
+                    &proposal.proposer,
+                    &reason_hash,
+                    escrow_amount,
+                );
             }
             crate::types::AdminAction::ForceRefund(shipment_id, reason_hash) => {
                 // Reason hash is mandatory and must be non-zero for audit trail.
@@ -6154,7 +6154,13 @@ impl NavinShipment {
                 persist_shipment(&env, &shipment)?;
 
                 // Emit the dedicated force-refund event with reason hash for audit trail
-                events::emit_force_refunded(&env, shipment_id, &proposal.proposer, &reason_hash, escrow_amount);
+                events::emit_force_refunded(
+                    &env,
+                    shipment_id,
+                    &proposal.proposer,
+                    &reason_hash,
+                    escrow_amount,
+                );
             }
         }
 

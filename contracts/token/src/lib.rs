@@ -522,8 +522,12 @@ impl NavinToken {
         }
 
         let current_supply = storage::get_total_supply(&env);
-        let new_supply = current_supply.checked_sub(amount).ok_or(TokenError::Overflow)?;
-        let new_from_balance = from_balance.checked_sub(amount).ok_or(TokenError::Overflow)?;
+        let new_supply = current_supply
+            .checked_sub(amount)
+            .ok_or(TokenError::Overflow)?;
+        let new_from_balance = from_balance
+            .checked_sub(amount)
+            .ok_or(TokenError::Overflow)?;
         storage::set_total_supply(&env, new_supply);
         storage::set_balance(&env, &from, new_from_balance);
         storage::extend_balance_ttl(&env, &from, 1000, 500000);
@@ -573,8 +577,12 @@ impl NavinToken {
             .map(|v| v.expiration_ledger)
             .unwrap_or(0);
         let current_supply = storage::get_total_supply(&env);
-        let new_supply = current_supply.checked_sub(amount).ok_or(TokenError::Overflow)?;
-        let new_from_balance = from_balance.checked_sub(amount).ok_or(TokenError::Overflow)?;
+        let new_supply = current_supply
+            .checked_sub(amount)
+            .ok_or(TokenError::Overflow)?;
+        let new_from_balance = from_balance
+            .checked_sub(amount)
+            .ok_or(TokenError::Overflow)?;
         let new_allowance = allowance.checked_sub(amount).ok_or(TokenError::Overflow)?;
         storage::set_total_supply(&env, new_supply);
         storage::set_balance(&env, &from, new_from_balance);
@@ -702,7 +710,9 @@ impl NavinToken {
         storage::set_balance(
             &env,
             &from,
-            from_balance.checked_sub(total).ok_or(TokenError::Overflow)?,
+            from_balance
+                .checked_sub(total)
+                .ok_or(TokenError::Overflow)?,
         );
         for (to, amount) in recipients.iter() {
             let recipient_balance = storage::get_balance(&env, &to);

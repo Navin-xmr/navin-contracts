@@ -910,11 +910,7 @@ mod reset_integration_tests {
     use crate::{
         CircuitBreakerState, NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus,
     };
-    use soroban_sdk::{
-        contract, contractimpl,
-        testutils::Address as _,
-        Address, BytesN, Env, Vec,
-    };
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
 
     /// Token whose `transfer` always succeeds, so post-reset transfers go through.
     #[contract]

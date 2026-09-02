@@ -363,8 +363,12 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// 12. max_milestones_per_shipment (u32, 4 bytes, big-endian)
 /// 13. max_notes_per_shipment (u32, 4 bytes, big-endian)
 /// 14. max_evidence_per_dispute (u32, 4 bytes, big-endian)
+/// 15. max_breaches_per_shipment (u32, 4 bytes, big-endian)
+/// 16. idempotency_window_seconds (u64, 8 bytes, big-endian)
+/// 17. creation_quota_max (u32, 4 bytes, big-endian)
+/// 18. creation_quota_window_seconds (u64, 8 bytes, big-endian)
 ///
-/// Total: 65 bytes serialized, hashed to 32-byte SHA-256 digest.
+/// Total: 89 bytes serialized, hashed to 32-byte SHA-256 digest.
 ///
 /// # Arguments
 /// * `config` - The configuration to checksum.
@@ -380,8 +384,8 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// assert_eq!(checksum1, checksum2); // Deterministic
 /// ```
 pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32> {
-    // Serialize all fields in fixed order (69 bytes total)
-    let mut bytes: [u8; 69] = [0; 69];
+    // Serialize all fields in fixed order (89 bytes total)
+    let mut bytes: [u8; 89] = [0; 89];
     let mut offset = 0;
 
     // 1. shipment_ttl_threshold (u32, big-endian)
@@ -442,6 +446,18 @@ pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32>
 
     // 15. max_breaches_per_shipment (u32, big-endian)
     bytes[offset..offset + 4].copy_from_slice(&config.max_breaches_per_shipment.to_be_bytes());
+    offset += 4;
+
+    // 16. idempotency_window_seconds (u64, big-endian)
+    bytes[offset..offset + 8].copy_from_slice(&config.idempotency_window_seconds.to_be_bytes());
+    offset += 8;
+
+    // 17. creation_quota_max (u32, big-endian)
+    bytes[offset..offset + 4].copy_from_slice(&config.creation_quota_max.to_be_bytes());
+    offset += 4;
+
+    // 18. creation_quota_window_seconds (u64, big-endian)
+    bytes[offset..offset + 8].copy_from_slice(&config.creation_quota_window_seconds.to_be_bytes());
 
     // Compute SHA-256 hash and convert to BytesN<32>
     let hash = env
@@ -891,6 +907,30 @@ mod tests {
         assert_ne!(
             checksum, checksum_original,
             "Changing max_breaches_per_shipment must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.idempotency_window_seconds = 600;
+        let checksum = compute_config_checksum(&config, &env);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing idempotency_window_seconds must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.creation_quota_max = 50;
+        let checksum = compute_config_checksum(&config, &env);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing creation_quota_max must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.creation_quota_window_seconds = 7200;
+        let checksum = compute_config_checksum(&config, &env);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing creation_quota_window_seconds must change checksum"
         );
     }
 

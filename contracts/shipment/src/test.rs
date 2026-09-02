@@ -3206,6 +3206,10 @@ fn test_cancel_shipment_with_escrow() {
             Symbol::try_from_val(&env, &v).ok() == Some(Symbol::new(&env, "escrow_refunded"))
         })
     });
+    assert!(
+        emitted_refund,
+        "cancel_shipment must emit escrow_refunded when returning escrow"
+    );
 }
 
 #[test]
@@ -16429,7 +16433,10 @@ fn test_compute_idempotency_key_handles_max_length_symbol() {
     // 32 characters — the SDK's maximum.
     let max_symbol = Symbol::new(&env, "abcdefghijklmnopqrstuvwxyz012345");
     let result = client.try_compute_idempotency_key(&1u64, &max_symbol, &0u32);
-    assert!(result.is_err(), "must not panic at the maximum symbol length");
+    assert!(
+        result.is_err(),
+        "must not panic at the maximum symbol length"
+    );
 }
 
 /// #750 — ordinary symbols still produce a stable key.
@@ -16444,7 +16451,10 @@ fn test_compute_idempotency_key_still_works_for_short_symbols() {
     assert_eq!(first, second, "the key must be deterministic");
 
     let other = client.compute_idempotency_key(&2u64, &symbol, &0u32);
-    assert_ne!(first, other, "a different shipment must yield a different key");
+    assert_ne!(
+        first, other,
+        "a different shipment must yield a different key"
+    );
 }
 
 /// #751 — a company must not chain a shipment it does not own.
@@ -16466,12 +16476,20 @@ fn test_add_shipment_dependency_rejects_a_foreign_shipment() {
     client.add_company(&admin, &attacker);
 
     let victim_shipment = client.create_shipment(
-        &victim, &receiver, &carrier, &data_hash,
-        &soroban_sdk::Vec::new(&env), &deadline,
+        &victim,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
     let attacker_shipment = client.create_shipment(
-        &attacker, &receiver, &carrier, &data_hash,
-        &soroban_sdk::Vec::new(&env), &deadline,
+        &attacker,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
 
     // The attack: pin the victim's shipment behind the attacker's.
@@ -16498,12 +16516,20 @@ fn test_add_shipment_dependency_rejects_a_foreign_prerequisite() {
     client.add_company(&admin, &other);
 
     let own = client.create_shipment(
-        &owner, &receiver, &carrier, &data_hash,
-        &soroban_sdk::Vec::new(&env), &deadline,
+        &owner,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
     let foreign = client.create_shipment(
-        &other, &receiver, &carrier, &data_hash,
-        &soroban_sdk::Vec::new(&env), &deadline,
+        &other,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
 
     assert_eq!(
@@ -16527,16 +16553,26 @@ fn test_add_shipment_dependency_requires_the_company_role() {
 
     client.add_company(&admin, &company);
     let a = client.create_shipment(
-        &company, &receiver, &carrier, &data_hash,
-        &soroban_sdk::Vec::new(&env), &deadline,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
     let b = client.create_shipment(
-        &company, &receiver, &carrier, &data_hash,
-        &soroban_sdk::Vec::new(&env), &deadline,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
 
     assert!(
-        client.try_add_shipment_dependency(&outsider, &a, &b).is_err(),
+        client
+            .try_add_shipment_dependency(&outsider, &a, &b)
+            .is_err(),
         "require_auth alone is not authorization - the Company role is required"
     );
 }
@@ -16554,12 +16590,20 @@ fn test_add_shipment_dependency_allows_own_shipments() {
 
     client.add_company(&admin, &company);
     let dependent = client.create_shipment(
-        &company, &receiver, &carrier, &data_hash,
-        &soroban_sdk::Vec::new(&env), &deadline,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
     let prereq = client.create_shipment(
-        &company, &receiver, &carrier, &data_hash,
-        &soroban_sdk::Vec::new(&env), &deadline,
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
 
     client.add_shipment_dependency(&company, &dependent, &prereq);

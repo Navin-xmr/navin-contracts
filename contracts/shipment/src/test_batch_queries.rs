@@ -5,7 +5,12 @@ use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec};
 
 /// Directly mutate a shipment's status in persistent storage. Used to set up
 /// status-filtered query fixtures without driving the full lifecycle.
-fn set_status(env: &Env, client: &crate::NavinShipmentClient<'static>, id: u64, status: ShipmentStatus) {
+fn set_status(
+    env: &Env,
+    client: &crate::NavinShipmentClient<'static>,
+    id: u64,
+    status: ShipmentStatus,
+) {
     env.as_contract(&client.address, || {
         let mut shipment = storage::get_shipment(env, id).unwrap();
         shipment.status = status;
@@ -590,11 +595,7 @@ fn test_get_shipments_by_carrier_page_rejects_zero_limit() {
     let (_env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
-    let result = client.try_get_shipments_by_carrier_page(
-        &Address::generate(&_env),
-        &0,
-        &0,
-    );
+    let result = client.try_get_shipments_by_carrier_page(&Address::generate(&_env), &0, &0);
     assert!(matches!(result, Err(Ok(NavinError::InvalidConfig))));
 }
 
