@@ -199,8 +199,15 @@ impl NavinToken {
             .map(|v| v.expiration_ledger)
             .unwrap_or(0);
         storage::set_balance(&env, &from, from_balance - amount);
-        storage::set_balance(&env, &to, storage::get_balance(&env, &to) + amount);
-        storage::set_allowance(&env, &from, &spender, allowance - amount, expiration_ledger);
+        let recipient_balance = storage::get_balance(&env, &to);
+        let updated_recipient_balance = recipient_balance
+            .checked_add(amount)
+            .ok_or(TokenError::Overflow)?;
+        let updated_allowance = allowance
+            .checked_sub(amount)
+            .ok_or(TokenError::Overflow)?;
+        storage::set_balance(&env, &to, updated_recipient_balance);
+        storage::set_allowance(&env, &from, &spender, updated_allowance, expiration_ledger);
 
         storage::extend_balance_ttl_for(&env, &[from.clone(), to.clone()], 1000, 500000);
         storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
