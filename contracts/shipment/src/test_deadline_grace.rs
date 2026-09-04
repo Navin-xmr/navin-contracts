@@ -14,7 +14,11 @@
 #[cfg(test)]
 mod tests {
     use crate::{test_utils, NavinShipment, NavinShipmentClient, ShipmentStatus};
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
+    use crate::types::NotificationType;
+    use soroban_sdk::{
+        contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Symbol, TryFromVal,
+        Vec,
+    };
 
     #[contract]
     struct MockToken;
@@ -240,6 +244,48 @@ mod tests {
             ShipmentStatus::Cancelled,
             "reducing grace below the elapsed time must cause expiry"
         );
+    }
+
+    // ── Permissionless deadline warning ─────────────────────────────────────
+
+    /// The warning is emitted once when the shipment enters the configured
+    /// warning window, and repeated crank calls are harmless.
+    #[test]
+    fn deadline_warning_is_permissionless_and_emitted_once() {
+        let (env, client, admin) = setup();
+        let now = env.ledger().timestamp();
+        let deadline = now + 1000;
+        let grace = 300u64;
+        let data_hash = BytesN::from_array(&env, &[0x09u8; 32]);
+        let id = create_with_deadline(&env, &client, &admin, 0x09, deadline);
+        set_grace(&client, &admin, grace);
+
+        test_utils::set_ledger_time(&env, deadline - grace);
+        env.events().all();
+
+        // A caller other than the sender, carrier, or admin may crank it.
+        client.check_deadline_warning(&id, &data_hash);
+        let first_events = env.events().all();
+        assert_eq!(first_events.len(), 2);
+        for (_contract, topics, data) in first_events.iter() {
+            assert_eq!(
+                topics.get(0),
+                Some(Symbol::new(&env, "notification")),
+                "warning must emit notification events"
+            );
+            let (_recipient, kind, shipment_id, hash): (
+                Address,
+                NotificationType,
+                u64,
+                BytesN<32>,
+            ) = TryFromVal::try_from_val(&env, &data).expect("notification must deserialize");
+            assert_eq!(kind, NotificationType::DeadlineApproaching);
+            assert_eq!(shipment_id, id);
+            assert_eq!(hash, data_hash);
+        }
+
+        client.check_deadline_warning(&id, &data_hash);
+        assert_eq!(env.events().all().len(), 2, "warning must only be emitted once");
     }
 
     // ── Max cap enforcement ───────────────────────────────────────────────────

@@ -132,6 +132,10 @@ fn test_add_allowed_metadata_key_success() {
     client.add_allowed_metadata_key(&admin, &key);
 
     assert!(client.is_metadata_key_allowed(&key));
+
+    let allowed_keys = client.get_allowed_metadata_keys();
+    assert_eq!(allowed_keys.len(), 1);
+    assert_eq!(allowed_keys.get(0), Some(key));
 }
 
 #[test]
@@ -168,6 +172,7 @@ fn test_remove_allowed_metadata_key_success() {
 
     client.remove_allowed_metadata_key(&admin, &key);
     assert!(!client.is_metadata_key_allowed(&key));
+    assert!(client.get_allowed_metadata_keys().is_empty());
 }
 
 #[test]
@@ -304,18 +309,14 @@ fn test_allowlist_updates_reflected_immediately() {
     let key = Symbol::new(&env, "twitter");
     let value = String::from_str(&env, "@navin");
 
-    // Add key and set metadata
     client.add_allowed_metadata_key(&admin, &key);
     client.set_metadata(&admin, &key, &value);
     assert_eq!(client.get_metadata(&key), Some(value.clone()));
 
-    // Remove key from allowlist
     client.remove_allowed_metadata_key(&admin, &key);
 
-    // Metadata should still exist (removal doesn't delete data)
-    assert_eq!(client.get_metadata(&key), Some(value.clone()));
+    assert_eq!(client.get_metadata(&key), None);
 
-    // But setting new value should fail
     let new_value = String::from_str(&env, "@newnavin");
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         client.set_metadata(&admin, &key, &new_value);
@@ -362,6 +363,48 @@ fn test_multiple_allowed_keys() {
     assert!(!client.is_metadata_key_allowed(&key2));
     assert!(client.is_metadata_key_allowed(&key1));
     assert!(client.is_metadata_key_allowed(&key3));
+
+    let allowed_keys = client.get_allowed_metadata_keys();
+    assert_eq!(allowed_keys.len(), 2);
+    assert_eq!(allowed_keys.get(0), Some(key1));
+    assert_eq!(allowed_keys.get(1), Some(key3));
+}
+
+#[test]
+fn test_allowed_metadata_keys_list_round_trip() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    assert!(client.get_allowed_metadata_keys().is_empty());
+
+    let key1 = Symbol::new(&env, "website");
+    let key2 = Symbol::new(&env, "twitter");
+    let key3 = Symbol::new(&env, "discord");
+
+    client.add_allowed_metadata_key(&admin, &key1);
+    client.add_allowed_metadata_key(&admin, &key2);
+    client.add_allowed_metadata_key(&admin, &key3);
+
+    let allowed_keys = client.get_allowed_metadata_keys();
+    assert_eq!(allowed_keys.len(), 3);
+    assert_eq!(allowed_keys.get(0), Some(key1.clone()));
+    assert_eq!(allowed_keys.get(1), Some(key2.clone()));
+    assert_eq!(allowed_keys.get(2), Some(key3.clone()));
+
+    client.remove_allowed_metadata_key(&admin, &key2);
+
+    let allowed_keys = client.get_allowed_metadata_keys();
+    assert_eq!(allowed_keys.len(), 2);
+    assert_eq!(allowed_keys.get(0), Some(key1.clone()));
+    assert_eq!(allowed_keys.get(1), Some(key3.clone()));
+    assert!(client.is_metadata_key_allowed(&key1));
+    assert!(!client.is_metadata_key_allowed(&key2));
+    assert!(client.is_metadata_key_allowed(&key3));
+
+    client.remove_allowed_metadata_key(&admin, &key1);
+    client.remove_allowed_metadata_key(&admin, &key3);
+
+    assert!(client.get_allowed_metadata_keys().is_empty());
 }
 
 // ============================================================================
@@ -700,6 +743,35 @@ fn test_paused_blocks_approve() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_paused_blocks_increase_allowance() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let spender = Address::generate(&env);
+
+    client.pause(&admin);
+    client.increase_allowance(&admin, &spender, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_paused_blocks_decrease_allowance() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let spender = Address::generate(&env);
+
+    client.pause(&admin);
+    client.decrease_allowance(&admin, &spender, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_decimals_requires_initialization() {
+    let (env, client, _) = setup_token_env();
+    client.decimals();
+}
+
+#[test]
 fn test_unpause_restores_transfer() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -807,6 +879,61 @@ fn test_batch_transfer_rejects_self_transfer_leg() {
 }
 
 #[test]
+fn test_batch_transfer_emits_per_recipient_detail() {
+    use soroban_sdk::{testutils::Events as _, TryFromVal, Vec as SdkVec};
+
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+    let r3 = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    recipients.push_back((r1.clone(), 100));
+    recipients.push_back((r2.clone(), 250));
+    recipients.push_back((r3.clone(), 375));
+
+    client.batch_transfer(&admin, &recipients);
+
+    // Reconstruct per-recipient amounts from the `batch_leg` events alone.
+    let leg_topic = Symbol::new(&env, "batch_leg");
+    let mut reconstructed: std::vec::Vec<(Address, i128)> = std::vec::Vec::new();
+    for (_cid, topics, data) in env.events().all().iter() {
+        if topics.get(0).and_then(|t| Symbol::try_from_val(&env, &t).ok()) != Some(leg_topic.clone())
+        {
+            continue;
+        }
+        let (from, to, amount): (Address, Address, i128) =
+            TryFromVal::try_from_val(&env, &data).unwrap();
+        assert_eq!(from, admin, "each leg event records the sender");
+        reconstructed.push((to, amount));
+    }
+
+    assert_eq!(reconstructed.len(), 3, "one detail event per recipient");
+    assert!(reconstructed.contains(&(r1.clone(), 100)));
+    assert!(reconstructed.contains(&(r2.clone(), 250)));
+    assert!(reconstructed.contains(&(r3.clone(), 375)));
+
+    // The `batch_tr` summary still carries the full recipient/amount list.
+    let sum_topic = Symbol::new(&env, "batch_tr");
+    let summary = env
+        .events()
+        .all()
+        .iter()
+        .find(|(_cid, topics, _data)| {
+            topics.get(0).and_then(|t| Symbol::try_from_val(&env, &t).ok()) == Some(sum_topic.clone())
+        })
+        .map(|(_cid, _topics, data)| data)
+        .expect("batch_tr summary event must be emitted");
+    let (from, list, count): (Address, SdkVec<(Address, i128)>, u32) =
+        TryFromVal::try_from_val(&env, &summary).unwrap();
+    assert_eq!(from, admin);
+    assert_eq!(count, 3);
+    assert_eq!(list, recipients);
+}
+
+#[test]
 fn test_transfer_admin_success() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -814,7 +941,19 @@ fn test_transfer_admin_success() {
     let new_admin = Address::generate(&env);
     client.transfer_admin(&admin, &new_admin);
 
+    assert_eq!(client.get_admin(), admin);
+
+    client.accept_admin_transfer(&new_admin);
     assert_eq!(client.get_admin(), new_admin);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")]
+fn test_transfer_admin_rejects_self_transfer() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    client.transfer_admin(&admin, &admin);
 }
 
 #[test]
@@ -832,4 +971,72 @@ fn test_transfer_admin_unauthorized() {
         result.is_err(),
         "Non-admin must not be able to transfer admin"
     );
+}
+
+// ============================================================================
+// Event Fixture Tests (#660): pin each token event topic + schema version +
+// payload shape so indexers can rely on a stable, versioned surface.
+// ============================================================================
+
+#[test]
+fn event_fixtures_transfer_and_mint_and_burn() {
+    let (env, client, admin) = setup_token_env();
+    let user = Address::generate(&env);
+    let to = Address::generate(&env);
+    initialize_token(&client, &env, &admin, 1000);
+
+    env.mock_all_auths();
+    client.mint(&admin, &to, &100);
+    client.transfer(&admin, &to, &10);
+    client.burn(&admin, &10);
+
+    let events = env.events().all();
+    // mint, transfer, burn — plus any init events from the SDK.
+    let mut found_mint = false;
+    let mut found_transfer = false;
+    let mut found_burn = false;
+    for event in events.iter() {
+        let (topics, _data) = (event.topics(), event.data());
+        let first: soroban_sdk::Symbol = topics.get(0).unwrap();
+        let second: soroban_sdk::Symbol = topics.get(1).unwrap();
+        // Every token event carries the schema version as the second topic.
+        assert_eq!(second.to_string(), "v1");
+        match first.to_string().as_str() {
+            "mint" => found_mint = true,
+            "transfer" => found_transfer = true,
+            "burn" => found_burn = true,
+            _ => {}
+        }
+    }
+    assert!(found_mint, "expected a mint event");
+    assert!(found_transfer, "expected a transfer event");
+    assert!(found_burn, "expected a burn event");
+}
+
+#[test]
+fn event_fixtures_approve_and_metadata() {
+    let (env, client, admin) = setup_token_env();
+    let spender = Address::generate(&env);
+    initialize_token(&client, &env, &admin, 1000);
+
+    env.mock_all_auths();
+    client.approve(&admin, &spender, &50, &u32::MAX);
+    client.set_metadata(&admin, &Symbol::new(&env, "key"), &String::from_str(&env, "value"));
+
+    let events = env.events().all();
+    let mut found_approve = false;
+    let mut found_meta = false;
+    for event in events.iter() {
+        let (topics, _data) = (event.topics(), event.data());
+        let first: soroban_sdk::Symbol = topics.get(0).unwrap();
+        let second: soroban_sdk::Symbol = topics.get(1).unwrap();
+        assert_eq!(second.to_string(), "v1");
+        match first.to_string().as_str() {
+            "approve" => found_approve = true,
+            "meta_set" => found_meta = true,
+            _ => {}
+        }
+    }
+    assert!(found_approve, "expected an approve event");
+    assert!(found_meta, "expected a metadata event");
 }
