@@ -7870,7 +7870,12 @@ fn test_verify_data_hash_returns_invalid_hash() {
         crate::ShipmentStatus::Delivered,
     );
 
-    client.verify_data_hash(&shipment_id, &crate::ShipmentStatus::Delivered, &zero_hash);
+    client.verify_data_hash(
+        &shipment_id,
+        &crate::ShipmentStatus::Delivered,
+        &0,
+        &zero_hash,
+    );
 }
 
 #[test]
@@ -13557,7 +13562,7 @@ fn test_get_status_hash_shipment_not_found() {
     let (_env, client, admin, token_contract) = setup_shipment_env();
     client.initialize(&admin, &token_contract);
 
-    let result = client.try_get_status_hash(&9999u64, &ShipmentStatus::InTransit);
+    let result = client.try_get_status_hash(&9999u64, &ShipmentStatus::InTransit, &0);
     assert_eq!(
         result,
         Err(Ok(NavinError::ShipmentNotFound)),
@@ -13820,7 +13825,7 @@ fn test_milestone_limit_exceeded() {
 
     // Delivered hash was never recorded.
     let probe = BytesN::from_array(&env, &[5u8; 32]);
-    let result = client.try_verify_data_hash(&shipment_id, &ShipmentStatus::Delivered, &probe);
+    let result = client.try_verify_data_hash(&shipment_id, &ShipmentStatus::Delivered, &0, &probe);
     assert_eq!(
         result,
         Err(Ok(NavinError::StatusHashNotFound)),
@@ -13858,7 +13863,7 @@ fn test_get_status_hash_valid_returns_correct_hash() {
         &transit_hash,
     );
 
-    let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
+    let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit, &0);
     assert_eq!(
         result,
         Ok(Ok(transit_hash)),
@@ -13963,7 +13968,7 @@ fn test_milestone_limit_valid_milestones_work() {
         &transit_hash,
     );
 
-    let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
+    let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit, &0);
     assert_eq!(
         result,
         Ok(Ok(transit_hash)),
@@ -14237,7 +14242,8 @@ fn test_assert_data_hash_incorrect_hash_returns_mismatch() {
     );
 
     let wrong_hash = BytesN::from_array(&env, &[0xBBu8; 32]);
-    let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &wrong_hash);
+    let result =
+        client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &0, &wrong_hash);
     assert_eq!(
         result,
         Err(Ok(NavinError::DataHashMismatch)),
@@ -14411,7 +14417,7 @@ fn test_breach_limit_one_allowed() {
     );
 
     let result =
-        client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+        client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &0, &transit_hash);
     assert_eq!(
         result,
         Ok(Ok(())),
@@ -14426,7 +14432,7 @@ fn test_assert_data_hash_nonexistent_shipment_returns_not_found() {
     client.initialize(&admin, &token_contract);
 
     let hash = BytesN::from_array(&env, &[1u8; 32]);
-    let result = client.try_assert_data_hash(&9999u64, &ShipmentStatus::InTransit, &hash);
+    let result = client.try_assert_data_hash(&9999u64, &ShipmentStatus::InTransit, &0, &hash);
     assert_eq!(
         result,
         Err(Ok(NavinError::ShipmentNotFound)),
@@ -14457,7 +14463,7 @@ fn test_assert_data_hash_unset_status_returns_status_hash_not_found() {
     );
 
     let hash = BytesN::from_array(&env, &[1u8; 32]);
-    let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &hash);
+    let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::InTransit, &0, &hash);
     assert_eq!(
         result,
         Err(Ok(NavinError::StatusHashNotFound)),
@@ -14592,7 +14598,8 @@ fn test_creation_quota_resets_after_window() {
 
     // AtCheckpoint was never set.
     let probe = BytesN::from_array(&env, &[7u8; 32]);
-    let result = client.try_assert_data_hash(&shipment_id, &ShipmentStatus::AtCheckpoint, &probe);
+    let result =
+        client.try_assert_data_hash(&shipment_id, &ShipmentStatus::AtCheckpoint, &0, &probe);
     assert_eq!(
         result,
         Err(Ok(NavinError::StatusHashNotFound)),
