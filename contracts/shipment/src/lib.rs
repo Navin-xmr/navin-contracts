@@ -75,6 +75,7 @@ mod test_hash_domain_separation;
 mod test_iot_verification;
 #[cfg(test)]
 mod test_milestone_payout_order;
+#[cfg(test)]
 mod test_multisig_reinit_guard;
 #[cfg(test)]
 mod test_panic_free_invariants;
@@ -82,6 +83,7 @@ mod test_panic_free_invariants;
 mod test_pause;
 #[cfg(test)]
 mod test_precondition_guards;
+#[cfg(test)]
 mod test_proposal_digest;
 #[cfg(test)]
 mod test_refund_escrow_ttl;
@@ -112,6 +114,7 @@ mod test_zero_amount_escrow;
 
 #[cfg(test)]
 mod test_invalid_config;
+#[cfg(test)]
 mod test_whitelist_multicompany;
 // Error-variant test suites (issues #613–#616)
 #[cfg(test)]
