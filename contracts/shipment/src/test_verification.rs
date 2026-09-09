@@ -2,7 +2,7 @@ extern crate std;
 use std::println;
 
 use soroban_sdk::{
-    testutils::{Address as _, Events},
+    testutils::Events as _, {Address as _, Events},
     Address, BytesN, Symbol, TryIntoVal, Vec,
 };
 

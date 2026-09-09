@@ -4,7 +4,7 @@ extern crate std;
 
 use crate::{test_utils::setup_env, NavinToken, NavinTokenClient};
 use soroban_sdk::{
-    testutils::{Address as _, Ledger as _},
+    testutils::{Address as _, Events as _, Ledger as _},
     Address, Env, String, Symbol,
 };
 
@@ -767,7 +767,7 @@ fn test_paused_blocks_decrease_allowance() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_decimals_requires_initialization() {
-    let (env, client, _) = setup_token_env();
+    let (_env, client, _) = setup_token_env();
     client.decimals();
 }
 
@@ -996,7 +996,7 @@ fn event_fixtures_transfer_and_mint_and_burn() {
     let mut found_transfer = false;
     let mut found_burn = false;
     for event in events.iter() {
-        let (topics, _data) = (event.topics(), event.data());
+        let (_addr, topics, _data) = event;
         let first: soroban_sdk::Symbol = topics.get(0).unwrap();
         let second: soroban_sdk::Symbol = topics.get(1).unwrap();
         // Every token event carries the schema version as the second topic.
@@ -1027,7 +1027,7 @@ fn event_fixtures_approve_and_metadata() {
     let mut found_approve = false;
     let mut found_meta = false;
     for event in events.iter() {
-        let (topics, _data) = (event.topics(), event.data());
+        let (_addr, topics, _data) = event;
         let first: soroban_sdk::Symbol = topics.get(0).unwrap();
         let second: soroban_sdk::Symbol = topics.get(1).unwrap();
         assert_eq!(second.to_string(), "v1");

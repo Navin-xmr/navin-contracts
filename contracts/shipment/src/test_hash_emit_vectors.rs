@@ -76,7 +76,7 @@
 extern crate std;
 
 use crate::events::generate_idempotency_key;
-use soroban_sdk::{testutils::Address as _, Address, Env};
+use soroban_sdk::{testutils::Events as _, Address as _, Address, Env};
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -384,7 +384,7 @@ fn test_vector_contract_helper_matches_events_helper() {
 fn test_vector_emitted_keys_match_recomputed() {
     use crate::{NavinShipment, NavinShipmentClient};
     use soroban_sdk::{
-        testutils::{Address as _, Events},
+        testutils::Events as _, {Address as _, Events},
         Address, BytesN, Symbol, TryFromVal, Vec,
     };
 

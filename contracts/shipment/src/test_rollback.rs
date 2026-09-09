@@ -4,7 +4,7 @@ use crate::{
 };
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::{Address as _, Events},
+    testutils::Events as _, {Address as _, Events},
     Address, BytesN, Env, Symbol, TryFromVal, Vec,
 };
 

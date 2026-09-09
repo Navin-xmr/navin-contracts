@@ -29,7 +29,7 @@ extern crate std;
 use crate::{test_utils, NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::{Address as _, Events, Ledger as _},
+    testutils::Events as _, {Address as _, Events, Ledger as _},
     token::StellarAssetClient,
     Address, BytesN, Env, Symbol, TryFromVal, TryIntoVal, Vec,
 };

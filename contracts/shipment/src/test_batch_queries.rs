@@ -329,6 +329,9 @@ fn issue_701_batch_rejects_sender_equals_receiver() {
 
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
+    // TODO: Add test implementation for issue #701
+}
+
 // ── Receiver-side shipment lookup (issue #644) ────────────────────────────────
 
 #[test]

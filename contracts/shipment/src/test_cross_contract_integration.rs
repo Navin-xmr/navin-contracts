@@ -81,7 +81,7 @@ use crate::{
     NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus,
 };
 use soroban_sdk::{
-    testutils::{Address as _, Events as _},
+    testutils::Events as _, {Address as _, Events as _},
     Address, BytesN, Env, Symbol, Vec,
 };
 

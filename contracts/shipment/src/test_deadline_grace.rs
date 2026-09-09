@@ -16,7 +16,7 @@ mod tests {
     use crate::{test_utils, NavinShipment, NavinShipmentClient, ShipmentStatus};
     use crate::types::NotificationType;
     use soroban_sdk::{
-        contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Symbol, TryFromVal,
+        contract, contractimpl, testutils::Events as _, Address as _, Address, BytesN, Env, Symbol, TryFromVal,
         Vec,
     };
 

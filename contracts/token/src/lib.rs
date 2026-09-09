@@ -59,8 +59,8 @@ impl NavinToken {
 
         env.events().publish(
             (
-                Symbol::new(env, event_topics::INIT),
-                Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                Symbol::new(&env, event_topics::INIT),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
             ),
             (admin.clone(), total_supply),
         );
@@ -151,8 +151,8 @@ impl NavinToken {
 
         env.events().publish(
             (
-                Symbol::new(env, event_topics::TRANSFER),
-                Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                Symbol::new(&env, event_topics::TRANSFER),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
             ),
             (from, to, amount),
         );
@@ -257,8 +257,8 @@ impl NavinToken {
 
         env.events().publish(
             (
-                Symbol::new(env, event_topics::APPROVE),
-                Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                Symbol::new(&env, event_topics::APPROVE),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
             ),
             (from, spender, amount, expiration_ledger),
         );
@@ -308,8 +308,8 @@ impl NavinToken {
 
         env.events().publish(
             (
-                Symbol::new(env, event_topics::ALLOWANCE_INCREASED),
-                Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                Symbol::new(&env, event_topics::ALLOWANCE_INCREASED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
             ),
             (owner, spender, delta, new_allowance),
         );
@@ -353,8 +353,8 @@ impl NavinToken {
 
         env.events().publish(
             (
-                Symbol::new(env, event_topics::ALLOWANCE_DECREASED),
-                Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                Symbol::new(&env, event_topics::ALLOWANCE_DECREASED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
             ),
             (owner, spender, delta, new_allowance),
         );
@@ -386,7 +386,7 @@ impl NavinToken {
         storage::set_pending_admin(&env, &new_admin);
 
         env.events()
-            .publish((symbol_short!("admin_prop"),), (current_admin, new_admin));
+            .publish((symbol_short!("admin_pro"),), (current_admin, new_admin));
 
         Ok(())
     }
@@ -446,8 +446,8 @@ impl NavinToken {
 
         env.events().publish(
             (
-                Symbol::new(env, event_topics::MINT),
-                Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                Symbol::new(&env, event_topics::MINT),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
             ),
             (to, amount),
         );
@@ -500,8 +500,8 @@ impl NavinToken {
 
         env.events().publish(
             (
-                Symbol::new(env, event_topics::ADMIN_BURN),
-                Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                Symbol::new(&env, event_topics::ADMIN_BURN),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
             ),
             (from, amount),
         );
@@ -541,8 +541,8 @@ impl NavinToken {
 
         env.events().publish(
             (
-                Symbol::new(env, event_topics::BURN),
-                Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                Symbol::new(&env, event_topics::BURN),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
             ),
             (from, amount),
         );
@@ -599,8 +599,8 @@ impl NavinToken {
 
         env.events().publish(
             (
-                Symbol::new(env, event_topics::BURN_FROM),
-                Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                Symbol::new(&env, event_topics::BURN_FROM),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
             ),
             (from, spender, amount),
         );
@@ -625,8 +625,8 @@ impl NavinToken {
         storage::set_paused(&env, true);
         env.events().publish(
             (
-                Symbol::new(env, event_topics::PAUSED),
-                Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                Symbol::new(&env, event_topics::PAUSED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
             ),
             (admin,),
         );
@@ -650,8 +650,8 @@ impl NavinToken {
         storage::set_paused(&env, false);
         env.events().publish(
             (
-                Symbol::new(env, event_topics::UNPAUSED),
-                Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                Symbol::new(&env, event_topics::UNPAUSED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
             ),
             (admin,),
         );
@@ -797,8 +797,8 @@ impl NavinToken {
 
         env.events().publish(
             (
-                Symbol::new(env, event_topics::METADATA_ADDED),
-                Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                Symbol::new(&env, event_topics::METADATA_ADDED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
             ),
             (admin, key),
         );
@@ -841,8 +841,8 @@ impl NavinToken {
 
         env.events().publish(
             (
-                Symbol::new(env, event_topics::METADATA_REMOVED),
-                Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                Symbol::new(&env, event_topics::METADATA_REMOVED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
             ),
             (admin, key),
         );
@@ -927,8 +927,8 @@ impl NavinToken {
 
         env.events().publish(
             (
-                Symbol::new(env, event_topics::METADATA_SET),
-                Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                Symbol::new(&env, event_topics::METADATA_SET),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
             ),
             (admin, key, value),
         );
@@ -985,8 +985,8 @@ impl NavinToken {
 
         env.events().publish(
             (
-                Symbol::new(env, event_topics::METADATA_DELETED),
-                Symbol::new(env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                Symbol::new(&env, event_topics::METADATA_DELETED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
             ),
             (admin, key),
         );
