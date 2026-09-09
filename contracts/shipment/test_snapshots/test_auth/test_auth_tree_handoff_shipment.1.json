@@ -1099,6 +1099,9 @@
                       "symbol": "InTransit"
                     }
                   ]
+                },
+                {
+                  "u32": 0
                 }
               ]
             },
@@ -1126,12 +1129,74 @@
                           "symbol": "InTransit"
                         }
                       ]
+                    },
+                    {
+                      "u32": 0
                     }
                   ]
                 },
                 "durability": "persistent",
                 "val": {
                   "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4096
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "StatusHashCount"
+                },
+                {
+                  "u64": 1
+                },
+                {
+                  "vec": [
+                    {
+                      "symbol": "InTransit"
+                    }
+                  ]
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "StatusHashCount"
+                    },
+                    {
+                      "u64": 1
+                    },
+                    {
+                      "vec": [
+                        {
+                          "symbol": "InTransit"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u32": 1
                 }
               }
             },
@@ -1839,6 +1904,154 @@
                 },
                 {
                   "bytes": "e8ffb96033bb2cad3549780fa04718293422417a5f127d3ad345eb9f337f0bd5"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000003",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "notification"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                },
+                {
+                  "vec": [
+                    {
+                      "symbol": "CarrierHandoff"
+                    }
+                  ]
+                },
+                {
+                  "u64": 1
+                },
+                {
+                  "bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000003",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "notification"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                },
+                {
+                  "vec": [
+                    {
+                      "symbol": "CarrierHandoff"
+                    }
+                  ]
+                },
+                {
+                  "u64": 1
+                },
+                {
+                  "bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000003",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "notification"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                },
+                {
+                  "vec": [
+                    {
+                      "symbol": "CarrierHandoff"
+                    }
+                  ]
+                },
+                {
+                  "u64": 1
+                },
+                {
+                  "bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000003",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "notification"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                },
+                {
+                  "vec": [
+                    {
+                      "symbol": "CarrierHandoff"
+                    }
+                  ]
+                },
+                {
+                  "u64": 1
+                },
+                {
+                  "bytes": "0303030303030303030303030303030303030303030303030303030303030303"
                 }
               ]
             }

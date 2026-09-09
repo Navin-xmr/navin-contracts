@@ -737,6 +737,9 @@
                       "symbol": "InTransit"
                     }
                   ]
+                },
+                {
+                  "u32": 0
                 }
               ]
             },
@@ -764,12 +767,74 @@
                           "symbol": "InTransit"
                         }
                       ]
+                    },
+                    {
+                      "u32": 0
                     }
                   ]
                 },
                 "durability": "persistent",
                 "val": {
                   "bytes": "0202020202020202020202020202020202020202020202020202020202020202"
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4096
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "StatusHashCount"
+                },
+                {
+                  "u64": 1
+                },
+                {
+                  "vec": [
+                    {
+                      "symbol": "InTransit"
+                    }
+                  ]
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "StatusHashCount"
+                    },
+                    {
+                      "u64": 1
+                    },
+                    {
+                      "vec": [
+                        {
+                          "symbol": "InTransit"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u32": 1
                 }
               }
             },

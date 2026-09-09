@@ -1197,6 +1197,9 @@
                       "symbol": "InTransit"
                     }
                   ]
+                },
+                {
+                  "u32": 0
                 }
               ]
             },
@@ -1224,12 +1227,74 @@
                           "symbol": "InTransit"
                         }
                       ]
+                    },
+                    {
+                      "u32": 0
                     }
                   ]
                 },
                 "durability": "persistent",
                 "val": {
                   "bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4096
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "StatusHashCount"
+                },
+                {
+                  "u64": 1
+                },
+                {
+                  "vec": [
+                    {
+                      "symbol": "InTransit"
+                    }
+                  ]
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "StatusHashCount"
+                    },
+                    {
+                      "u64": 1
+                    },
+                    {
+                      "vec": [
+                        {
+                          "symbol": "InTransit"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u32": 1
                 }
               }
             },
@@ -2009,6 +2074,43 @@
               "vec": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                },
+                {
+                  "vec": [
+                    {
+                      "symbol": "StatusChanged"
+                    }
+                  ]
+                },
+                {
+                  "u64": 1
+                },
+                {
+                  "bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000006",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "notification"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                 },
                 {
                   "vec": [

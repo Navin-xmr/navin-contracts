@@ -4,7 +4,7 @@
 mod tests {
     use crate::test_utils::*;
     use crate::types::*;
-    use crate::{NavinShipment, NavinShipmentClient};
+    use crate::{NavinError, NavinShipment, NavinShipmentClient};
     use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
 
     #[contract]
@@ -57,7 +57,7 @@ mod tests {
         );
 
         // Verify the hash was stored
-        let stored_hash = client.get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
+        let stored_hash = client.get_status_hash(&shipment_id, &ShipmentStatus::InTransit, &0);
         assert_eq!(stored_hash, transit_hash);
     }
 
@@ -91,7 +91,7 @@ mod tests {
 
         // Verify with correct hash
         let verified =
-            client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+            client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &0, &transit_hash);
         assert!(verified);
     }
 
@@ -126,7 +126,7 @@ mod tests {
         // Verify with wrong hash
         let wrong_hash = BytesN::from_array(&env, &[3u8; 32]);
         let verified =
-            client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &wrong_hash);
+            client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &0, &wrong_hash);
         assert!(!verified);
     }
 
@@ -169,10 +169,11 @@ mod tests {
         );
 
         // Verify both hashes are stored independently
-        let transit_stored = client.get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
+        let transit_stored = client.get_status_hash(&shipment_id, &ShipmentStatus::InTransit, &0);
         assert_eq!(transit_stored, transit_hash);
 
-        let checkpoint_stored = client.get_status_hash(&shipment_id, &ShipmentStatus::AtCheckpoint);
+        let checkpoint_stored =
+            client.get_status_hash(&shipment_id, &ShipmentStatus::AtCheckpoint, &0);
         assert_eq!(checkpoint_stored, checkpoint_hash);
     }
 
@@ -197,7 +198,7 @@ mod tests {
             client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
 
         // Try to get hash for status that was never set
-        client.get_status_hash(&shipment_id, &ShipmentStatus::Delivered);
+        client.get_status_hash(&shipment_id, &ShipmentStatus::Delivered, &0);
     }
 
     #[test]
@@ -208,7 +209,7 @@ mod tests {
         client.initialize(&admin, &token_contract);
 
         let hash = BytesN::from_array(&_env, &[1u8; 32]);
-        client.verify_data_hash(&999, &ShipmentStatus::InTransit, &hash);
+        client.verify_data_hash(&999, &ShipmentStatus::InTransit, &0, &hash);
     }
 
     #[test]
@@ -241,7 +242,7 @@ mod tests {
 
         // Anyone can verify (no auth required) - this is a read-only operation
         let verified =
-            client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &transit_hash);
+            client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &0, &transit_hash);
         assert!(verified);
     }
 
@@ -270,7 +271,7 @@ mod tests {
         let (_env, client, admin, token_contract) = setup_test_env();
         client.initialize(&admin, &token_contract);
 
-        let result = client.try_get_status_hash(&9999u64, &ShipmentStatus::InTransit);
+        let result = client.try_get_status_hash(&9999u64, &ShipmentStatus::InTransit, &0);
         assert_eq!(
             result,
             Err(Ok(NavinError::ShipmentNotFound)),
@@ -300,7 +301,7 @@ mod tests {
             client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
 
         // No status update has been made — Delivered hash must not exist.
-        let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::Delivered);
+        let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::Delivered, &0);
         assert_eq!(
             result,
             Err(Ok(NavinError::StatusHashNotFound)),
@@ -338,7 +339,7 @@ mod tests {
             &transit_hash,
         );
 
-        let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::AtCheckpoint);
+        let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::AtCheckpoint, &0);
         assert_eq!(
             result,
             Err(Ok(NavinError::StatusHashNotFound)),
@@ -367,7 +368,7 @@ mod tests {
             client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
 
         // Shipment is Created — no Cancelled hash recorded yet.
-        let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::Cancelled);
+        let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::Cancelled, &0);
         assert_eq!(
             result,
             Err(Ok(NavinError::StatusHashNotFound)),
@@ -383,7 +384,7 @@ mod tests {
         client.initialize(&admin, &token_contract);
 
         let hash = BytesN::from_array(&_env, &[1u8; 32]);
-        let result = client.try_verify_data_hash(&9999u64, &ShipmentStatus::InTransit, &hash);
+        let result = client.try_verify_data_hash(&9999u64, &ShipmentStatus::InTransit, &0, &hash);
         assert_eq!(
             result,
             Err(Ok(NavinError::ShipmentNotFound)),
@@ -413,7 +414,8 @@ mod tests {
 
         // No status update — verify_data_hash for Delivered must be StatusHashNotFound.
         let probe = BytesN::from_array(&env, &[5u8; 32]);
-        let result = client.try_verify_data_hash(&shipment_id, &ShipmentStatus::Delivered, &probe);
+        let result =
+            client.try_verify_data_hash(&shipment_id, &ShipmentStatus::Delivered, &0, &probe);
         assert_eq!(
             result,
             Err(Ok(NavinError::StatusHashNotFound)),
@@ -452,7 +454,7 @@ mod tests {
 
         let probe = BytesN::from_array(&env, &[9u8; 32]);
         let result =
-            client.try_verify_data_hash(&shipment_id, &ShipmentStatus::AtCheckpoint, &probe);
+            client.try_verify_data_hash(&shipment_id, &ShipmentStatus::AtCheckpoint, &0, &probe);
         assert_eq!(
             result,
             Err(Ok(NavinError::StatusHashNotFound)),
@@ -488,7 +490,7 @@ mod tests {
             &transit_hash,
         );
 
-        let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
+        let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit, &0);
         assert_eq!(
             result,
             Ok(Ok(transit_hash)),
@@ -536,7 +538,7 @@ mod tests {
         );
 
         // InTransit hash must still be retrievable even after moving to AtCheckpoint.
-        let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit);
+        let result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit, &0);
         assert_eq!(
             result,
             Ok(Ok(transit_hash)),
@@ -544,7 +546,7 @@ mod tests {
         );
 
         // AtCheckpoint hash must also be correct.
-        let cp_result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::AtCheckpoint);
+        let cp_result = client.try_get_status_hash(&shipment_id, &ShipmentStatus::AtCheckpoint, &0);
         assert_eq!(
             cp_result,
             Ok(Ok(checkpoint_hash)),
@@ -575,11 +577,12 @@ mod tests {
             client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
 
         // Non-existent shipment → ShipmentNotFound.
-        let not_found = client.try_get_status_hash(&9999u64, &ShipmentStatus::InTransit);
+        let not_found = client.try_get_status_hash(&9999u64, &ShipmentStatus::InTransit, &0);
         assert_eq!(not_found, Err(Ok(NavinError::ShipmentNotFound)));
 
         // Existing shipment, unset status → StatusHashNotFound.
-        let hash_not_found = client.try_get_status_hash(&shipment_id, &ShipmentStatus::Delivered);
+        let hash_not_found =
+            client.try_get_status_hash(&shipment_id, &ShipmentStatus::Delivered, &0);
         assert_eq!(hash_not_found, Err(Ok(NavinError::StatusHashNotFound)));
 
         // The two errors must be distinct values.
@@ -587,6 +590,134 @@ mod tests {
             NavinError::ShipmentNotFound as u32,
             NavinError::StatusHashNotFound as u32,
             "ShipmentNotFound and StatusHashNotFound must have different discriminants"
+        );
+    }
+
+    /// Revisiting an already-recorded status (InTransit -> AtCheckpoint ->
+    /// InTransit) must APPEND a new hash entry rather than overwriting the
+    /// earlier visit, and both visits must remain independently queryable.
+    #[test]
+    fn test_status_hash_revisit_appends_not_overwrites() {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        let milestones = Vec::new(&env);
+        let deadline = future_deadline(&env, 86400);
+
+        let shipment_id =
+            client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
+
+        let transit_1 = BytesN::from_array(&env, &[0xAAu8; 32]);
+        let checkpoint_1 = BytesN::from_array(&env, &[0xBBu8; 32]);
+        let transit_2 = BytesN::from_array(&env, &[0xCCu8; 32]);
+        let checkpoint_2 = BytesN::from_array(&env, &[0xDDu8; 32]);
+
+        // First pass: InTransit -> AtCheckpoint.
+        client.update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::InTransit,
+            &transit_1,
+        );
+        advance_past_rate_limit(&env);
+        client.update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::AtCheckpoint,
+            &checkpoint_1,
+        );
+
+        // Second pass revisiting both statuses.
+        advance_past_rate_limit(&env);
+        client.update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::InTransit,
+            &transit_2,
+        );
+        advance_past_rate_limit(&env);
+        client.update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::AtCheckpoint,
+            &checkpoint_2,
+        );
+
+        // First-visit hashes must remain accessible and unmodified.
+        let first_transit =
+            client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit, &0);
+        assert_eq!(
+            first_transit,
+            Ok(Ok(transit_1.clone())),
+            "first InTransit visit must not be overwritten by the revisit"
+        );
+        let first_checkpoint =
+            client.try_get_status_hash(&shipment_id, &ShipmentStatus::AtCheckpoint, &0);
+        assert_eq!(
+            first_checkpoint,
+            Ok(Ok(checkpoint_1.clone())),
+            "first AtCheckpoint visit must not be overwritten by the revisit"
+        );
+
+        // Second-visit hashes are queryable at index 1.
+        let second_transit =
+            client.try_get_status_hash(&shipment_id, &ShipmentStatus::InTransit, &1);
+        assert_eq!(
+            second_transit,
+            Ok(Ok(transit_2.clone())),
+            "second InTransit visit must be stored at index 1"
+        );
+        let second_checkpoint =
+            client.try_get_status_hash(&shipment_id, &ShipmentStatus::AtCheckpoint, &1);
+        assert_eq!(
+            second_checkpoint,
+            Ok(Ok(checkpoint_2.clone())),
+            "second AtCheckpoint visit must be stored at index 1"
+        );
+
+        // Counts reflect the number of visits, regardless of current status.
+        let transit_count =
+            client.try_get_status_hash_count(&shipment_id, &ShipmentStatus::InTransit);
+        assert_eq!(transit_count, Ok(Ok(2)));
+        let cp_count =
+            client.try_get_status_hash_count(&shipment_id, &ShipmentStatus::AtCheckpoint);
+        assert_eq!(cp_count, Ok(Ok(2)));
+
+        // Verification is visit-specific and cannot cross-index.
+        assert!(client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &0, &transit_1));
+        assert!(client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &1, &transit_2));
+        assert!(!client.verify_data_hash(&shipment_id, &ShipmentStatus::InTransit, &1, &transit_1));
+
+        // assert_data_hash remains strict about the visit index.
+        client.assert_data_hash(
+            &shipment_id,
+            &ShipmentStatus::AtCheckpoint,
+            &0,
+            &checkpoint_1,
+        );
+        client.assert_data_hash(
+            &shipment_id,
+            &ShipmentStatus::AtCheckpoint,
+            &1,
+            &checkpoint_2,
+        );
+        let mismatch = client.try_assert_data_hash(
+            &shipment_id,
+            &ShipmentStatus::AtCheckpoint,
+            &1,
+            &checkpoint_1,
+        );
+        assert_eq!(
+            mismatch,
+            Err(Ok(NavinError::DataHashMismatch)),
+            "assert_data_hash at index 1 must not accept the index-0 hash"
         );
     }
 }
