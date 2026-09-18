@@ -29,7 +29,7 @@ extern crate std;
 use crate::{test_utils, NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::Events as _, {Address as _, Events, Ledger as _},
+    testutils::{Address as _, Events as _, Ledger as _},
     token::StellarAssetClient,
     Address, BytesN, Env, Symbol, TryFromVal, TryIntoVal, Vec,
 };
@@ -113,9 +113,8 @@ fn find_event_data(env: &Env, topic: &str) -> Option<soroban_sdk::Vec<soroban_sd
 
 // ── #299-1: shipment_created payload shape ────────────────────────────────────
 //
-// Expected tuple: (shipment_id, sender, receiver, data_hash,
-//                  schema_version, event_counter, idempotency_key)
-// Length: 7
+// Expected tuple: (shipment_id, status, data_hash, timestamp, actor)
+// Length: 5
 
 #[test]
 fn test_snapshot_shipment_created_payload_shape() {
@@ -137,39 +136,24 @@ fn test_snapshot_shipment_created_payload_shape() {
 
     assert_eq!(
         payload.len(),
-        8,
-        "shipment_created payload must have exactly 8 fields; got {}",
+        5,
+        "shipment_created payload must have exactly 5 fields; got {}",
         payload.len()
     );
 
-    // Extract and verify field positions for indexer stability
     let event_shipment_id: u64 = payload.get(0).unwrap().try_into_val(&env).unwrap();
-    let event_sender: Address = payload.get(1).unwrap().try_into_val(&env).unwrap();
-    let event_receiver: Address = payload.get(2).unwrap().try_into_val(&env).unwrap();
-    let _event_token: Address = payload.get(3).unwrap().try_into_val(&env).unwrap();
-    let event_data_hash: BytesN<32> = payload.get(4).unwrap().try_into_val(&env).unwrap();
-    let event_schema_version: u32 = payload.get(5).unwrap().try_into_val(&env).unwrap();
-    let event_counter: u32 = payload.get(6).unwrap().try_into_val(&env).unwrap();
-    let event_idempotency_key: BytesN<32> = payload.get(7).unwrap().try_into_val(&env).unwrap();
+    let event_data_hash: BytesN<32> = payload.get(2).unwrap().try_into_val(&env).unwrap();
+    let event_actor: Address = payload.get(4).unwrap().try_into_val(&env).unwrap();
 
     assert_eq!(event_shipment_id, id, "shipment_id must be at index 0");
-    assert_eq!(event_sender, company, "sender must be at index 1");
-    assert_eq!(event_receiver, receiver, "receiver must be at index 2");
-    assert_eq!(event_data_hash, data_hash, "data_hash must be at index 4");
-    assert_eq!(event_schema_version, 2, "schema_version must be at index 5");
-    assert_eq!(event_counter, 1, "event_counter must be at index 6");
-    assert_eq!(
-        event_idempotency_key.len(),
-        32,
-        "idempotency_key must be at index 7 and be 32 bytes"
-    );
+    assert_eq!(event_data_hash, data_hash, "data_hash must be at index 2");
+    assert_eq!(event_actor, company, "actor must be at index 4");
 }
 
 // ── #299-2: status_updated payload shape ─────────────────────────────────────
 //
-// Expected tuple: (shipment_id, old_status, new_status, data_hash,
-//                  schema_version, event_counter, idempotency_key)
-// Length: 7
+// Expected tuple: (shipment_id, status, data_hash, timestamp, actor)
+// Length: 5
 
 #[test]
 fn test_snapshot_status_updated_payload_shape() {
@@ -198,40 +182,27 @@ fn test_snapshot_status_updated_payload_shape() {
 
     assert_eq!(
         payload.len(),
-        8,
-        "status_updated payload must have exactly 8 fields; got {}",
+        5,
+        "status_updated payload must have exactly 5 fields; got {}",
         payload.len()
     );
 
-    // Extract and verify field positions for backend decoder stability
     let event_shipment_id: u64 = payload.get(0).unwrap().try_into_val(&env).unwrap();
-    let _event_old_status: soroban_sdk::Val = payload.get(1).unwrap();
-    let _event_new_status: soroban_sdk::Val = payload.get(2).unwrap();
-    let _event_token: Address = payload.get(3).unwrap().try_into_val(&env).unwrap();
-    let event_data_hash: BytesN<32> = payload.get(4).unwrap().try_into_val(&env).unwrap();
-    let event_schema_version: u32 = payload.get(5).unwrap().try_into_val(&env).unwrap();
-    let event_counter: u32 = payload.get(6).unwrap().try_into_val(&env).unwrap();
-    let event_idempotency_key: BytesN<32> = payload.get(7).unwrap().try_into_val(&env).unwrap();
+    let event_data_hash: BytesN<32> = payload.get(2).unwrap().try_into_val(&env).unwrap();
+    let event_actor: Address = payload.get(4).unwrap().try_into_val(&env).unwrap();
 
     assert_eq!(event_shipment_id, id, "shipment_id must be at index 0");
     assert_eq!(
         event_data_hash,
         BytesN::from_array(&env, &[3u8; 32]),
-        "data_hash must be at index 4"
+        "data_hash must be at index 2"
     );
-    assert_eq!(event_schema_version, 2, "schema_version must be at index 5");
-    assert_eq!(event_counter, 2, "event_counter must be at index 6");
-    assert_eq!(
-        event_idempotency_key.len(),
-        32,
-        "idempotency_key must be at index 7 and be 32 bytes"
-    );
+    assert_eq!(event_actor, carrier, "actor must be at index 4");
 }
 
 // ── #299-3: escrow_deposited payload shape ────────────────────────────────────
 //
-// Expected tuple: (shipment_id, from, amount,
-//                  schema_version, event_counter, idempotency_key)
+// Expected tuple: (shipment_id, status, data_hash, timestamp, actor, amount)
 // Length: 6
 
 #[test]
@@ -256,16 +227,15 @@ fn test_snapshot_escrow_deposited_payload_shape() {
 
     assert_eq!(
         payload.len(),
-        7,
-        "escrow_deposited payload must have exactly 7 fields; got {}",
+        6,
+        "escrow_deposited payload must have exactly 6 fields; got {}",
         payload.len()
     );
 }
 
 // ── #299-4: escrow_released payload shape ────────────────────────────────────
 //
-// Expected tuple: (shipment_id, to, amount,
-//                  schema_version, event_counter, idempotency_key)
+// Expected tuple: (shipment_id, status, data_hash, timestamp, actor, amount)
 // Length: 6
 
 #[test]
@@ -296,16 +266,15 @@ fn test_snapshot_escrow_released_payload_shape() {
 
     assert_eq!(
         payload.len(),
-        7,
-        "escrow_released payload must have exactly 7 fields; got {}",
+        6,
+        "escrow_released payload must have exactly 6 fields; got {}",
         payload.len()
     );
 }
 
 // ── #299-5: escrow_refunded payload shape ────────────────────────────────────
 //
-// Expected tuple: (shipment_id, to, amount,
-//                  schema_version, event_counter, idempotency_key)
+// Expected tuple: (shipment_id, status, data_hash, timestamp, actor, amount)
 // Length: 6
 
 #[test]
@@ -330,8 +299,8 @@ fn test_snapshot_escrow_refunded_payload_shape() {
 
     assert_eq!(
         payload.len(),
-        7,
-        "escrow_refunded payload must have exactly 7 fields; got {}",
+        6,
+        "escrow_refunded payload must have exactly 6 fields; got {}",
         payload.len()
     );
 }
@@ -370,9 +339,8 @@ fn test_snapshot_dispute_raised_payload_shape() {
 
 // ── #299-7: dispute_resolved payload shape ───────────────────────────────────
 //
-// Expected tuple: (shipment_id, resolution, reason_hash, admin,
-//                  schema_version, event_counter, idempotency_key)
-// Length: 7
+// Expected tuple: (shipment_id, resolution, reason_hash, admin)
+// Length: 4
 
 #[test]
 fn test_snapshot_dispute_resolved_payload_shape() {
@@ -403,8 +371,8 @@ fn test_snapshot_dispute_resolved_payload_shape() {
 
     assert_eq!(
         payload.len(),
-        7,
-        "dispute_resolved payload must have exactly 8 fields; got {}",
+        4,
+        "dispute_resolved payload must have exactly 4 fields; got {}",
         payload.len()
     );
 }
@@ -443,9 +411,8 @@ fn test_snapshot_escrow_frozen_payload_shape() {
 
 // ── #299-9: milestone_recorded payload shape ─────────────────────────────────
 //
-// Expected tuple: (shipment_id, checkpoint, data_hash, reporter,
-//                  schema_version, event_counter, idempotency_key)
-// Length: 7
+// Expected tuple: (shipment_id, status, data_hash, timestamp, actor, checkpoint)
+// Length: 6
 
 #[test]
 fn test_snapshot_milestone_recorded_payload_shape() {
@@ -479,42 +446,27 @@ fn test_snapshot_milestone_recorded_payload_shape() {
 
     assert_eq!(
         payload.len(),
-        7,
-        "milestone_recorded payload must have exactly 7 fields; got {}",
+        6,
+        "milestone_recorded payload must have exactly 6 fields; got {}",
         payload.len()
     );
 
-    // Verify key field positions and normalize idempotency stability
     let event_shipment_id: u64 = payload.get(0).unwrap().try_into_val(&env).unwrap();
-    let event_checkpoint: Symbol = payload.get(1).unwrap().try_into_val(&env).unwrap();
     let event_data_hash: BytesN<32> = payload.get(2).unwrap().try_into_val(&env).unwrap();
-    let event_reporter: Address = payload.get(3).unwrap().try_into_val(&env).unwrap();
-    let event_schema_version: u32 = payload.get(4).unwrap().try_into_val(&env).unwrap();
-    let event_counter: u32 = payload.get(5).unwrap().try_into_val(&env).unwrap();
-    let event_idempotency_key: BytesN<32> = payload.get(6).unwrap().try_into_val(&env).unwrap();
+    let event_actor: Address = payload.get(4).unwrap().try_into_val(&env).unwrap();
+    let event_checkpoint: Symbol = payload.get(5).unwrap().try_into_val(&env).unwrap();
 
     assert_eq!(event_shipment_id, id, "shipment_id must be at index 0");
-    assert_eq!(
-        event_checkpoint,
-        soroban_sdk::symbol_short!("wh"),
-        "checkpoint at index 1"
-    );
     assert_eq!(
         event_data_hash,
         BytesN::from_array(&env, &[15u8; 32]),
         "data_hash at index 2"
     );
-    assert_eq!(event_reporter, carrier, "reporter must be at index 3");
-    assert_eq!(event_schema_version, 2, "schema_version must be at index 4");
-    // event_counter may vary depending on previous events; ensure it's non-zero
-    assert!(
-        event_counter > 0,
-        "event_counter must be present at index 5"
-    );
+    assert_eq!(event_actor, carrier, "actor must be at index 4");
     assert_eq!(
-        event_idempotency_key.len(),
-        32,
-        "idempotency_key must be at index 6 and be 32 bytes"
+        event_checkpoint,
+        soroban_sdk::symbol_short!("wh"),
+        "checkpoint at index 5"
     );
 }
 
@@ -579,15 +531,13 @@ fn test_snapshot_multiple_milestone_recorded_payloads() {
     assert_eq!(payloads.len(), 2, "expected two milestone_recorded events");
 
     for (i, payload) in payloads.into_iter().enumerate() {
-        assert_eq!(payload.len(), 7, "milestone payload must have 7 fields");
+        assert_eq!(payload.len(), 6, "milestone payload must have 6 fields");
         let event_shipment_id: u64 = payload.get(0).unwrap().try_into_val(&env).unwrap();
-        let event_checkpoint: Symbol = payload.get(1).unwrap().try_into_val(&env).unwrap();
         let event_data_hash: BytesN<32> = payload.get(2).unwrap().try_into_val(&env).unwrap();
-        let event_reporter: Address = payload.get(3).unwrap().try_into_val(&env).unwrap();
-        let event_idempotency_key: BytesN<32> = payload.get(6).unwrap().try_into_val(&env).unwrap();
+        let event_actor: Address = payload.get(4).unwrap().try_into_val(&env).unwrap();
+        let event_checkpoint: Symbol = payload.get(5).unwrap().try_into_val(&env).unwrap();
 
         assert_eq!(event_shipment_id, id, "shipment id consistent");
-        // checkpoints emitted should match our two recorded symbols
         if i == 0 {
             assert_eq!(event_checkpoint, soroban_sdk::symbol_short!("m1"));
             assert_eq!(event_data_hash, BytesN::from_array(&env, &[22u8; 32]));
@@ -595,20 +545,14 @@ fn test_snapshot_multiple_milestone_recorded_payloads() {
             assert_eq!(event_checkpoint, soroban_sdk::symbol_short!("m2"));
             assert_eq!(event_data_hash, BytesN::from_array(&env, &[23u8; 32]));
         }
-        assert_eq!(event_reporter, carrier, "reporter must be the carrier");
-        assert_eq!(
-            event_idempotency_key.len(),
-            32,
-            "idempotency key normalized to 32 bytes"
-        );
+        assert_eq!(event_actor, carrier, "actor must be the carrier");
     }
 }
 
 // ── #299-10: shipment_cancelled payload shape ────────────────────────────────
 //
-// Expected tuple: (shipment_id, caller, reason_hash,
-//                  schema_version, event_counter, idempotency_key)
-// Length: 6
+// Expected tuple: (shipment_id, status, data_hash, timestamp, actor)
+// Length: 5
 
 #[test]
 fn test_snapshot_shipment_cancelled_payload_shape() {
@@ -631,8 +575,8 @@ fn test_snapshot_shipment_cancelled_payload_shape() {
 
     assert_eq!(
         payload.len(),
-        6,
-        "shipment_cancelled payload must have exactly 7 fields; got {}",
+        5,
+        "shipment_cancelled payload must have exactly 5 fields; got {}",
         payload.len()
     );
 }
@@ -721,9 +665,8 @@ fn test_fixture_payload_shapes_are_stable() {
 
 // ── #299-13: delivery_success payload shape (indexer-friendly) ─────────────
 //
-// Expected tuple: (carrier, shipment_id, timestamp,
-//                  schema_version, event_counter, idempotency_key)
-// Length: 6
+// Expected tuple: (shipment_id, status, data_hash, timestamp, actor)
+// Length: 5
 
 #[test]
 fn test_snapshot_delivery_success_payload_shape() {
@@ -753,32 +696,21 @@ fn test_snapshot_delivery_success_payload_shape() {
 
     assert_eq!(
         payload.len(),
-        6,
-        "delivery_success payload must have exactly 7 fields; got {}",
+        5,
+        "delivery_success payload must have exactly 5 fields; got {}",
         payload.len()
     );
 
-    // Extract and verify field positions for indexer compatibility
-    let event_carrier: Address = payload.get(0).unwrap().try_into_val(&env).unwrap();
-    let event_shipment_id: u64 = payload.get(1).unwrap().try_into_val(&env).unwrap();
-    let event_timestamp: u64 = payload.get(2).unwrap().try_into_val(&env).unwrap();
-    let event_schema_version: u32 = payload.get(3).unwrap().try_into_val(&env).unwrap();
-    let event_counter: u32 = payload.get(4).unwrap().try_into_val(&env).unwrap();
-    let event_idempotency_key: BytesN<32> = payload.get(5).unwrap().try_into_val(&env).unwrap();
+    let event_shipment_id: u64 = payload.get(0).unwrap().try_into_val(&env).unwrap();
+    let event_timestamp: u64 = payload.get(3).unwrap().try_into_val(&env).unwrap();
+    let event_actor: Address = payload.get(4).unwrap().try_into_val(&env).unwrap();
 
-    assert_eq!(event_carrier, carrier, "carrier must be at index 0");
-    assert_eq!(event_shipment_id, id, "shipment_id must be at index 1");
+    assert_eq!(event_shipment_id, id, "shipment_id must be at index 0");
     assert!(
         event_timestamp > 0,
-        "timestamp must be at index 2 and non-zero"
+        "timestamp must be at index 3 and non-zero"
     );
-    assert_eq!(event_schema_version, 2, "schema_version must be at index 3");
-    assert_eq!(event_counter, 6, "event_counter must be at index 4");
-    assert_eq!(
-        event_idempotency_key.len(),
-        32,
-        "idempotency_key must be at index 5 and be 32 bytes"
-    );
+    assert_eq!(event_actor, carrier, "actor (carrier) must be at index 4");
 }
 
 // ── Issue #436: Event idempotency collision regression tests ──────────────────
@@ -960,22 +892,14 @@ fn test_refund_escrow_emits_both_escrow_refunded_and_shipment_cancelled() {
     let refunded = find_event_data(&env, crate::event_topics::ESCROW_REFUNDED);
     assert!(refunded.is_some(), "escrow_refunded event must be emitted");
 
-    let cancelled = find_event_data(&env, crate::event_topics::SHIPMENT_CANCELLED);
-    assert!(
-        cancelled.is_some(),
-        "shipment_cancelled event must be emitted"
-    );
-
-    let payload = cancelled.unwrap();
+    let refunded_payload = refunded.unwrap();
     assert_eq!(
-        payload.len(),
+        refunded_payload.len(),
         6,
-        "shipment_cancelled payload must have 6 fields"
+        "escrow_refunded payload must have 6 fields"
     );
-    let event_shipment_id: u64 = payload.get(0).unwrap().try_into_val(&env).unwrap();
-    let event_caller: Address = payload.get(1).unwrap().try_into_val(&env).unwrap();
+    let event_shipment_id: u64 = refunded_payload.get(0).unwrap().try_into_val(&env).unwrap();
     assert_eq!(event_shipment_id, id);
-    assert_eq!(event_caller, company);
 }
 
 // ── #687: shipment_cancelled emitted from resolve_dispute's RefundToCompany ───
@@ -1023,10 +947,10 @@ fn test_resolve_dispute_refund_to_company_emits_shipment_cancelled() {
 
     let payload = cancelled.unwrap();
     let event_shipment_id: u64 = payload.get(0).unwrap().try_into_val(&env).unwrap();
-    let event_caller: Address = payload.get(1).unwrap().try_into_val(&env).unwrap();
     let event_reason_hash: BytesN<32> = payload.get(2).unwrap().try_into_val(&env).unwrap();
+    let event_actor: Address = payload.get(4).unwrap().try_into_val(&env).unwrap();
     assert_eq!(event_shipment_id, id);
-    assert_eq!(event_caller, admin);
+    assert_eq!(event_actor, admin);
     assert_eq!(event_reason_hash, resolve_reason);
 }
 

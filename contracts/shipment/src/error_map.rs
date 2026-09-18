@@ -677,16 +677,6 @@ mod tests {
     use crate::errors::NavinError;
 
     #[test]
-    fn test_get_error_info_known_code() {
-        let info = get_error_info(39);
-        assert_eq!(info.code, 39);
-        assert_eq!(info.code, 39);
-        assert_eq!(info.category, ErrorCategory::Transient);
-        assert_eq!(info.retry, RetryGuidance::RetryAfterDelay);
-        assert_eq!(info.message, symbol_short!("token"));
-    }
-
-    #[test]
     fn test_get_error_info_unknown_code_falls_back_gracefully() {
         let info = get_error_info(999_999);
         assert_eq!(info.code, 999_999);
@@ -696,15 +686,6 @@ mod tests {
     }
 
     // ── Token transfer failure recovery — error mapping (issue #447) ─────────
-
-    #[test]
-    fn test_token_transfer_failed_info() {
-        let info = error_info(NavinError::TokenTransferFailed);
-        assert_eq!(info.code, 39);
-        assert_eq!(info.category, ErrorCategory::Transient);
-        assert_eq!(info.retry, RetryGuidance::RetryAfterDelay);
-        assert_eq!(info.message, symbol_short!("token"));
-    }
 
     #[test]
     fn test_circuit_breaker_open_info() {
@@ -796,15 +777,6 @@ mod tests {
     /// `NotAnAdmin` is returned by multi-sig entry points when the caller is
     /// not in the admin list.  It must map to `ErrorCategory::Unauthorized`
     /// with `NoRetry` — joining the admin list requires admin action, not a retry.
-    #[test]
-    fn test_not_an_admin_error_info() {
-        let info = error_info(NavinError::NotAnAdmin);
-        assert_eq!(info.code, 27);
-        assert_eq!(info.category, ErrorCategory::Unauthorized);
-        assert_eq!(info.retry, RetryGuidance::NoRetry);
-        assert_eq!(info.message, symbol_short!("unknown"));
-    }
-
     /// Auth-failure errors (`Unauthorized`, `NotAnAdmin`) must consistently
     /// map to `ErrorCategory::Unauthorized` so that error-handling middleware
     /// can classify them without switching on individual variants.

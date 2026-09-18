@@ -40,9 +40,6 @@ pub const SHIPMENT_CANCELLED: &str = "shipment_cancelled";
 /// Emitted when a shipment misses its deadline and is auto-cancelled.
 pub const SHIPMENT_EXPIRED: &str = "shipment_expired";
 
-/// Emitted when a shipment is moved to temporary (archived) storage.
-pub const SHIPMENT_ARCHIVED: &str = "shipment_archived";
-
 /// Emitted when a shipment is successfully delivered.
 pub const DELIVERY_SUCCESS: &str = "delivery_success";
 
@@ -319,29 +316,6 @@ pub fn hash_domain_for_symbol(env: &soroban_sdk::Env, event_type: &soroban_sdk::
 /// Unknown topics fall back to [`HASH_DOMAIN_SHIPMENT`], which keeps the
 /// function total and preserves keys previously emitted for shipment events.
 ///
-/// Only reachable from `#[cfg(test)]` code today (it exercises the `&str`
-/// twin of [`hash_domain_for_symbol`] to prove the two mappings agree) — kept
-/// as the documented reference implementation for off-chain indexers, who
-/// work with plain strings rather than a live `Symbol`.
-#[cfg(test)]
-pub fn hash_domain_for_event(event_type: &str) -> u8 {
-    let mut i = 0;
-    while i < NON_DEFAULT_HASH_DOMAINS.len() {
-        let (topic, domain) = NON_DEFAULT_HASH_DOMAINS[i];
-        if str_eq(topic, event_type) {
-            return domain;
-        }
-        i += 1;
-    }
-    HASH_DOMAIN_SHIPMENT
-}
-
-/// `str` equality usable in this no_std context.
-#[cfg(test)]
-fn str_eq(a: &str, b: &str) -> bool {
-    a.as_bytes() == b.as_bytes()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -358,7 +332,6 @@ mod tests {
             MILESTONE_RECORDED,
             SHIPMENT_CANCELLED,
             SHIPMENT_EXPIRED,
-            SHIPMENT_ARCHIVED,
             DELIVERY_SUCCESS,
             ESCROW_DEPOSITED,
             ESCROW_RELEASED,
@@ -419,7 +392,6 @@ mod tests {
         assert_eq!(MILESTONE_RECORDED, "milestone_recorded");
         assert_eq!(SHIPMENT_CANCELLED, "shipment_cancelled");
         assert_eq!(SHIPMENT_EXPIRED, "shipment_expired");
-        assert_eq!(SHIPMENT_ARCHIVED, "shipment_archived");
         assert_eq!(DELIVERY_SUCCESS, "delivery_success");
         assert_eq!(ESCROW_DEPOSITED, "escrow_deposited");
         assert_eq!(ESCROW_RELEASED, "escrow_released");
@@ -468,7 +440,6 @@ mod tests {
             MILESTONE_RECORDED,
             SHIPMENT_CANCELLED,
             SHIPMENT_EXPIRED,
-            SHIPMENT_ARCHIVED,
             DELIVERY_SUCCESS,
             ESCROW_DEPOSITED,
             ESCROW_RELEASED,

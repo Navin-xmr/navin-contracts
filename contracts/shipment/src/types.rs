@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, BytesN, Map, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, BytesN, Symbol, Vec};
 
 pub const HASH_ALGO_SHA256: u32 = 1;
 pub const DEFAULT_HASH_ALGO: u32 = HASH_ALGO_SHA256;
@@ -80,24 +80,12 @@ pub enum DataKey {
     ContractConfig,
     /// Event counter for a shipment (tracks number of events emitted).
     EventCount(u64),
-    /// Archived shipment data in temporary storage (for terminal state shipments).
-    ArchivedShipment(u64),
-    /// Append-only note hashes for shipment commentary (shipment_id, index) -> hash.
-    ShipmentNote(u64, u32),
-    /// Total number of notes appended to a shipment.
-    ShipmentNoteCount(u64),
-    /// Append-only evidence hashes for shipment disputes (shipment_id, index) -> hash.
-    DisputeEvidence(u64, u32),
-    /// Total number of evidence hashes appended to a shipment dispute.
-    DisputeEvidenceCount(u64),
     /// SHA-256 checksum of critical config fields for drift detection.
     ConfigChecksum,
     /// Counter for milestone events emitted for a shipment.
     MilestoneEventCount(u64),
     /// Temporary idempotency window key — present while the action hash is within its window.
     IdempotencyWindow(BytesN<32>),
-    /// IoT sensor data hash stored per shipment status transition.
-    StatusHash(u64, ShipmentStatus),
     /// Contract pause state flag.
     IsPaused,
     /// Platform fee configuration.
@@ -114,10 +102,6 @@ pub enum DataKey {
     /// Admin-configured circuit breaker thresholds. Absent means the built-in
     /// default is in effect.
     CircuitBreakerConfig,
-    /// Audit log entry keyed by entry ID.
-    AuditEntry(u64),
-    /// Total count of audit log entries.
-    AuditEntryCount,
     /// Counter for condition breach events emitted for a shipment.
     BreachEventCount(u64),
     /// Contract-wide reentrancy lock flag for escrow-sensitive execution paths.
@@ -136,10 +120,6 @@ pub enum DataKey {
     CreationQuotaConfig,
     /// Deterministic action digest stored on proposal creation.
     ProposalDigest(u64),
-    /// Per-shipment recovery action record (shipment_id, index) -> RecoveryRecord.
-    RecoveryRecord(u64, u32),
-    /// Total count of recovery action records for a shipment.
-    RecoveryRecordCount(u64),
     /// Proposal salt used to prevent replay attacks — salt -> bool.
     ProposalSalt(BytesN<32>),
     /// Prerequisite shipment IDs for a dependent — dependent_id -> Vec<u64>.
@@ -357,8 +337,6 @@ pub struct Shipment {
     pub escrow_amount: i128,
     /// Total amount deposited in escrow.
     pub total_escrow: i128,
-    /// Optional metadata for storing small key-value pairs (e.g., weight category, priority).
-    pub metadata: Option<Map<Symbol, Symbol>>,
     /// Milestone-based payment schedule: (checkpoint name, percentage).
     pub payment_milestones: Vec<(Symbol, u32)>,
     /// List of symbols for milestones that have already been paid.
@@ -543,81 +521,6 @@ pub struct ShipmentInput {
     pub data_hash: BytesN<32>,
     pub payment_milestones: Vec<(Symbol, u32)>,
     pub deadline: u64,
-}
-
-/// Cursor page result for searching shipment IDs by status.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct ShipmentStatusCursorPage {
-    pub shipment_ids: Vec<u64>,
-    pub next_cursor: Option<u64>,
-}
-
-/// Cursor page result for searching shipment IDs by sender, carrier, or receiver.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct ShipmentCursorPage {
-    pub shipment_ids: Vec<u64>,
-    pub next_cursor: Option<u64>,
-}
-
-/// Maximum number of recovery action history records stored per shipment.
-pub const MAX_RECOVERY_RECORDS_PER_SHIPMENT: u32 = 20;
-
-/// Recovery action type for history log audit trail.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum RecoveryActionType {
-    /// Reset shipment state to a valid target status.
-    RecoverShipment,
-    /// Manually unlock stuck escrow.
-    UnlockEscrow,
-    /// Clear finalization flag to allow reprocessing.
-    ClearFinalization,
-    /// Rollback shipment status on external failure.
-    RollbackOnExternalFailure,
-}
-
-/// Queryable recovery action record stored per shipment.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct RecoveryRecord {
-    /// Type of recovery action performed.
-    pub action_type: RecoveryActionType,
-    /// Admin address executing the recovery.
-    pub admin: Address,
-    /// Hash of the justification/reason for recovery.
-    pub reason_hash: BytesN<32>,
-    /// Ledger timestamp when recovery was executed.
-    pub timestamp: u64,
-}
-
-/// Storage presence classification used for restore triage.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum StoragePresenceState {
-    /// Canonical active path: shipment exists in persistent storage.
-    ActivePersistent,
-    /// Archived path: shipment is no longer persistent and exists in temporary storage.
-    ArchivedExpected,
-    /// Neither active nor archived entries were found for this shipment ID.
-    Missing,
-    /// Both active and archived entries exist; operators should investigate.
-    InconsistentDualPresence,
-}
-
-/// Read-only diagnostics to determine whether restore flow is needed.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct PersistentRestoreDiagnostics {
-    pub shipment_id: u64,
-    pub state: StoragePresenceState,
-    pub persistent_shipment_present: bool,
-    pub archived_shipment_present: bool,
-    pub escrow_present: bool,
-    pub confirmation_hash_present: bool,
-    pub last_status_update_present: bool,
-    pub event_count_present: bool,
 }
 
 /// On-chain introspection snapshot of the contract state.

@@ -437,20 +437,7 @@ pub fn preflight_check_shipment_available(
         .get(&crate::types::DataKey::Shipment(shipment_id));
 
     match shipment {
-        None => {
-            // Not in persistent storage. Check if it was archived (temporary storage).
-            // If it exists in temporary storage the shipment is archived and unavailable
-            // for mutations; surface ShipmentUnavailable so callers get a distinct,
-            // actionable error rather than the ambiguous ShipmentNotFound.
-            let archived: Option<Shipment> = env
-                .storage()
-                .temporary()
-                .get(&crate::types::DataKey::ArchivedShipment(shipment_id));
-            if archived.is_some() {
-                return Err(NavinError::ShipmentUnavailable);
-            }
-            Err(NavinError::ShipmentNotFound)
-        }
+        None => Err(NavinError::ShipmentNotFound),
         Some(shipment) => {
             // Check if shipment is finalized (locked)
             if shipment.finalized {
@@ -658,7 +645,6 @@ mod tests {
             updated_at: 100,
             escrow_amount: 10,
             total_escrow: 10,
-            metadata: None,
             payment_milestones: soroban_sdk::Vec::new(&env),
             paid_milestones: soroban_sdk::Vec::new(&env),
             milestones_completed: soroban_sdk::Vec::new(&env),
@@ -684,7 +670,6 @@ mod tests {
             updated_at: 100,
             escrow_amount: 20,
             total_escrow: 10,
-            metadata: None,
             payment_milestones: soroban_sdk::Vec::new(&env),
             paid_milestones: soroban_sdk::Vec::new(&env),
             milestones_completed: soroban_sdk::Vec::new(&env),

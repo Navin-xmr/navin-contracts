@@ -10,11 +10,7 @@ use soroban_sdk::{testutils::Address as _, Address, BytesN};
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-fn setup_company(
-    env: &soroban_sdk::Env,
-    client: &NavinShipmentClient,
-    admin: &Address,
-) -> Address {
+fn setup_company(env: &soroban_sdk::Env, client: &NavinShipmentClient, admin: &Address) -> Address {
     let company = Address::generate(env);
     client.add_company(admin, &company);
     company
@@ -32,8 +28,12 @@ fn test_sender_equals_receiver_returns_error() {
     let deadline = env.ledger().timestamp() + 3600;
 
     let result = client.try_create_shipment(
-        &sender, &sender, &carrier, &data_hash,
-        &soroban_sdk::Vec::new(&env), &deadline,
+        &sender,
+        &sender,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
     assert_eq!(
         result,
@@ -52,8 +52,12 @@ fn test_sender_equals_carrier_returns_error() {
     let deadline = env.ledger().timestamp() + 3600;
 
     let result = client.try_create_shipment(
-        &sender, &receiver, &sender, &data_hash,
-        &soroban_sdk::Vec::new(&env), &deadline,
+        &sender,
+        &receiver,
+        &sender,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
     assert_eq!(
         result,
@@ -72,8 +76,12 @@ fn test_receiver_equals_carrier_returns_error() {
     let deadline = env.ledger().timestamp() + 3600;
 
     let result = client.try_create_shipment(
-        &sender, &shared, &shared, &data_hash,
-        &soroban_sdk::Vec::new(&env), &deadline,
+        &sender,
+        &shared,
+        &shared,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
     assert_eq!(
         result,
@@ -91,8 +99,12 @@ fn test_all_participants_same_returns_error() {
     let deadline = env.ledger().timestamp() + 3600;
 
     let result = client.try_create_shipment(
-        &sender, &sender, &sender, &data_hash,
-        &soroban_sdk::Vec::new(&env), &deadline,
+        &sender,
+        &sender,
+        &sender,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
     assert_eq!(
         result,
@@ -116,8 +128,12 @@ fn test_distinct_participants_succeeds() {
     let deadline = env.ledger().timestamp() + 3600;
 
     let result = client.try_create_shipment(
-        &sender, &receiver, &carrier, &data_hash,
-        &soroban_sdk::Vec::new(&env), &deadline,
+        &sender,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
     assert!(
         result.is_ok(),
@@ -139,8 +155,12 @@ fn test_error_code_is_57() {
     let deadline = env.ledger().timestamp() + 3600;
 
     let result = client.try_create_shipment(
-        &sender, &shared, &shared, &data_hash,
-        &soroban_sdk::Vec::new(&env), &deadline,
+        &sender,
+        &shared,
+        &shared,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
     );
     assert_eq!(
         result,

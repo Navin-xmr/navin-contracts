@@ -4,7 +4,7 @@
 /// reject deadlines that are not strictly in the future, while accepting valid future deadlines.
 extern crate std;
 
-use crate::{test::setup_shipment_env, NavinError, NavinShipmentClient};
+use crate::{test::setup_shipment_env, NavinError};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Vec};
 
 #[test]
