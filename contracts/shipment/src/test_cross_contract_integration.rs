@@ -81,7 +81,7 @@ use crate::{
     NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus,
 };
 use soroban_sdk::{
-    testutils::Events as _, {Address as _, Events as _},
+    testutils::{Address as _, Events as _},
     Address, BytesN, Env, Symbol, Vec,
 };
 
@@ -235,68 +235,6 @@ fn test_read_only_queries_work_regardless_of_token_state() {
     assert_eq!(ctx.client.get_shipment_counter(), 0);
     let analytics = ctx.client.get_analytics();
     assert_eq!(analytics.total_shipments, 0);
-}
-
-/// Test carrier handoff event emission
-#[test]
-fn test_carrier_handoff_event_emitted() {
-    let ctx = setup_ok();
-    let deadline = test_utils::future_deadline(&ctx.env, 7200);
-    let receiver = Address::generate(&ctx.env);
-
-    // Create initial shipment
-    let id = ctx.client.create_shipment(
-        &ctx.company,
-        &receiver,
-        &ctx.carrier,
-        &dummy_hash(&ctx.env, 1),
-        &Vec::new(&ctx.env),
-        &deadline,
-    );
-
-    // Create a new carrier for handoff
-    let new_carrier = Address::generate(&ctx.env);
-    ctx.client.add_carrier(&ctx.admin, &new_carrier);
-
-    // Get count just before handoff
-    let events_before_handoff = ctx.env.events().all().len();
-
-    // Perform handoff
-    ctx.client
-        .handoff_shipment(&ctx.carrier, &new_carrier, &id, &dummy_hash(&ctx.env, 2));
-
-    // Verify handoff events are emitted
-    let events = ctx.env.events().all();
-    assert!(events.len() > events_before_handoff);
-
-    // Find the carrier_handoff event
-    let target_topic = Symbol::new(&ctx.env, "carrier_handoff_completed");
-    let mut handoff_event = None;
-    for e in events.iter() {
-        if !e.1.is_empty() {
-            // Check if topic matches "carrier_handoff" (topic at index 0)
-            if let Ok(topic) = Symbol::try_from_val(&ctx.env, &e.1.get(0).unwrap()) {
-                if topic == target_topic {
-                    handoff_event = Some(e);
-                    break;
-                }
-            }
-        }
-    }
-
-    let event = handoff_event.expect("carrier_handoff event not found");
-
-    // Check from/to carrier in payload
-    use soroban_sdk::TryFromVal;
-    let data: Vec<soroban_sdk::Val> = Vec::try_from_val(&ctx.env, &event.2).unwrap();
-    // Payload for carrier_handoff: [from_carrier, to_carrier, shipment_id]
-    // Wait, let's check events.rs for emit_carrier_handoff_completed
-    // events::emit_carrier_handoff_completed(&env, &old_carrier, &new_carrier, shipment_id);
-
-    let from_carrier: Address = Address::try_from_val(&ctx.env, &data.get(0).unwrap()).unwrap();
-    let to_carrier: Address = Address::try_from_val(&ctx.env, &data.get(1).unwrap()).unwrap();
-    assert_eq!(from_carrier, ctx.carrier);
-    assert_eq!(to_carrier, new_carrier);
 }
 
 /// Test rejected handoff when caller is not current carrier

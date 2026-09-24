@@ -203,9 +203,7 @@ impl NavinToken {
         let updated_recipient_balance = recipient_balance
             .checked_add(amount)
             .ok_or(TokenError::Overflow)?;
-        let updated_allowance = allowance
-            .checked_sub(amount)
-            .ok_or(TokenError::Overflow)?;
+        let updated_allowance = allowance.checked_sub(amount).ok_or(TokenError::Overflow)?;
         storage::set_balance(&env, &to, updated_recipient_balance);
         storage::set_allowance(&env, &from, &spender, updated_allowance, expiration_ledger);
 
@@ -722,6 +720,9 @@ impl NavinToken {
                 .ok_or(TokenError::Overflow)?,
         );
         for (to, amount) in recipients.iter() {
+            if to == from {
+                continue;
+            }
             let recipient_balance = storage::get_balance(&env, &to);
             let new_recipient_balance = recipient_balance
                 .checked_add(amount)
@@ -740,6 +741,9 @@ impl NavinToken {
         // shape of `transfer`'s event — followed by a `batch_tr` summary
         // carrying the full recipient/amount list and the leg count.
         for (to, amount) in recipients.iter() {
+            if to == from {
+                continue;
+            }
             env.events()
                 .publish((symbol_short!("batch_leg"),), (from.clone(), to, amount));
         }

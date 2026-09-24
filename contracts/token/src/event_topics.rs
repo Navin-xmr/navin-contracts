@@ -46,12 +46,6 @@ pub const INIT: &str = "init";
 /// Single-party transfer (`transfer`).
 pub const TRANSFER: &str = "transfer";
 
-/// Two-party transfer (`transfer_from`).
-pub const TRANSFER_FROM: &str = "tr_from";
-
-/// Batch transfer (`batch_transfer`).
-pub const BATCH_TRANSFER: &str = "batch_tr";
-
 // ── Allowances ───────────────────────────────────────────────────────────────
 
 /// Allowance approval.
@@ -62,11 +56,6 @@ pub const ALLOWANCE_INCREASED: &str = "inc_alw";
 
 /// Allowance decreased.
 pub const ALLOWANCE_DECREASED: &str = "dec_alw";
-
-// ── Admin ────────────────────────────────────────────────────────────────────
-
-/// Admin transferred.
-pub const ADMIN_TRANSFERRED: &str = "admin_tr";
 
 // ── Supply ───────────────────────────────────────────────────────────────────
 

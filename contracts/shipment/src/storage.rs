@@ -468,21 +468,11 @@ pub fn is_company_suspended(env: &Env, company: &Address) -> bool {
         .unwrap_or(false)
 }
 
-/// Canonical single source of truth helper to retrieve a shipment by ID from persistent or temporary storage.
+/// Canonical single source of truth helper to retrieve a shipment by ID from persistent storage.
 pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
-    // First check persistent storage
-    if let Some(shipment) = env
-        .storage()
+    env.storage()
         .persistent()
         .get(&DataKey::Shipment(shipment_id))
-    {
-        return Some(shipment);
-    }
-
-    // If not in persistent, check temporary (archived) storage
-    env.storage()
-        .temporary()
-        .get(&DataKey::ArchivedShipment(shipment_id))
 }
 
 /// Canonical single source of truth helper to check whether shipment payload exists in persistent storage.
@@ -492,37 +482,10 @@ pub fn has_persistent_shipment(env: &Env, shipment_id: u64) -> bool {
         .has(&DataKey::Shipment(shipment_id))
 }
 
-/// Retrieve a shipment ONLY from persistent storage.
-pub fn get_persistent_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::Shipment(shipment_id))
-}
-
 /// Check whether escrow entry exists in persistent storage.
+#[cfg(test)]
 pub fn has_escrow_entry(env: &Env, shipment_id: u64) -> bool {
     env.storage().persistent().has(&escrow_key(shipment_id))
-}
-
-/// Check whether confirmation hash exists in persistent storage.
-pub fn has_confirmation_hash_entry(env: &Env, shipment_id: u64) -> bool {
-    env.storage()
-        .persistent()
-        .has(&confirmation_hash_key(shipment_id))
-}
-
-/// Check whether last status update timestamp exists in persistent storage.
-pub fn has_last_status_update_entry(env: &Env, shipment_id: u64) -> bool {
-    env.storage()
-        .persistent()
-        .has(&DataKey::LastStatusUpdate(shipment_id))
-}
-
-/// Check whether event count entry exists in persistent storage.
-pub fn has_event_count_entry(env: &Env, shipment_id: u64) -> bool {
-    env.storage()
-        .persistent()
-        .has(&DataKey::EventCount(shipment_id))
 }
 
 /// Persist a shipment to persistent storage (survives TTL extension).
@@ -1458,284 +1421,8 @@ pub fn get_event_count(env: &Env, shipment_id: u64) -> u32 {
 ///
 /// # Returns
 /// No return value.
-///
-/// # Examples
-/// ```rust
-/// // storage::increment_event_count(&env, 1);
-/// ```
-pub fn increment_event_count(env: &Env, shipment_id: u64) {
-    let current = get_event_count(env, shipment_id);
-    env.storage().persistent().set(
-        &DataKey::EventCount(shipment_id),
-        &current.saturating_add(1),
-    );
-}
 
-// ============= Shipment Archival Storage Functions =============
-
-/// Archive a shipment by moving it from persistent to temporary storage.
-/// This reduces state rent costs for completed shipments.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `shipment_id` - The ID of the shipment to archive.
-/// * `shipment` - The shipment data to archive.
-///
-/// # Returns
-/// No return value.
-///
-/// # Examples
-/// ```rust
-/// // storage::archive_shipment(&env, 1, &shipment);
-/// ```
-pub fn archive_shipment(env: &Env, shipment_id: u64, shipment: &Shipment) {
-    // Store in temporary storage (cheaper, shorter TTL)
-    env.storage()
-        .temporary()
-        .set(&DataKey::ArchivedShipment(shipment_id), shipment);
-
-    // Remove primary shipment record from persistent storage
-    env.storage()
-        .persistent()
-        .remove(&DataKey::Shipment(shipment_id));
-
-    // ── Clean up all per-shipment persistent counters and indexes ────────────
-    // Leaving these behind inflates check_contract_health's
-    // storage_inconsistencies list over time (#649).
-
-    // Escrow (always zero by the time a terminal-state shipment is archived,
-    // but the key itself persists until explicitly removed).
-    remove_escrow(env, shipment_id);
-
-    // Confirmation hash (written on confirm_delivery).
-    remove_confirmation_hash(env, shipment_id);
-
-    // Rate-limit timestamp for status updates.
-    remove_last_status_update(env, shipment_id);
-
-    // General-purpose event counter.
-    remove_event_count(env, shipment_id);
-
-    // Milestone and breach event counters.
-    remove_milestone_event_count(env, shipment_id);
-    remove_breach_event_count(env, shipment_id);
-
-    // Escrow freeze reason (written when escrow is frozen during dispute/pause).
-    remove_escrow_freeze_reason(env, shipment_id);
-
-    // Active settlement pointer (written by settlement module).
-    clear_active_settlement(env, shipment_id);
-
-    // Notes: remove every indexed entry then the count key.
-    purge_shipment_notes(env, shipment_id);
-
-    // Dispute evidence: remove every indexed entry then the count key.
-    purge_dispute_evidence(env, shipment_id);
-
-    // Recovery records: remove every indexed entry then the count key.
-    purge_recovery_records(env, shipment_id);
-
-    // IoT status hashes: one entry per ShipmentStatus variant.
-    purge_status_hashes(env, shipment_id);
-}
-
-/// Check if a shipment is archived.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `shipment_id` - The ID of the shipment.
-///
-/// # Returns
-/// * `bool` - True if the shipment is archived.
-///
-/// # Examples
-/// ```rust
-/// // let is_archived = storage::is_shipment_archived(&env, 1);
-/// ```
-#[allow(dead_code)]
-pub fn is_shipment_archived(env: &Env, shipment_id: u64) -> bool {
-    env.storage()
-        .temporary()
-        .has(&DataKey::ArchivedShipment(shipment_id))
-}
-
-// ============= Per-Shipment Cleanup Helpers (used by archive_shipment) =============
-
-/// Remove the confirmation hash for a shipment from persistent storage.
-pub fn remove_confirmation_hash(env: &Env, shipment_id: u64) {
-    env.storage()
-        .persistent()
-        .remove(&confirmation_hash_key(shipment_id));
-}
-
-/// Remove the last-status-update timestamp for a shipment from persistent storage.
-pub fn remove_last_status_update(env: &Env, shipment_id: u64) {
-    env.storage()
-        .persistent()
-        .remove(&DataKey::LastStatusUpdate(shipment_id));
-}
-
-/// Remove the event count for a shipment from persistent storage.
-pub fn remove_event_count(env: &Env, shipment_id: u64) {
-    env.storage()
-        .persistent()
-        .remove(&DataKey::EventCount(shipment_id));
-}
-
-/// Remove the milestone event count for a shipment from persistent storage.
-pub fn remove_milestone_event_count(env: &Env, shipment_id: u64) {
-    env.storage()
-        .persistent()
-        .remove(&DataKey::MilestoneEventCount(shipment_id));
-}
-
-/// Remove the breach event count for a shipment from persistent storage.
-pub fn remove_breach_event_count(env: &Env, shipment_id: u64) {
-    env.storage()
-        .persistent()
-        .remove(&DataKey::BreachEventCount(shipment_id));
-}
-
-/// Remove the escrow freeze reason for a shipment from persistent storage.
-pub fn remove_escrow_freeze_reason(env: &Env, shipment_id: u64) {
-    env.storage()
-        .persistent()
-        .remove(&escrow_freeze_reason_key(shipment_id));
-}
-
-/// Remove all note hashes and the note count for a shipment from persistent storage.
-pub fn purge_shipment_notes(env: &Env, shipment_id: u64) {
-    let count = get_note_count(env, shipment_id);
-    for i in 0..count {
-        env.storage()
-            .persistent()
-            .remove(&DataKey::ShipmentNote(shipment_id, i));
-    }
-    if count > 0 {
-        env.storage()
-            .persistent()
-            .remove(&DataKey::ShipmentNoteCount(shipment_id));
-    }
-}
-
-/// Remove all evidence hashes and the evidence count for a shipment from persistent storage.
-pub fn purge_dispute_evidence(env: &Env, shipment_id: u64) {
-    let count = get_evidence_count(env, shipment_id);
-    for i in 0..count {
-        env.storage()
-            .persistent()
-            .remove(&DataKey::DisputeEvidence(shipment_id, i));
-    }
-    if count > 0 {
-        env.storage()
-            .persistent()
-            .remove(&DataKey::DisputeEvidenceCount(shipment_id));
-    }
-}
-
-/// Remove all recovery records and the record count for a shipment from persistent storage.
-pub fn purge_recovery_records(env: &Env, shipment_id: u64) {
-    let count = get_recovery_record_count(env, shipment_id);
-    for i in 0..count {
-        env.storage()
-            .persistent()
-            .remove(&DataKey::RecoveryRecord(shipment_id, i));
-    }
-    if count > 0 {
-        env.storage()
-            .persistent()
-            .remove(&DataKey::RecoveryRecordCount(shipment_id));
-    }
-}
-
-/// Remove all IoT status hash entries for a shipment from persistent storage.
-///
-/// One entry may exist for each `ShipmentStatus` variant, written during
-/// `update_status` calls that supply a data hash.
-pub fn purge_status_hashes(env: &Env, shipment_id: u64) {
-    use ShipmentStatus::*;
-    for status in [
-        Created,
-        InTransit,
-        AtCheckpoint,
-        PartiallyDelivered,
-        Delivered,
-        Disputed,
-        Cancelled,
-    ] {
-        let key = DataKey::StatusHash(shipment_id, status);
-        if env.storage().persistent().has(&key) {
-            env.storage().persistent().remove(&key);
-        }
-    }
-}
-
-/// Get the total number of notes appended to a shipment.
-pub fn get_note_count(env: &Env, shipment_id: u64) -> u32 {
-    env.storage()
-        .persistent()
-        .get(&DataKey::ShipmentNoteCount(shipment_id))
-        .unwrap_or(0)
-}
-
-/// Increment the note count for a shipment and return the new index.
-pub fn increment_note_count(env: &Env, shipment_id: u64) -> u32 {
-    let current = get_note_count(env, shipment_id);
-    let next = current.checked_add(1).expect("Note count overflow");
-    env.storage()
-        .persistent()
-        .set(&DataKey::ShipmentNoteCount(shipment_id), &next);
-    current // Return 0-based index for storage
-}
-
-/// Store a note hash for a shipment at a specific index.
-pub fn set_note_hash(env: &Env, shipment_id: u64, index: u32, hash: &BytesN<32>) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::ShipmentNote(shipment_id, index), hash);
-}
-
-/// Retrieve a note hash for a shipment by its index.
-#[allow(dead_code)]
-pub fn get_note_hash(env: &Env, shipment_id: u64, index: u32) -> Option<BytesN<32>> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::ShipmentNote(shipment_id, index))
-}
-
-// ============= Dispute Evidence Storage Functions =============
-
-/// Get the total number of evidence hashes appended to a shipment dispute.
-pub fn get_evidence_count(env: &Env, shipment_id: u64) -> u32 {
-    env.storage()
-        .persistent()
-        .get(&DataKey::DisputeEvidenceCount(shipment_id))
-        .unwrap_or(0)
-}
-
-/// Increment the evidence count for a shipment dispute and return the new index.
-pub fn increment_evidence_count(env: &Env, shipment_id: u64) -> u32 {
-    let current = get_evidence_count(env, shipment_id);
-    let next = current.checked_add(1).expect("Evidence count overflow");
-    env.storage()
-        .persistent()
-        .set(&DataKey::DisputeEvidenceCount(shipment_id), &next);
-    current // Return 0-based index for storage
-}
-
-/// Store an evidence hash for a shipment dispute at a specific index.
-pub fn set_evidence_hash(env: &Env, shipment_id: u64, index: u32, hash: &BytesN<32>) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::DisputeEvidence(shipment_id, index), hash);
-}
-
-/// Retrieve an evidence hash for a shipment dispute by its index.
-pub fn get_evidence_hash(env: &Env, shipment_id: u64, index: u32) -> Option<BytesN<32>> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::DisputeEvidence(shipment_id, index))
-}
+// ============= Per-Shipment Cleanup Helpers =============
 
 // ============= Milestone Event Counter Storage Functions =============
 
@@ -1787,22 +1474,6 @@ pub fn set_reentrancy_lock(env: &Env, locked: bool) {
     env.storage()
         .instance()
         .set(&DataKey::ReentrancyLock, &locked);
-}
-
-// ============= IoT Hash Verification Storage Functions =============
-
-/// Store the data hash for a specific shipment status transition.
-pub fn set_status_hash(env: &Env, shipment_id: u64, status: &ShipmentStatus, hash: &BytesN<32>) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::StatusHash(shipment_id, status.clone()), hash);
-}
-
-/// Retrieve the data hash for a specific shipment status transition.
-pub fn get_status_hash(env: &Env, shipment_id: u64, status: &ShipmentStatus) -> Option<BytesN<32>> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::StatusHash(shipment_id, status.clone()))
 }
 
 // ============= TTL Health Monitoring Functions =============
@@ -2021,61 +1692,6 @@ pub fn get_proposal_digest(
         .get(&DataKey::ProposalDigest(proposal_id))
 }
 
-// ============= Recovery Action History Storage Functions =============
-
-/// Get the number of recovery history records logged for a shipment.
-pub fn get_recovery_record_count(env: &Env, shipment_id: u64) -> u32 {
-    env.storage()
-        .persistent()
-        .get(&DataKey::RecoveryRecordCount(shipment_id))
-        .unwrap_or(0)
-}
-
-/// Append a recovery record for a shipment, bounded by `MAX_RECOVERY_RECORDS_PER_SHIPMENT`.
-pub fn append_recovery_record(
-    env: &Env,
-    shipment_id: u64,
-    record: &crate::types::RecoveryRecord,
-) -> Result<(), NavinError> {
-    let count = get_recovery_record_count(env, shipment_id);
-    if count >= crate::types::MAX_RECOVERY_RECORDS_PER_SHIPMENT {
-        return Err(NavinError::RecoveryLimitExceeded);
-    }
-    env.storage()
-        .persistent()
-        .set(&DataKey::RecoveryRecord(shipment_id, count), record);
-    env.storage()
-        .persistent()
-        .set(&DataKey::RecoveryRecordCount(shipment_id), &(count + 1));
-    Ok(())
-}
-
-/// Retrieve a recovery record for a shipment by index.
-pub fn get_recovery_record(
-    env: &Env,
-    shipment_id: u64,
-    index: u32,
-) -> Option<crate::types::RecoveryRecord> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::RecoveryRecord(shipment_id, index))
-}
-
-/// Retrieve all recovery history records for a shipment.
-pub fn get_recovery_history(
-    env: &Env,
-    shipment_id: u64,
-) -> soroban_sdk::Vec<crate::types::RecoveryRecord> {
-    let mut history = soroban_sdk::Vec::new(env);
-    let count = get_recovery_record_count(env, shipment_id);
-    for i in 0..count {
-        if let Some(record) = get_recovery_record(env, shipment_id, i) {
-            history.push_back(record);
-        }
-    }
-    history
-}
-
 // ============= Proposal Salt Storage Functions =============
 
 /// Check if a proposal salt has been used.
@@ -2171,58 +1787,6 @@ mod tests {
 
             reactivate_role(&env, &user, &Role::Company);
             assert!(!is_role_suspended(&env, &user, &Role::Company));
-        });
-    }
-
-    #[test]
-    fn shipment_note_tuple_key_round_trip_and_component_regression() {
-        let (env, contract_id) = with_contract_env();
-        let shipment_id = 77_u64;
-        let note_idx_0 = 0_u32;
-        let note_idx_1 = 1_u32;
-        let note_0 = BytesN::from_array(&env, &[0x11; 32]);
-        let note_1 = BytesN::from_array(&env, &[0x22; 32]);
-
-        env.as_contract(&contract_id, || {
-            set_note_hash(&env, shipment_id, note_idx_0, &note_0);
-            set_note_hash(&env, shipment_id, note_idx_1, &note_1);
-
-            assert_eq!(get_note_hash(&env, shipment_id, note_idx_0), Some(note_0));
-            assert_eq!(get_note_hash(&env, shipment_id, note_idx_1), Some(note_1));
-            assert_eq!(get_note_hash(&env, shipment_id + 1, note_idx_0), None);
-            assert_eq!(get_note_hash(&env, shipment_id, note_idx_1 + 1), None);
-        });
-    }
-
-    #[test]
-    fn dispute_evidence_tuple_key_round_trip_and_component_regression() {
-        let (env, contract_id) = with_contract_env();
-        let shipment_id = 900_u64;
-        let evidence_idx_0 = 0_u32;
-        let evidence_idx_1 = 1_u32;
-        let evidence_0 = BytesN::from_array(&env, &[0x33; 32]);
-        let evidence_1 = BytesN::from_array(&env, &[0x44; 32]);
-
-        env.as_contract(&contract_id, || {
-            set_evidence_hash(&env, shipment_id, evidence_idx_0, &evidence_0);
-            set_evidence_hash(&env, shipment_id, evidence_idx_1, &evidence_1);
-
-            assert_eq!(
-                get_evidence_hash(&env, shipment_id, evidence_idx_0),
-                Some(evidence_0)
-            );
-            assert_eq!(
-                get_evidence_hash(&env, shipment_id, evidence_idx_1),
-                Some(evidence_1)
-            );
-            assert_eq!(
-                get_evidence_hash(&env, shipment_id + 1, evidence_idx_0),
-                None
-            );
-            assert_eq!(
-                get_evidence_hash(&env, shipment_id, evidence_idx_1 + 1),
-                None
-            );
         });
     }
 }
