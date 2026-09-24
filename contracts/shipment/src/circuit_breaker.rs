@@ -907,10 +907,8 @@ mod tests {
 
 #[cfg(test)]
 mod reset_integration_tests {
-    use crate::{
-        CircuitBreakerState, NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus,
-    };
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
+    use crate::{CircuitBreakerState, NavinShipment, NavinShipmentClient};
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env};
 
     /// Token whose `transfer` always succeeds, so post-reset transfers go through.
     #[contract]
@@ -926,6 +924,7 @@ mod reset_integration_tests {
 
     fn setup() -> (Env, NavinShipmentClient<'static>, Address) {
         let env = Env::default();
+        env.mock_all_auths();
         let admin = Address::generate(&env);
         let token = env.register(WorkingToken {}, ());
         let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
@@ -956,5 +955,22 @@ mod reset_integration_tests {
                 .persistent()
                 .set(&crate::types::DataKey::CircuitBreakerState, &tracker);
         });
+    }
+
+    /// End-to-end: an Open breaker blocks calls until an admin resets it, after
+    /// which the next call goes through the normal (non-tripped) path again.
+    #[test]
+    fn test_reset_circuit_breaker_unblocks_after_trip() {
+        let (env, client, admin) = setup();
+        inject_open_breaker(&env, &client);
+
+        let (state, _failures, _recovery) = client.get_circuit_breaker_status();
+        assert_eq!(state, CircuitBreakerState::Open);
+
+        client.reset_circuit_breaker(&admin);
+
+        let (state, failures, _recovery) = client.get_circuit_breaker_status();
+        assert_eq!(state, CircuitBreakerState::Closed);
+        assert_eq!(failures, 0);
     }
 }

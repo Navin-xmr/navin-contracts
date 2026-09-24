@@ -8,8 +8,8 @@ use crate::{
 };
 use soroban_sdk::{
     contract, contracterror, contractimpl,
-    testutils::{storage::Persistent, Address as _, Events, Ledger},
-    Address, BytesN, Env, FromVal, IntoVal, Symbol, TryFromVal, TryIntoVal,
+    testutils::{Address as _, Events},
+    Address, BytesN, Env, FromVal, IntoVal, Symbol, TryFromVal,
 };
 
 #[contract]
@@ -3576,33 +3576,6 @@ fn test_suspended_role_cannot_perform_actions() {
 }
 
 // ============= Deadline Grace Period Tests =============
-
-/// Helper: initialize the contract, register a company, and create a shipment with the given
-/// deadline. Returns the shipment ID.
-fn setup_shipment_with_deadline(
-    env: &Env,
-    client: &NavinShipmentClient,
-    admin: &Address,
-    token_contract: &Address,
-    deadline: u64,
-) -> u64 {
-    let company = Address::generate(env);
-    let receiver = Address::generate(env);
-    let carrier = Address::generate(env);
-    let data_hash = BytesN::from_array(env, &[42u8; 32]);
-
-    client.initialize(admin, token_contract);
-    client.add_company(admin, &company);
-
-    client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &soroban_sdk::Vec::new(env),
-        &deadline,
-    )
-}
 
 /// Within the grace window: deadline has passed but grace has not — must return NotExpired.
 /// Exactly at the grace boundary: timestamp == deadline + grace — must succeed.
