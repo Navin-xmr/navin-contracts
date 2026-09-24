@@ -9,7 +9,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
+    use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient};
     use soroban_sdk::testutils::Ledger as _;
     use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
 

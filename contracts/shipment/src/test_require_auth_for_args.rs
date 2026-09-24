@@ -10,7 +10,7 @@ use crate::{NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
     contract, contractimpl,
     testutils::{Address as _, AuthorizedFunction, Ledger as _},
-    Address, BytesN, Env, IntoVal, Symbol, Vec,
+    Address, Env, IntoVal, Symbol,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

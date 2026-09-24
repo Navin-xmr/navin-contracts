@@ -1,10 +1,6 @@
 #![cfg(test)]
 
 use crate::test::*;
-use crate::test_utils::dummy_hash;
-use crate::types::*;
-use soroban_sdk::testutils::Address as _;
-use soroban_sdk::Address;
 
 // ── Issue #434: Settlement counter overflow protection tests ──────────────────
 

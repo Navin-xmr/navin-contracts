@@ -80,10 +80,7 @@ use crate::{
     types::{SettlementOperation, SettlementState, ShipmentInput},
     NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus,
 };
-use soroban_sdk::{
-    testutils::{Address as _, Events as _},
-    Address, BytesN, Env, Symbol, Vec,
-};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec};
 
 fn dummy_hash(env: &Env, seed: u8) -> BytesN<32> {
     BytesN::from_array(env, &[seed; 32])
