@@ -2,9 +2,9 @@ name: Navin Smart Contracts CI
 
 on:
   push:
-    branches: ["dev"]
+    branches: ["prod"]
   pull_request:
-    branches: ["dev"]
+    branches: ["prod"]
   workflow_dispatch:
 
 jobs:
