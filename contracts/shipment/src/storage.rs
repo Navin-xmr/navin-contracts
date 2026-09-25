@@ -796,6 +796,13 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
             .persistent()
             .extend_ttl(&freeze_reason_key, threshold, extend_to);
     }
+
+    let last_status_key = DataKey::LastStatusUpdate(shipment_id);
+    if env.storage().persistent().has(&last_status_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&last_status_key, threshold, extend_to);
+    }
 }
 
 /// Backwards-compatible wrapper used by existing contract code/tests.
@@ -1389,38 +1396,6 @@ pub fn increment_breach_event_count(env: &Env, shipment_id: u64) {
         &current.saturating_add(1),
     );
 }
-
-// ============= Event Counter Storage Functions =============
-
-/// Get the event count for a shipment.
-/// Returns 0 if no events have been emitted yet.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `shipment_id` - The ID of the shipment.
-///
-/// # Returns
-/// * `u32` - The number of events emitted for this shipment.
-///
-/// # Examples
-/// ```rust
-/// // let count = storage::get_event_count(&env, 1);
-/// ```
-pub fn get_event_count(env: &Env, shipment_id: u64) -> u32 {
-    env.storage()
-        .persistent()
-        .get(&DataKey::EventCount(shipment_id))
-        .unwrap_or(0)
-}
-
-/// Increment the event count for a shipment.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `shipment_id` - The ID of the shipment.
-///
-/// # Returns
-/// No return value.
 
 // ============= Per-Shipment Cleanup Helpers =============
 
