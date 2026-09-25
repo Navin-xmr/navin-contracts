@@ -6,6 +6,7 @@ use soroban_sdk::{
 
 mod circuit_breaker;
 mod config;
+mod consistency;
 pub mod error_map;
 mod errors;
 mod event_topics;
@@ -2025,9 +2026,7 @@ impl NavinShipment {
         check_idempotency(&env, payload)?;
 
         let now = env.ledger().timestamp();
-        if deadline <= now {
-            return Err(NavinError::InvalidShipmentDeadline);
-        }
+        validation::validate_timestamp(&env, deadline)?;
 
         // Check company active shipment limit
         let current_active = storage::get_active_shipment_count(&env, &sender);
@@ -2157,9 +2156,7 @@ impl NavinShipment {
             validate_milestones(&env, &shipment_input.payment_milestones)?;
             validate_hash(&shipment_input.data_hash)?;
 
-            if shipment_input.deadline <= now {
-                return Err(NavinError::InvalidShipmentDeadline);
-            }
+            validation::validate_timestamp(&env, shipment_input.deadline)?;
 
             let shipment_id = storage::get_shipment_counter(&env)
                 .checked_add(1)
@@ -3900,7 +3897,9 @@ impl NavinShipment {
         }
 
         // Reason hash is mandatory and must be non-zero.
-        validation::validate_hash(&reason_hash)?;
+        if reason_hash.to_array().iter().all(|&b| b == 0) {
+            return Err(NavinError::ForceCancelReasonHashMissing);
+        }
 
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
@@ -3935,6 +3934,40 @@ impl NavinShipment {
 
         let _ = old_status;
         Ok(())
+    }
+
+    /// Run cross-shipment consistency checks on a batch of shipment IDs.
+    ///
+    /// Admin or guardian only. Returns every violation detected across the
+    /// provided IDs so the caller can correlate them back to storage for
+    /// manual correction.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `caller` - Must be the contract admin or an active guardian.
+    /// * `ids` - Shipment IDs to audit.
+    ///
+    /// # Returns
+    /// * `Result<Vec<ConsistencyViolation>, NavinError>` - Detected violations.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If `caller` is neither admin nor guardian.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let violations = contract.check_batch_consistency(&env, &admin, &vec![1, 2, 3]);
+    /// ```
+    pub fn check_batch_consistency(
+        env: Env,
+        caller: Address,
+        ids: Vec<u64>,
+    ) -> Result<Vec<crate::consistency::ConsistencyViolation>, NavinError> {
+        require_initialized(&env)?;
+        caller.require_auth();
+        require_admin_or_guardian(&env, &caller)?;
+        let result = consistency::check_batch_consistency(&env, &ids);
+        Ok(result)
     }
 
     /// Upgrade the contract to a new WASM implementation.
