@@ -80,6 +80,8 @@ pub enum DataKey {
     ContractConfig,
     /// Event counter for a shipment (tracks number of events emitted).
     EventCount(u64),
+    /// Contract-wide counter for governance and configuration events.
+    GlobalEventCount,
     /// SHA-256 checksum of critical config fields for drift detection.
     ConfigChecksum,
     /// Counter for milestone events emitted for a shipment.

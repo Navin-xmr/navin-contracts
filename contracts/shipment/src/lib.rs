@@ -600,6 +600,14 @@ fn require_initialized(env: &Env) -> Result<(), NavinError> {
     if !storage::is_initialized(env) {
         return Err(NavinError::NotInitialized);
     }
+    // Instance storage contains the admin, configuration, pause state, and
+    // other contract-wide records. Refresh its TTL on every normal entry
+    // path so active contracts do not expire after the one-time initialize()
+    // extension.
+    let config = config::get_config(env);
+    env.storage()
+        .instance()
+        .extend_ttl(config.shipment_ttl_threshold, config.shipment_ttl_extension);
     Ok(())
 }
 
@@ -1353,10 +1361,7 @@ impl NavinShipment {
 
         storage::add_carrier_to_whitelist(&env, &company, &carrier);
 
-        env.events().publish(
-            (symbol_short!("add_wl"),),
-            (company.clone(), carrier.clone()),
-        );
+        events::emit_whitelist_added(&env, &company, &carrier);
 
         Ok(())
     }
@@ -1396,10 +1401,7 @@ impl NavinShipment {
 
         storage::remove_carrier_from_whitelist(&env, &company, &carrier);
 
-        env.events().publish(
-            (symbol_short!("rm_wl"),),
-            (company.clone(), carrier.clone()),
-        );
+        events::emit_whitelist_removed(&env, &company, &carrier);
 
         Ok(())
     }
@@ -4945,8 +4947,7 @@ impl NavinShipment {
             storage::set_proposal_counter(&env, 0);
         }
 
-        env.events()
-            .publish((symbol_short!("ms_init"),), (admin_count, threshold));
+        events::emit_multisig_initialized(&env, admin_count, threshold);
 
         Ok(())
     }
@@ -5162,10 +5163,7 @@ impl NavinShipment {
         proposal.approvals.push_back(approver.clone());
         storage::set_proposal(&env, &proposal);
 
-        env.events().publish(
-            (symbol_short!("approve"),),
-            (proposal_id, approver, proposal.approvals.len()),
-        );
+        events::emit_proposal_approved(&env, proposal_id, &approver, proposal.approvals.len());
 
         // Check if threshold is met and auto-execute
         let threshold = storage::get_multisig_threshold(&env).unwrap_or(2);
@@ -5367,8 +5365,7 @@ impl NavinShipment {
             }
         }
 
-        env.events()
-            .publish((symbol_short!("executed"),), (proposal_id, proposal.action));
+        events::emit_proposal_executed(&env, proposal_id, &proposal.action);
 
         Ok(())
     }
@@ -5904,14 +5901,11 @@ impl NavinShipment {
         let config = preset.resolve()?;
         circuit_breaker::set_config(&env, &config);
 
-        env.events().publish(
-            (Symbol::new(&env, event_topics::CONFIG_UPDATED),),
-            (
-                Symbol::new(&env, "circuit_breaker"),
-                config.failure_threshold,
-                config.recovery_timeout,
-                config.half_open_max_requests,
-            ),
+        events::emit_circuit_breaker_config_updated(
+            &env,
+            config.failure_threshold,
+            config.recovery_timeout,
+            config.half_open_max_requests,
         );
 
         Ok(())
