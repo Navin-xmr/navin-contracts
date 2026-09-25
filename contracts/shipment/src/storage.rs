@@ -354,10 +354,29 @@ pub fn set_carrier_role(env: &Env, carrier: &Address) {
 pub fn revoke_role(env: &Env, address: &Address, role: &Role) {
     let key = DataKey::UserRole(address.clone(), role.clone());
     env.storage().instance().remove(&key);
-    // Reset legacy single-role slot to Unassigned
-    env.storage()
-        .instance()
-        .set(&DataKey::Role(address.clone()), &Role::Unassigned);
+    // Only re-resolve the legacy single-role slot if it currently points to the revoked role.
+    // This keeps multi-role addresses consistent: revoking a non-primary role leaves the
+    // legacy pointer untouched, while revoking the primary promotes any remaining role.
+    let current_legacy: Option<Role> = env.storage().instance().get(&DataKey::Role(address.clone()));
+    if let Some(legacy) = current_legacy {
+        if &legacy == role {
+            let remaining = if has_role(env, address, &Role::Company) {
+                Some(Role::Company)
+            } else if has_role(env, address, &Role::Carrier) {
+                Some(Role::Carrier)
+            } else if has_role(env, address, &Role::Guardian) {
+                Some(Role::Guardian)
+            } else if has_role(env, address, &Role::Operator) {
+                Some(Role::Operator)
+            } else {
+                None
+            };
+            match remaining {
+                Some(r) => env.storage().instance().set(&DataKey::Role(address.clone()), &r),
+                None => env.storage().instance().set(&DataKey::Role(address.clone()), &Role::Unassigned),
+            }
+        }
+    }
 }
 
 /// Suspend a role temporarily. The role is retained but marked as suspended.
