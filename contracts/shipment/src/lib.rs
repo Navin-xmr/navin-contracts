@@ -600,6 +600,14 @@ fn require_initialized(env: &Env) -> Result<(), NavinError> {
     if !storage::is_initialized(env) {
         return Err(NavinError::NotInitialized);
     }
+    // Instance storage contains the admin, configuration, pause state, and
+    // other contract-wide records. Refresh its TTL on every normal entry
+    // path so active contracts do not expire after the one-time initialize()
+    // extension.
+    let config = config::get_config(env);
+    env.storage()
+        .instance()
+        .extend_ttl(config.shipment_ttl_threshold, config.shipment_ttl_extension);
     Ok(())
 }
 

@@ -216,6 +216,32 @@ fn test_ttl_extended_on_active_mutation() {
 }
 
 #[test]
+fn test_instance_ttl_refreshes_on_active_read() {
+    let (env, client, _admin, _token) = setup_shipment_env();
+
+    let ttl_before_read = env.as_contract(&client.address, || {
+        env.storage().instance().get_ttl()
+    });
+
+    // Move close to the expiry window without allowing the instance entry to
+    // expire. A normal read must refresh the contract-wide instance storage.
+    env.ledger().with_mut(|ledger| {
+        ledger.sequence_number += 500_000;
+        ledger.timestamp += 500_000;
+    });
+
+    client.get_status_summary();
+
+    let ttl_after_read = env.as_contract(&client.address, || {
+        env.storage().instance().get_ttl()
+    });
+    assert!(
+        ttl_after_read > ttl_before_read.saturating_sub(500_000),
+        "active reads must refresh the instance storage TTL"
+    );
+}
+
+#[test]
 fn test_ttl_not_extended_for_archived_terminal_shipment() {
     let (env, client, admin, _token) = setup_shipment_env();
 
