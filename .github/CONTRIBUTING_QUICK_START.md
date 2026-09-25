@@ -111,6 +111,26 @@ This single command runs:
 3. ✅ All tests (`cargo test`)
 4. ✅ WASM build (`stellar contract build`)
 
+### Security & License Checks
+
+Before submitting a PR, verify there are no vulnerable or unlicensed dependencies:
+
+```bash
+# Run cargo-deny to check for security advisories and license issues
+cargo deny check advisories licenses
+```
+
+This check will:
+
+- ✅ Detect known security vulnerabilities in dependencies
+- ✅ Verify all dependencies have allowed licenses (MIT, Apache-2.0, BSD, ISC, MPL-2.0, Unicode-DFS-2016)
+- ✅ Reject GPL/AGPL dependencies which conflict with project licensing
+
+If this fails, you'll need to:
+
+1. Update vulnerable dependencies: `cargo update`
+2. Or add an exception in `deny.toml` if the advisory is a false positive
+
 ### If CI Fails
 
 If your PR fails CI, run these commands locally:
@@ -127,6 +147,9 @@ make lint
 
 # If lint fails, try auto-fix:
 make lint-fix
+
+# Check security and licenses
+cargo deny check advisories licenses
 
 # Run tests
 make test
@@ -223,18 +246,21 @@ Before submitting a PR, make sure:
 
 - [ ] Code is formatted (`make fmt`)
 - [ ] All pre-commit checks pass (`make pre-commit`)
+- [ ] Security & license checks pass (`cargo deny check advisories licenses`)
 - [ ] Tests are added for new features
 - [ ] Documentation is updated if needed
 - [ ] Commit messages follow convention
 - [ ] PR template is filled out
 
-**Key Command to Remember:**
+**Key Commands to Remember:**
 
 ```bash
+# Run all code quality checks
 make pre-commit
-```
 
-This runs everything CI will check. If it passes locally, your PR will likely pass CI!
+# Run security & license checks
+cargo deny check advisories licenses
+```
 
 ---
 

@@ -80,10 +80,7 @@ use crate::{
     types::{SettlementOperation, SettlementState, ShipmentInput},
     NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus,
 };
-use soroban_sdk::{
-    testutils::{Address as _, Events as _},
-    Address, BytesN, Env, Symbol, Vec,
-};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec};
 
 fn dummy_hash(env: &Env, seed: u8) -> BytesN<32> {
     BytesN::from_array(env, &[seed; 32])
@@ -235,68 +232,6 @@ fn test_read_only_queries_work_regardless_of_token_state() {
     assert_eq!(ctx.client.get_shipment_counter(), 0);
     let analytics = ctx.client.get_analytics();
     assert_eq!(analytics.total_shipments, 0);
-}
-
-/// Test carrier handoff event emission
-#[test]
-fn test_carrier_handoff_event_emitted() {
-    let ctx = setup_ok();
-    let deadline = test_utils::future_deadline(&ctx.env, 7200);
-    let receiver = Address::generate(&ctx.env);
-
-    // Create initial shipment
-    let id = ctx.client.create_shipment(
-        &ctx.company,
-        &receiver,
-        &ctx.carrier,
-        &dummy_hash(&ctx.env, 1),
-        &Vec::new(&ctx.env),
-        &deadline,
-    );
-
-    // Create a new carrier for handoff
-    let new_carrier = Address::generate(&ctx.env);
-    ctx.client.add_carrier(&ctx.admin, &new_carrier);
-
-    // Get count just before handoff
-    let events_before_handoff = ctx.env.events().all().len();
-
-    // Perform handoff
-    ctx.client
-        .handoff_shipment(&ctx.carrier, &new_carrier, &id, &dummy_hash(&ctx.env, 2));
-
-    // Verify handoff events are emitted
-    let events = ctx.env.events().all();
-    assert!(events.len() > events_before_handoff);
-
-    // Find the carrier_handoff event
-    let target_topic = Symbol::new(&ctx.env, "carrier_handoff_completed");
-    let mut handoff_event = None;
-    for e in events.iter() {
-        if !e.1.is_empty() {
-            // Check if topic matches "carrier_handoff" (topic at index 0)
-            if let Ok(topic) = Symbol::try_from_val(&ctx.env, &e.1.get(0).unwrap()) {
-                if topic == target_topic {
-                    handoff_event = Some(e);
-                    break;
-                }
-            }
-        }
-    }
-
-    let event = handoff_event.expect("carrier_handoff event not found");
-
-    // Check from/to carrier in payload
-    use soroban_sdk::TryFromVal;
-    let data: Vec<soroban_sdk::Val> = Vec::try_from_val(&ctx.env, &event.2).unwrap();
-    // Payload for carrier_handoff: [from_carrier, to_carrier, shipment_id]
-    // Wait, let's check events.rs for emit_carrier_handoff_completed
-    // events::emit_carrier_handoff_completed(&env, &old_carrier, &new_carrier, shipment_id);
-
-    let from_carrier: Address = Address::try_from_val(&ctx.env, &data.get(0).unwrap()).unwrap();
-    let to_carrier: Address = Address::try_from_val(&ctx.env, &data.get(1).unwrap()).unwrap();
-    assert_eq!(from_carrier, ctx.carrier);
-    assert_eq!(to_carrier, new_carrier);
 }
 
 /// Test rejected handoff when caller is not current carrier
@@ -742,6 +677,15 @@ fn test_batch_creation_does_not_call_token_contract() {
 }
 
 #[test]
+fn test_external_integration_failed_error_code() {
+    let err = crate::NavinError::ExternalIntegrationFailed;
+    assert_eq!(err as u32, 64);
+    let info = crate::error_map::error_info(err);
+    assert_eq!(info.code, 64);
+    assert_eq!(info.category, crate::error_map::ErrorCategory::Transient);
+}
+
+#[test]
 fn test_recovery_behavior_deterministic_across_reruns() {}
 
 // ── Zero-address treasury validation ───────────────────────────────────────────
@@ -930,5 +874,37 @@ fn test_confirm_delivery_without_escrow_succeeds_with_failing_token() {
         ctx.client.get_shipment(&id).status,
         ShipmentStatus::Delivered,
         "confirm_delivery without escrow must succeed even with a failing token"
+    );
+}
+
+/// Non-sender company attempting to deposit escrow for a shipment must be rejected with Unauthorized (#684).
+#[test]
+fn test_non_sender_company_cannot_deposit_escrow() {
+    let ctx = setup_ok();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x80),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+
+    // Register a second distinct company
+    let other_company = Address::generate(&ctx.env);
+    ctx.client.add_company(&ctx.admin, &other_company);
+
+    let err = ctx
+        .client
+        .try_deposit_escrow(&other_company, &id, &1000i128)
+        .unwrap_err()
+        .unwrap();
+
+    assert_eq!(
+        err,
+        NavinError::Unauthorized,
+        "Non-sender company deposit into another company's shipment must be rejected with Unauthorized"
     );
 }

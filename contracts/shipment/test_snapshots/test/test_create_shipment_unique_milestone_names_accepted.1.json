@@ -70,7 +70,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
                 },
                 {
-                  "bytes": "0505050505050505050505050505050505050505050505050505050505050505"
+                  "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
                 },
                 {
                   "vec": [
@@ -107,7 +107,7 @@
                   ]
                 },
                 {
-                  "u64": 90000
+                  "u64": 93600
                 }
               ]
             }
@@ -232,6 +232,225 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "AuditEntry"
+                },
+                {
+                  "u64": 0
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "AuditEntry"
+                    },
+                    {
+                      "u64": 0
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "actor"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "entry_id"
+                      },
+                      "val": {
+                        "u64": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "event_type"
+                      },
+                      "val": {
+                        "vec": [
+                          {
+                            "symbol": "RoleAssigned"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "target"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "timestamp"
+                      },
+                      "val": {
+                        "u64": 86400
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4096
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "AuditEntry"
+                },
+                {
+                  "u64": 1
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "AuditEntry"
+                    },
+                    {
+                      "u64": 1
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "actor"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "entry_id"
+                      },
+                      "val": {
+                        "u64": 1
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "event_type"
+                      },
+                      "val": {
+                        "vec": [
+                          {
+                            "symbol": "RoleAssigned"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "target"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "timestamp"
+                      },
+                      "val": {
+                        "u64": 86400
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4096
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "AuditEntryCount"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "AuditEntryCount"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u32": 2
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4096
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "key": {
+              "vec": [
+                {
                   "symbol": "Escrow"
                 },
                 {
@@ -328,7 +547,7 @@
                   "symbol": "IdempotencyWindow"
                 },
                 {
-                  "bytes": "0619ecd90b887d894102c70f5930ff1ea6cf3edf1aed9e2f46fb7904a3fdc086"
+                  "bytes": "6e694fcad09b1881d59ecf5f66b7ef919bd9e56a1e928a23fdf379602ebc41f8"
                 }
               ]
             },
@@ -348,7 +567,7 @@
                       "symbol": "IdempotencyWindow"
                     },
                     {
-                      "bytes": "0619ecd90b887d894102c70f5930ff1ea6cf3edf1aed9e2f46fb7904a3fdc086"
+                      "bytes": "6e694fcad09b1881d59ecf5f66b7ef919bd9e56a1e928a23fdf379602ebc41f8"
                     }
                   ]
                 },
@@ -421,7 +640,7 @@
                         "symbol": "data_hash"
                       },
                       "val": {
-                        "bytes": "0505050505050505050505050505050505050505050505050505050505050505"
+                        "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
                       }
                     },
                     {
@@ -429,7 +648,7 @@
                         "symbol": "deadline"
                       },
                       "val": {
-                        "u64": 90000
+                        "u64": 93600
                       }
                     },
                     {
@@ -1087,7 +1306,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "bytes": "0505050505050505050505050505050505050505050505050505050505050505"
+                  "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
                 },
                 {
                   "u32": 2
@@ -1133,7 +1352,7 @@
                   "u64": 1
                 },
                 {
-                  "bytes": "0505050505050505050505050505050505050505050505050505050505050505"
+                  "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
                 }
               ]
             }
@@ -1170,7 +1389,7 @@
                   "u64": 1
                 },
                 {
-                  "bytes": "0505050505050505050505050505050505050505050505050505050505050505"
+                  "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
                 }
               ]
             }

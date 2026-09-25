@@ -102,4 +102,56 @@ mod tests {
             "operator must be rejected from refund_escrow even on a cancelled shipment"
         );
     }
+
+    #[test]
+    fn remove_guardian_revokes_guardian_role() {
+        let (env, client, admin) = setup();
+        let guardian = Address::generate(&env);
+        client.add_guardian(&admin, &guardian);
+
+        assert_eq!(client.get_role(&guardian), crate::types::Role::Guardian);
+        client.remove_guardian(&admin, &guardian);
+        assert_eq!(client.get_role(&guardian), crate::types::Role::Unassigned);
+    }
+
+    #[test]
+    fn remove_operator_revokes_operator_role() {
+        let (env, client, admin) = setup();
+        let operator = Address::generate(&env);
+        client.add_operator(&admin, &operator);
+
+        assert_eq!(client.get_role(&operator), crate::types::Role::Operator);
+        client.remove_operator(&admin, &operator);
+        assert_eq!(client.get_role(&operator), crate::types::Role::Unassigned);
+    }
+
+    #[test]
+    fn remove_guardian_matches_revoke_role_behavior() {
+        let (env, client, admin) = setup();
+        let guardian = Address::generate(&env);
+        let company = Address::generate(&env);
+        client.add_guardian(&admin, &guardian);
+        client.add_company(&admin, &company);
+
+        client.remove_guardian(&admin, &guardian);
+        client.revoke_role(&admin, &company);
+
+        assert_eq!(client.get_role(&guardian), crate::types::Role::Unassigned);
+        assert_eq!(client.get_role(&company), crate::types::Role::Unassigned);
+    }
+
+    #[test]
+    fn remove_operator_matches_revoke_role_behavior() {
+        let (env, client, admin) = setup();
+        let operator = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        client.add_operator(&admin, &operator);
+        client.add_carrier(&admin, &carrier);
+
+        client.remove_operator(&admin, &operator);
+        client.revoke_role(&admin, &carrier);
+
+        assert_eq!(client.get_role(&operator), crate::types::Role::Unassigned);
+        assert_eq!(client.get_role(&carrier), crate::types::Role::Unassigned);
+    }
 }

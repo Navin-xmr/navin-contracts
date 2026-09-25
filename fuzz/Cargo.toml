@@ -1,0 +1,29 @@
+[package]
+name = "shipment-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+shipment = { path = "../contracts/shipment" }
+soroban-sdk = { version = "22.0.0", features = ["testutils"] }
+
+[[bin]]
+name = "escrow_arithmetic"
+path = "fuzz_targets/escrow_arithmetic.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rbac_authorization"
+path = "fuzz_targets/rbac_authorization.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

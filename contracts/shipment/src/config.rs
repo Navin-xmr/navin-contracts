@@ -257,6 +257,9 @@ pub fn set_config(env: &Env, config: &ContractConfig) -> Result<(), NavinError> 
 /// - `multisig_min_admins` must be >= 2
 /// - `multisig_max_admins` must be >= `multisig_min_admins` and <= 50
 /// - `proposal_expiry_seconds` must be >= 3,600 (1 hour) and <= 2,592,000 (30 days)
+/// - `idempotency_window_seconds` must be >= 30 and <= 86,400 (1 day)
+/// - `creation_quota_max` must be <= 10,000 (0 = disabled)
+/// - `creation_quota_window_seconds` must be >= 60 and <= 86,400 (1 day)
 ///
 /// # Examples
 /// ```rust
@@ -326,6 +329,23 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
         return Err("deadline_grace_seconds must be <= 604,800 (7 days)");
     }
 
+    // Validate idempotency window (30 seconds minimum, 1 day maximum)
+    if config.idempotency_window_seconds < 30 || config.idempotency_window_seconds > 86_400 {
+        return Err("idempotency_window_seconds must be >= 30 and <= 86,400");
+    }
+
+    // Validate creation quota cap (0 = disabled; when set, must be <= 10,000)
+    if config.creation_quota_max > 10_000 {
+        return Err("creation_quota_max must be <= 10,000");
+    }
+
+    // Validate creation quota window (must be a sensible duration regardless of
+    // whether the quota is currently enabled, to prevent invalid values from
+    // silently persisting in config and taking effect if the quota is later turned on)
+    if config.creation_quota_window_seconds < 60 || config.creation_quota_window_seconds > 86_400 {
+        return Err("creation_quota_window_seconds must be >= 60 and <= 86,400");
+    }
+
     Ok(())
 }
 
@@ -351,8 +371,12 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// 12. max_milestones_per_shipment (u32, 4 bytes, big-endian)
 /// 13. max_notes_per_shipment (u32, 4 bytes, big-endian)
 /// 14. max_evidence_per_dispute (u32, 4 bytes, big-endian)
+/// 15. max_breaches_per_shipment (u32, 4 bytes, big-endian)
+/// 16. idempotency_window_seconds (u64, 8 bytes, big-endian)
+/// 17. creation_quota_max (u32, 4 bytes, big-endian)
+/// 18. creation_quota_window_seconds (u64, 8 bytes, big-endian)
 ///
-/// Total: 65 bytes serialized, hashed to 32-byte SHA-256 digest.
+/// Total: 89 bytes serialized, hashed to 32-byte SHA-256 digest.
 ///
 /// # Arguments
 /// * `config` - The configuration to checksum.
@@ -368,8 +392,8 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// assert_eq!(checksum1, checksum2); // Deterministic
 /// ```
 pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32> {
-    // Serialize all fields in fixed order (69 bytes total)
-    let mut bytes: [u8; 69] = [0; 69];
+    // Serialize all fields in fixed order (89 bytes total)
+    let mut bytes: [u8; 89] = [0; 89];
     let mut offset = 0;
 
     // 1. shipment_ttl_threshold (u32, big-endian)
@@ -430,6 +454,18 @@ pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32>
 
     // 15. max_breaches_per_shipment (u32, big-endian)
     bytes[offset..offset + 4].copy_from_slice(&config.max_breaches_per_shipment.to_be_bytes());
+    offset += 4;
+
+    // 16. idempotency_window_seconds (u64, big-endian)
+    bytes[offset..offset + 8].copy_from_slice(&config.idempotency_window_seconds.to_be_bytes());
+    offset += 8;
+
+    // 17. creation_quota_max (u32, big-endian)
+    bytes[offset..offset + 4].copy_from_slice(&config.creation_quota_max.to_be_bytes());
+    offset += 4;
+
+    // 18. creation_quota_window_seconds (u64, big-endian)
+    bytes[offset..offset + 8].copy_from_slice(&config.creation_quota_window_seconds.to_be_bytes());
 
     // Compute SHA-256 hash and convert to BytesN<32>
     let hash = env
@@ -587,6 +623,155 @@ mod tests {
         assert!(validate_config(&config).is_err());
     }
 
+    #[test]
+    fn test_validate_idempotency_window_seconds() {
+        // Invalid: zero
+        let config = ContractConfig {
+            idempotency_window_seconds: 0,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_config(&config),
+            Err("idempotency_window_seconds must be >= 30 and <= 86,400")
+        );
+
+        // Invalid: one below minimum (29 seconds)
+        let config = ContractConfig {
+            idempotency_window_seconds: 29,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_config(&config),
+            Err("idempotency_window_seconds must be >= 30 and <= 86,400")
+        );
+
+        // Invalid: one above maximum (86,401 seconds)
+        let config = ContractConfig {
+            idempotency_window_seconds: 86_401,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_config(&config),
+            Err("idempotency_window_seconds must be >= 30 and <= 86,400")
+        );
+
+        // Valid: minimum boundary (30 seconds)
+        let config = ContractConfig {
+            idempotency_window_seconds: 30,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+
+        // Valid: maximum boundary (86,400 seconds = 1 day)
+        let config = ContractConfig {
+            idempotency_window_seconds: 86_400,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+
+        // Valid: default value (300 seconds = 5 minutes)
+        let config = ContractConfig {
+            idempotency_window_seconds: 300,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_validate_creation_quota_max() {
+        // Valid: 0 (quota disabled)
+        let config = ContractConfig {
+            creation_quota_max: 0,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+
+        // Valid: maximum boundary (10,000)
+        let config = ContractConfig {
+            creation_quota_max: 10_000,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+
+        // Valid: mid-range value
+        let config = ContractConfig {
+            creation_quota_max: 100,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+
+        // Invalid: one above maximum (10,001)
+        let config = ContractConfig {
+            creation_quota_max: 10_001,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_config(&config),
+            Err("creation_quota_max must be <= 10,000")
+        );
+
+        // Invalid: absurd value
+        let config = ContractConfig {
+            creation_quota_max: u32::MAX,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn test_validate_creation_quota_window_seconds() {
+        // Invalid: zero
+        let config = ContractConfig {
+            creation_quota_window_seconds: 0,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_config(&config),
+            Err("creation_quota_window_seconds must be >= 60 and <= 86,400")
+        );
+
+        // Invalid: one below minimum (59 seconds)
+        let config = ContractConfig {
+            creation_quota_window_seconds: 59,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_config(&config),
+            Err("creation_quota_window_seconds must be >= 60 and <= 86,400")
+        );
+
+        // Invalid: one above maximum (86,401 seconds)
+        let config = ContractConfig {
+            creation_quota_window_seconds: 86_401,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_config(&config),
+            Err("creation_quota_window_seconds must be >= 60 and <= 86,400")
+        );
+
+        // Valid: minimum boundary (60 seconds)
+        let config = ContractConfig {
+            creation_quota_window_seconds: 60,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+
+        // Valid: maximum boundary (86,400 seconds = 1 day)
+        let config = ContractConfig {
+            creation_quota_window_seconds: 86_400,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+
+        // Valid: default value (3,600 seconds = 1 hour)
+        let config = ContractConfig {
+            creation_quota_window_seconds: 3_600,
+            ..Default::default()
+        };
+        assert!(validate_config(&config).is_ok());
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Checksum Tests — Deterministic Config Drift Detection
     // ─────────────────────────────────────────────────────────────────────────
@@ -730,6 +915,30 @@ mod tests {
         assert_ne!(
             checksum, checksum_original,
             "Changing max_breaches_per_shipment must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.idempotency_window_seconds = 600;
+        let checksum = compute_config_checksum(&config, &env);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing idempotency_window_seconds must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.creation_quota_max = 50;
+        let checksum = compute_config_checksum(&config, &env);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing creation_quota_max must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.creation_quota_window_seconds = 7200;
+        let checksum = compute_config_checksum(&config, &env);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing creation_quota_window_seconds must change checksum"
         );
     }
 

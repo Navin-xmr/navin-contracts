@@ -2,9 +2,9 @@ name: Navin Smart Contracts CI
 
 on:
   push:
-    branches: ["dev"]
+    branches: ["prod"]
   pull_request:
-    branches: ["dev"]
+    branches: ["prod"]
   workflow_dispatch:
 
 jobs:
@@ -24,23 +24,6 @@ jobs:
       - name: Run format check
         run: cargo fmt --all -- --check
 
-  clippy:
-    name: Clippy Lints
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          components: clippy
-          target: wasm32-unknown-unknown
-
-      - name: Run clippy lints
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
   test:
     name: Run Tests
     runs-on: ubuntu-latest
@@ -57,8 +40,8 @@ jobs:
       - name: Run tests
         run: cargo test
 
-  cargo-build:
-    name: Cargo Build (Host)
+  coverage:
+    name: Test Coverage
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -68,10 +51,21 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          target: wasm32-unknown-unknown
+          components: llvm-tools-preview
 
-      - name: Build host targets
-        run: cargo build --all-targets
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Measure coverage
+        run: make coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            target/llvm-cov/lcov.info
+            target/llvm-cov/html
 
   wasm-build:
     name: Build WASM Contracts

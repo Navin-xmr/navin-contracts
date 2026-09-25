@@ -472,10 +472,10 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "ConfirmationHash"
+                  "symbol": "AuditEntry"
                 },
                 {
-                  "u64": 1
+                  "u64": 0
                 }
               ]
             },
@@ -492,22 +492,67 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "ConfirmationHash"
+                      "symbol": "AuditEntry"
                     },
                     {
-                      "u64": 1
+                      "u64": 0
                     }
                   ]
                 },
                 "durability": "persistent",
                 "val": {
-                  "bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "actor"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "entry_id"
+                      },
+                      "val": {
+                        "u64": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "event_type"
+                      },
+                      "val": {
+                        "vec": [
+                          {
+                            "symbol": "RoleAssigned"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "target"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "timestamp"
+                      },
+                      "val": {
+                        "u64": 86400
+                      }
+                    }
+                  ]
                 }
               }
             },
             "ext": "v0"
           },
-          518401
+          4096
         ]
       ],
       [
@@ -517,7 +562,7 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "Escrow"
+                  "symbol": "AuditEntry"
                 },
                 {
                   "u64": 1
@@ -537,7 +582,7 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "Escrow"
+                      "symbol": "AuditEntry"
                     },
                     {
                       "u64": 1
@@ -546,16 +591,58 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 0
-                  }
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "actor"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "entry_id"
+                      },
+                      "val": {
+                        "u64": 1
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "event_type"
+                      },
+                      "val": {
+                        "vec": [
+                          {
+                            "symbol": "RoleAssigned"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "target"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "timestamp"
+                      },
+                      "val": {
+                        "u64": 86400
+                      }
+                    }
+                  ]
                 }
               }
             },
             "ext": "v0"
           },
-          518401
+          4096
         ]
       ],
       [
@@ -565,10 +652,7 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "EventCount"
-                },
-                {
-                  "u64": 1
+                  "symbol": "AuditEntryCount"
                 }
               ]
             },
@@ -585,16 +669,13 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "EventCount"
-                    },
-                    {
-                      "u64": 1
+                      "symbol": "AuditEntryCount"
                     }
                   ]
                 },
                 "durability": "persistent",
                 "val": {
-                  "u32": 4
+                  "u32": 2
                 }
               }
             },
@@ -691,110 +772,6 @@
             "ext": "v0"
           },
           16
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "LastStatusUpdate"
-                },
-                {
-                  "u64": 1
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "LastStatusUpdate"
-                    },
-                    {
-                      "u64": 1
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "u64": 86461
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4096
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "StatusHash"
-                },
-                {
-                  "u64": 1
-                },
-                {
-                  "vec": [
-                    {
-                      "symbol": "InTransit"
-                    }
-                  ]
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "StatusHash"
-                    },
-                    {
-                      "u64": 1
-                    },
-                    {
-                      "vec": [
-                        {
-                          "symbol": "InTransit"
-                        }
-                      ]
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "bytes": "0303030303030303030303030303030303030303030303030303030303030303"
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4096
         ]
       ],
       [

@@ -8,7 +8,7 @@ mod invalid_config_tests {
     extern crate std;
 
     use crate::{NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env};
+    use soroban_sdk::{contract, contractimpl, Address, Env};
 
     #[contract]
     struct MockToken;

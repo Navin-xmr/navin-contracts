@@ -1,11 +1,23 @@
 target
 test_snapshots/**/test_snapshots/
+fuzz/target
+fuzz/corpus
+fuzz/artifacts
 
 .agent/
 .agents/
 issue.md
 skills-lock.json
 PR_DESCRIPTION.md
+*DESCRIPTION*.md
+
+# Logs and test outputs
+*.log
+test_output.txt
+
+# OS artifacts
+.DS_Store
+Thumbs.db
 
 # Testnet deployment configuration
 .env.testnet

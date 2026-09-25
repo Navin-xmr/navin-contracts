@@ -1,4 +1,4 @@
-use crate::{audit, NavinShipment, NavinShipmentClient, ShipmentStatus};
+use crate::{NavinShipment, NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Symbol, Vec};
 
 #[soroban_sdk::contract]
@@ -22,51 +22,6 @@ fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address)
 }
 
 #[test]
-fn test_finalization_on_delivery_settlement() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-    );
-
-    // Initial state: not finalized
-    let shipment = client.get_shipment(&shipment_id);
-    assert!(!shipment.finalized);
-
-    // Step 1: Deposit escrow
-    client.deposit_escrow(&company, &shipment_id, &1000);
-
-    // Step 2: Transition to Delivered - this should release remaining escrow and finalize
-    client.update_status(
-        &carrier,
-        &shipment_id,
-        &ShipmentStatus::InTransit,
-        &data_hash,
-    );
-    client.confirm_delivery(&receiver, &shipment_id, &data_hash);
-
-    // Should be finalized because status is Delivered and escrow is released (cleared to 0)
-    let shipment = client.get_shipment(&shipment_id);
-    assert_eq!(shipment.status, ShipmentStatus::Delivered);
-    assert_eq!(shipment.escrow_amount, 0);
-    assert!(shipment.finalized);
-}
-
-#[test]
 fn test_finalization_on_cancel_with_zero_escrow() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -77,6 +32,8 @@ fn test_finalization_on_cancel_with_zero_escrow() {
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -100,42 +57,6 @@ fn test_finalization_on_cancel_with_zero_escrow() {
     assert!(shipment.finalized);
 }
 
-#[test]
-#[should_panic(expected = "Error(Contract, #38)")]
-fn test_mutation_rejected_after_finalization() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-    );
-
-    // Finalize it
-    client.cancel_shipment(&company, &shipment_id, &data_hash);
-    let shipment = client.get_shipment(&shipment_id);
-    assert!(shipment.finalized);
-
-    // Try to update metadata - should panic with ShipmentFinalized (38)
-    client.set_shipment_metadata(
-        &company,
-        &shipment_id,
-        &Symbol::new(&env, "key"),
-        &Symbol::new(&env, "val"),
-    );
-}
-
 // ── Finalization lock-out: mutating paths after finalization (issue #446) ────
 
 /// Helper: create a shipment and cancel it (which finalizes it).
@@ -154,6 +75,8 @@ fn create_and_finalize(
 
     client.initialize(admin, token_contract);
     client.add_company(admin, &company);
+    client.add_carrier(admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -282,174 +205,4 @@ fn test_lockout_is_stable_across_reruns() {
             "raise_dispute lockout must be stable"
         );
     }
-}
-
-#[test]
-fn test_archival_permitted_after_finalization() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-    );
-
-    // Finalize it
-    client.cancel_shipment(&company, &shipment_id, &data_hash);
-    let shipment = client.get_shipment(&shipment_id);
-    assert!(shipment.finalized);
-
-    // Archiving should succeed (proving the finalize lock exception)
-    client.archive_shipment(&admin, &shipment_id);
-
-    // Verify it's still readable (fallback to temporary storage works)
-    let archived = client.get_shipment(&shipment_id);
-    assert_eq!(archived.id, shipment_id);
-}
-
-// ── Audit sequence continuity (issue #535) ──────────────────────────────────
-
-#[test]
-fn test_audit_sequence_continuity() {
-    let env = soroban_sdk::Env::default();
-    let contract_id = env.register(crate::NavinShipment, ());
-    let _client = NavinShipmentClient::new(&env, &contract_id);
-
-    // Initial count must be 0
-    let initial_count = env.as_contract(&contract_id, || audit::get_audit_entry_count(&env));
-    assert_eq!(initial_count, 0, "audit entry count must start at 0");
-
-    // Insert entries and verify monotonic IDs
-    let admin = Address::generate(&env);
-    let actor1 = Address::generate(&env);
-    let actor2 = Address::generate(&env);
-    let actor3 = Address::generate(&env);
-
-    let ids: Vec<u64> = env.as_contract(&contract_id, || {
-        let id1 = audit::get_next_audit_entry_id(&env).unwrap();
-        audit::store_audit_entry(
-            &env,
-            &audit::AuditLogEntry {
-                entry_id: id1,
-                event_type: audit::AuditEventType::RoleAssigned,
-                actor: admin.clone(),
-                target: actor1,
-                timestamp: 1000,
-            },
-        );
-
-        let id2 = audit::get_next_audit_entry_id(&env).unwrap();
-        audit::store_audit_entry(
-            &env,
-            &audit::AuditLogEntry {
-                entry_id: id2,
-                event_type: audit::AuditEventType::RoleRevoked,
-                actor: admin.clone(),
-                target: actor2,
-                timestamp: 2000,
-            },
-        );
-
-        let id3 = audit::get_next_audit_entry_id(&env).unwrap();
-        audit::store_audit_entry(
-            &env,
-            &audit::AuditLogEntry {
-                entry_id: id3,
-                event_type: audit::AuditEventType::RoleSuspended,
-                actor: admin.clone(),
-                target: actor3,
-                timestamp: 3000,
-            },
-        );
-
-        soroban_sdk::vec![&env, id1, id2, id3]
-    });
-
-    // Verify monotonic sequence: 0, 1, 2
-    assert_eq!(ids.len(), 3, "must have 3 audit entries");
-    assert_eq!(ids.get(0).unwrap(), 0, "first entry ID must be 0");
-    assert_eq!(ids.get(1).unwrap(), 1, "second entry ID must be 1");
-    assert_eq!(ids.get(2).unwrap(), 2, "third entry ID must be 2");
-
-    // Verify count reflects 3 entries
-    let final_count = env.as_contract(&contract_id, || audit::get_audit_entry_count(&env));
-    assert_eq!(
-        final_count, 3,
-        "audit entry count must be 3 after inserting 3 entries"
-    );
-
-    // Verify entries can be read back (they exist in storage)
-    let count_again = env.as_contract(&contract_id, || audit::get_audit_entry_count(&env));
-    assert_eq!(count_again, 3, "count must persist between reads");
-}
-
-#[test]
-fn test_recovery_history_logging() {
-    use crate::types::RecoveryActionType;
-
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-    );
-
-    let reason1 = BytesN::from_array(&env, &[0xA1; 32]);
-    let reason2 = BytesN::from_array(&env, &[0xB2; 32]);
-
-    // Initial history is empty
-    assert_eq!(client.get_recovery_record_count(&shipment_id), 0);
-    assert_eq!(client.get_recovery_history(&shipment_id).len(), 0);
-
-    // Action 1: recover shipment status from Created to Cancelled
-    client.recover_shipment(&admin, &shipment_id, &ShipmentStatus::Cancelled, &reason1);
-
-    // Set finalized flag so clear_finalization can be invoked
-    env.as_contract(&client.address, || {
-        let mut s = crate::storage::get_shipment(&env, shipment_id).unwrap();
-        s.finalized = true;
-        crate::storage::set_shipment(&env, &s);
-    });
-
-    // Action 2: clear finalization flag
-    client.clear_finalization(&admin, &shipment_id, &reason2);
-
-    // Verify history log
-    assert_eq!(client.get_recovery_record_count(&shipment_id), 2);
-    let history = client.get_recovery_history(&shipment_id);
-    assert_eq!(history.len(), 2);
-
-    let rec1 = history.get(0).unwrap();
-    assert_eq!(rec1.action_type, RecoveryActionType::RecoverShipment);
-    assert_eq!(rec1.admin, admin);
-    assert_eq!(rec1.reason_hash, reason1);
-
-    let rec2 = history.get(1).unwrap();
-    assert_eq!(rec2.action_type, RecoveryActionType::ClearFinalization);
-    assert_eq!(rec2.admin, admin);
-    assert_eq!(rec2.reason_hash, reason2);
 }

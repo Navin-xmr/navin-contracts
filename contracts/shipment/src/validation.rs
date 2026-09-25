@@ -95,7 +95,7 @@ pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
         return Err(NavinError::InvalidSymbol);
     }
     if !(12..=20).contains(&len) {
-        return Err(NavinError::InvalidShipmentInput);
+        return Err(NavinError::InvalidSymbol);
     }
 
     Ok(())
@@ -437,20 +437,7 @@ pub fn preflight_check_shipment_available(
         .get(&crate::types::DataKey::Shipment(shipment_id));
 
     match shipment {
-        None => {
-            // Not in persistent storage. Check if it was archived (temporary storage).
-            // If it exists in temporary storage the shipment is archived and unavailable
-            // for mutations; surface ShipmentUnavailable so callers get a distinct,
-            // actionable error rather than the ambiguous ShipmentNotFound.
-            let archived: Option<Shipment> = env
-                .storage()
-                .temporary()
-                .get(&crate::types::DataKey::ArchivedShipment(shipment_id));
-            if archived.is_some() {
-                return Err(NavinError::ShipmentUnavailable);
-            }
-            Err(NavinError::ShipmentNotFound)
-        }
+        None => Err(NavinError::ShipmentNotFound),
         Some(shipment) => {
             // Check if shipment is finalized (locked)
             if shipment.finalized {
@@ -658,7 +645,6 @@ mod tests {
             updated_at: 100,
             escrow_amount: 10,
             total_escrow: 10,
-            metadata: None,
             payment_milestones: soroban_sdk::Vec::new(&env),
             paid_milestones: soroban_sdk::Vec::new(&env),
             milestones_completed: soroban_sdk::Vec::new(&env),
@@ -684,7 +670,6 @@ mod tests {
             updated_at: 100,
             escrow_amount: 20,
             total_escrow: 10,
-            metadata: None,
             payment_milestones: soroban_sdk::Vec::new(&env),
             paid_milestones: soroban_sdk::Vec::new(&env),
             milestones_completed: soroban_sdk::Vec::new(&env),
@@ -1105,7 +1090,7 @@ mod symbol_validation_tests {
         let result = validate_symbol(&env, &oversized_symbol);
         assert_eq!(
             result,
-            Err(NavinError::InvalidShipmentInput),
+            Err(NavinError::InvalidSymbol),
             "Oversized symbol must return InvalidShipmentInput"
         );
     }
@@ -1133,7 +1118,7 @@ mod symbol_validation_tests {
         let value = Symbol::new(&env, &long);
         assert_eq!(
             validate_metadata_symbols(&env, &key, &value),
-            Err(NavinError::InvalidShipmentInput),
+            Err(NavinError::InvalidSymbol),
             "13-char metadata value must be rejected"
         );
     }
@@ -1158,7 +1143,7 @@ mod symbol_validation_tests {
         let value = Symbol::new(&env, "ok");
         assert_eq!(
             validate_metadata_symbols(&env, &key, &value),
-            Err(NavinError::InvalidShipmentInput),
+            Err(NavinError::InvalidSymbol),
             "13-char metadata key must be rejected"
         );
     }
@@ -1185,7 +1170,7 @@ mod symbol_validation_tests {
             let s: std::string::String = "A".repeat(len);
             assert_eq!(
                 validate_metadata_symbols(&env, &key, &Symbol::new(&env, &s)),
-                Err(NavinError::InvalidShipmentInput),
+                Err(NavinError::InvalidSymbol),
                 "metadata value of length {len} must be rejected"
             );
         }
