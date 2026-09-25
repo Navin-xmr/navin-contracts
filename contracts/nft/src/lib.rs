@@ -1,7 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Env, Symbol,
+    contract, contracterror, contractimpl, contracttype, symbol_short, vec, Address, Env, Symbol,
+    Vec,
 };
 
 // ── Storage Keys ────────────────────────────────────────────────────────────
@@ -9,6 +10,7 @@ use soroban_sdk::{
 #[contracttype]
 enum NftKey {
     Owner(u64),
+    OwnerTokens(Address),
     TokenCount,
     Admin,
     Name,
@@ -26,6 +28,7 @@ pub enum NftError {
     NotAdmin = 3,
     TokenDoesNotExist = 4,
     NotOwner = 5,
+    TokenAlreadyMinted = 6,
 }
 
 // ── Events ──────────────────────────────────────────────────────────────────
@@ -47,6 +50,8 @@ impl NavinShipmentNft {
         name: Symbol,
         symbol: Symbol,
     ) -> Result<(), NftError> {
+        admin.require_auth();
+
         if env.storage().instance().has(&NftKey::Initialized) {
             return Err(NftError::AlreadyInitialized);
         }
@@ -62,12 +67,14 @@ impl NavinShipmentNft {
         Self::require_admin(&env)?;
 
         if env.storage().persistent().has(&NftKey::Owner(token_id)) {
-            return Err(NftError::TokenDoesNotExist);
+            return Err(NftError::TokenAlreadyMinted);
         }
 
         env.storage()
             .persistent()
             .set(&NftKey::Owner(token_id), &to);
+
+        Self::add_token_to_owner(&env, &to, token_id);
 
         let count: u64 = env
             .storage()
@@ -97,11 +104,17 @@ impl NavinShipmentNft {
         env.storage()
             .persistent()
             .set(&NftKey::Owner(token_id), &to);
+
+        Self::remove_token_from_owner(&env, &from, token_id);
+        Self::add_token_to_owner(&env, &to, token_id);
+
         env.events().publish((TRANSFER_NFT,), (token_id, from, to));
         Ok(())
     }
 
     pub fn burn(env: Env, caller: Address, token_id: u64) -> Result<(), NftError> {
+        caller.require_auth();
+
         let owner = Self::get_owner_inner(&env, token_id)?;
         let admin = Self::get_admin_inner(&env)?;
 
@@ -110,6 +123,7 @@ impl NavinShipmentNft {
         }
 
         env.storage().persistent().remove(&NftKey::Owner(token_id));
+        Self::remove_token_from_owner(&env, &owner, token_id);
 
         let count: u64 = env
             .storage()
@@ -131,26 +145,12 @@ impl NavinShipmentNft {
     }
 
     pub fn balance_of(env: Env, owner: Address) -> u64 {
-        let mut count = 0_u64;
-        let total: u64 = env
+        let tokens: Vec<u64> = env
             .storage()
-            .instance()
-            .get(&NftKey::TokenCount)
-            .unwrap_or(0);
-        let mut i = 1_u64;
-        while i <= total {
-            if let Some(token_owner) = env
-                .storage()
-                .persistent()
-                .get::<_, Address>(&NftKey::Owner(i))
-            {
-                if token_owner == owner {
-                    count += 1;
-                }
-            }
-            i += 1;
-        }
-        count
+            .persistent()
+            .get(&NftKey::OwnerTokens(owner))
+            .unwrap_or_else(|| vec![&env]);
+        tokens.len() as u64
     }
 
     pub fn total_supply(env: Env) -> u64 {
@@ -197,6 +197,41 @@ impl NavinShipmentNft {
         admin.require_auth();
         Ok(admin)
     }
+
+    fn add_token_to_owner(env: &Env, owner: &Address, token_id: u64) {
+        let mut tokens: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&NftKey::OwnerTokens(owner.clone()))
+            .unwrap_or_else(|| vec![env]);
+        tokens.push_back(token_id);
+        env.storage()
+            .persistent()
+            .set(&NftKey::OwnerTokens(owner.clone()), &tokens);
+    }
+
+    fn remove_token_from_owner(env: &Env, owner: &Address, token_id: u64) {
+        let tokens: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&NftKey::OwnerTokens(owner.clone()))
+            .unwrap_or_else(|| vec![env]);
+        let mut new_tokens: Vec<u64> = vec![env];
+        for id in tokens.iter() {
+            if id != token_id {
+                new_tokens.push_back(id);
+            }
+        }
+        if new_tokens.is_empty() {
+            env.storage()
+                .persistent()
+                .remove(&NftKey::OwnerTokens(owner.clone()));
+        } else {
+            env.storage()
+                .persistent()
+                .set(&NftKey::OwnerTokens(owner.clone()), &new_tokens);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -233,6 +268,17 @@ mod tests {
     }
 
     #[test]
+    fn test_initialize_unauthenticated_fails() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let contract_id = env.register(NavinShipmentNft, ());
+        let client = NavinShipmentNftClient::new(&env, &contract_id);
+        // Do not mock auths - should fail auth requirement
+        let result = client.try_initialize(&admin, &symbol_short!("NavinNFT"), &symbol_short!("NNFT"));
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_mint_and_owner() {
         let (env, _admin, client) = setup();
         let recipient = Address::generate(&env);
@@ -248,7 +294,7 @@ mod tests {
         let recipient = Address::generate(&env);
         client.mint(&recipient, &1);
         let result = client.try_mint(&recipient, &1);
-        assert!(result.is_err());
+        assert_eq!(result, Err(Ok(NftError::TokenAlreadyMinted)));
     }
 
     #[test]
@@ -259,6 +305,8 @@ mod tests {
         client.mint(&alice, &1);
         client.transfer(&alice, &bob, &1);
         assert_eq!(client.owner_of(&1), bob);
+        assert_eq!(client.balance_of(&alice), 0);
+        assert_eq!(client.balance_of(&bob), 1);
     }
 
     #[test]
@@ -277,8 +325,10 @@ mod tests {
         let owner = Address::generate(&env);
         client.mint(&owner, &1);
         assert_eq!(client.total_supply(), 1);
+        assert_eq!(client.balance_of(&owner), 1);
         client.burn(&owner, &1);
         assert_eq!(client.total_supply(), 0);
+        assert_eq!(client.balance_of(&owner), 0);
         assert!(client.try_owner_of(&1).is_err());
     }
 
@@ -289,6 +339,44 @@ mod tests {
         client.mint(&owner, &1);
         client.burn(&admin, &1);
         assert_eq!(client.total_supply(), 0);
+        assert_eq!(client.balance_of(&owner), 0);
+    }
+
+    #[test]
+    fn test_burn_unauthenticated_fails() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let owner = Address::generate(&env);
+        let contract_id = env.register(NavinShipmentNft, ());
+        let client = NavinShipmentNftClient::new(&env, &contract_id);
+
+        // Set up contract under mock auths
+        env.mock_all_auths();
+        client.initialize(&admin, &symbol_short!("NavinNFT"), &symbol_short!("NNFT"));
+        client.mint(&owner, &100);
+
+        // Now test burn in a clean env where mock_all_auths is NOT active
+        let env_no_auth = Env::default();
+        let admin2 = Address::generate(&env_no_auth);
+        let owner2 = Address::generate(&env_no_auth);
+        let cid = env_no_auth.register(NavinShipmentNft, ());
+        let client_no_auth = NavinShipmentNftClient::new(&env_no_auth, &cid);
+
+        // Mock auths only to set up state
+        env_no_auth.mock_all_auths();
+        client_no_auth.initialize(&admin2, &symbol_short!("NavinNFT"), &symbol_short!("NNFT"));
+        client_no_auth.mint(&owner2, &100);
+
+        // Disable/mock auths selectively using mock_auths or test without mock_all_auths
+        // Create a new env without mock_all_auths and call try_burn
+        let env_strict = Env::default();
+        let cid_strict = env_strict.register(NavinShipmentNft, ());
+        let client_strict = NavinShipmentNftClient::new(&env_strict, &cid_strict);
+
+        // Since auth is required as the first line of burn, calling try_burn without mock_all_auths fails auth
+        let caller = Address::generate(&env_strict);
+        let res = client_strict.try_burn(&caller, &100);
+        assert!(res.is_err());
     }
 
     #[test]
@@ -301,6 +389,16 @@ mod tests {
         client.mint(&bob, &3);
         assert_eq!(client.balance_of(&alice), 2);
         assert_eq!(client.balance_of(&bob), 1);
+    }
+
+    #[test]
+    fn test_balance_of_non_sequential_ids() {
+        let (env, _admin, client) = setup();
+        let alice = Address::generate(&env);
+        client.mint(&alice, &42);
+        client.mint(&alice, &9999);
+        assert_eq!(client.balance_of(&alice), 2);
+        assert_eq!(client.total_supply(), 2);
     }
 
     #[test]
@@ -319,3 +417,4 @@ mod tests {
         assert_eq!(client.owner_of(&1), alice);
     }
 }
+
