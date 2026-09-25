@@ -171,13 +171,5 @@ fn has_orphaned_counters(env: &Env, shipment_id: u64) -> bool {
     {
         return true;
     }
-    // Recovery record count (implies record entries also exist)
-    if env
-        .storage()
-        .persistent()
-        .has(&DataKey::RecoveryRecordCount(shipment_id))
-    {
-        return true;
-    }
     false
 }
