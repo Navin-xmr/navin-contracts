@@ -2706,16 +2706,16 @@ fn test_execute_proposal_returns_proposal_not_found_variant() {
 
 // ============= Error #25: AlreadyApproved Tests =============
 
-/// Approve the same proposal twice with the same admin — must return AlreadyApproved error.
-/// Two different admins can approve the same proposal — confirms multi-sig flow works.
+// Approve the same proposal twice with the same admin — must return AlreadyApproved error.
+// Two different admins can approve the same proposal — confirms multi-sig flow works.
 // ============= Error #26: InsufficientApprovals Tests =============
 
 // ============= Error #27: NotAnAdmin Tests =============
 
-/// Non-admin (not in admin list) attempts propose_action — must return NotAnAdmin.
-/// Non-admin (not in admin list) attempts approve_action — must return NotAnAdmin.
-/// Admin (in admin list) can propose_action — verifies admin operations succeed.
-/// Different admin (in admin list) can approve_action — verifies admin operations succeed.
+// Non-admin (not in admin list) attempts propose_action — must return NotAnAdmin.
+// Non-admin (not in admin list) attempts approve_action — must return NotAnAdmin.
+// Admin (in admin list) can propose_action — verifies admin operations succeed.
+// Different admin (in admin list) can approve_action — verifies admin operations succeed.
 // ============= Error #28: InvalidMultiSigConfig Tests =============
 
 #[test]
@@ -4141,7 +4141,7 @@ fn test_data_hash_mismatch_error_code_is_45() {
     );
 }
 
-/// assert_delivery_hash returns DataHashMismatch (#45) for an incorrect hash.
+// assert_delivery_hash returns DataHashMismatch (#45) for an incorrect hash.
 // ═══════════════════════════════════════════════════════════════════════════
 // Issue #594 — BreachLimitExceeded (code 51)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -4964,18 +4964,18 @@ fn test_single_execution_succeeds_and_applies_action() {
     );
 }
 
-/// ForceRelease proposal: single execution releases escrow correctly.
-/// Verifies that the `ProposalAlreadyExecuted` guard works for non-Upgrade actions.
+// ForceRelease proposal: single execution releases escrow correctly.
+// Verifies that the `ProposalAlreadyExecuted` guard works for non-Upgrade actions.
 // =============================================================================
 // ForceRelease reason_hash validation and audit trail tests
 // =============================================================================
 
-/// ForceRelease with reason_hash: verifies reason hash is persisted in event stream and queryable.
-/// Ensures audit trail contains the admin-provided reason for the force release.
-/// ForceRelease rejects zero reason_hash, matching force_cancel_shipment behavior.
-/// ForceRefund with reason_hash: verifies reason hash is persisted in event stream and queryable.
-/// Ensures audit trail contains the admin-provided reason for the force refund.
-/// ForceRefund rejects zero reason_hash, matching force_cancel_shipment behavior.
+// ForceRelease with reason_hash: verifies reason hash is persisted in event stream and queryable.
+// Ensures audit trail contains the admin-provided reason for the force release.
+// ForceRelease rejects zero reason_hash, matching force_cancel_shipment behavior.
+// ForceRefund with reason_hash: verifies reason hash is persisted in event stream and queryable.
+// Ensures audit trail contains the admin-provided reason for the force refund.
+// ForceRefund rejects zero reason_hash, matching force_cancel_shipment behavior.
 // ===========================================================================
 // Security regressions: #748, #749, #750, #751
 // ===========================================================================

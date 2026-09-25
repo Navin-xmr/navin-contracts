@@ -322,24 +322,6 @@ pub fn validate_amount(amount: i128) -> Result<(), NavinError> {
     Ok(())
 }
 
-/// Ensure an amount is strictly positive.
-///
-/// # Arguments
-/// * `amount` - The `i128` value to validate.
-///
-/// # Returns
-/// * `Ok(())` if `amount > 0`.
-/// * `Err(NavinError::InvalidAmount)` otherwise.
-pub fn validate_positive_amount(amount: i128) -> Result<(), NavinError> {
-    if amount <= 0 {
-        return Err(NavinError::InsufficientFunds);
-    }
-    if amount > MAX_AMOUNT {
-        return Err(NavinError::InvalidAmount);
-    }
-    Ok(())
-}
-
 /// Ensure a timestamp is neither too far in the past nor too far in the future
 /// relative to the current ledger time.
 ///

@@ -780,51 +780,6 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "EventCount"
-                },
-                {
-                  "u64": 1
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "EventCount"
-                    },
-                    {
-                      "u64": 1
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "u32": 1
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4096
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-            "key": {
-              "vec": [
-                {
                   "symbol": "IdempotencyWindow"
                 },
                 {
@@ -966,12 +921,6 @@
                       "val": {
                         "u32": 0
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "metadata"
-                      },
-                      "val": "void"
                     },
                     {
                       "key": {
@@ -1130,7 +1079,7 @@
                           ]
                         },
                         "val": {
-                          "bytes": "c762c109f164f642d8fdbffb12997a48dd911ba369c01f80f65704837f42d62e"
+                          "bytes": "e425e082f6dd4b765b5bde8652e0a99474a69a9489edb398ba8da8bd39604bbf"
                         }
                       },
                       {

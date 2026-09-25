@@ -102,6 +102,10 @@ pub enum DataKey {
     /// Admin-configured circuit breaker thresholds. Absent means the built-in
     /// default is in effect.
     CircuitBreakerConfig,
+    /// Audit log entry keyed by entry ID.
+    AuditEntry(u64),
+    /// Total count of audit log entries.
+    AuditEntryCount,
     /// Counter for condition breach events emitted for a shipment.
     BreachEventCount(u64),
     /// Contract-wide reentrancy lock flag for escrow-sensitive execution paths.
@@ -120,6 +124,12 @@ pub enum DataKey {
     CreationQuotaConfig,
     /// Deterministic action digest stored on proposal creation.
     ProposalDigest(u64),
+    /// Per-shipment recovery action record (shipment_id, index) -> RecoveryRecord.
+    /// Discriminant reserved for storage compatibility.
+    RecoveryRecord(u64, u32),
+    /// Total count of recovery action records for a shipment.
+    /// Discriminant reserved for storage compatibility.
+    RecoveryRecordCount(u64),
     /// Proposal salt used to prevent replay attacks — salt -> bool.
     ProposalSalt(BytesN<32>),
     /// Prerequisite shipment IDs for a dependent — dependent_id -> Vec<u64>.

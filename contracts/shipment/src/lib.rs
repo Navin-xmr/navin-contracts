@@ -4,6 +4,7 @@ use soroban_sdk::{
     contract, contractimpl, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal, Symbol, Vec,
 };
 
+pub mod audit;
 mod circuit_breaker;
 mod config;
 pub mod error_map;
@@ -13,9 +14,13 @@ mod events;
 mod storage;
 pub mod test;
 #[cfg(test)]
+mod test_audit_trail;
+#[cfg(test)]
 mod test_cross_contract_integration;
 #[cfg(test)]
 mod test_mixed_token_shipments;
+#[cfg(test)]
+mod test_zero_amount_escrow;
 
 #[cfg(test)]
 mod test_event_fixtures;
@@ -1358,6 +1363,8 @@ impl NavinShipment {
             (company.clone(), carrier.clone()),
         );
 
+        audit::log_carrier_whitelisted(&env, &company, &company, &carrier)?;
+
         Ok(())
     }
 
@@ -1400,6 +1407,8 @@ impl NavinShipment {
             (symbol_short!("rm_wl"),),
             (company.clone(), carrier.clone()),
         );
+
+        audit::log_carrier_unwhitelisted(&env, &company, &company, &carrier)?;
 
         Ok(())
     }
@@ -1493,6 +1502,8 @@ impl NavinShipment {
             &Role::Company,
         );
 
+        audit::log_role_assigned(&env, &admin, &company, &Role::Company)?;
+
         Ok(())
     }
 
@@ -1536,6 +1547,8 @@ impl NavinShipment {
             &Role::Carrier,
         );
 
+        audit::log_role_assigned(&env, &admin, &carrier, &Role::Carrier)?;
+
         Ok(())
     }
 
@@ -1576,6 +1589,8 @@ impl NavinShipment {
             &Role::Guardian,
         );
 
+        audit::log_role_assigned(&env, &admin, &guardian, &Role::Guardian)?;
+
         Ok(())
     }
 
@@ -1615,6 +1630,8 @@ impl NavinShipment {
             &operator,
             &Role::Operator,
         );
+
+        audit::log_role_assigned(&env, &admin, &operator, &Role::Operator)?;
 
         Ok(())
     }
@@ -1671,6 +1688,7 @@ impl NavinShipment {
 
         storage::suspend_carrier(&env, &carrier);
         events::emit_carrier_suspended(&env, &admin, &carrier);
+        audit::log_carrier_suspended(&env, &admin, &carrier)?;
         Ok(())
     }
 
@@ -1690,6 +1708,7 @@ impl NavinShipment {
 
         storage::reactivate_carrier(&env, &carrier);
         events::emit_carrier_reactivated(&env, &admin, &carrier);
+        audit::log_carrier_reactivated(&env, &admin, &carrier)?;
         Ok(())
     }
 
@@ -1718,6 +1737,98 @@ impl NavinShipment {
     pub fn is_company_suspended(env: Env, company: Address) -> Result<bool, NavinError> {
         require_initialized(&env)?;
         Ok(storage::is_company_suspended(&env, &company))
+    }
+
+    /// Query the audit trail for every role/permission change recorded against
+    /// a specific address, whether it was the actor (e.g. the admin) or the
+    /// target (e.g. the address whose role changed).
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `target` - The address to fetch audit entries for.
+    ///
+    /// # Returns
+    /// * `Result<Vec<audit::AuditLogEntry>, NavinError>` - All entries recorded
+    ///   with `target` as the affected address, oldest first.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn query_audit_history_for_target(
+        env: Env,
+        target: Address,
+    ) -> Result<Vec<audit::AuditLogEntry>, NavinError> {
+        require_initialized(&env)?;
+        Ok(audit::query_audit_history_for_target(&env, &target))
+    }
+
+    /// Query the audit trail for every role/permission change performed by a
+    /// specific actor (e.g. an admin who assigned, revoked, or suspended roles).
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `actor` - The address that performed the audited actions.
+    ///
+    /// # Returns
+    /// * `Result<Vec<audit::AuditLogEntry>, NavinError>` - All entries recorded
+    ///   with `actor` as the performing address, oldest first.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn query_audit_history_by_actor(
+        env: Env,
+        actor: Address,
+    ) -> Result<Vec<audit::AuditLogEntry>, NavinError> {
+        require_initialized(&env)?;
+        Ok(audit::query_audit_history_by_actor(&env, &actor))
+    }
+
+    /// Query the audit trail for role/permission changes within a timestamp
+    /// window, inclusive of both bounds.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `start_time` - Start timestamp (inclusive).
+    /// * `end_time` - End timestamp (inclusive).
+    ///
+    /// # Returns
+    /// * `Result<Vec<audit::AuditLogEntry>, NavinError>` - All entries whose
+    ///   timestamp falls within `[start_time, end_time]`.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn query_audit_history(
+        env: Env,
+        start_time: u64,
+        end_time: u64,
+    ) -> Result<Vec<audit::AuditLogEntry>, NavinError> {
+        require_initialized(&env)?;
+        Ok(audit::query_audit_history(&env, start_time, end_time))
+    }
+
+    /// Prune audit-trail entries older than `before_timestamp`. Admin only.
+    ///
+    /// The audit log is append-only and otherwise unbounded, so this is the
+    /// only way to reclaim storage from stale `AuditEntry` records on a live
+    /// contract.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Admin address executing the cleanup.
+    /// * `before_timestamp` - Remove entries strictly before this timestamp.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - Number of entries removed.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If called by a non-admin.
+    pub fn cleanup_audit_logs(
+        env: Env,
+        admin: Address,
+        before_timestamp: u64,
+    ) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        audit::cleanup_audit_logs(&env, &admin, before_timestamp)
     }
 
     /// Revoke a previously assigned role from an address.
@@ -1776,6 +1887,8 @@ impl NavinShipment {
             &current_role,
         );
 
+        audit::log_role_revoked(&env, &admin, &target, &current_role)?;
+
         Ok(())
     }
 
@@ -1832,6 +1945,8 @@ impl NavinShipment {
             &current_role,
         );
 
+        audit::log_role_suspended(&env, &admin, &target, &current_role)?;
+
         Ok(())
     }
 
@@ -1883,6 +1998,8 @@ impl NavinShipment {
             &current_role,
         );
 
+        audit::log_role_reactivated(&env, &admin, &target, &current_role)?;
+
         Ok(())
     }
 
@@ -1909,6 +2026,8 @@ impl NavinShipment {
             &Role::Company,
         );
 
+        audit::log_company_suspended(&env, &admin, &company)?;
+
         Ok(())
     }
 
@@ -1934,6 +2053,8 @@ impl NavinShipment {
             &company,
             &Role::Company,
         );
+
+        audit::log_company_reactivated(&env, &admin, &company)?;
 
         Ok(())
     }
@@ -2402,7 +2523,7 @@ impl NavinShipment {
         require_role(&env, &from, Role::Company)?;
 
         with_reentrancy_lock(&env, || {
-            validation::validate_positive_amount(amount)?;
+            validation::validate_amount(amount)?;
 
             let mut shipment =
                 storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
@@ -2821,16 +2942,6 @@ impl NavinShipment {
     ///
     /// # Returns
     /// * `Result<u32, NavinError>` - The number of events emitted for this shipment.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
-    ///
-    /// # Examples
-    /// ```rust
-    /// // let event_count = contract.get_event_count(&env, 1);
-    /// ```
-
     /// Get the event count for a shipment.
     /// Returns the number of events emitted for this shipment.
     /// Returns 0 for brand-new shipments or shipments with no events yet.
@@ -4855,6 +4966,7 @@ impl NavinShipment {
         // Logged here (not in `transfer_admin`) because the transfer only
         // takes effect once the proposed admin accepts it — logging at
         // proposal time would record transfers that never complete.
+        audit::log_admin_transferred(&env, &old_admin, &new_admin)?;
 
         Ok(())
     }

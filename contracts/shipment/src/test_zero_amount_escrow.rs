@@ -37,6 +37,7 @@ fn setup_escrow_env() -> (
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     (env, client, admin, company, receiver, carrier)
 }
@@ -65,7 +66,7 @@ fn test_deposit_escrow_zero_amount_rejected() {
 
     // Attempt to deposit zero amount - should fail
     let result = client.try_deposit_escrow(&company, &shipment_id, &0);
-    assert_eq!(result, Err(Ok(NavinError::InsufficientFunds)));
+    assert_eq!(result, Err(Ok(NavinError::InvalidAmount)));
 }
 
 /// Test that deposit_escrow with negative amount is rejected.
@@ -86,7 +87,7 @@ fn test_deposit_escrow_negative_amount_rejected() {
 
     // Attempt to deposit negative amount - should fail
     let result = client.try_deposit_escrow(&company, &shipment_id, &-100);
-    assert_eq!(result, Err(Ok(NavinError::InsufficientFunds)));
+    assert_eq!(result, Err(Ok(NavinError::InvalidAmount)));
 }
 
 /// Test that positive amounts are accepted in deposit_escrow.
@@ -135,7 +136,7 @@ fn test_deposit_escrow_zero_rejection_consistency() {
     // Multiple attempts with zero - all should fail consistently
     for _ in 0..3 {
         let result = client.try_deposit_escrow(&company, &shipment_id, &0);
-        assert_eq!(result, Err(Ok(NavinError::InsufficientFunds)));
+        assert_eq!(result, Err(Ok(NavinError::InvalidAmount)));
     }
 }
 
@@ -193,8 +194,8 @@ fn test_zero_amount_rejection_multiple_shipments() {
     let result_1 = client.try_deposit_escrow(&company, &shipment_1, &0);
     let result_2 = client.try_deposit_escrow(&company, &shipment_2, &0);
 
-    assert_eq!(result_1, Err(Ok(NavinError::InsufficientFunds)));
-    assert_eq!(result_2, Err(Ok(NavinError::InsufficientFunds)));
+    assert_eq!(result_1, Err(Ok(NavinError::InvalidAmount)));
+    assert_eq!(result_2, Err(Ok(NavinError::InvalidAmount)));
 }
 
 /// Test that release_escrow rejects zero-amount escrow even after shipment delivery.

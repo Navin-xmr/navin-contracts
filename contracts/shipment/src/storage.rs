@@ -1413,15 +1413,6 @@ pub fn get_event_count(env: &Env, shipment_id: u64) -> u32 {
         .unwrap_or(0)
 }
 
-/// Increment the event count for a shipment.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `shipment_id` - The ID of the shipment.
-///
-/// # Returns
-/// No return value.
-
 // ============= Per-Shipment Cleanup Helpers =============
 
 // ============= Milestone Event Counter Storage Functions =============
@@ -1475,13 +1466,6 @@ pub fn set_reentrancy_lock(env: &Env, locked: bool) {
         .instance()
         .set(&DataKey::ReentrancyLock, &locked);
 }
-
-// ============= TTL Health Monitoring Functions =============
-
-/// Check if a shipment exists in persistent storage.
-///
-/// This is used for TTL health monitoring to determine which shipments
-/// are still active in persistent storage vs archived.
 
 // ============= Settlement Tracking Functions =============
 
