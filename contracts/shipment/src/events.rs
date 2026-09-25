@@ -5,10 +5,56 @@
 //! emits structured events containing only the `shipment_id`, relevant
 //! identifiers, and a `data_hash` (SHA-256 of the full off-chain payload).
 //!
-//! ## Shipment Lifecycle Event Schema
+//! ## Event Schemas
 //!
-//! Every shipment lifecycle event carries a minimal tuple:
+//! There is **no single schema shared by every event**. Payload shapes fall
+//! into the families below; the rustdoc table on each `emit_*` function is
+//! the authoritative field list for that event.
+//!
+//! ### Shipment lifecycle — the 5-field tuple
+//!
 //! `(shipment_id, status, data_hash, timestamp, actor)`
+//!
+//! Exactly this shape: `emit_shipment_created`, `emit_status_updated`,
+//! `emit_shipment_cancelled` (hash is the reason hash),
+//! `emit_shipment_expired`, `emit_delivery_success` (timestamp is the
+//! delivery time), `emit_delivery_confirmed`.
+//!
+//! The 5-field prefix followed by extra trailing fields:
+//!
+//! | Emitter                                  | Trailing fields            |
+//! |------------------------------------------|----------------------------|
+//! | `emit_milestone_recorded`                | `checkpoint`               |
+//! | `emit_eta_updated`                       | `new_eta`                  |
+//! | `emit_escrow_deposited` / `_released` / `_refunded` | `amount`        |
+//! | `emit_platform_fee_collected`            | `amount`                   |
+//! | `emit_milestone_payment_released`        | `milestone`, `amount`      |
+//! | `emit_force_cancelled` / `_released` / `_refunded` | escrow amount    |
+//!
+//! `emit_geofence_event` keeps the 5-field layout but carries a `zone_type`
+//! in the `status` slot.
+//!
+//! ### Other families — their own shapes
+//!
+//! These do **not** follow the 5-field tuple; see each function's docs:
+//!
+//! - **Disputes:** `emit_dispute_raised`, `emit_dispute_resolved`,
+//!   `emit_escrow_frozen`.
+//! - **Conditions and handoffs:** `emit_condition_breach`,
+//!   `emit_carrier_handoff`, `emit_carrier_handoff_completed`.
+//! - **Carrier reputation:** `emit_carrier_breach`,
+//!   `emit_carrier_dispute_loss`, `emit_carrier_late_delivery`,
+//!   `emit_carrier_on_time_delivery`, `emit_carrier_milestone_rate`,
+//!   `emit_carrier_suspended`, `emit_carrier_reactivated`.
+//! - **Admin and governance:** `emit_contract_initialized`,
+//!   `emit_contract_upgraded`, `emit_migration_report`,
+//!   `emit_admin_proposed`, `emit_admin_transferred`,
+//!   `emit_contract_paused`, `emit_contract_unpaused`,
+//!   `emit_shipment_limit_updated`, `emit_company_limit_updated`,
+//!   `emit_config_updated`, `emit_proposal_digest`, `emit_quota_set`,
+//!   `emit_fee_config_updated`.
+//! - **RBAC:** `emit_role_revoked`, `emit_role_changed`.
+//! - **Notifications:** `emit_notification`.
 //!
 //! ## Listeners
 //!
