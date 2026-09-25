@@ -2026,7 +2026,7 @@ impl NavinShipment {
         check_idempotency(&env, payload)?;
 
         let now = env.ledger().timestamp();
-        validation::validate_timestamp(&env, deadline)?;
+        validation::validate_deadline(&env, deadline)?;
 
         // Check company active shipment limit
         let current_active = storage::get_active_shipment_count(&env, &sender);
@@ -2156,7 +2156,7 @@ impl NavinShipment {
             validate_milestones(&env, &shipment_input.payment_milestones)?;
             validate_hash(&shipment_input.data_hash)?;
 
-            validation::validate_timestamp(&env, shipment_input.deadline)?;
+            validation::validate_deadline(&env, shipment_input.deadline)?;
 
             let shipment_id = storage::get_shipment_counter(&env)
                 .checked_add(1)

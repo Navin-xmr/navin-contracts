@@ -12,7 +12,7 @@ const MAX_PAST_OFFSET: u64 = 365 * 24 * 60 * 60;
 
 /// How far in the future a timestamp may be before it is rejected (seconds).
 /// Roughly 10 years.
-const MAX_FUTURE_OFFSET: u64 = 10 * 365 * 24 * 60 * 60;
+pub const MAX_FUTURE_OFFSET: u64 = 10 * 365 * 24 * 60 * 60;
 
 /// Expected byte length for SHA-256 hashes (`BytesN<32>`).
 pub const HASH_BYTE_LENGTH: usize = 32;
@@ -533,6 +533,28 @@ pub fn validate_created_at_versus_now(env: &Env, created_at: u64) -> Result<(), 
         return Err(NavinError::InvalidTimestamp);
     }
 
+    Ok(())
+}
+
+/// Validate a shipment deadline: it must be strictly in the future relative to
+/// the current ledger time and must not exceed `MAX_FUTURE_OFFSET` seconds ahead.
+///
+/// This is the correct guard for `create_shipment` / `create_shipments_batch`
+/// because it surfaces `InvalidShipmentDeadline` rather than the generic
+/// `InvalidTimestamp` returned by `validate_timestamp`.
+///
+/// # Arguments
+/// * `env`      - Execution environment (used to read `ledger().timestamp()`).
+/// * `deadline` - The `u64` UNIX deadline timestamp to validate.
+///
+/// # Returns
+/// * `Ok(())` if `now < deadline <= now + MAX_FUTURE_OFFSET`.
+/// * `Err(NavinError::InvalidShipmentDeadline)` otherwise.
+pub fn validate_deadline(env: &Env, deadline: u64) -> Result<(), NavinError> {
+    let now = env.ledger().timestamp();
+    if deadline <= now || deadline > now.saturating_add(MAX_FUTURE_OFFSET) {
+        return Err(NavinError::InvalidShipmentDeadline);
+    }
     Ok(())
 }
 
