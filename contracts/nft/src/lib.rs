@@ -63,6 +63,12 @@ impl NavinShipmentNft {
         Ok(())
     }
 
+    /// Mint `token_id` to `to`.
+    ///
+    /// Re-minting after burn: `burn` removes the `Owner(token_id)` entry, so a
+    /// burned `token_id` counts as unminted and may be minted again (by the
+    /// admin). This is intentional — only a *currently owned* id is rejected
+    /// with `TokenAlreadyMinted`.
     pub fn mint(env: Env, to: Address, token_id: u64) -> Result<u64, NftError> {
         Self::require_admin(&env)?;
 
@@ -377,6 +383,45 @@ mod tests {
         let caller = Address::generate(&env_strict);
         let res = client_strict.try_burn(&caller, &100);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_double_burn_fails() {
+        let (env, _admin, client) = setup();
+        let owner = Address::generate(&env);
+        client.mint(&owner, &1);
+        client.burn(&owner, &1);
+        let result = client.try_burn(&owner, &1);
+        assert_eq!(result, Err(Ok(NftError::TokenDoesNotExist)));
+        assert_eq!(client.total_supply(), 0);
+    }
+
+    #[test]
+    fn test_remint_after_burn_succeeds() {
+        let (env, _admin, client) = setup();
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        client.mint(&alice, &1);
+        client.burn(&alice, &1);
+
+        // A burned id is free again (see the doc comment on `mint`).
+        assert_eq!(client.mint(&bob, &1), 1);
+        assert_eq!(client.owner_of(&1), bob);
+        assert_eq!(client.balance_of(&alice), 0);
+        assert_eq!(client.balance_of(&bob), 1);
+        assert_eq!(client.total_supply(), 1);
+    }
+
+    #[test]
+    fn test_burn_by_unrelated_caller_fails() {
+        let (env, _admin, client) = setup();
+        let owner = Address::generate(&env);
+        let stranger = Address::generate(&env);
+        client.mint(&owner, &1);
+        let result = client.try_burn(&stranger, &1);
+        assert_eq!(result, Err(Ok(NftError::NotOwner)));
+        assert_eq!(client.owner_of(&1), owner);
+        assert_eq!(client.total_supply(), 1);
     }
 
     #[test]
