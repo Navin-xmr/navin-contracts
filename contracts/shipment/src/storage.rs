@@ -1413,6 +1413,23 @@ pub fn get_event_count(env: &Env, shipment_id: u64) -> u32 {
         .unwrap_or(0)
 }
 
+/// Return the contract-wide event counter used by events without a shipment ID.
+pub fn get_global_event_count(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::GlobalEventCount)
+        .unwrap_or(0)
+}
+
+/// Increment and return the next contract-wide event counter.
+pub fn increment_global_event_count(env: &Env) -> u32 {
+    let next = get_global_event_count(env).saturating_add(1);
+    env.storage()
+        .instance()
+        .set(&DataKey::GlobalEventCount, &next);
+    next
+}
+
 /// Increment the event count for a shipment.
 ///
 /// # Arguments

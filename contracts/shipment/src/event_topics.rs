@@ -133,6 +133,21 @@ pub const ROLE_REVOKED: &str = "role_revoked";
 /// Emitted on every RBAC change (assign / revoke / suspend / reactivate).
 pub const ROLE_CHANGED: &str = "role_changed";
 
+/// Emitted when a carrier is added to a company's whitelist.
+pub const WHITELIST_ADDED: &str = "add_wl";
+
+/// Emitted when a carrier is removed from a company's whitelist.
+pub const WHITELIST_REMOVED: &str = "rm_wl";
+
+/// Emitted when multisig configuration is initialized or replaced.
+pub const MULTISIG_INITIALIZED: &str = "ms_init";
+
+/// Emitted when an admin approves a multisig proposal.
+pub const PROPOSAL_APPROVED: &str = "approve";
+
+/// Emitted when a multisig proposal is executed.
+pub const PROPOSAL_EXECUTED: &str = "executed";
+
 // ── Carrier handoff ───────────────────────────────────────────────────────────
 
 /// Emitted when a shipment is handed off to a new carrier.

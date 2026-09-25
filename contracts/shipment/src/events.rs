@@ -27,10 +27,10 @@ use crate::types::{
     BreachType, EscrowFreezeReason, MigrationReport, Role, RoleChangeAction, Severity,
     ShipmentStatus,
 };
-use soroban_sdk::{Address, BytesN, Env, Symbol};
+use soroban_sdk::{Address, Bytes, BytesN, Env, Symbol};
 
-#[cfg(test)]
-use soroban_sdk::Bytes;
+/// Version of the tuple suffix used by schema-aware events.
+pub const EVENT_SCHEMA_VERSION: u32 = 2;
 
 /// Compute the canonical idempotency key for an event.
 ///
@@ -42,7 +42,6 @@ use soroban_sdk::Bytes;
 /// 2. `shipment_id` as big-endian u64 (8 bytes)
 /// 3. `topic_len` (u32 big-endian), `topic_bytes`
 /// 4. `event_counter` as big-endian u32 (4 bytes)
-#[cfg(test)]
 pub fn generate_idempotency_key(
     env: &Env,
     domain: u8,
@@ -69,6 +68,134 @@ pub fn generate_idempotency_key(
 
     payload.append(&Bytes::from_array(env, &event_counter.to_be_bytes()));
     env.crypto().sha256(&payload).into()
+}
+
+fn next_global_event_metadata(env: &Env, topic: &str, domain: u8) -> (u32, BytesN<32>) {
+    let event_counter = crate::storage::increment_global_event_count(env);
+    let idempotency_key =
+        generate_idempotency_key(env, domain, event_counter as u64, topic, event_counter);
+    (event_counter, idempotency_key)
+}
+
+pub fn emit_whitelist_added(env: &Env, company: &Address, carrier: &Address) {
+    let (event_counter, idempotency_key) = next_global_event_metadata(
+        env,
+        crate::event_topics::WHITELIST_ADDED,
+        crate::event_topics::HASH_DOMAIN_RBAC,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::WHITELIST_ADDED),),
+        (
+            company.clone(),
+            carrier.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+}
+
+pub fn emit_whitelist_removed(env: &Env, company: &Address, carrier: &Address) {
+    let (event_counter, idempotency_key) = next_global_event_metadata(
+        env,
+        crate::event_topics::WHITELIST_REMOVED,
+        crate::event_topics::HASH_DOMAIN_RBAC,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::WHITELIST_REMOVED),),
+        (
+            company.clone(),
+            carrier.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+}
+
+pub fn emit_multisig_initialized(env: &Env, admin_count: u32, threshold: u32) {
+    let (event_counter, idempotency_key) = next_global_event_metadata(
+        env,
+        crate::event_topics::MULTISIG_INITIALIZED,
+        crate::event_topics::HASH_DOMAIN_ADMIN,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::MULTISIG_INITIALIZED),),
+        (
+            admin_count,
+            threshold,
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+}
+
+pub fn emit_proposal_approved(
+    env: &Env,
+    proposal_id: u64,
+    approver: &Address,
+    approval_count: u32,
+) {
+    let (event_counter, idempotency_key) = next_global_event_metadata(
+        env,
+        crate::event_topics::PROPOSAL_APPROVED,
+        crate::event_topics::HASH_DOMAIN_ADMIN,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::PROPOSAL_APPROVED),),
+        (
+            proposal_id,
+            approver.clone(),
+            approval_count,
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+}
+
+pub fn emit_proposal_executed(env: &Env, proposal_id: u64, action: &crate::types::AdminAction) {
+    let (event_counter, idempotency_key) = next_global_event_metadata(
+        env,
+        crate::event_topics::PROPOSAL_EXECUTED,
+        crate::event_topics::HASH_DOMAIN_ADMIN,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::PROPOSAL_EXECUTED),),
+        (
+            proposal_id,
+            action.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+}
+
+pub fn emit_circuit_breaker_config_updated(
+    env: &Env,
+    failure_threshold: u32,
+    recovery_timeout: u64,
+    half_open_max_requests: u32,
+) {
+    let (event_counter, idempotency_key) = next_global_event_metadata(
+        env,
+        crate::event_topics::CONFIG_UPDATED,
+        crate::event_topics::HASH_DOMAIN_ADMIN,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::CONFIG_UPDATED),),
+        (
+            Symbol::new(env, "circuit_breaker"),
+            failure_threshold,
+            recovery_timeout,
+            half_open_max_requests,
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
 }
 
 /// Emits a `shipment_created` event when a new shipment is registered.
