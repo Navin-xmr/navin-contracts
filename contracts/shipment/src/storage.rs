@@ -468,11 +468,20 @@ pub fn is_company_suspended(env: &Env, company: &Address) -> bool {
         .unwrap_or(false)
 }
 
-/// Canonical single source of truth helper to retrieve a shipment by ID from persistent storage.
+/// Canonical single source of truth helper to retrieve a shipment by ID.
+/// Checks persistent storage first, then falls back to temporary archived storage.
+/// When an archived shipment is read, its TTL is refreshed to prevent silent eviction.
 pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
-    env.storage()
+    // First check persistent storage (active shipments)
+    if let Some(shipment) = env
+        .storage()
         .persistent()
         .get(&DataKey::Shipment(shipment_id))
+    {
+        return Some(shipment);
+    }
+    // Fallback to archived (temporary) storage; refresh TTL on read
+    get_archived_shipment(env, shipment_id)
 }
 
 /// Canonical single source of truth helper to check whether shipment payload exists in persistent storage.
@@ -505,6 +514,71 @@ pub fn set_shipment(env: &Env, shipment: &Shipment) {
     env.storage()
         .persistent()
         .set(&shipment_key(shipment.id), shipment);
+}
+
+// ============= Archived Shipment (Temporary Storage) =============
+
+/// Archive a shipment by moving it from persistent to temporary storage.
+/// Extends TTL on the archived entry to prevent silent eviction.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment to archive.
+/// * `shipment` - The shipment data to archive.
+pub fn archive_shipment(env: &Env, shipment_id: u64, shipment: &Shipment) {
+    let key = DataKey::ArchivedShipment(shipment_id);
+    env.storage().temporary().set(&key, shipment);
+    // Extend TTL immediately on write - critical to prevent silent eviction
+    let config = crate::config::get_config(env);
+    env.storage()
+        .temporary()
+        .extend_ttl(&key, config.shipment_ttl_threshold, config.shipment_ttl_extension);
+    // Remove from persistent storage
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Shipment(shipment_id));
+}
+
+/// Get an archived shipment from temporary storage.
+/// Refreshes TTL on read to keep archived data alive while it is being accessed.
+pub fn get_archived_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
+    let key = DataKey::ArchivedShipment(shipment_id);
+    let shipment: Option<Shipment> = env.storage().temporary().get(&key);
+    if shipment.is_some() {
+        let config = crate::config::get_config(env);
+        env.storage()
+            .temporary()
+            .extend_ttl(&key, config.shipment_ttl_threshold, config.shipment_ttl_extension);
+    }
+    shipment
+}
+
+/// Check if a shipment is archived in temporary storage.
+pub fn is_shipment_archived(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .temporary()
+        .has(&DataKey::ArchivedShipment(shipment_id))
+}
+
+/// Explicitly refresh TTL for an archived shipment entry.
+/// Useful for background keep-alive jobs.
+pub fn refresh_archived_shipment_ttl(env: &Env, shipment_id: u64) {
+    let key = DataKey::ArchivedShipment(shipment_id);
+    if env.storage().temporary().has(&key) {
+        let config = crate::config::get_config(env);
+        env.storage()
+            .temporary()
+            .extend_ttl(&key, config.shipment_ttl_threshold, config.shipment_ttl_extension);
+    }
+}
+
+/// Extend TTL for archived shipment in temporary storage alongside persistent entries.
+/// Called by `extend_shipment_ttl` to ensure archived entries don't silently expire.
+pub fn extend_archived_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_to: u32) {
+    let key = DataKey::ArchivedShipment(shipment_id);
+    if env.storage().temporary().has(&key) {
+        env.storage().temporary().extend_ttl(&key, threshold, extend_to);
+    }
 }
 
 /// Get escrow amount for a shipment from persistent storage. Returns 0 if unset.
@@ -795,6 +869,21 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
         env.storage()
             .persistent()
             .extend_ttl(&freeze_reason_key, threshold, extend_to);
+    }
+
+    let dependents_key = DataKey::ShipmentDependents(shipment_id);
+    if env.storage().persistent().has(&dependents_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&dependents_key, threshold, extend_to);
+    }
+
+    // Also extend TTL for archived shipment in temporary storage to prevent silent eviction
+    let archived_key = DataKey::ArchivedShipment(shipment_id);
+    if env.storage().temporary().has(&archived_key) {
+        env.storage()
+            .temporary()
+            .extend_ttl(&archived_key, threshold, extend_to);
     }
 }
 
@@ -1713,7 +1802,7 @@ pub fn set_proposal_salt_used(env: &Env, salt: &BytesN<32>) {
 /// Get the prerequisite IDs for a dependent shipment.
 pub fn get_shipment_dependents(env: &Env, dependent_id: u64) -> Vec<u64> {
     env.storage()
-        .instance()
+        .persistent()
         .get(&DataKey::ShipmentDependents(dependent_id))
         .unwrap_or(Vec::new(env))
 }
@@ -1722,13 +1811,82 @@ pub fn get_shipment_dependents(env: &Env, dependent_id: u64) -> Vec<u64> {
 pub fn set_shipment_dependency(env: &Env, dependent_id: u64, prereq_id: u64) {
     let mut prereqs: Vec<u64> = env
         .storage()
-        .instance()
+        .persistent()
         .get(&DataKey::ShipmentDependents(dependent_id))
         .unwrap_or(Vec::new(env));
     prereqs.push_back(prereq_id);
     env.storage()
-        .instance()
+        .persistent()
         .set(&DataKey::ShipmentDependents(dependent_id), &prereqs);
+}
+
+/// Remove the prerequisite list for a dependent shipment from persistent storage.
+///
+/// Called by `archive_shipment`'s purge list to prevent unbounded growth of
+/// `ShipmentDependents` entries (issue #786). Without this, dependents would
+/// remain in instance storage indefinitely and inflate rent.
+pub fn remove_shipment_dependents(env: &Env, dependent_id: u64) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::ShipmentDependents(dependent_id));
+}
+
+/// Purge per-shipment hash/state entries when a shipment reaches a terminal state.
+///
+/// Cleanup list includes Delivered, Cancelled, and PartiallyRefunded (issue #783).
+/// Called by `archive_shipment` in `lib.rs` after moving the shipment to temporary storage;
+/// also exposed for direct invocation in tests. Each key is removed from persistent storage
+/// if present, preventing unbounded growth of `ConfirmationHash`, `LastStatusUpdate`,
+/// `DeadlineWarningEmitted`, `BreachEventCount`, `MilestoneEventCount`, `EventCount`,
+/// `ShipmentDependents`, `EscrowFreezeReasonByShipment`, and `ActiveSettlement` entries.
+pub fn purge_status_hashes(env: &Env, shipment_id: u64) {
+    // Resolve status from persistent or archived storage. Archived shipments are terminal by definition.
+    let status_opt: Option<ShipmentStatus> = if let Some(s) = get_shipment(env, shipment_id) {
+        Some(s.status)
+    } else {
+        None
+    };
+
+    let is_terminal = matches!(
+        status_opt,
+        Some(ShipmentStatus::Delivered)
+            | Some(ShipmentStatus::Cancelled)
+            | Some(ShipmentStatus::PartiallyRefunded)
+    );
+
+    if !is_terminal {
+        return;
+    }
+
+    env.storage()
+        .persistent()
+        .remove(&DataKey::ConfirmationHash(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::LastStatusUpdate(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::DeadlineWarningEmitted(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::BreachEventCount(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::MilestoneEventCount(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::EventCount(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::ShipmentDependents(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::EscrowFreezeReasonByShipment(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::ActiveSettlement(shipment_id));
+    // Also ensure dependents helper is cleared (covers instance->persistent migration per diff in storage.rs)
+    remove_shipment_dependents(env, shipment_id);
 }
 
 #[cfg(test)]
