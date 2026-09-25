@@ -84,10 +84,13 @@ pub fn check_shipment_invariants(env: &Env, shipment_id: u64) -> Vec<Consistency
     }
 
     // Finalization: finalized shipments must be terminal with zero escrow.
+    // Terminal set includes PartiallyRefunded (issue #783) — all three share escrow==0 finalization semantics.
     if shipment.finalized {
         let is_terminal = matches!(
             shipment.status,
-            ShipmentStatus::Delivered | ShipmentStatus::Cancelled
+            ShipmentStatus::Delivered
+                | ShipmentStatus::Cancelled
+                | ShipmentStatus::PartiallyRefunded
         );
         if !is_terminal || shipment.escrow_amount != 0 {
             violations.push_back(ConsistencyViolation::InvalidFinalization(shipment_id));
