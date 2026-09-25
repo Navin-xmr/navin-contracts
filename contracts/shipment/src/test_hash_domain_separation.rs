@@ -13,7 +13,7 @@
 //!
 //! These tests make the guarantee explicit and machine-checkable:
 //!
-//! * **Uniqueness**: all ten `HASH_DOMAIN_*` constants have distinct values.
+//! * **Uniqueness**: all `HASH_DOMAIN_*` constants have distinct values.
 //! * **Cross-family separation**: the same `(shipment_id, event_type, counter)`
 //!   tuple hashed with two different domain tags must produce different outputs.
 //! * **Intra-family reproducibility**: the same four-tuple always produces the
@@ -24,8 +24,7 @@
 mod tests {
     use crate::event_topics::{
         HASH_DOMAIN_ADMIN, HASH_DOMAIN_CARRIER, HASH_DOMAIN_CONDITION, HASH_DOMAIN_DISPUTE,
-        HASH_DOMAIN_ESCROW, HASH_DOMAIN_NOTE, HASH_DOMAIN_NOTIFICATION, HASH_DOMAIN_RBAC,
-        HASH_DOMAIN_SHIPMENT,
+        HASH_DOMAIN_ESCROW, HASH_DOMAIN_NOTIFICATION, HASH_DOMAIN_RBAC, HASH_DOMAIN_SHIPMENT,
     };
     use soroban_sdk::{Bytes, BytesN, Env, Symbol};
 
@@ -58,7 +57,7 @@ mod tests {
 
     // ── 1. Domain constant uniqueness ────────────────────────────────────────
 
-    /// All ten `HASH_DOMAIN_*` constants must have pairwise-distinct `u8` values.
+    /// All `HASH_DOMAIN_*` constants must have pairwise-distinct `u8` values.
     ///
     /// Adding a new family constant must not reuse an existing discriminant —
     /// this test is the first line of defence against that class of mistake.
@@ -73,7 +72,6 @@ mod tests {
             HASH_DOMAIN_ADMIN,
             HASH_DOMAIN_RBAC,
             HASH_DOMAIN_NOTIFICATION,
-            HASH_DOMAIN_NOTE,
         ];
         domains.sort_unstable();
         for pair in domains.windows(2) {
@@ -96,7 +94,6 @@ mod tests {
         assert_eq!(HASH_DOMAIN_ADMIN, 0x06);
         assert_eq!(HASH_DOMAIN_RBAC, 0x07);
         assert_eq!(HASH_DOMAIN_NOTIFICATION, 0x08);
-        assert_eq!(HASH_DOMAIN_NOTE, 0x09);
     }
 
     // ── 2. Cross-family separation ───────────────────────────────────────────
@@ -133,7 +130,6 @@ mod tests {
             event_type,
             counter,
         );
-        let key_note = compute_key(&env, HASH_DOMAIN_NOTE, shipment_id, event_type, counter);
 
         let all_keys = [
             key_shipment,
@@ -144,7 +140,6 @@ mod tests {
             key_admin,
             key_rbac,
             key_notification,
-            key_note,
         ];
 
         // Every pair must be distinct.
@@ -486,7 +481,6 @@ mod tests {
             crate::event_topics::CARRIER_HANDOFF,
             crate::event_topics::ROLE_REVOKED,
             crate::event_topics::NOTIFICATION,
-            crate::event_topics::NOTE_APPENDED,
             crate::event_topics::PLATFORM_FEE_COLLECTED,
         ];
 
