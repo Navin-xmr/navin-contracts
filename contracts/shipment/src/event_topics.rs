@@ -198,8 +198,7 @@ pub const HASH_DOMAIN_CARRIER: u8 = 0x05;
 /// Domain tag for admin / governance events
 /// (`admin_proposed`, `admin_transferred`, `contract_upgraded`,
 ///  `migration_reported`, `contract_paused`, `contract_unpaused`,
-///  `force_cancelled`, `recovery_event`, `escrow_unlock_event`,
-///  `finalization_clear_event`).
+///  `force_cancelled`).
 #[allow(dead_code)]
 pub const HASH_DOMAIN_ADMIN: u8 = 0x06;
 

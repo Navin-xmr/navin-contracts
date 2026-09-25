@@ -75,11 +75,72 @@ mod test_milestone_sum_invalid;
 mod test_whitelist_multicompany;
 
 #[cfg(test)]
+mod test_auth;
+#[cfg(test)]
+mod test_auto_dispute;
+#[cfg(test)]
+mod test_batch_queries;
+#[cfg(test)]
+mod test_consistency;
+#[cfg(test)]
+mod test_counter_overflow;
+#[cfg(test)]
+mod test_deadline_grace;
+#[cfg(test)]
+mod test_diagnostics;
+#[cfg(test)]
+mod test_invalid_shipment_input;
+#[cfg(test)]
+mod test_pause;
+#[cfg(test)]
+mod test_performance;
+#[cfg(test)]
+mod test_precondition_guards;
+#[cfg(test)]
+mod test_reentrancy_guard;
+#[cfg(test)]
+mod test_rollback;
+#[cfg(test)]
+mod test_settlement_transitions;
+#[cfg(test)]
+mod test_suspension;
+#[cfg(test)]
+mod test_suspension_cascade;
+#[cfg(test)]
+mod test_ttl_health;
+#[cfg(test)]
+mod test_verification;
+#[cfg(test)]
+mod test_zero_amount_escrow;
+#[cfg(test)]
+mod test_hash_domain_separation;
+#[cfg(test)]
+mod test_iot_verification;
+#[cfg(test)]
+mod test_archive_restore_consistency;
+#[cfg(test)]
+mod test_audit_trail;
+
+#[cfg(test)]
 mod fuzz_rbac_authorization;
 #[cfg(test)]
 mod fuzz_role_assignment;
 #[cfg(test)]
+mod fuzz_escrow_arithmetic;
+#[cfg(test)]
+mod fuzz_escrow_lifecycle;
+#[cfg(test)]
+mod fuzz_milestone_releases;
+#[cfg(test)]
+mod fuzz_storage_operations;
+#[cfg(test)]
+mod fuzz_ttl_management;
+#[cfg(test)]
+mod fuzz_wallet_auth_integration;
+#[cfg(test)]
 mod preservation_property_tests;
+#[cfg(test)]
+mod consistency;
 
 pub use circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState};
 pub use config::*;
