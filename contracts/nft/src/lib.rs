@@ -151,12 +151,16 @@ impl NavinShipmentNft {
     }
 
     pub fn balance_of(env: Env, owner: Address) -> u64 {
-        let tokens: Vec<u64> = env
-            .storage()
+        Self::tokens_of_owner(env, owner).len() as u64
+    }
+
+    /// Token ids currently held by `owner`, read from the per-owner index
+    /// (a single storage read, no scan over all token ids).
+    pub fn tokens_of_owner(env: Env, owner: Address) -> Vec<u64> {
+        env.storage()
             .persistent()
             .get(&NftKey::OwnerTokens(owner))
-            .unwrap_or_else(|| vec![&env]);
-        tokens.len() as u64
+            .unwrap_or_else(|| vec![&env])
     }
 
     pub fn total_supply(env: Env) -> u64 {
@@ -444,6 +448,41 @@ mod tests {
         client.mint(&alice, &9999);
         assert_eq!(client.balance_of(&alice), 2);
         assert_eq!(client.total_supply(), 2);
+    }
+
+    #[test]
+    fn test_tokens_of_owner_tracks_mint() {
+        let (env, _admin, client) = setup();
+        let alice = Address::generate(&env);
+        assert_eq!(client.tokens_of_owner(&alice), vec![&env]);
+        client.mint(&alice, &7);
+        client.mint(&alice, &42);
+        assert_eq!(client.tokens_of_owner(&alice), vec![&env, 7_u64, 42_u64]);
+    }
+
+    #[test]
+    fn test_tokens_of_owner_moves_on_transfer() {
+        let (env, _admin, client) = setup();
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        client.mint(&alice, &1);
+        client.mint(&alice, &2);
+        client.transfer(&alice, &bob, &1);
+        assert_eq!(client.tokens_of_owner(&alice), vec![&env, 2_u64]);
+        assert_eq!(client.tokens_of_owner(&bob), vec![&env, 1_u64]);
+    }
+
+    #[test]
+    fn test_tokens_of_owner_pruned_on_burn() {
+        let (env, _admin, client) = setup();
+        let alice = Address::generate(&env);
+        client.mint(&alice, &1);
+        client.mint(&alice, &2);
+        client.burn(&alice, &1);
+        assert_eq!(client.tokens_of_owner(&alice), vec![&env, 2_u64]);
+        client.burn(&alice, &2);
+        assert_eq!(client.tokens_of_owner(&alice), vec![&env]);
+        assert_eq!(client.balance_of(&alice), 0);
     }
 
     #[test]
