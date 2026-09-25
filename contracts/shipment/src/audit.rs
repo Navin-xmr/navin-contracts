@@ -266,6 +266,168 @@ pub fn log_carrier_whitelisted(
     Ok(entry_id)
 }
 
+/// Log a carrier unwhitelisted event
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `actor` - The actor performing the action (admin or company)
+/// * `_company` - The company whose whitelist was modified
+/// * `carrier` - The carrier removed from the whitelist
+///
+/// # Returns
+/// * `Ok(entry_id)` on success
+/// * `Err(NavinError)` on failure
+pub fn log_carrier_unwhitelisted(
+    env: &Env,
+    actor: &Address,
+    _company: &Address,
+    carrier: &Address,
+) -> Result<u64, NavinError> {
+    let entry_id = get_next_audit_entry_id(env)?;
+    let timestamp = env.ledger().timestamp();
+
+    let entry = AuditLogEntry {
+        entry_id,
+        event_type: AuditEventType::CarrierUnwhitelisted,
+        actor: actor.clone(),
+        target: carrier.clone(),
+        timestamp,
+    };
+
+    store_audit_entry(env, &entry);
+    emit_audit_event(env, &entry);
+
+    Ok(entry_id)
+}
+
+/// Log a company suspension event
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `admin` - The admin performing the suspension
+/// * `company` - The company being suspended
+///
+/// # Returns
+/// * `Ok(entry_id)` on success
+/// * `Err(NavinError)` on failure
+pub fn log_company_suspended(
+    env: &Env,
+    admin: &Address,
+    company: &Address,
+) -> Result<u64, NavinError> {
+    let entry_id = get_next_audit_entry_id(env)?;
+    let timestamp = env.ledger().timestamp();
+
+    let entry = AuditLogEntry {
+        entry_id,
+        event_type: AuditEventType::CompanySuspended,
+        actor: admin.clone(),
+        target: company.clone(),
+        timestamp,
+    };
+
+    store_audit_entry(env, &entry);
+    emit_audit_event(env, &entry);
+
+    Ok(entry_id)
+}
+
+/// Log a company reactivation event
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `admin` - The admin performing the reactivation
+/// * `company` - The company being reactivated
+///
+/// # Returns
+/// * `Ok(entry_id)` on success
+/// * `Err(NavinError)` on failure
+pub fn log_company_reactivated(
+    env: &Env,
+    admin: &Address,
+    company: &Address,
+) -> Result<u64, NavinError> {
+    let entry_id = get_next_audit_entry_id(env)?;
+    let timestamp = env.ledger().timestamp();
+
+    let entry = AuditLogEntry {
+        entry_id,
+        event_type: AuditEventType::CompanyReactivated,
+        actor: admin.clone(),
+        target: company.clone(),
+        timestamp,
+    };
+
+    store_audit_entry(env, &entry);
+    emit_audit_event(env, &entry);
+
+    Ok(entry_id)
+}
+
+/// Log a carrier suspension event
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `admin` - The admin performing the suspension
+/// * `carrier` - The carrier being suspended
+///
+/// # Returns
+/// * `Ok(entry_id)` on success
+/// * `Err(NavinError)` on failure
+pub fn log_carrier_suspended(
+    env: &Env,
+    admin: &Address,
+    carrier: &Address,
+) -> Result<u64, NavinError> {
+    let entry_id = get_next_audit_entry_id(env)?;
+    let timestamp = env.ledger().timestamp();
+
+    let entry = AuditLogEntry {
+        entry_id,
+        event_type: AuditEventType::CarrierSuspended,
+        actor: admin.clone(),
+        target: carrier.clone(),
+        timestamp,
+    };
+
+    store_audit_entry(env, &entry);
+    emit_audit_event(env, &entry);
+
+    Ok(entry_id)
+}
+
+/// Log a carrier reactivation event
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `admin` - The admin performing the reactivation
+/// * `carrier` - The carrier being reactivated
+///
+/// # Returns
+/// * `Ok(entry_id)` on success
+/// * `Err(NavinError)` on failure
+pub fn log_carrier_reactivated(
+    env: &Env,
+    admin: &Address,
+    carrier: &Address,
+) -> Result<u64, NavinError> {
+    let entry_id = get_next_audit_entry_id(env)?;
+    let timestamp = env.ledger().timestamp();
+
+    let entry = AuditLogEntry {
+        entry_id,
+        event_type: AuditEventType::CarrierReactivated,
+        actor: admin.clone(),
+        target: carrier.clone(),
+        timestamp,
+    };
+
+    store_audit_entry(env, &entry);
+    emit_audit_event(env, &entry);
+
+    Ok(entry_id)
+}
+
 /// Query audit history by date range
 ///
 /// # Arguments
@@ -465,9 +627,20 @@ mod tests {
         let revoked = AuditEventType::RoleRevoked;
         let suspended = AuditEventType::RoleSuspended;
         let reactivated = AuditEventType::RoleReactivated;
+        let admin_transferred = AuditEventType::AdminTransferred;
+        let whitelisted = AuditEventType::CarrierWhitelisted;
+        let unwhitelisted = AuditEventType::CarrierUnwhitelisted;
+        let comp_suspended = AuditEventType::CompanySuspended;
+        let comp_reactivated = AuditEventType::CompanyReactivated;
+        let carr_suspended = AuditEventType::CarrierSuspended;
+        let carr_reactivated = AuditEventType::CarrierReactivated;
 
         assert_ne!(assigned, revoked);
         assert_ne!(suspended, reactivated);
+        assert_ne!(whitelisted, unwhitelisted);
+        assert_ne!(comp_suspended, comp_reactivated);
+        assert_ne!(carr_suspended, carr_reactivated);
+        assert_ne!(admin_transferred, assigned);
     }
 
     #[test]
