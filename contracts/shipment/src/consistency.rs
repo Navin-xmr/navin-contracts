@@ -173,7 +173,7 @@ pub fn check_batch_consistency(env: &Env, ids: &Vec<u64>) -> Vec<ConsistencyViol
 /// * `env` - Execution environment.
 pub fn check_status_count_consistency(env: &Env) -> Vec<ConsistencyViolation> {
     let mut violations: Vec<ConsistencyViolation> = Vec::new(env);
-    let total = storage::get_shipment_count(env);
+    let total = storage::get_shipment_counter(env);
 
     // Scan all shipments and count actual statuses.
     use crate::types::ShipmentStatus::*;
@@ -219,7 +219,7 @@ pub fn check_status_count_consistency(env: &Env) -> Vec<ConsistencyViolation> {
 /// # Arguments
 /// * `env` - Execution environment.
 pub fn check_all_consistency(env: &Env) -> Vec<ConsistencyViolation> {
-    let total = storage::get_shipment_count(env);
+    let total = storage::get_shipment_counter(env);
     let mut violations: Vec<ConsistencyViolation> = Vec::new(env);
 
     for id in 1..=total {

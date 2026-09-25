@@ -933,7 +933,7 @@ fn test_get_escrow_balance_after_deposit() {
     );
 
     env.as_contract(&client.address, || {
-        crate::storage::set_escrow_balance(&env, shipment_id, 500_000);
+        crate::storage::set_escrow(&env, shipment_id, 500_000);
     });
 
     assert_eq!(client.get_escrow_balance(&shipment_id), 500_000);
@@ -961,12 +961,12 @@ fn test_get_escrow_balance_after_release() {
     );
 
     env.as_contract(&client.address, || {
-        crate::storage::set_escrow_balance(&env, shipment_id, 1_000_000);
+        crate::storage::set_escrow(&env, shipment_id, 1_000_000);
     });
     assert_eq!(client.get_escrow_balance(&shipment_id), 1_000_000);
 
     env.as_contract(&client.address, || {
-        crate::storage::remove_escrow_balance(&env, shipment_id);
+        crate::storage::remove_escrow(&env, shipment_id);
     });
 
     assert_eq!(client.get_escrow_balance(&shipment_id), 0);

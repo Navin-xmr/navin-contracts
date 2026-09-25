@@ -4090,12 +4090,12 @@ impl NavinShipment {
         }
 
         if escrow_amount > 0 {
-            storage::remove_escrow_balance(&env, shipment_id);
+            storage::remove_escrow(&env, shipment_id);
             events::emit_escrow_released(&env, shipment_id, &shipment.sender, escrow_amount);
         }
         finalize_if_settled(&env, &mut shipment);
         persist_shipment(&env, &shipment)?;
-        storage::remove_escrow_balance(&env, shipment_id);
+        storage::remove_escrow(&env, shipment_id);
         extend_shipment_ttl(&env, shipment_id);
 
         events::emit_shipment_cancelled(&env, shipment_id, &caller, &reason_hash);
@@ -4759,7 +4759,7 @@ impl NavinShipment {
 
         finalize_if_settled(&env, &mut shipment);
         persist_shipment(&env, &shipment)?;
-        storage::remove_escrow_balance(&env, shipment_id);
+        storage::remove_escrow(&env, shipment_id);
         extend_shipment_ttl(&env, shipment_id);
 
         match resolution {
@@ -5658,7 +5658,7 @@ impl NavinShipment {
         storage::decrement_active_shipment_count(&env, &shipment.sender);
 
         if escrow_amount > 0 {
-            storage::remove_escrow_balance(&env, shipment_id);
+            storage::remove_escrow(&env, shipment_id);
 
             let token_contract =
                 storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
@@ -5921,7 +5921,7 @@ impl NavinShipment {
         require_initialized(&env)?;
 
         let config = config::get_config(&env);
-        let total = storage::get_shipment_count(&env);
+        let total = storage::get_shipment_counter(&env);
 
         // Sample all shipments (cap at 100 for budget safety on large sets)
         let sample_limit: u64 = 100;

@@ -187,23 +187,6 @@ pub fn increment_shipment_counter(env: &Env) -> u64 {
     next
 }
 
-/// Alternate name requested: returns the shipment count (wrapper).
-///
-/// # Arguments
-/// * `env` - The execution environment.
-///
-/// # Returns
-/// * `u64` - The shipment count.
-///
-/// # Examples
-/// ```rust
-/// // let count = storage::get_shipment_count(&env);
-/// ```
-#[allow(dead_code)]
-pub fn get_shipment_count(env: &Env) -> u64 {
-    get_shipment_counter(env)
-}
-
 /// Alternate name requested: increment shipment count and return new value.
 ///
 /// # Arguments
@@ -661,25 +644,6 @@ pub fn remove_escrow(env: &Env, shipment_id: u64) {
     env.storage().persistent().remove(&escrow_key(shipment_id));
 }
 
-/// Backwards-compatible name used by tests: set escrow balance.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `shipment_id` - The ID of the shipment.
-/// * `amount` - Escrow balance to set.
-///
-/// # Returns
-/// No return value.
-///
-/// # Examples
-/// ```rust
-/// // storage::set_escrow_balance(&env, 1, 1000);
-/// ```
-#[allow(dead_code)]
-pub fn set_escrow_balance(env: &Env, shipment_id: u64, amount: i128) {
-    set_escrow(env, shipment_id, amount);
-}
-
 // ── Storage Key Wrapper Helpers ──────────────────────────────────────────────────
 // These helpers wrap common storage key construction patterns, making repeated
 // key assembly easier to read and harder to get wrong.
@@ -764,24 +728,6 @@ pub fn confirmation_hash_key(shipment_id: u64) -> DataKey {
 #[inline]
 pub fn escrow_freeze_reason_key(shipment_id: u64) -> DataKey {
     DataKey::EscrowFreezeReasonByShipment(shipment_id)
-}
-
-/// Backwards-compatible name used by tests: remove escrow balance.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `shipment_id` - The ID of the shipment.
-///
-/// # Returns
-/// No return value.
-///
-/// # Examples
-/// ```rust
-/// // storage::remove_escrow_balance(&env, 1);
-/// ```
-#[allow(dead_code)]
-pub fn remove_escrow_balance(env: &Env, shipment_id: u64) {
-    remove_escrow(env, shipment_id);
 }
 
 /// Store confirmation hash for a shipment in persistent storage.
