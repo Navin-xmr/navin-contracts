@@ -171,8 +171,7 @@ pub const EVIDENCE_ADDED: &str = "evidence_added";
 
 /// Domain tag for shipment-lifecycle events
 /// (`shipment_created`, `status_updated`, `milestone_recorded`,
-///  `shipment_cancelled`, `shipment_expired`, `shipment_archived`,
-///  `delivery_success`).
+///  `shipment_cancelled`, `shipment_expired`, `delivery_success`).
 pub const HASH_DOMAIN_SHIPMENT: u8 = 0x01;
 
 /// Domain tag for escrow-operation events
