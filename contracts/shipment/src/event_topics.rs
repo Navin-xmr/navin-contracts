@@ -214,9 +214,25 @@ pub const HASH_DOMAIN_PLATFORM: u8 = 0x0B;
 /// Contains a structured reason code (`EscrowFreezeReason`) so that
 /// indexers can classify the freeze without parsing free-form text.
 pub const ESCROW_FROZEN: &str = "escrow_frozen";
+
+// ── Abbreviated legacy topics ────────────────────────────────────────────────
+//
+// The three topics below deliberately break the full snake_case naming used
+// everywhere else. They predate that convention and are already emitted on
+// chain, so indexers filter on these exact strings; renaming them would
+// silently stop matching existing events. Keep the strings as they are and
+// give any *new* topic a full descriptive name.
+
+/// Emitted once by `initialize`. Topic string `"init"` (legacy abbreviation
+/// of `contract_initialized`).
 pub const CONTRACT_INITIALIZED: &str = "init";
+/// Emitted by `set_shipment_limit`. Topic
+/// string `"set_limit"` (legacy abbreviation of `shipment_limit_updated`).
 pub const SHIPMENT_LIMIT_UPDATED: &str = "set_limit";
+/// Emitted by `set_company_shipment_limit`. Topic
+/// string `"set_cmp_limit"` (legacy abbreviation of `company_limit_updated`).
 pub const COMPANY_LIMIT_UPDATED: &str = "set_cmp_limit";
+
 pub const CARRIER_SUSPENDED: &str = "carrier_suspended";
 pub const CARRIER_REACTIVATED: &str = "carrier_reactivated";
 pub const DELIVERY_CONFIRMED: &str = "delivery_confirmed";
