@@ -396,7 +396,8 @@ fn effective_batch_query_limit(env: &Env) -> u32 {
 
 fn finalize_if_settled(_env: &Env, shipment: &mut Shipment) {
     if (shipment.status == ShipmentStatus::Delivered
-        || shipment.status == ShipmentStatus::Cancelled)
+        || shipment.status == ShipmentStatus::Cancelled
+        || shipment.status == ShipmentStatus::PartiallyRefunded)
         && shipment.escrow_amount == 0
     {
         shipment.finalized = true;
@@ -1115,9 +1116,17 @@ impl NavinShipment {
             created_count: storage::get_status_count(&env, &ShipmentStatus::Created),
             in_transit_count: storage::get_status_count(&env, &ShipmentStatus::InTransit),
             at_checkpoint_count: storage::get_status_count(&env, &ShipmentStatus::AtCheckpoint),
+            partially_delivered_count: storage::get_status_count(
+                &env,
+                &ShipmentStatus::PartiallyDelivered,
+            ),
             delivered_count: storage::get_status_count(&env, &ShipmentStatus::Delivered),
             disputed_count: storage::get_status_count(&env, &ShipmentStatus::Disputed),
             cancelled_count: storage::get_status_count(&env, &ShipmentStatus::Cancelled),
+            partially_refunded_count: storage::get_status_count(
+                &env,
+                &ShipmentStatus::PartiallyRefunded,
+            ),
         })
     }
 
@@ -1144,6 +1153,10 @@ impl NavinShipment {
             delivered: storage::get_status_count(&env, &ShipmentStatus::Delivered),
             disputed: storage::get_status_count(&env, &ShipmentStatus::Disputed),
             cancelled: storage::get_status_count(&env, &ShipmentStatus::Cancelled),
+            partially_refunded: storage::get_status_count(
+                &env,
+                &ShipmentStatus::PartiallyRefunded,
+            ),
         })
     }
 
@@ -2237,6 +2250,35 @@ impl NavinShipment {
     pub fn get_shipment(env: Env, shipment_id: u64) -> Result<Shipment, NavinError> {
         require_initialized(&env)?;
         storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)
+    }
+
+    /// Archive a shipment by moving it from persistent to temporary storage.
+    /// This reduces state rent costs for completed shipments.
+    /// Only admin can archive, and shipment must be in a terminal state (Delivered or Cancelled).
+    /// TTL is extended on write and on subsequent reads to prevent silent eviction.
+    pub fn archive_shipment(env: Env, admin: Address, shipment_id: u64) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        // Only allow archiving terminal state shipments (must not be already archived)
+        if storage::is_shipment_archived(&env, shipment_id) {
+            return Err(NavinError::ShipmentAlreadyCompleted);
+        }
+        if shipment.status != ShipmentStatus::Delivered
+            && shipment.status != ShipmentStatus::Cancelled
+            && shipment.status != ShipmentStatus::PartiallyRefunded
+        {
+            return Err(NavinError::InvalidStatus);
+        }
+        storage::archive_shipment(&env, shipment_id, &shipment);
+        // Purge status hashes for terminal states (including PartiallyRefunded) — cleanup list per issue #783
+        storage::purge_status_hashes(&env, shipment_id);
+        events::emit_shipment_archived(&env, shipment_id, env.ledger().timestamp());
+        Ok(())
     }
 
     /// Retrieve the immutable creator identity for a shipment.
@@ -4414,52 +4456,110 @@ impl NavinShipment {
         shipment.updated_at = env.ledger().timestamp();
         shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
-        let recipient = match resolution {
+        // Resolve recipient/status per resolution; PartialRefund produces PartiallyRefunded via split amounts / partial flag (issue #783)
+        match resolution {
             DisputeResolution::ReleaseToCarrier => {
                 shipment.status = ShipmentStatus::Delivered;
-                shipment.carrier.clone()
             }
             DisputeResolution::RefundToCompany => {
                 shipment.status = ShipmentStatus::Cancelled;
-                shipment.sender.clone()
             }
-        };
+            DisputeResolution::PartialRefund => {
+                shipment.status = ShipmentStatus::PartiallyRefunded;
+            }
+        }
 
         // #695 — nothing to move on-chain when escrow is already zero (e.g.
         // fully released via milestone payments before the dispute was
         // raised); skip settlement/transfer entirely and just apply the
         // status transition below.
         if escrow_amount > 0 {
-            // Transfer tokens from this contract to recipient
             let token_contract =
                 storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
             let contract_address = env.current_contract_address();
 
-            // Create settlement record in Pending state
-            let operation = match resolution {
-                DisputeResolution::ReleaseToCarrier => SettlementOperation::Release,
-                DisputeResolution::RefundToCompany => SettlementOperation::Refund,
-            };
-            let settlement_id = create_settlement(
-                &env,
-                shipment_id,
-                operation,
-                escrow_amount,
-                &contract_address,
-                &recipient,
-            )?;
-
-            // Transfer tokens
-            invoke_token_transfer(
-                &env,
-                &token_contract,
-                &contract_address,
-                &recipient,
-                escrow_amount,
-            )?;
-
-            // Mark settlement as completed
-            complete_settlement(&env, settlement_id, shipment_id)?;
+            match resolution {
+                DisputeResolution::ReleaseToCarrier => {
+                    let recipient = shipment.carrier.clone();
+                    let settlement_id = create_settlement(
+                        &env,
+                        shipment_id,
+                        SettlementOperation::Release,
+                        escrow_amount,
+                        &contract_address,
+                        &recipient,
+                    )?;
+                    invoke_token_transfer(
+                        &env,
+                        &token_contract,
+                        &contract_address,
+                        &recipient,
+                        escrow_amount,
+                    )?;
+                    complete_settlement(&env, settlement_id, shipment_id)?;
+                }
+                DisputeResolution::RefundToCompany => {
+                    let recipient = shipment.sender.clone();
+                    let settlement_id = create_settlement(
+                        &env,
+                        shipment_id,
+                        SettlementOperation::Refund,
+                        escrow_amount,
+                        &contract_address,
+                        &recipient,
+                    )?;
+                    invoke_token_transfer(
+                        &env,
+                        &token_contract,
+                        &contract_address,
+                        &recipient,
+                        escrow_amount,
+                    )?;
+                    complete_settlement(&env, settlement_id, shipment_id)?;
+                }
+                DisputeResolution::PartialRefund => {
+                    // Arbiter-provided partial flag: split escrow evenly between carrier and company.
+                    // This creates two on-chain transfers and produces the previously-unreachable PartiallyRefunded status.
+                    let carrier_share = escrow_amount / 2;
+                    let company_share = escrow_amount - carrier_share;
+                    if carrier_share > 0 {
+                        let settlement_id = create_settlement(
+                            &env,
+                            shipment_id,
+                            SettlementOperation::Release,
+                            carrier_share,
+                            &contract_address,
+                            &shipment.carrier,
+                        )?;
+                        invoke_token_transfer(
+                            &env,
+                            &token_contract,
+                            &contract_address,
+                            &shipment.carrier,
+                            carrier_share,
+                        )?;
+                        complete_settlement(&env, settlement_id, shipment_id)?;
+                    }
+                    if company_share > 0 {
+                        let settlement_id = create_settlement(
+                            &env,
+                            shipment_id,
+                            SettlementOperation::Refund,
+                            company_share,
+                            &contract_address,
+                            &shipment.sender,
+                        )?;
+                        invoke_token_transfer(
+                            &env,
+                            &token_contract,
+                            &contract_address,
+                            &shipment.sender,
+                            company_share,
+                        )?;
+                        complete_settlement(&env, settlement_id, shipment_id)?;
+                    }
+                }
+            }
         }
 
         storage::decrement_status_count(&env, &ShipmentStatus::Disputed);
@@ -4473,13 +4573,25 @@ impl NavinShipment {
 
         match resolution {
             DisputeResolution::ReleaseToCarrier => {
-                events::emit_escrow_released(&env, shipment_id, &recipient, escrow_amount);
+                events::emit_escrow_released(&env, shipment_id, &shipment.carrier, escrow_amount);
             }
             DisputeResolution::RefundToCompany => {
-                events::emit_escrow_refunded(&env, shipment_id, &recipient, escrow_amount);
+                events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, escrow_amount);
                 // Reputation: carrier lost this dispute
                 events::emit_carrier_dispute_loss(&env, &shipment.carrier, shipment_id);
                 events::emit_shipment_cancelled(&env, shipment_id, &admin, &reason_hash);
+            }
+            DisputeResolution::PartialRefund => {
+                let carrier_share = escrow_amount / 2;
+                let company_share = escrow_amount - carrier_share;
+                if carrier_share > 0 {
+                    events::emit_escrow_released(&env, shipment_id, &shipment.carrier, carrier_share);
+                }
+                if company_share > 0 {
+                    events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, company_share);
+                }
+                // Partial refund still penalizes carrier partially but we emit the loss event for indexing
+                events::emit_carrier_dispute_loss(&env, &shipment.carrier, shipment_id);
             }
         }
 
