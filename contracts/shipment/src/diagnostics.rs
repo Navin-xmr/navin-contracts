@@ -23,7 +23,7 @@ pub fn run_system_health_check(env: &Env) -> SystemHealthStatus {
 
 /// Executes a health check over a specific range of shipment IDs [start_id, start_id + limit - 1].
 pub fn run_system_health_check_range(env: &Env, start_id: u64, limit: u64) -> SystemHealthStatus {
-    let total_shipments = storage::get_shipment_count(env);
+    let total_shipments = storage::get_shipment_counter(env);
 
     let mut sum_of_escrow_balances: i128 = 0;
     let mut active_shipments_counted: u32 = 0;

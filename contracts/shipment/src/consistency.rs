@@ -190,7 +190,7 @@ fn check_status_count_consistency_range(
     end_id: u64,
 ) -> Vec<ConsistencyViolation> {
     let mut violations: Vec<ConsistencyViolation> = Vec::new(env);
-    let total = storage::get_shipment_count(env);
+    let total = storage::get_shipment_counter(env);
 
     if start_id == 0 || start_id > total {
         return violations;
