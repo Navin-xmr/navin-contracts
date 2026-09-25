@@ -12,7 +12,7 @@ const MAX_PAST_OFFSET: u64 = 365 * 24 * 60 * 60;
 
 /// How far in the future a timestamp may be before it is rejected (seconds).
 /// Roughly 10 years.
-const MAX_FUTURE_OFFSET: u64 = 10 * 365 * 24 * 60 * 60;
+pub const MAX_FUTURE_OFFSET: u64 = 10 * 365 * 24 * 60 * 60;
 
 /// Expected byte length for SHA-256 hashes (`BytesN<32>`).
 pub const HASH_BYTE_LENGTH: usize = 32;
@@ -200,15 +200,8 @@ pub fn validate_milestone_symbols(
 ) -> Result<(), NavinError> {
     // Check each milestone symbol for validity and percentage bounds
     for milestone in milestones.iter() {
-        validate_symbol(env, &milestone.0)?;
-        // Character-level guard: only [A-Za-z0-9_] allowed in milestone symbols.
-        // Returns InvalidSymbol for any special-character content.
-        validate_symbol_chars(env, &milestone.0).map_err(|_| NavinError::InvalidSymbol)?;
-        // Reject zero or out-of-bounds percentages (negative values cannot appear
-        // in u32, but values > 100 are equally invalid as percentage weights).
-        // Reject invalid milestone name format with a dedicated error code.
+        validate_symbol_chars(env, &milestone.0).map_err(|_| NavinError::InvalidPaymentMilestoneName)?;
         validate_symbol(env, &milestone.0).map_err(|_| NavinError::InvalidPaymentMilestoneName)?;
-        // Reject zero or out-of-bounds percentages with a dedicated error code.
         if milestone.1 == 0 || milestone.1 > 100 {
             return Err(NavinError::InvalidPaymentMilestones);
         }
@@ -540,6 +533,28 @@ pub fn validate_created_at_versus_now(env: &Env, created_at: u64) -> Result<(), 
         return Err(NavinError::InvalidTimestamp);
     }
 
+    Ok(())
+}
+
+/// Validate a shipment deadline: it must be strictly in the future relative to
+/// the current ledger time and must not exceed `MAX_FUTURE_OFFSET` seconds ahead.
+///
+/// This is the correct guard for `create_shipment` / `create_shipments_batch`
+/// because it surfaces `InvalidShipmentDeadline` rather than the generic
+/// `InvalidTimestamp` returned by `validate_timestamp`.
+///
+/// # Arguments
+/// * `env`      - Execution environment (used to read `ledger().timestamp()`).
+/// * `deadline` - The `u64` UNIX deadline timestamp to validate.
+///
+/// # Returns
+/// * `Ok(())` if `now < deadline <= now + MAX_FUTURE_OFFSET`.
+/// * `Err(NavinError::InvalidShipmentDeadline)` otherwise.
+pub fn validate_deadline(env: &Env, deadline: u64) -> Result<(), NavinError> {
+    let now = env.ledger().timestamp();
+    if deadline <= now || deadline > now.saturating_add(MAX_FUTURE_OFFSET) {
+        return Err(NavinError::InvalidShipmentDeadline);
+    }
     Ok(())
 }
 
