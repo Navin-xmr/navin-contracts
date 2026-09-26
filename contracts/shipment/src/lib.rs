@@ -6084,6 +6084,9 @@ impl NavinShipment {
         window_seconds: u64,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        // #862 — match sibling config setters (e.g. update_config): no config
+        // mutation while the contract is paused.
+        require_not_paused(&env)?;
         admin.require_auth();
         require_admin(&env, &admin)?;
 
