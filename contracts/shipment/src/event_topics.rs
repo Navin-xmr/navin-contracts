@@ -143,14 +143,6 @@ pub const CARRIER_HANDOFF: &str = "carrier_handoff";
 /// Emitted to trigger push notifications, emails, or in-app alerts.
 pub const NOTIFICATION: &str = "notification";
 
-// ── Notes & evidence ─────────────────────────────────────────────────────────
-
-/// Emitted when a hash-only note is appended to a shipment.
-pub const NOTE_APPENDED: &str = "note_appended";
-
-/// Emitted when dispute evidence is appended (append-only).
-pub const EVIDENCE_ADDED: &str = "evidence_added";
-
 // ── Hash domain-separation prefixes by event family ──────────────────────────
 //
 // These `u8` tags are prepended to every idempotency-key hash input to
@@ -171,8 +163,7 @@ pub const EVIDENCE_ADDED: &str = "evidence_added";
 
 /// Domain tag for shipment-lifecycle events
 /// (`shipment_created`, `status_updated`, `milestone_recorded`,
-///  `shipment_cancelled`, `shipment_expired`, `shipment_archived`,
-///  `delivery_success`).
+///  `shipment_cancelled`, `shipment_expired`, `delivery_success`).
 pub const HASH_DOMAIN_SHIPMENT: u8 = 0x01;
 
 /// Domain tag for escrow-operation events
@@ -211,9 +202,8 @@ pub const HASH_DOMAIN_RBAC: u8 = 0x07;
 #[allow(dead_code)]
 pub const HASH_DOMAIN_NOTIFICATION: u8 = 0x08;
 
-/// Domain tag for shipment-note events (`note_appended`).
-#[allow(dead_code)]
-pub const HASH_DOMAIN_NOTE: u8 = 0x09;
+// 0x09 was `HASH_DOMAIN_NOTE` (for the removed `note_appended` topic). It is
+// retired and must not be reused.
 
 /// Domain tag for platform-level events (`platform_fee_collected`, `fee_config_updated`).
 pub const HASH_DOMAIN_PLATFORM: u8 = 0x0B;
@@ -224,9 +214,25 @@ pub const HASH_DOMAIN_PLATFORM: u8 = 0x0B;
 /// Contains a structured reason code (`EscrowFreezeReason`) so that
 /// indexers can classify the freeze without parsing free-form text.
 pub const ESCROW_FROZEN: &str = "escrow_frozen";
+
+// ── Abbreviated legacy topics ────────────────────────────────────────────────
+//
+// The three topics below deliberately break the full snake_case naming used
+// everywhere else. They predate that convention and are already emitted on
+// chain, so indexers filter on these exact strings; renaming them would
+// silently stop matching existing events. Keep the strings as they are and
+// give any *new* topic a full descriptive name.
+
+/// Emitted once by `initialize`. Topic string `"init"` (legacy abbreviation
+/// of `contract_initialized`).
 pub const CONTRACT_INITIALIZED: &str = "init";
+/// Emitted by `set_shipment_limit`. Topic
+/// string `"set_limit"` (legacy abbreviation of `shipment_limit_updated`).
 pub const SHIPMENT_LIMIT_UPDATED: &str = "set_limit";
+/// Emitted by `set_company_shipment_limit`. Topic
+/// string `"set_cmp_limit"` (legacy abbreviation of `company_limit_updated`).
 pub const COMPANY_LIMIT_UPDATED: &str = "set_cmp_limit";
+
 pub const CARRIER_SUSPENDED: &str = "carrier_suspended";
 pub const CARRIER_REACTIVATED: &str = "carrier_reactivated";
 pub const DELIVERY_CONFIRMED: &str = "delivery_confirmed";
@@ -251,7 +257,6 @@ const NON_DEFAULT_HASH_DOMAINS: &[(&str, u8)] = &[
     // Disputes
     (DISPUTE_RAISED, HASH_DOMAIN_DISPUTE),
     (DISPUTE_RESOLVED, HASH_DOMAIN_DISPUTE),
-    (EVIDENCE_ADDED, HASH_DOMAIN_DISPUTE),
     // Condition / sensor breaches
     (CONDITION_BREACH, HASH_DOMAIN_CONDITION),
     (CARRIER_BREACH, HASH_DOMAIN_CONDITION),
@@ -284,8 +289,6 @@ const NON_DEFAULT_HASH_DOMAINS: &[(&str, u8)] = &[
     (ROLE_CHANGED, HASH_DOMAIN_RBAC),
     // Notifications
     (NOTIFICATION, HASH_DOMAIN_NOTIFICATION),
-    // Shipment notes
-    (NOTE_APPENDED, HASH_DOMAIN_NOTE),
     // Platform-level fee events
     (PLATFORM_FEE_COLLECTED, HASH_DOMAIN_PLATFORM),
     (FEE_CONFIG_UPDATED, HASH_DOMAIN_PLATFORM),
@@ -354,8 +357,6 @@ mod tests {
             ROLE_CHANGED,
             CARRIER_HANDOFF,
             NOTIFICATION,
-            NOTE_APPENDED,
-            EVIDENCE_ADDED,
             MIGRATION_REPORTED,
             ESCROW_FROZEN,
             CONTRACT_INITIALIZED,
@@ -414,8 +415,6 @@ mod tests {
         assert_eq!(ROLE_CHANGED, "role_changed");
         assert_eq!(CARRIER_HANDOFF, "carrier_handoff");
         assert_eq!(NOTIFICATION, "notification");
-        assert_eq!(NOTE_APPENDED, "note_appended");
-        assert_eq!(EVIDENCE_ADDED, "evidence_added");
         assert_eq!(MIGRATION_REPORTED, "migration_reported");
         assert_eq!(ESCROW_FROZEN, "escrow_frozen");
         assert_eq!(CONTRACT_INITIALIZED, "init");
@@ -462,8 +461,6 @@ mod tests {
             ROLE_CHANGED,
             CARRIER_HANDOFF,
             NOTIFICATION,
-            NOTE_APPENDED,
-            EVIDENCE_ADDED,
             MIGRATION_REPORTED,
             ESCROW_FROZEN,
             CONTRACT_INITIALIZED,
@@ -503,7 +500,6 @@ mod tests {
             HASH_DOMAIN_ADMIN,
             HASH_DOMAIN_RBAC,
             HASH_DOMAIN_NOTIFICATION,
-            HASH_DOMAIN_NOTE,
         ];
         domains.sort_unstable();
         for pair in domains.windows(2) {
@@ -527,6 +523,5 @@ mod tests {
         assert_eq!(HASH_DOMAIN_ADMIN, 0x06);
         assert_eq!(HASH_DOMAIN_RBAC, 0x07);
         assert_eq!(HASH_DOMAIN_NOTIFICATION, 0x08);
-        assert_eq!(HASH_DOMAIN_NOTE, 0x09);
     }
 }
