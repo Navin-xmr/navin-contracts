@@ -124,6 +124,10 @@ pub enum DataKey {
     ProposalSalt(BytesN<32>),
     /// Prerequisite shipment IDs for a dependent — dependent_id -> Vec<u64>.
     ShipmentDependents(u64),
+    /// Counter for audit log entry IDs.
+    AuditEntryCount,
+    /// Individual audit log entry keyed by entry ID.
+    AuditEntry(u64),
 }
 
 /// Storage keys for dispute evidence.
@@ -380,7 +384,7 @@ pub struct Shipment {
 /// // Struct represents a milestone reached by a shipment.
 /// ```
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Milestone {
     /// ID of the shipment this milestone belongs to.
     pub shipment_id: u64,
@@ -551,7 +555,7 @@ pub struct ShipmentInput {
 /// // Struct holds metadata about the contract state itself.
 /// ```
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ContractMetadata {
     /// Current contract version (starts at 1, incremented on each upgrade).
     pub version: u32,
@@ -622,7 +626,7 @@ pub enum AdminAction {
 /// // Struct represents a pending multi-sig proposal.
 /// ```
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Proposal {
     /// Unique proposal identifier.
     pub id: u64,

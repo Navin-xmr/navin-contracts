@@ -65,10 +65,8 @@ pub fn run_system_health_check_range(env: &Env, start_id: u64, limit: u64) -> Sy
 
                     // Consistency verification against storage structure
                     let has_persist = storage::has_persistent_shipment(env, id);
-                    let escrow_in_storage = storage::get_escrow(env, id);
-
                     // Consistency check: dual storage of escrow must match
-                    if shipment.escrow_amount != escrow_in_storage
+                    if storage::has_escrow_mismatch(env, id, shipment.escrow_amount)
                         && !storage_inconsistencies.contains(id)
                     {
                         storage_inconsistencies.push_back(id);
