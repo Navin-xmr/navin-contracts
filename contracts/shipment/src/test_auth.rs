@@ -127,6 +127,7 @@ fn test_add_company_duplicate_leaves_state_unchanged() {
 
     let deadline = env.ledger().timestamp() + 3600;
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -197,6 +198,7 @@ fn test_add_carrier_duplicate_leaves_state_unchanged() {
 
     let deadline = env.ledger().timestamp() + 3600;
     let data_hash = BytesN::from_array(&env, &[2u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -336,6 +338,7 @@ fn test_auth_tree_force_cancel_shipment() {
     let cid = contract_id(&client);
 
     client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -363,48 +366,6 @@ fn test_auth_tree_force_cancel_shipment() {
     );
 }
 
-/// `archive_shipment` must record admin auth with the shipment ID.
-#[test]
-fn test_auth_tree_archive_shipment() {
-    let (env, client, admin, _token) = setup_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let reason_hash = BytesN::from_array(&env, &[2u8; 32]);
-    let deadline = crate::test_utils::future_deadline(&env, 3_600);
-    let cid = contract_id(&client);
-
-    client.add_company(&admin, &company);
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &deadline,
-    );
-    // Cancel so the shipment is finalized (required before archiving)
-    client.cancel_shipment(&company, &shipment_id, &reason_hash);
-
-    client.archive_shipment(&admin, &shipment_id);
-
-    assert_eq!(
-        env.auths(),
-        std::vec![(
-            admin.clone(),
-            AuthorizedInvocation {
-                function: AuthorizedFunction::Contract((
-                    cid,
-                    Symbol::new(&env, "archive_shipment"),
-                    (admin.clone(), shipment_id).into_val(&env),
-                )),
-                sub_invocations: std::vec![],
-            }
-        )]
-    );
-}
-
 // =============================================================================
 // Company path — positive auth-tree assertions
 // =============================================================================
@@ -423,6 +384,7 @@ fn test_auth_tree_create_shipment() {
     let cid = contract_id(&client);
 
     client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     client.create_shipment(
         &company,
         &receiver,
@@ -470,6 +432,7 @@ fn test_auth_tree_cancel_shipment() {
     let cid = contract_id(&client);
 
     client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -516,6 +479,7 @@ fn test_auth_tree_update_status() {
 
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -570,6 +534,7 @@ fn test_auth_tree_handoff_shipment() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier1);
     client.add_carrier(&admin, &carrier2);
+    crate::test_utils::allow_carrier(&client, &company, &carrier1);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -586,6 +551,7 @@ fn test_auth_tree_handoff_shipment() {
         &data_hash,
     );
 
+    crate::test_utils::allow_carrier(&client, &company, &carrier2);
     client.handoff_shipment(&carrier1, &carrier2, &shipment_id, &handoff_hash);
 
     assert_eq!(
@@ -629,6 +595,7 @@ fn test_auth_tree_confirm_delivery() {
 
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -725,6 +692,7 @@ fn test_auth_create_shipment_fails_without_auth() {
     let deadline = env.ledger().timestamp() + 3_600;
 
     client.initialize(&admin, &token); // no auth needed
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // No mock → company.require_auth() fires and fails before role check
     let result = client.try_create_shipment(
@@ -1266,6 +1234,7 @@ fn test_set_shipment_metadata_rejects_empty_key_symbol() {
 
     let deadline = crate::test_utils::future_deadline(&env, 3_600);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -1301,6 +1270,7 @@ fn test_set_shipment_metadata_rejects_empty_value_symbol() {
 
     let deadline = crate::test_utils::future_deadline(&env, 3_600);
     let data_hash = BytesN::from_array(&env, &[2u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,

@@ -120,6 +120,7 @@ fn test_debug_event_structure() {
     shipment.add_carrier(&admin, &carrier);
 
     let deadline = env.ledger().timestamp() + 86_400;
+    crate::test_utils::allow_carrier(&shipment, &company, &carrier);
     shipment.create_shipment(
         &company,
         &receiver,
@@ -193,6 +194,7 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
 
     // ── Create shipment ───────────────────────────────────────────────────────
     let deadline = env.ledger().timestamp() + 86_400;
+    crate::test_utils::allow_carrier(&shipment, &company, &carrier);
     let shipment_id = shipment.create_shipment(
         &company,
         &receiver,
@@ -408,6 +410,7 @@ fn test_e2e_cancel_refund_path_with_token_balances() {
     assert_eq!(token.balance(&company), 5_000);
 
     let deadline = env.ledger().timestamp() + 86_400;
+    crate::test_utils::allow_carrier(&shipment, &company, &carrier);
     let shipment_id = shipment.create_shipment(
         &company,
         &receiver,
@@ -494,6 +497,7 @@ fn test_e2e_cancel_shipment_returns_escrow_to_company() {
 
     token.mint(&admin, &company, &5_000_i128);
     let deadline = env.ledger().timestamp() + 86_400;
+    crate::test_utils::allow_carrier(&shipment, &company, &carrier);
     let shipment_id = shipment.create_shipment(
         &company,
         &receiver,
@@ -561,6 +565,7 @@ fn test_e2e_partial_milestones_then_cancel_via_deadline() {
     milestones.push_back((Symbol::new(&env, "rest"), 50_u32));
 
     let deadline = env.ledger().timestamp() + 3_600;
+    crate::test_utils::allow_carrier(&shipment, &company, &carrier);
     let shipment_id = shipment.create_shipment(
         &company,
         &receiver,
@@ -707,6 +712,7 @@ fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
     assert_eq!(token.balance(&company), 3_000);
 
     let deadline = env.ledger().timestamp() + 3_600;
+    crate::test_utils::allow_carrier(&shipment, &company, &carrier);
     let shipment_id = shipment.create_shipment(
         &company,
         &receiver,
@@ -800,6 +806,7 @@ fn test_regression_milestone_release_event_ordering() {
 
     let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
     milestones.push_back((Symbol::new(&env, "pickup"), 100_u32));
+    crate::test_utils::allow_carrier(&shipment, &company, &carrier);
 
     let shipment_id = shipment.create_shipment(
         &company,
@@ -853,6 +860,7 @@ fn test_regression_deadline_refund_event_ordering() {
     shipment.add_company(&admin, &company);
     shipment.add_carrier(&admin, &carrier);
     token.mint(&admin, &company, &2_000_i128);
+    crate::test_utils::allow_carrier(&shipment, &company, &carrier);
 
     let shipment_id = shipment.create_shipment(
         &company,

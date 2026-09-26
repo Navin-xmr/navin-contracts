@@ -288,7 +288,10 @@ pub fn query_audit_history(
     if start_id >= total_entries || limit == 0 {
         return results;
     }
-    let end_id = start_id.saturating_add(limit).saturating_sub(1).min(total_entries.saturating_sub(1));
+    let end_id = start_id
+        .saturating_add(limit)
+        .saturating_sub(1)
+        .min(total_entries.saturating_sub(1));
 
     for id in start_id..=end_id {
         if let Some(entry) = get_audit_entry(env, id) {
@@ -323,7 +326,10 @@ pub fn query_audit_history_for_target(
     if start_id >= total_entries || limit == 0 {
         return results;
     }
-    let end_id = start_id.saturating_add(limit).saturating_sub(1).min(total_entries.saturating_sub(1));
+    let end_id = start_id
+        .saturating_add(limit)
+        .saturating_sub(1)
+        .min(total_entries.saturating_sub(1));
 
     for id in start_id..=end_id {
         if let Some(entry) = get_audit_entry(env, id) {
@@ -358,7 +364,10 @@ pub fn query_audit_history_by_actor(
     if start_id >= total_entries || limit == 0 {
         return results;
     }
-    let end_id = start_id.saturating_add(limit).saturating_sub(1).min(total_entries.saturating_sub(1));
+    let end_id = start_id
+        .saturating_add(limit)
+        .saturating_sub(1)
+        .min(total_entries.saturating_sub(1));
 
     for id in start_id..=end_id {
         if let Some(entry) = get_audit_entry(env, id) {

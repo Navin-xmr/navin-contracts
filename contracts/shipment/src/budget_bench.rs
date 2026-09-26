@@ -48,7 +48,9 @@ struct MockToken;
 
 #[contractimpl]
 impl MockToken {
-    pub fn decimals(_env: soroban_sdk::Env) -> u32 { 7 }
+    pub fn decimals(_env: soroban_sdk::Env) -> u32 {
+        7
+    }
 
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
 }
@@ -92,7 +94,13 @@ struct BudgetBaseline {
 }
 
 const BASELINES: &[(&str, BudgetBaseline)] = &[
-    ("initialize", BudgetBaseline { cpu: 88_650, mem: 9_505 }),
+    (
+        "initialize",
+        BudgetBaseline {
+            cpu: 88_650,
+            mem: 9_505,
+        },
+    ),
     (
         "create_shipment (single)",
         BudgetBaseline {
@@ -114,7 +122,13 @@ const BASELINES: &[(&str, BudgetBaseline)] = &[
             mem: 51_307,
         },
     ),
-    ("deposit_escrow", BudgetBaseline { cpu: 298_576, mem: 46_942 }),
+    (
+        "deposit_escrow",
+        BudgetBaseline {
+            cpu: 298_576,
+            mem: 46_942,
+        },
+    ),
     (
         "confirm_delivery (InTransit → Delivered)",
         BudgetBaseline {
@@ -122,9 +136,27 @@ const BASELINES: &[(&str, BudgetBaseline)] = &[
             mem: 69_924,
         },
     ),
-    ("release_escrow", BudgetBaseline { cpu: 223_487, mem: 34_370 }),
-    ("refund_escrow", BudgetBaseline { cpu: 370_226, mem: 52_106 }),
-    ("raise_dispute", BudgetBaseline { cpu: 349_159, mem: 52_143 }),
+    (
+        "release_escrow",
+        BudgetBaseline {
+            cpu: 223_487,
+            mem: 34_370,
+        },
+    ),
+    (
+        "refund_escrow",
+        BudgetBaseline {
+            cpu: 370_226,
+            mem: 52_106,
+        },
+    ),
+    (
+        "raise_dispute",
+        BudgetBaseline {
+            cpu: 349_159,
+            mem: 52_143,
+        },
+    ),
     (
         "resolve_dispute (RefundToCompany)",
         BudgetBaseline {
@@ -139,8 +171,20 @@ const BASELINES: &[(&str, BudgetBaseline)] = &[
             mem: 25_686,
         },
     ),
-    ("cancel_shipment", BudgetBaseline { cpu: 314_479, mem: 46_016 }),
-    ("handoff_shipment", BudgetBaseline { cpu: 262_004, mem: 39_462 }),
+    (
+        "cancel_shipment",
+        BudgetBaseline {
+            cpu: 314_479,
+            mem: 46_016,
+        },
+    ),
+    (
+        "handoff_shipment",
+        BudgetBaseline {
+            cpu: 262_004,
+            mem: 39_462,
+        },
+    ),
 ];
 
 fn absolute_regression_percent(current: u64, baseline: u64) -> f64 {
@@ -152,7 +196,9 @@ fn absolute_regression_percent(current: u64, baseline: u64) -> f64 {
 }
 
 fn assert_budget_within_threshold(label: &str, cpu: u64, mem: u64) {
-    let Some((_, baseline)) = BASELINES.iter().find(|(baseline_label, _)| *baseline_label == label)
+    let Some((_, baseline)) = BASELINES
+        .iter()
+        .find(|(baseline_label, _)| *baseline_label == label)
     else {
         return;
     };
@@ -217,6 +263,7 @@ fn bench_create_shipment() {
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
 
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     env.cost_estimate().budget().reset_default();
     client.create_shipment(
         &company,
@@ -266,6 +313,9 @@ fn bench_create_shipments_batch() {
         });
     }
 
+    for s in inputs.iter() {
+        crate::test_utils::allow_carrier(&client, &company, &s.carrier);
+    }
     env.cost_estimate().budget().reset_default();
     client.create_shipments_batch(&company, &inputs);
     let (cpu, mem) = read_budget(&env);
@@ -300,6 +350,7 @@ fn bench_update_status() {
     env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -344,6 +395,7 @@ fn bench_deposit_escrow() {
     env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -386,6 +438,7 @@ fn bench_release_escrow() {
     env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -435,6 +488,7 @@ fn bench_refund_escrow() {
     env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -477,6 +531,7 @@ fn bench_raise_dispute() {
     env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -523,6 +578,7 @@ fn bench_resolve_dispute() {
     env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -579,6 +635,7 @@ fn bench_record_milestone() {
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -632,6 +689,7 @@ fn bench_confirm_delivery() {
     env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -685,6 +743,7 @@ fn bench_cancel_shipment() {
     env.cost_estimate().budget().reset_unlimited();
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -734,6 +793,7 @@ fn bench_handoff_shipment() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier_a);
     client.add_carrier(&admin, &carrier_b);
+    crate::test_utils::allow_carrier(&client, &company, &carrier_a);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -749,6 +809,7 @@ fn bench_handoff_shipment() {
         &BytesN::from_array(&env, &[22u8; 32]),
     );
 
+    crate::test_utils::allow_carrier(&client, &company, &carrier_b);
     env.cost_estimate().budget().reset_default();
     client.handoff_shipment(
         &carrier_a,
@@ -801,6 +862,7 @@ fn bench_full_lifecycle_summary() {
 
     // ---- create_shipment (measured) ----
     env.cost_estimate().budget().reset_default();
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let id = client.create_shipment(
         &company,
         &receiver,
@@ -842,6 +904,7 @@ fn bench_full_lifecycle_summary() {
     //      benchmark; confirm_delivery already cleared escrow on shipment `id`.
     // ----
     env.cost_estimate().budget().reset_unlimited();
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let id2 = client.create_shipment(
         &company,
         &receiver,

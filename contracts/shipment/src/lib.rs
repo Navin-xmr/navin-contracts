@@ -4,6 +4,7 @@ use soroban_sdk::{
     contract, contractimpl, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal, Symbol, Vec,
 };
 
+mod audit;
 mod circuit_breaker;
 mod config;
 pub mod error_map;
@@ -75,11 +76,17 @@ mod test_milestone_sum_invalid;
 mod test_whitelist_multicompany;
 
 #[cfg(test)]
+mod test_archive_restore_consistency;
+#[cfg(test)]
+mod test_audit_trail;
+#[cfg(test)]
 mod test_auth;
 #[cfg(test)]
 mod test_auto_dispute;
 #[cfg(test)]
 mod test_batch_queries;
+#[cfg(test)]
+mod test_circuit_breaker_reset;
 #[cfg(test)]
 mod test_consistency;
 #[cfg(test)]
@@ -89,11 +96,13 @@ mod test_deadline_grace;
 #[cfg(test)]
 mod test_diagnostics;
 #[cfg(test)]
+mod test_hash_domain_separation;
+#[cfg(test)]
 mod test_invalid_shipment_input;
 #[cfg(test)]
-mod test_pause;
+mod test_iot_verification;
 #[cfg(test)]
-mod test_circuit_breaker_reset;
+mod test_pause;
 #[cfg(test)]
 mod test_performance;
 #[cfg(test)]
@@ -114,25 +123,19 @@ mod test_ttl_health;
 mod test_verification;
 #[cfg(test)]
 mod test_zero_amount_escrow;
-#[cfg(test)]
-mod test_hash_domain_separation;
-#[cfg(test)]
-mod test_iot_verification;
-#[cfg(test)]
-mod test_archive_restore_consistency;
-#[cfg(test)]
-mod test_audit_trail;
 
 #[cfg(test)]
-mod fuzz_rbac_authorization;
-#[cfg(test)]
-mod fuzz_role_assignment;
+mod consistency;
 #[cfg(test)]
 mod fuzz_escrow_arithmetic;
 #[cfg(test)]
 mod fuzz_escrow_lifecycle;
 #[cfg(test)]
 mod fuzz_milestone_releases;
+#[cfg(test)]
+mod fuzz_rbac_authorization;
+#[cfg(test)]
+mod fuzz_role_assignment;
 #[cfg(test)]
 mod fuzz_storage_operations;
 #[cfg(test)]
@@ -141,8 +144,6 @@ mod fuzz_ttl_management;
 mod fuzz_wallet_auth_integration;
 #[cfg(test)]
 mod preservation_property_tests;
-#[cfg(test)]
-mod consistency;
 
 #[cfg(test)]
 mod budget_bench;
@@ -3864,7 +3865,7 @@ impl NavinShipment {
         finalize_if_settled(&env, &mut shipment);
         persist_shipment(&env, &shipment)?;
         if escrow_amount > 0 {
-            storage::remove_escrow_balance(&env, shipment_id);
+            storage::remove_escrow(&env, shipment_id);
         }
         extend_shipment_ttl(&env, shipment_id);
 
@@ -5870,6 +5871,7 @@ impl NavinShipment {
     /// following a run of consecutive transfer failures.
     pub fn reset_circuit_breaker(env: Env, admin: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         circuit_breaker::manual_reset(&env, &admin)
     }
 
@@ -5914,6 +5916,7 @@ impl NavinShipment {
     ///
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ContractPaused` - If the contract is paused.
     /// * `NavinError::Unauthorized` - If `admin` is not the contract admin.
     /// * `NavinError::InvalidConfig` - If `Custom` values are out of range
     ///   (a zero threshold would open the breaker permanently).
@@ -5923,6 +5926,7 @@ impl NavinShipment {
         preset: circuit_breaker::CircuitBreakerPreset,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
         require_admin(&env, &admin)?;
 

@@ -5,7 +5,7 @@
 #[cfg(test)]
 mod tests {
     extern crate std;
-    use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
+    use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient};
     use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
 
     #[contract]
@@ -65,6 +65,7 @@ mod tests {
 
         client.add_company(&admin, &company);
         client.add_carrier(&admin, &carrier);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let shipment_id = client.create_shipment(
             &company,

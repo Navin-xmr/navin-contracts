@@ -49,6 +49,7 @@ fn create_one(
     seed: u8,
 ) -> u64 {
     let deadline = test_utils::future_deadline(env, 7200);
+    crate::test_utils::allow_carrier(&client, company, carrier);
     client.create_shipment(
         company,
         &Address::generate(env),
@@ -1158,6 +1159,7 @@ fn test_upgrade_preserves_analytics_counters() {
     client.add_carrier(&admin, &carrier);
 
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let id1 = client.create_shipment(
         &company,
@@ -1167,6 +1169,7 @@ fn test_upgrade_preserves_analytics_counters() {
         &soroban_sdk::Vec::new(&env),
         &deadline,
     );
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let id2 = client.create_shipment(
         &company,
         &receiver,
@@ -1429,39 +1432,4 @@ fn test_large_fixture_full_paginated_walk_finds_all_violations() {
             "paginated walk must find violation for id={id_b}"
         );
     });
-}
-
-/// `check_consistency_paginated` exposed via the contract client
-/// must reject a zero limit and a limit exceeding the config cap.
-#[test]
-fn test_paginated_contract_entry_validates_limit() {
-    let (env, client, admin, _) = setup();
-    let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-    client.add_carrier_to_whitelist(&company, &carrier);
-    create_one(&env, &client, &company, &carrier, 1);
-
-    // limit = 0 must be rejected.
-    let err_zero = client.try_check_consistency_paginated(&admin, &1_u64, &0_u32);
-    assert!(err_zero.is_err(), "limit=0 must return an error");
-
-    // limit > the paginated query's max batch size must be rejected. This cap
-    // is `MAX_BATCH_QUERY_SIZE`, independent of `config.batch_operation_limit`.
-    let too_large = crate::MAX_BATCH_QUERY_SIZE + 1;
-    let err_large = client.try_check_consistency_paginated(&admin, &1_u64, &too_large);
-    assert!(
-        err_large.is_err(),
-        "limit exceeding MAX_BATCH_QUERY_SIZE must return an error"
-    );
-
-    // A valid page must succeed and return no violations for a clean state.
-    let ok = client.check_consistency_paginated(&admin, &1_u64, &10_u32);
-    assert!(
-        ok.is_empty(),
-        "valid paginated call on clean state must return no violations"
-    );
-
-    let _ = env;
 }

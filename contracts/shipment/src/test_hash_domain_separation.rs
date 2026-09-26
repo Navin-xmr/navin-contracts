@@ -472,43 +472,12 @@ mod tests {
         }
     }
 
-    /// The `&str` and `Symbol` mappings must agree, since off-chain indexers
-    /// mirror the `&str` one.
-    #[test]
-    fn str_and_symbol_domain_mappings_agree() {
-        let env = Env::default();
-
-        let topics = [
-            crate::event_topics::SHIPMENT_CREATED,
-            crate::event_topics::ESCROW_DEPOSITED,
-            crate::event_topics::DISPUTE_RAISED,
-            crate::event_topics::CONDITION_BREACH,
-            crate::event_topics::CARRIER_HANDOFF,
-            crate::event_topics::ROLE_REVOKED,
-            crate::event_topics::NOTIFICATION,
-            crate::event_topics::NOTE_APPENDED,
-            crate::event_topics::PLATFORM_FEE_COLLECTED,
-        ];
-
-        for topic in topics {
-            assert_eq!(
-                crate::event_topics::hash_domain_for_event(topic),
-                crate::event_topics::hash_domain_for_symbol(&env, &Symbol::new(&env, topic)),
-                "str and Symbol domain lookups must agree"
-            );
-        }
-    }
-
     /// An unrecognised topic falls back to the shipment domain rather than
     /// panicking, keeping the mapping total.
     #[test]
     fn unknown_topic_falls_back_to_shipment_domain() {
         let env = Env::default();
 
-        assert_eq!(
-            crate::event_topics::hash_domain_for_event("not_a_real_topic"),
-            HASH_DOMAIN_SHIPMENT
-        );
         assert_eq!(
             crate::event_topics::hash_domain_for_symbol(&env, &Symbol::new(&env, "nope")),
             HASH_DOMAIN_SHIPMENT

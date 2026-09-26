@@ -42,6 +42,7 @@ fn test_company_suspension_blocks_create_shipment() {
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let milestones = Vec::new(&env);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // Attempt to create shipment should fail with CompanySuspended (37)
     let result = client.try_create_shipment(
@@ -72,6 +73,7 @@ fn test_company_suspension_blocks_metadata_update() {
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let milestones = Vec::new(&env);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -128,6 +130,7 @@ fn test_company_reactivation_restores_access() {
 
     // Reactivate
     client.reactivate_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // Create should now succeed
     let result = client.try_create_shipment(
@@ -155,6 +158,7 @@ fn test_company_suspension_blocks_cancel_shipment() {
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let milestones = Vec::new(&env);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -198,6 +202,7 @@ fn test_suspension_with_rate_limit_exhaustion() {
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let milestones = Vec::new(&env);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // Create a shipment
     let _shipment_id = client.create_shipment(
@@ -211,6 +216,7 @@ fn test_suspension_with_rate_limit_exhaustion() {
 
     // Suspend the company
     client.suspend_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // Attempting to create another shipment should fail with CompanySuspended
     // (suspension takes precedence over rate limit)
@@ -247,6 +253,7 @@ fn test_suspension_recovery_with_active_rate_limit_window() {
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let milestones = Vec::new(&env);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // Create a shipment (uses rate limit quota)
     client.create_shipment(
@@ -260,6 +267,7 @@ fn test_suspension_recovery_with_active_rate_limit_window() {
 
     // Suspend the company
     client.suspend_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // Verify suspension blocks operations
     let result = client.try_create_shipment(
@@ -281,6 +289,7 @@ fn test_suspension_recovery_with_active_rate_limit_window() {
     // Use different addresses to avoid any potential conflicts
     let receiver2 = Address::generate(&env);
     let data_hash2 = BytesN::from_array(&env, &[2u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // After reactivation, operations should succeed
     // (rate limit window is still active but reactivation resets access)
@@ -317,6 +326,7 @@ fn test_multiple_suspended_actors_independent_rate_limits() {
 
     // Suspend company1
     client.suspend_company(&admin, &company1);
+    crate::test_utils::allow_carrier(&client, &company1, &carrier);
 
     // company1 should be blocked
     let result1 = client.try_create_shipment(
@@ -328,6 +338,7 @@ fn test_multiple_suspended_actors_independent_rate_limits() {
         &deadline,
     );
     assert!(result1.is_err());
+    crate::test_utils::allow_carrier(&client, &company2, &carrier);
 
     // company2 should still work (independent rate limit state)
     let result2 = client.try_create_shipment(

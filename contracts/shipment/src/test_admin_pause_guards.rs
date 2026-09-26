@@ -123,4 +123,31 @@ mod tests {
             Err(Ok(NavinError::ContractPaused))
         );
     }
+
+    // ── #890 / #891: pause gates circuit-breaker admin surface ──────
+
+    #[test]
+    fn paused_contract_rejects_reset_circuit_breaker() {
+        let (_env, client, admin, _admin2) = setup_multisig();
+        client.pause(&admin);
+
+        assert_eq!(
+            client.try_reset_circuit_breaker(&admin),
+            Err(Ok(NavinError::ContractPaused))
+        );
+    }
+
+    #[test]
+    fn paused_contract_rejects_set_circuit_breaker_config() {
+        let (_env, client, admin, _admin2) = setup_multisig();
+        client.pause(&admin);
+
+        assert_eq!(
+            client.try_set_circuit_breaker_config(
+                &admin,
+                &crate::circuit_breaker::CircuitBreakerPreset::Strict
+            ),
+            Err(Ok(NavinError::ContractPaused))
+        );
+    }
 }
