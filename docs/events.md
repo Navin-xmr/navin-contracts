@@ -74,8 +74,10 @@
 
 All events are published via the Soroban SDK's `env.events().publish()` method:
 
+- **Shipment Contract:** `topic: (Symbol,)` — single descriptive symbol for stream filtering.
+- **Token Contract:** `topic: (Symbol::new(name), Symbol::new(EVENT_SCHEMA_VERSION_STR))` — 2-element topic tuple carrying the event name symbol and schema version string (e.g., `"v1"`), as defined in [`contracts/token/src/event_topics.rs`](../contracts/token/src/event_topics.rs).
+
 ```
-topic:  (Symbol,)                — single descriptive symbol for stream filtering
 data:   (field1, field2, ...)    — tuple of typed payload fields
 ```
 
