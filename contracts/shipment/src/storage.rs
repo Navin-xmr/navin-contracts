@@ -1414,13 +1414,6 @@ pub fn set_reentrancy_lock(env: &Env, locked: bool) {
         .set(&DataKey::ReentrancyLock, &locked);
 }
 
-// ============= TTL Health Monitoring Functions =============
-
-/// Check if a shipment exists in persistent storage.
-///
-/// This is used for TTL health monitoring to determine which shipments
-/// are still active in persistent storage vs archived.
-
 // ============= Settlement Tracking Functions =============
 
 /// Get the settlement counter value from instance storage.
