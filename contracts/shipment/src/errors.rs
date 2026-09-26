@@ -164,8 +164,7 @@ pub enum NavinError {
     CarrierNotWhitelisted = 69,
     /// Address is invalid (e.g., zero-address sentinel).
     InvalidAddress = 70,
-    /// Maximum allowed recovery action entries for a shipment has been reached.
-    RecoveryLimitExceeded = 71,
+    // Code 71 is reserved; the orphaned recovery-limit variant was never reachable (#887).
     /// Issue #749 — the target of a role-specific revocation does not hold
     /// the role being revoked. Raised instead of silently revoking whatever
     /// role the address happens to have, which previously let

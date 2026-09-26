@@ -480,12 +480,6 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "Address is invalid (e.g., zero-address sentinel).",
         ),
-        NavinError::RecoveryLimitExceeded => (
-            71,
-            LimitExceeded,
-            NoRetry,
-            "Maximum allowed recovery action entries for a shipment has been reached.",
-        ),
         NavinError::RoleMismatch => (
             72,
             Unauthorized,
@@ -585,7 +579,6 @@ fn message_for(error: NavinError) -> Symbol {
         NavinError::CarrierAlreadyWhitelisted => symbol_short!("carrier"),
         NavinError::CarrierNotWhitelisted => symbol_short!("not_wlist"),
         NavinError::InvalidAddress => symbol_short!("address"),
-        NavinError::RecoveryLimitExceeded => symbol_short!("recovery"),
         NavinError::RoleMismatch => symbol_short!("role_mis"),
         NavinError::InvalidSymbolEncoding => symbol_short!("sym_enc"),
         NavinError::MultiSigProposalPending => symbol_short!("ms_pend"),
@@ -668,7 +661,6 @@ pub fn get_error_info(code: u32) -> ContractErrorInfo {
         68 => error_info(NavinError::RoleAlreadyAssigned),
         69 => error_info(NavinError::CarrierAlreadyWhitelisted),
         70 => error_info(NavinError::InvalidAddress),
-        71 => error_info(NavinError::RecoveryLimitExceeded),
         76 => error_info(NavinError::AuditLogLimitExceeded),
         _ => ContractErrorInfo {
             code,
@@ -691,6 +683,19 @@ mod tests {
         assert_eq!(info.category, ErrorCategory::InvalidInput);
         assert_eq!(info.retry, RetryGuidance::NoRetry);
         assert_eq!(info.message, symbol_short!("unknown"));
+    }
+
+    #[test]
+    fn test_issue_887_recovery_code_is_reserved_and_unknown() {
+        let info = get_error_info(71);
+        assert_eq!(info.code, 71);
+        assert_eq!(info.category, ErrorCategory::InvalidInput);
+        assert_eq!(info.retry, RetryGuidance::NoRetry);
+        assert_eq!(info.message, symbol_short!("unknown"));
+
+        // Removing the dead variant must not disturb the surviving neighbours.
+        assert_eq!(get_error_info(70).message, symbol_short!("address"));
+        assert_eq!(get_error_info(76).message, symbol_short!("audit_lim"));
     }
 
     // ── Token transfer failure recovery — error mapping (issue #447) ─────────
