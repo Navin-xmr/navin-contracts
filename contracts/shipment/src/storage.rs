@@ -527,6 +527,11 @@ pub fn get_escrow(env: &Env, shipment_id: u64) -> i128 {
         .unwrap_or(0)
 }
 
+/// Check if the shipment's struct escrow_amount differs from dedicated storage.
+pub fn has_escrow_mismatch(env: &Env, shipment_id: u64, struct_escrow_amount: i128) -> bool {
+    get_escrow(env, shipment_id) != struct_escrow_amount
+}
+
 /// Set escrow amount for a shipment in persistent storage.
 ///
 /// # Arguments
