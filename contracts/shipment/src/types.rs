@@ -124,6 +124,10 @@ pub enum DataKey {
     ProposalSalt(BytesN<32>),
     /// Prerequisite shipment IDs for a dependent — dependent_id -> Vec<u64>.
     ShipmentDependents(u64),
+    /// Counter for audit log entry IDs.
+    AuditEntryCount,
+    /// Individual audit log entry keyed by entry ID.
+    AuditEntry(u64),
 }
 
 /// Structured reason codes for escrow freeze events.

@@ -4,6 +4,7 @@ use soroban_sdk::{
     contract, contractimpl, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal, Symbol, Vec,
 };
 
+mod audit;
 mod circuit_breaker;
 mod config;
 pub mod error_map;
@@ -85,6 +86,8 @@ mod test_auto_dispute;
 #[cfg(test)]
 mod test_batch_queries;
 #[cfg(test)]
+mod test_circuit_breaker_reset;
+#[cfg(test)]
 mod test_consistency;
 #[cfg(test)]
 mod test_counter_overflow;
@@ -100,8 +103,6 @@ mod test_invalid_shipment_input;
 mod test_iot_verification;
 #[cfg(test)]
 mod test_pause;
-#[cfg(test)]
-mod test_circuit_breaker_reset;
 #[cfg(test)]
 mod test_performance;
 #[cfg(test)]
