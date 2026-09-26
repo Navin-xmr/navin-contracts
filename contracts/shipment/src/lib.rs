@@ -122,6 +122,9 @@ mod test_archive_restore_consistency;
 mod test_audit_trail;
 
 #[cfg(test)]
+mod test_dispute_evidence;
+
+#[cfg(test)]
 mod fuzz_rbac_authorization;
 #[cfg(test)]
 mod fuzz_role_assignment;
@@ -3862,7 +3865,7 @@ impl NavinShipment {
         finalize_if_settled(&env, &mut shipment);
         persist_shipment(&env, &shipment)?;
         if escrow_amount > 0 {
-            storage::remove_escrow_balance(&env, shipment_id);
+            storage::remove_escrow(&env, shipment_id);
         }
         extend_shipment_ttl(&env, shipment_id);
 
@@ -4532,6 +4535,120 @@ impl NavinShipment {
         );
 
         Ok(())
+    }
+
+    /// Attach evidence to an active shipment dispute.
+    ///
+    /// Follows the contract's hash-and-emit model: the evidence document is
+    /// held off-chain and only its SHA-256 hash is recorded, giving each
+    /// submission a tamper-evident on-chain timestamp without storing the
+    /// payload. Entries are append-only and capped per shipment by
+    /// `ContractConfig::max_evidence_per_dispute`.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `caller` - Shipment sender, receiver or carrier.
+    /// * `shipment_id` - ID of the disputed shipment.
+    /// * `evidence_hash` - SHA-256 hash of the off-chain evidence document.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - Zero-based index the evidence was stored at.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::InvalidHash` - If `evidence_hash` is all zeros.
+    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
+    /// * `NavinError::Unauthorized` - If caller is not involved in the shipment.
+    /// * `NavinError::InvalidStatus` - If the shipment is not currently `Disputed`.
+    /// * `NavinError::EvidenceLimitExceeded` - If the dispute already holds
+    ///   `max_evidence_per_dispute` entries.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let index = client.add_dispute_evidence(&receiver, &shipment_id, &evidence_hash);
+    /// ```
+    pub fn add_dispute_evidence(
+        env: Env,
+        caller: Address,
+        shipment_id: u64,
+        evidence_hash: BytesN<32>,
+    ) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        caller.require_auth();
+
+        validation::validate_hash(&evidence_hash)?;
+
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        if caller != shipment.sender && caller != shipment.receiver && caller != shipment.carrier {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // A suspended company must not be able to build a dispute record.
+        if caller == shipment.sender {
+            require_active_company(&env, &caller)?;
+        }
+
+        // Evidence only makes sense while a dispute is actually open; once an
+        // admin has resolved it the record is closed.
+        if shipment.status != ShipmentStatus::Disputed {
+            return Err(NavinError::InvalidStatus);
+        }
+
+        // Same bound style as milestones and breaches: an admin-configurable
+        // per-shipment cap on the persistent entries one dispute may create.
+        let config = config::get_config(&env);
+        if storage::get_evidence_count(&env, shipment_id) >= config.max_evidence_per_dispute {
+            return Err(NavinError::EvidenceLimitExceeded);
+        }
+
+        let index = storage::append_evidence(&env, shipment_id, &evidence_hash);
+
+        extend_shipment_ttl(&env, shipment_id);
+
+        events::emit_evidence_added(&env, shipment_id, &caller, index, &evidence_hash);
+
+        Ok(index)
+    }
+
+    /// Read one evidence hash attached to a shipment's dispute.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    /// * `index` - Zero-based index of the evidence entry.
+    ///
+    /// # Returns
+    /// * `Result<BytesN<32>, NavinError>` - The stored SHA-256 hash.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::EvidenceNotFound` - If no evidence exists at `index`.
+    pub fn get_dispute_evidence(
+        env: Env,
+        shipment_id: u64,
+        index: u32,
+    ) -> Result<BytesN<32>, NavinError> {
+        require_initialized(&env)?;
+        storage::get_evidence(&env, shipment_id, index).ok_or(NavinError::EvidenceNotFound)
+    }
+
+    /// Count the evidence entries attached to a shipment's dispute.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - Number of entries, `0` if none.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn get_dispute_evidence_count(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        Ok(storage::get_evidence_count(&env, shipment_id))
     }
 
     /// Handoff a shipment from current carrier to a new carrier.
