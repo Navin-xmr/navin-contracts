@@ -463,7 +463,7 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             "Address already holds the requested role.",
         ),
         NavinError::CarrierAlreadyWhitelisted => (
-            69,
+            75,
             InvalidState,
             NoRetry,
             "Carrier is already on the company's whitelist; duplicate addition is not allowed.",
@@ -666,9 +666,10 @@ pub fn get_error_info(code: u32) -> ContractErrorInfo {
         66 => error_info(NavinError::NoteNotFound),
         67 => error_info(NavinError::EvidenceNotFound),
         68 => error_info(NavinError::RoleAlreadyAssigned),
-        69 => error_info(NavinError::CarrierAlreadyWhitelisted),
+        69 => error_info(NavinError::CarrierNotWhitelisted),
         70 => error_info(NavinError::InvalidAddress),
         71 => error_info(NavinError::RecoveryLimitExceeded),
+        75 => error_info(NavinError::CarrierAlreadyWhitelisted),
         76 => error_info(NavinError::AuditLogLimitExceeded),
         _ => ContractErrorInfo {
             code,
@@ -757,6 +758,8 @@ mod tests {
             (NavinError::ShipmentFinalized, 38),
             (NavinError::ShipmentNotFound, 4),
             (NavinError::Unauthorized, 3),
+            (NavinError::CarrierAlreadyWhitelisted, 75),
+            (NavinError::CarrierNotWhitelisted, 69),
         ];
         for (err, expected_code) in cases {
             let info = error_info(*err);
@@ -766,6 +769,23 @@ mod tests {
                 err, expected_code
             );
         }
+    }
+
+    #[test]
+    fn test_issue_888_carrier_error_codes_are_distinct() {
+        assert_eq!(NavinError::CarrierNotWhitelisted as u32, 69);
+        assert_eq!(NavinError::CarrierAlreadyWhitelisted as u32, 75);
+
+        let not_whitelisted = get_error_info(69);
+        let already_whitelisted = get_error_info(75);
+
+        assert_eq!(not_whitelisted.code, 69);
+        assert_eq!(not_whitelisted.message, symbol_short!("not_wlist"));
+        assert_eq!(already_whitelisted.code, 75);
+        assert_eq!(already_whitelisted.message, symbol_short!("carrier"));
+        assert_ne!(not_whitelisted.message, already_whitelisted.message);
+        assert_eq!(error_info(NavinError::CarrierNotWhitelisted).code, 69);
+        assert_eq!(error_info(NavinError::CarrierAlreadyWhitelisted).code, 75);
     }
 
     // ── #456: Auth mismatch error-mapping tests ──────────────────────────────
