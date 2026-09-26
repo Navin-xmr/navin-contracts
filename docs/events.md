@@ -66,6 +66,7 @@
     - [meta_set](#token-metadata-set)
     - [meta_del](#token-metadata-delete)
 16. [Token Batch Events](#token-batch-events)
+    - [batch_leg](#token-batch-leg)
     - [batch_tr](#token-batch-transfer)
 
 ---
@@ -1263,6 +1264,24 @@ Emitted when the admin removes a metadata entry via `remove_metadata()`.
 
 ## Token Batch Events
 
+### `batch_leg`
+
+Emitted for each recipient leg during a batch transfer execution via `batch_transfer()`.
+
+**Topic:** `"batch_leg"`
+**Emitted by:** `batch_transfer`
+**Caller role:** Token holder
+
+| #   | Field    | Soroban Type | Description                    |
+| --- | -------- | ------------ | ------------------------------ |
+| 1   | `from`   | `Address`    | Source account                 |
+| 2   | `to`     | `Address`    | Recipient account              |
+| 3   | `amount` | `i128`       | Leg transfer amount in stroops |
+
+**Backend action:** Track individual recipient leg within batch execution.
+
+---
+
 ### `batch_tr`
 
 Emitted when multiple transfers are executed atomically in a single call via `batch_transfer()`.
@@ -1271,10 +1290,11 @@ Emitted when multiple transfers are executed atomically in a single call via `ba
 **Emitted by:** `batch_transfer`
 **Caller role:** Token holder
 
-| #   | Field             | Soroban Type | Description                   |
-| --- | ----------------- | ------------ | ----------------------------- |
-| 1   | `from`            | `Address`    | Source account                |
-| 2   | `recipient_count` | `u64`        | Number of recipients in batch |
+| #   | Field        | Soroban Type           | Description                        |
+| --- | ------------ | ---------------------- | ---------------------------------- |
+| 1   | `from`       | `Address`              | Source account                     |
+| 2   | `recipients` | `Vec<(Address, i128)>` | List of recipient and amount pairs |
+| 3   | `leg_count`  | `u32`                  | Total number of recipients in batch|
 
 **Backend action:** Record atomic batch settlement; all transfers succeed or all revert.
 
