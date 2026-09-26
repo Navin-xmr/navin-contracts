@@ -149,6 +149,10 @@ fn test_assert_delivery_hash_no_confirmation_returns_status_hash_not_found() {
         "assert_delivery_hash before delivery confirmation must return StatusHashNotFound (#44)"
     );
 }
+
+/// DataHashMismatch (#45) and StatusHashNotFound (#44) are distinct error codes.
+#[test]
+fn test_data_hash_mismatch_is_distinct_from_status_hash_not_found() {
     use crate::NavinError;
     assert_ne!(
         NavinError::DataHashMismatch as u32,

@@ -13,11 +13,12 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{test_utils, NavinShipment, NavinShipmentClient, ShipmentStatus};
     use crate::types::NotificationType;
+    use crate::{test_utils, NavinShipment, NavinShipmentClient, ShipmentStatus};
     use soroban_sdk::{
-        contract, contractimpl, testutils::Events as _, Address as _, Address, BytesN, Env, Symbol, TryFromVal,
-        Vec,
+        contract, contractimpl,
+        testutils::{Address as _, Events as _},
+        Address, BytesN, Env, Symbol, TryFromVal, Vec,
     };
 
     #[contract]
@@ -269,8 +270,8 @@ mod tests {
         assert_eq!(first_events.len(), 2);
         for (_contract, topics, data) in first_events.iter() {
             assert_eq!(
-                topics.get(0),
-                Some(Symbol::new(&env, "notification")),
+                Symbol::try_from_val(&env, &topics.get(0).unwrap()).unwrap(),
+                Symbol::new(&env, "notification"),
                 "warning must emit notification events"
             );
             let (_recipient, kind, shipment_id, hash): (
@@ -285,7 +286,11 @@ mod tests {
         }
 
         client.check_deadline_warning(&id, &data_hash);
-        assert_eq!(env.events().all().len(), 2, "warning must only be emitted once");
+        assert_eq!(
+            env.events().all().len(),
+            2,
+            "warning must only be emitted once"
+        );
     }
 
     // ── Max cap enforcement ───────────────────────────────────────────────────

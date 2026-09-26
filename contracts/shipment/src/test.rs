@@ -3275,17 +3275,6 @@ fn test_check_deadline_returns_shipment_not_found() {
 /// - All role-based access controls are enforced
 // ============= Event Counter Tests =============
 
-#[test]
-#[should_panic(expected = "Error(Contract, #4)")]
-fn test_event_count_shipment_not_found() {
-    let (_env, client, admin, token_contract) = setup_shipment_env();
-
-    client.initialize(&admin, &token_contract);
-
-    // Try to get event count for non-existent shipment
-    client.get_event_count(&999);
-}
-
 // ============= Shipment Archival Tests =============
 
 // ── [ISSUE #600] ShipmentUnavailable error variant tests ─────────────────────

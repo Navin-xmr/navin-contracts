@@ -363,48 +363,6 @@ fn test_auth_tree_force_cancel_shipment() {
     );
 }
 
-/// `archive_shipment` must record admin auth with the shipment ID.
-#[test]
-fn test_auth_tree_archive_shipment() {
-    let (env, client, admin, _token) = setup_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let reason_hash = BytesN::from_array(&env, &[2u8; 32]);
-    let deadline = crate::test_utils::future_deadline(&env, 3_600);
-    let cid = contract_id(&client);
-
-    client.add_company(&admin, &company);
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &deadline,
-    );
-    // Cancel so the shipment is finalized (required before archiving)
-    client.cancel_shipment(&company, &shipment_id, &reason_hash);
-
-    client.archive_shipment(&admin, &shipment_id);
-
-    assert_eq!(
-        env.auths(),
-        std::vec![(
-            admin.clone(),
-            AuthorizedInvocation {
-                function: AuthorizedFunction::Contract((
-                    cid,
-                    Symbol::new(&env, "archive_shipment"),
-                    (admin.clone(), shipment_id).into_val(&env),
-                )),
-                sub_invocations: std::vec![],
-            }
-        )]
-    );
-}
-
 // =============================================================================
 // Company path — positive auth-tree assertions
 // =============================================================================

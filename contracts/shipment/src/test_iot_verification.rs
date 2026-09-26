@@ -27,3 +27,4 @@ mod tests {
         let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
         (env, client, admin, token_contract)
     }
+}

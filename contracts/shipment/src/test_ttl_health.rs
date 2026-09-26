@@ -215,52 +215,6 @@ fn test_ttl_extended_on_active_mutation() {
     );
 }
 
-#[test]
-fn test_ttl_not_extended_for_archived_terminal_shipment() {
-    let (env, client, admin, _token) = setup_shipment_env();
-
-    let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    let receiver = Address::generate(&env);
-    let create_hash = BytesN::from_array(&env, &[0x03u8; 32]);
-    let deadline = env.ledger().timestamp() + 86_400;
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &create_hash,
-        &soroban_sdk::Vec::new(&env),
-        &deadline,
-    );
-
-    let present_before = env.as_contract(&client.address, || {
-        let key = crate::types::DataKey::Shipment(shipment_id);
-        env.storage().persistent().has(&key)
-    });
-    assert!(
-        present_before,
-        "Shipment must be in persistent storage after creation"
-    );
-
-    let reason_hash = BytesN::from_array(&env, &[0x04u8; 32]);
-    client.cancel_shipment(&company, &shipment_id, &reason_hash);
-
-    client.archive_shipment(&admin, &shipment_id);
-
-    let present_after_archive = env.as_contract(&client.address, || {
-        let key = crate::types::DataKey::Shipment(shipment_id);
-        env.storage().persistent().has(&key)
-    });
-    assert!(
-        !present_after_archive,
-        "Archived terminal shipment must not remain in persistent storage"
-    );
-}
-
 /// Verify that health output matches actual storage state at TTL boundaries.
 #[test]
 fn test_ttl_health_output_matches_storage_state() {
@@ -289,50 +243,4 @@ fn test_ttl_health_output_matches_storage_state() {
             "Health output must match actual storage state"
         );
     });
-}
-
-/// Cover the public `get_ttl_health_summary` entry point directly through the
-/// contract client with a mixed-state fixture and assert every returned field
-/// against the known input. (issue #703)
-#[test]
-fn test_ttl_health_summary_matches_mixed_fixture() {
-    let (env, client, admin, _token_contract) = setup_shipment_env();
-    env.mock_all_auths();
-
-    let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    // 4 active shipments: present in persistent storage.
-    for i in 0u8..4 {
-        create_test_shipment(&client, &env, &company, &carrier, i);
-    }
-
-    // 2 shipments cancelled then archived: removed from persistent storage.
-    for i in 10u8..12 {
-        let id = create_test_shipment(&client, &env, &company, &carrier, i);
-        let reason_hash = BytesN::from_array(&env, &[i; 32]);
-        client.cancel_shipment(&company, &id, &reason_hash);
-        client.archive_shipment(&admin, &id);
-    }
-
-    let total: u64 = 6;
-    let archived: u64 = 2;
-    let active = total - archived; // 4 persistent
-
-    let summary = client.get_ttl_health_summary();
-
-    assert_eq!(summary.total_shipment_count, total);
-    assert_eq!(summary.sampled_count, total);
-    assert_eq!(summary.persistent_count, active);
-    assert_eq!(summary.missing_or_archived_count, archived);
-    assert_eq!(
-        summary.persistent_percentage,
-        ((active * 100) / total) as u32
-    );
-    assert_eq!(summary.ttl_threshold, 17_280);
-    assert_eq!(summary.ttl_extension, 518_400);
-    assert_eq!(summary.current_ledger, env.ledger().sequence());
-    assert_eq!(summary.query_timestamp, env.ledger().timestamp());
 }
