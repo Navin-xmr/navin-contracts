@@ -151,6 +151,11 @@ fn test_config_checksum_reflects_idempotency_and_quota_fields() {
     client.update_config(&admin, &cfg);
     assert_ne!(client.get_config_checksum(), before);
 }
+
+#[test]
+fn test_config_checksum_diagnostics_query_path() {
+    let (env, client, admin, _token) = prepare_test();
+    let q1 = client.get_config_checksum();
     let q2 = client.get_config_checksum();
     assert_eq!(q1, q2, "diagnostics query path must be idempotent");
 

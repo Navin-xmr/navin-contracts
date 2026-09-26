@@ -181,4 +181,6 @@ pub enum NavinError {
     /// after a merge collision on discriminant 72 with `RoleMismatch` dropped
     /// it from the enum.)
     MultiSigProposalPending = 74,
+    /// Maximum allowed audit log entries has been reached.
+    AuditLogLimitExceeded = 76,
 }

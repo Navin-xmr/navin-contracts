@@ -498,6 +498,12 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "Symbol could not be decoded: the declared content length exceeds              the decode buffer. Use an event type of 24 characters or fewer.",
         ),
+        NavinError::AuditLogLimitExceeded => (
+            76,
+            LimitExceeded,
+            NoRetry,
+            "Maximum allowed audit log entries has been reached.",
+        ),
     };
 
     ContractErrorInfo {
@@ -583,6 +589,7 @@ fn message_for(error: NavinError) -> Symbol {
         NavinError::RoleMismatch => symbol_short!("role_mis"),
         NavinError::InvalidSymbolEncoding => symbol_short!("sym_enc"),
         NavinError::MultiSigProposalPending => symbol_short!("ms_pend"),
+        NavinError::AuditLogLimitExceeded => symbol_short!("audit_lim"),
     }
 }
 
@@ -662,6 +669,7 @@ pub fn get_error_info(code: u32) -> ContractErrorInfo {
         69 => error_info(NavinError::CarrierAlreadyWhitelisted),
         70 => error_info(NavinError::InvalidAddress),
         71 => error_info(NavinError::RecoveryLimitExceeded),
+        76 => error_info(NavinError::AuditLogLimitExceeded),
         _ => ContractErrorInfo {
             code,
             category: ErrorCategory::InvalidInput,

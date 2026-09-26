@@ -78,8 +78,7 @@ pub fn check_shipment_invariants(env: &Env, shipment_id: u64) -> Vec<Consistency
     };
 
     // Escrow: struct field must match dedicated storage entry.
-    let stored_escrow = storage::get_escrow(env, shipment_id);
-    if shipment.escrow_amount != stored_escrow {
+    if storage::has_escrow_mismatch(env, shipment_id, shipment.escrow_amount) {
         violations.push_back(ConsistencyViolation::EscrowMismatch(shipment_id));
     }
 
