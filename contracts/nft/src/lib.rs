@@ -16,6 +16,7 @@ enum NftKey {
     Name,
     Symbol,
     Initialized,
+    Paused,
 }
 
 // ── Errors ──────────────────────────────────────────────────────────────────
@@ -29,6 +30,8 @@ pub enum NftError {
     TokenDoesNotExist = 4,
     NotOwner = 5,
     TokenAlreadyMinted = 6,
+    MintToContract = 7,
+    ContractPaused = 8,
 }
 
 // ── Events ──────────────────────────────────────────────────────────────────
@@ -36,6 +39,8 @@ pub enum NftError {
 const MINT: Symbol = symbol_short!("mint");
 const TRANSFER_NFT: Symbol = symbol_short!("xfer");
 const BURN: Symbol = symbol_short!("burn");
+const INIT: Symbol = symbol_short!("init");
+const ADMIN_TRANSFER: Symbol = symbol_short!("admin");
 
 // ── Contract ────────────────────────────────────────────────────────────────
 
@@ -60,11 +65,20 @@ impl NavinShipmentNft {
         env.storage().instance().set(&NftKey::Symbol, &symbol);
         env.storage().instance().set(&NftKey::TokenCount, &0_u64);
         env.storage().instance().set(&NftKey::Initialized, &true);
+        env.events().publish(
+            (INIT,),
+            (admin, name, symbol, env.ledger().timestamp()),
+        );
         Ok(())
     }
 
     pub fn mint(env: Env, to: Address, token_id: u64) -> Result<u64, NftError> {
+        Self::require_not_paused(&env)?;
         Self::require_admin(&env)?;
+
+        if to == env.current_contract_address() {
+            return Err(NftError::MintToContract);
+        }
 
         if env.storage().persistent().has(&NftKey::Owner(token_id)) {
             return Err(NftError::TokenAlreadyMinted);
@@ -85,11 +99,13 @@ impl NavinShipmentNft {
             .instance()
             .set(&NftKey::TokenCount, &(count + 1));
 
-        env.events().publish((MINT,), (token_id, to));
+        env.events()
+            .publish((MINT,), (token_id, to, env.ledger().timestamp()));
         Ok(token_id)
     }
 
     pub fn transfer(env: Env, from: Address, to: Address, token_id: u64) -> Result<(), NftError> {
+        Self::require_not_paused(&env)?;
         from.require_auth();
 
         let owner = Self::get_owner_inner(&env, token_id)?;
@@ -108,11 +124,15 @@ impl NavinShipmentNft {
         Self::remove_token_from_owner(&env, &from, token_id);
         Self::add_token_to_owner(&env, &to, token_id);
 
-        env.events().publish((TRANSFER_NFT,), (token_id, from, to));
+        env.events().publish(
+            (TRANSFER_NFT,),
+            (token_id, from, to, env.ledger().timestamp()),
+        );
         Ok(())
     }
 
     pub fn burn(env: Env, caller: Address, token_id: u64) -> Result<(), NftError> {
+        Self::require_not_paused(&env)?;
         caller.require_auth();
 
         let owner = Self::get_owner_inner(&env, token_id)?;
@@ -136,7 +156,44 @@ impl NavinShipmentNft {
                 .set(&NftKey::TokenCount, &(count - 1));
         }
 
-        env.events().publish((BURN,), (token_id, caller));
+        env.events()
+            .publish((BURN,), (token_id, caller, env.ledger().timestamp()));
+        Ok(())
+    }
+
+    pub fn transfer_admin(
+        env: Env,
+        admin: Address,
+        new_admin: Address,
+    ) -> Result<(), NftError> {
+        admin.require_auth();
+        if Self::get_admin_inner(&env)? != admin {
+            return Err(NftError::NotAdmin);
+        }
+
+        env.storage().instance().set(&NftKey::Admin, &new_admin);
+        env.events().publish(
+            (ADMIN_TRANSFER,),
+            (admin, new_admin, env.ledger().timestamp()),
+        );
+        Ok(())
+    }
+
+    pub fn pause(env: Env, admin: Address) -> Result<(), NftError> {
+        admin.require_auth();
+        if Self::get_admin_inner(&env)? != admin {
+            return Err(NftError::NotAdmin);
+        }
+        env.storage().instance().set(&NftKey::Paused, &true);
+        Ok(())
+    }
+
+    pub fn unpause(env: Env, admin: Address) -> Result<(), NftError> {
+        admin.require_auth();
+        if Self::get_admin_inner(&env)? != admin {
+            return Err(NftError::NotAdmin);
+        }
+        env.storage().instance().set(&NftKey::Paused, &false);
         Ok(())
     }
 
@@ -196,6 +253,18 @@ impl NavinShipmentNft {
         let admin = Self::get_admin_inner(env)?;
         admin.require_auth();
         Ok(admin)
+    }
+
+    fn require_not_paused(env: &Env) -> Result<(), NftError> {
+        if env
+            .storage()
+            .instance()
+            .get(&NftKey::Paused)
+            .unwrap_or(false)
+        {
+            return Err(NftError::ContractPaused);
+        }
+        Ok(())
     }
 
     fn add_token_to_owner(env: &Env, owner: &Address, token_id: u64) {
