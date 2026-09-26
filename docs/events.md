@@ -57,6 +57,7 @@
     - [adm_burn](#token-admin-burn)
     - [burn_from](#token-burn-from)
 14. [Token Admin Events](#token-admin-events)
+    - [admin_pro](#token-admin-proposed)
     - [admin_tr](#token-admin-transfer)
     - [paused](#token-paused)
     - [unpaused](#token-unpaused)
@@ -1142,18 +1143,35 @@ Emitted when tokens are burned using an allowance via `burn_from()`.
 
 ## Token Admin Events
 
-### `admin_tr`
+### `admin_pro`
 
-Emitted when admin rights are transferred to a new address via `transfer_admin()`.
+Emitted when an admin transfer is proposed to a new address via `transfer_admin()`.
 
-**Topic:** `"admin_tr"`
+**Topic:** `"admin_pro"`
 **Emitted by:** `transfer_admin`
 **Caller role:** Current admin
 
 | #   | Field           | Soroban Type | Description     |
 | --- | --------------- | ------------ | --------------- |
-| 1   | `current_admin` | `Address`    | Departing admin |
-| 2   | `new_admin`     | `Address`    | Incoming admin  |
+| 1   | `current_admin` | `Address`    | Current admin   |
+| 2   | `new_admin`     | `Address`    | Nominated admin |
+
+**Backend action:** Record pending admin proposal.
+
+---
+
+### `admin_tr`
+
+Emitted when a proposed admin transfer is accepted via `accept_admin_transfer()`.
+
+**Topic:** `"admin_tr"`
+**Emitted by:** `accept_admin_transfer`
+**Caller role:** Nominated admin
+
+| #   | Field       | Soroban Type | Description     |
+| --- | ----------- | ------------ | --------------- |
+| 1   | `old_admin` | `Address`    | Departing admin |
+| 2   | `new_admin` | `Address`    | Incoming admin  |
 
 **Backend action:** Update admin record in control registry.
 
