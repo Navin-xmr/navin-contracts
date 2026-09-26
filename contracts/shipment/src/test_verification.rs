@@ -149,6 +149,9 @@ fn test_assert_delivery_hash_no_confirmation_returns_status_hash_not_found() {
         "assert_delivery_hash before delivery confirmation must return StatusHashNotFound (#44)"
     );
 }
+
+#[test]
+fn test_assert_delivery_hash_error_codes_distinct() {
     use crate::NavinError;
     assert_ne!(
         NavinError::DataHashMismatch as u32,
