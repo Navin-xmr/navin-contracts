@@ -1701,7 +1701,7 @@ impl NavinShipment {
         // role; if the target does not hold it, that is a mistake worth
         // surfacing rather than a different role worth destroying.
         Self::require_exact_role(&env, &guardian, &Role::Guardian)?;
-        Self::revoke_role(env, admin, guardian)
+        Self::revoke_role(env, admin, guardian, Role::Guardian)
     }
 
     /// Revoke an Operator role using the ergonomic counterpart to [`Self::add_operator`].
@@ -1712,7 +1712,7 @@ impl NavinShipment {
     pub fn remove_operator(env: Env, admin: Address, operator: Address) -> Result<(), NavinError> {
         // Issue #749 — see the note on `remove_guardian`.
         Self::require_exact_role(&env, &operator, &Role::Operator)?;
-        Self::revoke_role(env, admin, operator)
+        Self::revoke_role(env, admin, operator, Role::Operator)
     }
 
     /// Fail unless `target` currently holds exactly `expected` (Issue #749).
@@ -1722,8 +1722,7 @@ impl NavinShipment {
     /// authorization error — the caller needs to know which of the two went
     /// wrong.
     fn require_exact_role(env: &Env, target: &Address, expected: &Role) -> Result<(), NavinError> {
-        let current = storage::get_role(env, target).unwrap_or(Role::Unassigned);
-        if current != *expected {
+        if !storage::has_role(env, target, expected) {
             return Err(NavinError::RoleMismatch);
         }
         Ok(())
@@ -1812,7 +1811,7 @@ impl NavinShipment {
     /// ```rust
     /// // contract.revoke_role(&env, &admin, &target_addr);
     /// ```
-    pub fn revoke_role(env: Env, admin: Address, target: Address) -> Result<(), NavinError> {
+    pub fn revoke_role(env: Env, admin: Address, target: Address, role: Role) -> Result<(), NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
         admin.require_auth();
@@ -1825,17 +1824,13 @@ impl NavinShipment {
             return Err(NavinError::CannotSelfRevoke);
         }
 
-        let current_role = storage::get_role(&env, &target).unwrap_or(Role::Unassigned);
-
-        match current_role {
-            Role::Company => storage::revoke_role(&env, &target, &Role::Company),
-            Role::Carrier => storage::revoke_role(&env, &target, &Role::Carrier),
-            Role::Guardian => storage::revoke_role(&env, &target, &Role::Guardian),
-            Role::Operator => storage::revoke_role(&env, &target, &Role::Operator),
-            Role::Unassigned => {}
+        if !storage::has_role(&env, &target, &role) {
+            return Err(NavinError::RoleMismatch);
         }
 
-        events::emit_role_revoked(&env, &admin, &target, &current_role);
+        storage::revoke_role(&env, &target, &role);
+
+        events::emit_role_revoked(&env, &admin, &target, &role);
 
         // Emit role history event for audit trail
         events::emit_role_changed(
@@ -1843,7 +1838,7 @@ impl NavinShipment {
             &RoleChangeAction::Revoked,
             &admin,
             &target,
-            &current_role,
+            &role,
         );
 
         Ok(())
