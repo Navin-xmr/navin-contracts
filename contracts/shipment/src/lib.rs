@@ -93,6 +93,8 @@ mod test_invalid_shipment_input;
 #[cfg(test)]
 mod test_pause;
 #[cfg(test)]
+mod test_circuit_breaker_reset;
+#[cfg(test)]
 mod test_performance;
 #[cfg(test)]
 mod test_precondition_guards;
