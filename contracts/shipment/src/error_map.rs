@@ -761,6 +761,8 @@ mod tests {
             (NavinError::ShipmentFinalized, 38),
             (NavinError::ShipmentNotFound, 4),
             (NavinError::Unauthorized, 3),
+            (NavinError::CarrierAlreadyWhitelisted, 75),
+            (NavinError::CarrierNotWhitelisted, 69),
         ];
         for (err, expected_code) in cases {
             let info = error_info(*err);
@@ -773,6 +775,20 @@ mod tests {
     }
 
     #[test]
+    fn test_issue_888_carrier_error_codes_are_distinct() {
+        assert_eq!(NavinError::CarrierNotWhitelisted as u32, 69);
+        assert_eq!(NavinError::CarrierAlreadyWhitelisted as u32, 75);
+
+        let not_whitelisted = get_error_info(69);
+        let already_whitelisted = get_error_info(75);
+
+        assert_eq!(not_whitelisted.code, 69);
+        assert_eq!(not_whitelisted.message, symbol_short!("not_wlist"));
+        assert_eq!(already_whitelisted.code, 75);
+        assert_eq!(already_whitelisted.message, symbol_short!("carrier"));
+        assert_ne!(not_whitelisted.message, already_whitelisted.message);
+        assert_eq!(error_info(NavinError::CarrierNotWhitelisted).code, 69);
+        assert_eq!(error_info(NavinError::CarrierAlreadyWhitelisted).code, 75);
     fn test_issue_889_numeric_lookup_covers_live_error_codes() {
         let cases: &[(u32, NavinError, ErrorCategory, Symbol)] = &[
             (
