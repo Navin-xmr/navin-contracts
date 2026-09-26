@@ -133,6 +133,41 @@ pub const ROLE_REVOKED: &str = "role_revoked";
 /// Emitted on every RBAC change (assign / revoke / suspend / reactivate).
 pub const ROLE_CHANGED: &str = "role_changed";
 
+// ── Audit trail ───────────────────────────────────────────────────────────────
+
+/// Emitted when an audit-log entry records a role assignment.
+pub const AUDIT_ROLE_ASSIGNED: &str = "audit_role_assigned";
+
+/// Emitted when an audit-log entry records a role revocation.
+pub const AUDIT_ROLE_REVOKED: &str = "audit_role_revoked";
+
+/// Emitted when an audit-log entry records a role suspension.
+pub const AUDIT_ROLE_SUSPENDED: &str = "audit_role_suspended";
+
+/// Emitted when an audit-log entry records a role reactivation.
+pub const AUDIT_ROLE_REACTIVATED: &str = "audit_role_reactivated";
+
+/// Emitted when an audit-log entry records an admin transfer.
+pub const AUDIT_ADMIN_TRANSFERRED: &str = "audit_admin_transferred";
+
+/// Emitted when an audit-log entry records a carrier whitelist addition.
+pub const AUDIT_CARRIER_WHITELISTED: &str = "audit_carrier_whitelisted";
+
+/// Emitted when an audit-log entry records a carrier whitelist removal.
+pub const AUDIT_CARRIER_UNWHITELISTED: &str = "audit_carrier_unwhitelisted";
+
+/// Emitted when an audit-log entry records a company suspension.
+pub const AUDIT_COMPANY_SUSPENDED: &str = "audit_company_suspended";
+
+/// Emitted when an audit-log entry records a company reactivation.
+pub const AUDIT_COMPANY_REACTIVATED: &str = "audit_company_reactivated";
+
+/// Emitted when an audit-log entry records a carrier suspension.
+pub const AUDIT_CARRIER_SUSPENDED: &str = "audit_carrier_suspended";
+
+/// Emitted when an audit-log entry records a carrier reactivation.
+pub const AUDIT_CARRIER_REACTIVATED: &str = "audit_carrier_reactivated";
+
 // ── Carrier handoff ───────────────────────────────────────────────────────────
 
 /// Emitted when a shipment is handed off to a new carrier.
@@ -352,6 +387,17 @@ mod tests {
             FORCE_CANCELLED,
             ROLE_REVOKED,
             ROLE_CHANGED,
+            AUDIT_ROLE_ASSIGNED,
+            AUDIT_ROLE_REVOKED,
+            AUDIT_ROLE_SUSPENDED,
+            AUDIT_ROLE_REACTIVATED,
+            AUDIT_ADMIN_TRANSFERRED,
+            AUDIT_CARRIER_WHITELISTED,
+            AUDIT_CARRIER_UNWHITELISTED,
+            AUDIT_COMPANY_SUSPENDED,
+            AUDIT_COMPANY_REACTIVATED,
+            AUDIT_CARRIER_SUSPENDED,
+            AUDIT_CARRIER_REACTIVATED,
             CARRIER_HANDOFF,
             NOTIFICATION,
             NOTE_APPENDED,
@@ -412,6 +458,17 @@ mod tests {
         assert_eq!(FORCE_CANCELLED, "force_cancelled");
         assert_eq!(ROLE_REVOKED, "role_revoked");
         assert_eq!(ROLE_CHANGED, "role_changed");
+        assert_eq!(AUDIT_ROLE_ASSIGNED, "audit_role_assigned");
+        assert_eq!(AUDIT_ROLE_REVOKED, "audit_role_revoked");
+        assert_eq!(AUDIT_ROLE_SUSPENDED, "audit_role_suspended");
+        assert_eq!(AUDIT_ROLE_REACTIVATED, "audit_role_reactivated");
+        assert_eq!(AUDIT_ADMIN_TRANSFERRED, "audit_admin_transferred");
+        assert_eq!(AUDIT_CARRIER_WHITELISTED, "audit_carrier_whitelisted");
+        assert_eq!(AUDIT_CARRIER_UNWHITELISTED, "audit_carrier_unwhitelisted");
+        assert_eq!(AUDIT_COMPANY_SUSPENDED, "audit_company_suspended");
+        assert_eq!(AUDIT_COMPANY_REACTIVATED, "audit_company_reactivated");
+        assert_eq!(AUDIT_CARRIER_SUSPENDED, "audit_carrier_suspended");
+        assert_eq!(AUDIT_CARRIER_REACTIVATED, "audit_carrier_reactivated");
         assert_eq!(CARRIER_HANDOFF, "carrier_handoff");
         assert_eq!(NOTIFICATION, "notification");
         assert_eq!(NOTE_APPENDED, "note_appended");
@@ -460,6 +517,17 @@ mod tests {
             FORCE_CANCELLED,
             ROLE_REVOKED,
             ROLE_CHANGED,
+            AUDIT_ROLE_ASSIGNED,
+            AUDIT_ROLE_REVOKED,
+            AUDIT_ROLE_SUSPENDED,
+            AUDIT_ROLE_REACTIVATED,
+            AUDIT_ADMIN_TRANSFERRED,
+            AUDIT_CARRIER_WHITELISTED,
+            AUDIT_CARRIER_UNWHITELISTED,
+            AUDIT_COMPANY_SUSPENDED,
+            AUDIT_COMPANY_REACTIVATED,
+            AUDIT_CARRIER_SUSPENDED,
+            AUDIT_CARRIER_REACTIVATED,
             CARRIER_HANDOFF,
             NOTIFICATION,
             NOTE_APPENDED,

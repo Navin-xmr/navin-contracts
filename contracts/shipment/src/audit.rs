@@ -474,17 +474,17 @@ fn remove_audit_entry(env: &Env, entry_id: u64) {
 fn emit_audit_event(env: &Env, entry: &AuditLogEntry) {
     // Emit audit event for off-chain indexing
     let event_type = match entry.event_type {
-        AuditEventType::RoleAssigned => "audit_role_assigned",
-        AuditEventType::RoleRevoked => "audit_role_revoked",
-        AuditEventType::RoleSuspended => "audit_role_suspended",
-        AuditEventType::RoleReactivated => "audit_role_reactivated",
-        AuditEventType::AdminTransferred => "audit_admin_transferred",
-        AuditEventType::CarrierWhitelisted => "audit_carrier_whitelisted",
-        AuditEventType::CarrierUnwhitelisted => "audit_carrier_unwhitelisted",
-        AuditEventType::CompanySuspended => "audit_company_suspended",
-        AuditEventType::CompanyReactivated => "audit_company_reactivated",
-        AuditEventType::CarrierSuspended => "audit_carrier_suspended",
-        AuditEventType::CarrierReactivated => "audit_carrier_reactivated",
+        AuditEventType::RoleAssigned => crate::event_topics::AUDIT_ROLE_ASSIGNED,
+        AuditEventType::RoleRevoked => crate::event_topics::AUDIT_ROLE_REVOKED,
+        AuditEventType::RoleSuspended => crate::event_topics::AUDIT_ROLE_SUSPENDED,
+        AuditEventType::RoleReactivated => crate::event_topics::AUDIT_ROLE_REACTIVATED,
+        AuditEventType::AdminTransferred => crate::event_topics::AUDIT_ADMIN_TRANSFERRED,
+        AuditEventType::CarrierWhitelisted => crate::event_topics::AUDIT_CARRIER_WHITELISTED,
+        AuditEventType::CarrierUnwhitelisted => crate::event_topics::AUDIT_CARRIER_UNWHITELISTED,
+        AuditEventType::CompanySuspended => crate::event_topics::AUDIT_COMPANY_SUSPENDED,
+        AuditEventType::CompanyReactivated => crate::event_topics::AUDIT_COMPANY_REACTIVATED,
+        AuditEventType::CarrierSuspended => crate::event_topics::AUDIT_CARRIER_SUSPENDED,
+        AuditEventType::CarrierReactivated => crate::event_topics::AUDIT_CARRIER_REACTIVATED,
     };
 
     env.events().publish(
