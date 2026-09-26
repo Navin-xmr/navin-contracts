@@ -87,6 +87,7 @@ fn create_shipment(
 ) -> u64 {
     let data_hash = hash_from_seed(env, seed);
     let deadline = env.ledger().timestamp() + 86_400 * 30;
+    crate::test_utils::allow_carrier(&client, company, carrier);
     client.create_shipment(
         company,
         receiver,
@@ -305,6 +306,7 @@ fn fuzz_escrow_release_never_exceeds_balance() {
         let receiver = Address::generate(&env);
         let data_hash = hash_from_seed(&env, seed + i as u64);
         let deadline = env.ledger().timestamp() + 86_400 * 30;
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let id = client.create_shipment(
             &company,
             &receiver,
@@ -369,6 +371,7 @@ fn fuzz_escrow_double_release_fails() {
         let receiver = Address::generate(&env);
         let data_hash = hash_from_seed(&env, seed + i as u64);
         let deadline = env.ledger().timestamp() + 86_400 * 30;
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let id = client.create_shipment(
             &company,
             &receiver,
@@ -467,6 +470,7 @@ fn fuzz_escrow_invariant_amount_lte_total() {
         let receiver = Address::generate(&env);
         let data_hash = hash_from_seed(&env, seed + i as u64);
         let deadline = env.ledger().timestamp() + 86_400 * 30;
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let id = client.create_shipment(
             &company,
             &receiver,

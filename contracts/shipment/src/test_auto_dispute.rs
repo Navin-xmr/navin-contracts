@@ -60,6 +60,7 @@ fn create_test_shipment(
 
     client.add_company(admin, &company);
     client.add_carrier(admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let id = client.create_shipment(
         &company,

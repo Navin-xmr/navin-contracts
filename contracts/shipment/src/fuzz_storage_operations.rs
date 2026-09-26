@@ -90,6 +90,7 @@ fn create_shipment_with_seed(
     let receiver = Address::generate(env);
     let data_hash = hash_from_seed(env, seed);
     let deadline = env.ledger().timestamp() + 86_400;
+    crate::test_utils::allow_carrier(&client, company, carrier);
     client.create_shipment(
         company,
         &receiver,
@@ -197,6 +198,7 @@ fn fuzz_storage_overwrite_updates_value() {
     // Create one shipment to update repeatedly
     let data_hash = hash_from_seed(&env, 1);
     let deadline = env.ledger().timestamp() + 86_400 * 365;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let id = client.create_shipment(
         &company,
         &receiver,
@@ -297,6 +299,7 @@ fn fuzz_storage_role_round_trip() {
         let data_hash = hash_from_seed(&env, _seed);
         env.ledger().with_mut(|l| l.timestamp += 2);
         let deadline = env.ledger().timestamp() + 86_400;
+        crate::test_utils::allow_carrier(&client, &addr, &carrier);
 
         let result = client.try_create_shipment(
             &addr,

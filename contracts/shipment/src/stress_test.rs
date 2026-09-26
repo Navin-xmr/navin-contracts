@@ -37,6 +37,7 @@ fn test_create_50_shipments_sequentially() {
         let receiver = Address::generate(&env);
         let carrier = Address::generate(&env);
         let data_hash = BytesN::from_array(&env, &[i as u8; 32]);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let shipment_id = client.create_shipment(
             &company,
@@ -72,6 +73,7 @@ fn test_20_concurrent_status_updates() {
         let receiver = Address::generate(&env);
         let carrier = carriers.get(i).unwrap();
         let data_hash = BytesN::from_array(&env, &[(i + 1) as u8; 32]);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         client.create_shipment(
             &company,
@@ -115,6 +117,7 @@ fn test_verify_shipment_count_after_mass_operations() {
         let receiver = Address::generate(&env);
         let carrier = Address::generate(&env);
         let data_hash = BytesN::from_array(&env, &[i as u8; 32]);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         client.create_shipment(
             &company,
@@ -151,6 +154,7 @@ fn test_no_data_corruption_between_shipments() {
         let data_hash = BytesN::from_array(&env, &[i as u8; 32]);
 
         expected_data.push_back((receiver.clone(), carrier.clone(), data_hash.clone()));
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         client.create_shipment(
             &company,

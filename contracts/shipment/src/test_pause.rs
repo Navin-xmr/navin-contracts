@@ -88,6 +88,7 @@ mod tests {
         let hash = BytesN::from_array(&env, &[1u8; 32]);
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
     }
@@ -108,6 +109,7 @@ mod tests {
         let hash = BytesN::from_array(&env, &[1u8; 32]);
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let shipment_id =
             client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
@@ -140,6 +142,7 @@ mod tests {
         let hash = BytesN::from_array(&env, &[1u8; 32]);
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let shipment_id =
             client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
@@ -173,6 +176,7 @@ mod tests {
         let hash1 = BytesN::from_array(&env, &[1u8; 32]);
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let shipment_id1 = client.create_shipment(
             &company,
@@ -193,6 +197,7 @@ mod tests {
 
         // Create shipment after unpause should work
         let hash2 = BytesN::from_array(&env, &[2u8; 32]);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let shipment_id2 = client.create_shipment(
             &company,
             &receiver,
@@ -253,6 +258,7 @@ mod tests {
 
         let hash = BytesN::from_array(&env, &[0x99u8; 32]);
         let deadline = future_deadline(&env, 86400);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let shipment_id = client.create_shipment(
             &company,
             &receiver,
@@ -347,6 +353,7 @@ mod tests {
 
         client.initialize(&admin, &token_contract);
         client.add_company(&admin, &company);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let shipment_id = client.create_shipment(
             &company,
@@ -375,6 +382,7 @@ mod tests {
         client.add_carrier_to_whitelist(&company, &carrier);
 
         let hash = BytesN::from_array(&env, &[1u8; 32]);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let shipment_id = client.create_shipment(
             &company,
             &receiver,
@@ -401,6 +409,7 @@ mod tests {
         client.add_carrier(&admin, &carrier);
 
         let hash = BytesN::from_array(&env, &[1u8; 32]);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let shipment_id = client.create_shipment(
             &company,
             &receiver,
@@ -427,6 +436,7 @@ mod tests {
         client.add_carrier(&admin, &carrier);
 
         let hash = BytesN::from_array(&env, &[1u8; 32]);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let shipment_id = client.create_shipment(
             &company,
             &receiver,
@@ -450,6 +460,7 @@ mod tests {
 
         client.initialize(&admin, &token_contract);
         client.add_company(&admin, &company);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let shipment_id = client.create_shipment(
             &company,
@@ -482,6 +493,7 @@ mod tests {
         client.add_carrier(&admin, &carrier);
 
         let hash = BytesN::from_array(&env, &[1u8; 32]);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let shipment_id = client.create_shipment(
             &company,
             &receiver,
@@ -513,6 +525,7 @@ mod tests {
         client.add_carrier(&admin, &carrier);
 
         let hash = BytesN::from_array(&env, &[1u8; 32]);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let shipment_id = client.create_shipment(
             &company,
             &receiver,
@@ -787,6 +800,7 @@ mod tests {
         let hash = BytesN::from_array(&env, &[1u8; 32]);
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let shipment_id =
             client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
@@ -826,6 +840,7 @@ mod tests {
         let hash = BytesN::from_array(&env, &[1u8; 32]);
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let shipment_id =
             client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
@@ -865,6 +880,7 @@ mod tests {
         let hash = BytesN::from_array(&env, &[1u8; 32]);
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let shipment_id =
             client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
@@ -910,6 +926,7 @@ mod tests {
         let hash = BytesN::from_array(&env, &[1u8; 32]);
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let shipment_id =
             client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
@@ -934,6 +951,7 @@ mod tests {
         let hash = BytesN::from_array(&env, &[1u8; 32]);
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let shipment_id =
             client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
@@ -966,6 +984,7 @@ mod tests {
         let hash = BytesN::from_array(&env, &[1u8; 32]);
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let shipment_id =
             client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);
@@ -1004,6 +1023,7 @@ mod tests {
         let hash = BytesN::from_array(&env, &[1u8; 32]);
         let milestones = Vec::new(&env);
         let deadline = future_deadline(&env, 86400);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let shipment_id =
             client.create_shipment(&company, &receiver, &carrier, &hash, &milestones, &deadline);

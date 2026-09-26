@@ -13,6 +13,7 @@ fn create_shipment_for(
 ) -> u64 {
     let data_hash = BytesN::from_array(env, &[marker; 32]);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, sender, carrier);
     client.create_shipment(
         sender,
         receiver,
@@ -259,6 +260,9 @@ fn issue_701_batch_rejects_sender_equals_receiver() {
         deadline,
     });
 
+    for s in shipments.iter() {
+        crate::test_utils::allow_carrier(&client, &company, &s.carrier);
+    }
     let result = client.try_create_shipments_batch(&company, &shipments);
     assert!(
         result.is_err(),
@@ -295,6 +299,9 @@ fn issue_701_batch_rejects_sender_equals_carrier() {
         deadline,
     });
 
+    for s in shipments.iter() {
+        crate::test_utils::allow_carrier(&client, &company, &s.carrier);
+    }
     let result = client.try_create_shipments_batch(&company, &shipments);
     assert!(
         result.is_err(),
@@ -331,6 +338,9 @@ fn issue_701_batch_rejects_receiver_equals_carrier() {
         deadline,
     });
 
+    for s in shipments.iter() {
+        crate::test_utils::allow_carrier(&client, &company, &s.carrier);
+    }
     let result = client.try_create_shipments_batch(&company, &shipments);
     assert!(
         result.is_err(),
@@ -368,6 +378,9 @@ fn issue_701_batch_succeeds_with_distinct_participants() {
         deadline,
     });
 
+    for s in shipments.iter() {
+        crate::test_utils::allow_carrier(&client, &company, &s.carrier);
+    }
     let result = client.try_create_shipments_batch(&company, &shipments);
     assert!(
         result.is_ok(),
@@ -412,6 +425,9 @@ fn issue_701_batch_atomicity_one_invalid_rejects_all() {
         deadline,
     });
 
+    for s in shipments.iter() {
+        crate::test_utils::allow_carrier(&client, &company, &s.carrier);
+    }
     let result = client.try_create_shipments_batch(&company, &shipments);
     assert!(
         result.is_err(),

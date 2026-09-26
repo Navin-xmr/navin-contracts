@@ -129,6 +129,7 @@ fn test_record_milestones_batch_rollback() {
 
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -228,6 +229,7 @@ fn test_release_escrow_failure_leaves_escrow_unchanged() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
     client.add_carrier_to_whitelist(&company, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let id = client.create_shipment(
         &company,
@@ -283,6 +285,7 @@ fn test_token_failure_maps_to_token_transfer_failed_error() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
     client.add_carrier_to_whitelist(&company, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let id = client.create_shipment(
         &company,
@@ -333,6 +336,7 @@ fn test_release_failure_emits_no_release_event() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
     client.add_carrier_to_whitelist(&company, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let id = client.create_shipment(
         &company,

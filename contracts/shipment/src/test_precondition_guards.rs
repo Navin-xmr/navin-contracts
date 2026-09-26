@@ -71,6 +71,7 @@ mod tests {
 
         // Pause the contract.
         client.pause(&admin);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let result = client.try_create_shipment(
             &company,
@@ -107,6 +108,7 @@ mod tests {
         let (env, client, _admin, _company, carrier) = setup();
         let hash = make_hash(&env, 2);
         let deadline = future_deadline(&env);
+        crate::test_utils::allow_carrier(&client, &carrier, &carrier);
 
         let result = client.try_create_shipment(
             &carrier,
@@ -126,6 +128,7 @@ mod tests {
         let (env, client, _admin, company, carrier) = setup();
         let hash = make_hash(&env, 3);
         let deadline = future_deadline(&env);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let id = client.create_shipment(
             &company,
@@ -151,6 +154,7 @@ mod tests {
 
         let hash = make_hash(&env, 5);
         let deadline = future_deadline(&env);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let result = client.try_create_shipment(
             &company,
@@ -170,6 +174,7 @@ mod tests {
         let (env, client, admin, company, carrier) = setup();
         let hash = make_hash(&env, 6);
         let deadline = future_deadline(&env);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let id = client.create_shipment(
             &company,
@@ -204,6 +209,7 @@ mod tests {
         let receiver = Address::generate(&env);
         let hash = make_hash(&env, 8);
         let deadline = future_deadline(&env);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let id = client.create_shipment(
             &company,
@@ -237,6 +243,7 @@ mod tests {
         // Try to create a shipment with a deadline in the past (before current time)
         // This tests the deadline validation which indirectly tests relativity
         let past_deadline = now - 100;
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let result = client.try_create_shipment(
             &company,
@@ -255,6 +262,7 @@ mod tests {
         let hash = make_hash(&env, 2);
         let hash2 = make_hash(&env, 3);
         let deadline = future_deadline(&env);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let id = client.create_shipment(
             &company,

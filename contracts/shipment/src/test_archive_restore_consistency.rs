@@ -65,6 +65,7 @@ mod tests {
 
         client.add_company(&admin, &company);
         client.add_carrier(&admin, &carrier);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let shipment_id = client.create_shipment(
             &company,

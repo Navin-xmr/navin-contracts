@@ -49,6 +49,7 @@ fn create_one(
     seed: u8,
 ) -> u64 {
     let deadline = test_utils::future_deadline(env, 7200);
+    crate::test_utils::allow_carrier(&client, company, carrier);
     client.create_shipment(
         company,
         &Address::generate(env),
@@ -1158,6 +1159,7 @@ fn test_upgrade_preserves_analytics_counters() {
     client.add_carrier(&admin, &carrier);
 
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let id1 = client.create_shipment(
         &company,
@@ -1167,6 +1169,7 @@ fn test_upgrade_preserves_analytics_counters() {
         &soroban_sdk::Vec::new(&env),
         &deadline,
     );
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let id2 = client.create_shipment(
         &company,
         &receiver,

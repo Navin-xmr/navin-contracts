@@ -50,6 +50,7 @@ mod tests {
 
         client.add_company(admin, &company);
         client.add_carrier(admin, &carrier);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let shipment_id = client.create_shipment(
             &company,
@@ -183,6 +184,7 @@ mod tests {
         let new_hash = BytesN::from_array(&env, &[0x44u8; 32]);
         let new_deadline = test_utils::future_deadline(&env, 3600);
         let new_receiver = Address::generate(&env);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let result = client.try_create_shipment(
             &company,
             &new_receiver,
@@ -277,6 +279,7 @@ mod tests {
         client.reactivate_company(&admin, &company);
         let new_hash2 = BytesN::from_array(&env, &[0x88u8; 32]);
         let deadline2 = test_utils::future_deadline(&env, 3600);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let result = client.try_create_shipment(
             &company,
             &receiver,

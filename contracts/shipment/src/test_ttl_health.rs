@@ -44,6 +44,7 @@ fn create_test_shipment(
     // Use hash_bytes + 1 to avoid all-zero hash which is rejected by validation
     let data_hash = BytesN::from_array(env, &[hash_bytes.wrapping_add(1); 32]);
     let deadline = env.ledger().timestamp() + 86400;
+    crate::test_utils::allow_carrier(&client, company, carrier);
 
     client.create_shipment(
         company,
@@ -173,6 +174,7 @@ fn test_ttl_extended_on_active_mutation() {
     let receiver = Address::generate(&env);
     let create_hash = BytesN::from_array(&env, &[0x01u8; 32]);
     let deadline = env.ledger().timestamp() + 86_400;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,

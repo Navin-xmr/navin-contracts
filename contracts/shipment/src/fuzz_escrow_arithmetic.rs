@@ -77,6 +77,7 @@ fn create_shipment(
 ) -> u64 {
     let data_hash = hash_from_seed(env, seed);
     let deadline = env.ledger().timestamp() + 86_400 * 30;
+    crate::test_utils::allow_carrier(&client, company, carrier);
     client.create_shipment(
         company,
         receiver,
@@ -214,6 +215,7 @@ fn fuzz_arithmetic_no_underflow() {
         let receiver = Address::generate(&env);
         let data_hash = hash_from_seed(&env, seed + i as u64);
         let deadline = env.ledger().timestamp() + 86_400 * 30;
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let id = client.create_shipment(
             &company,
             &receiver,
@@ -598,6 +600,7 @@ fn test_multiple_releases_maintain_nonnegative_invariant() {
         soroban_sdk::Symbol::new(&env, "delivery"),
         100u32, // 100% on delivery
     ));
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let id = client.create_shipment(
         &company,
