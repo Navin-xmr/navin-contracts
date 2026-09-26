@@ -3862,7 +3862,7 @@ impl NavinShipment {
         finalize_if_settled(&env, &mut shipment);
         persist_shipment(&env, &shipment)?;
         if escrow_amount > 0 {
-            storage::remove_escrow_balance(&env, shipment_id);
+            storage::remove_escrow(&env, shipment_id);
         }
         extend_shipment_ttl(&env, shipment_id);
 
