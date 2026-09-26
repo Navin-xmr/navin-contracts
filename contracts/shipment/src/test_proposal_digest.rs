@@ -302,16 +302,9 @@ mod tests {
         // Advance time past expiry
         crate::test_utils::advance_past_multisig_expiry(&env);
 
-        // Verify proposal can still be queried
+        // Verify proposal can still be queried and whole-struct state remains unchanged
         let after_expiry = client.get_proposal(&proposal_id);
-        assert_eq!(after_expiry.id, proposal_id);
-        assert_eq!(after_expiry.approvals.len(), 1);
-        assert!(!after_expiry.executed);
-
-        // State fields should remain unchanged
-        assert_eq!(after_expiry.proposer, before_expiry.proposer);
-        assert_eq!(after_expiry.created_at, before_expiry.created_at);
-        assert_eq!(after_expiry.expires_at, before_expiry.expires_at);
+        assert_eq!(after_expiry, before_expiry);
     }
 
     /// Test: Proposal expires exactly at the boundary timestamp.
