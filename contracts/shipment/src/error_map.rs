@@ -211,7 +211,7 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             "Caller is not in the admin list.",
         ),
         NavinError::MultiSigProposalPending => (
-            72,
+            74,
             InvalidState,
             NoRetry,
             "Cannot re-initialise multi-sig while a proposal is still pending.",
@@ -463,7 +463,7 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             "Address already holds the requested role.",
         ),
         NavinError::CarrierAlreadyWhitelisted => (
-            69,
+            75,
             InvalidState,
             NoRetry,
             "Carrier is already on the company's whitelist; duplicate addition is not allowed.",
@@ -659,8 +659,13 @@ pub fn get_error_info(code: u32) -> ContractErrorInfo {
         66 => error_info(NavinError::NoteNotFound),
         67 => error_info(NavinError::EvidenceNotFound),
         68 => error_info(NavinError::RoleAlreadyAssigned),
-        69 => error_info(NavinError::CarrierAlreadyWhitelisted),
+        69 => error_info(NavinError::CarrierNotWhitelisted),
         70 => error_info(NavinError::InvalidAddress),
+        71 => error_info(NavinError::RecoveryLimitExceeded),
+        72 => error_info(NavinError::RoleMismatch),
+        73 => error_info(NavinError::InvalidSymbolEncoding),
+        74 => error_info(NavinError::MultiSigProposalPending),
+        75 => error_info(NavinError::CarrierAlreadyWhitelisted),
         76 => error_info(NavinError::AuditLogLimitExceeded),
         _ => ContractErrorInfo {
             code,
@@ -762,6 +767,8 @@ mod tests {
             (NavinError::ShipmentFinalized, 38),
             (NavinError::ShipmentNotFound, 4),
             (NavinError::Unauthorized, 3),
+            (NavinError::CarrierAlreadyWhitelisted, 75),
+            (NavinError::CarrierNotWhitelisted, 69),
         ];
         for (err, expected_code) in cases {
             let info = error_info(*err);
@@ -770,6 +777,160 @@ mod tests {
                 "{:?} must map to code {}",
                 err, expected_code
             );
+        }
+    }
+
+    #[test]
+    fn test_issue_888_carrier_error_codes_are_distinct() {
+        assert_eq!(NavinError::CarrierNotWhitelisted as u32, 69);
+        assert_eq!(NavinError::CarrierAlreadyWhitelisted as u32, 75);
+
+        let not_whitelisted = get_error_info(69);
+        let already_whitelisted = get_error_info(75);
+
+        assert_eq!(not_whitelisted.code, 69);
+        assert_eq!(not_whitelisted.message, symbol_short!("not_wlist"));
+        assert_eq!(already_whitelisted.code, 75);
+        assert_eq!(already_whitelisted.message, symbol_short!("carrier"));
+        assert_ne!(not_whitelisted.message, already_whitelisted.message);
+        assert_eq!(error_info(NavinError::CarrierNotWhitelisted).code, 69);
+        assert_eq!(error_info(NavinError::CarrierAlreadyWhitelisted).code, 75);
+    fn test_issue_889_numeric_lookup_covers_live_error_codes() {
+        let cases: &[(u32, NavinError, ErrorCategory, Symbol)] = &[
+            (
+                72,
+                NavinError::RoleMismatch,
+                ErrorCategory::Unauthorized,
+                symbol_short!("role_mis"),
+            ),
+            (
+                73,
+                NavinError::InvalidSymbolEncoding,
+                ErrorCategory::InvalidInput,
+                symbol_short!("sym_enc"),
+            ),
+            (
+                74,
+                NavinError::MultiSigProposalPending,
+                ErrorCategory::InvalidState,
+                symbol_short!("ms_pend"),
+            ),
+            (
+                75,
+                NavinError::CarrierAlreadyWhitelisted,
+                ErrorCategory::InvalidState,
+                symbol_short!("carrier"),
+            ),
+        ];
+
+        for (code, error, category, message) in cases {
+            let info = get_error_info(*code);
+            assert_eq!(info.code, *code);
+            assert_eq!(info.category, *category);
+            assert_eq!(info.retry, RetryGuidance::NoRetry);
+            assert_eq!(info.message, *message);
+            assert_eq!(error_info(*error).code, *code);
+        }
+    }
+
+    #[test]
+    fn test_issue_889_unknown_code_contrast() {
+        let info = get_error_info(77);
+        assert_eq!(info.code, 77);
+        assert_eq!(info.category, ErrorCategory::InvalidInput);
+        assert_eq!(info.retry, RetryGuidance::NoRetry);
+        assert_eq!(info.message, symbol_short!("unknown"));
+    }
+
+    /// Every declared error variant must resolve to the same metadata through
+    /// both the by-variant and numeric lookup paths.
+    #[test]
+    fn test_every_error_variant_has_consistent_numeric_lookup() {
+        let errors = [
+            NavinError::AlreadyInitialized,
+            NavinError::NotInitialized,
+            NavinError::Unauthorized,
+            NavinError::ShipmentNotFound,
+            NavinError::InvalidStatus,
+            NavinError::InvalidHash,
+            NavinError::EscrowLocked,
+            NavinError::InsufficientFunds,
+            NavinError::ShipmentAlreadyCompleted,
+            NavinError::InvalidTimestamp,
+            NavinError::CounterOverflow,
+            NavinError::InvalidAmount,
+            NavinError::ReentrancyDetected,
+            NavinError::BatchTooLarge,
+            NavinError::InvalidShipmentInput,
+            NavinError::MilestoneSumInvalid,
+            NavinError::MilestoneAlreadyPaid,
+            NavinError::MetadataLimitExceeded,
+            NavinError::RateLimitExceeded,
+            NavinError::ProposalNotFound,
+            NavinError::ProposalAlreadyExecuted,
+            NavinError::ProposalExpired,
+            NavinError::AlreadyApproved,
+            NavinError::InsufficientApprovals,
+            NavinError::NotAnAdmin,
+            NavinError::InvalidMultiSigConfig,
+            NavinError::NotExpired,
+            NavinError::ShipmentLimitReached,
+            NavinError::InvalidConfig,
+            NavinError::CannotSelfRevoke,
+            NavinError::CarrierSuspended,
+            NavinError::ForceCancelReasonHashMissing,
+            NavinError::ArithmeticError,
+            NavinError::DisputeReasonHashMissing,
+            NavinError::CompanySuspended,
+            NavinError::ShipmentFinalized,
+            NavinError::TokenTransferFailed,
+            NavinError::TokenMintFailed,
+            NavinError::DuplicateAction,
+            NavinError::ShipmentUnavailable,
+            NavinError::ContractPaused,
+            NavinError::StatusHashNotFound,
+            NavinError::DataHashMismatch,
+            NavinError::CircuitBreakerOpen,
+            NavinError::InvalidMigrationEdge,
+            NavinError::MilestoneLimitExceeded,
+            NavinError::NoteLimitExceeded,
+            NavinError::EvidenceLimitExceeded,
+            NavinError::BreachLimitExceeded,
+            NavinError::InvalidTokenDecimals,
+            NavinError::CreationQuotaExceeded,
+            NavinError::DependenciesNotMet,
+            NavinError::CircularDependency,
+            NavinError::ProposalSaltReused,
+            NavinError::InvalidShipmentParticipants,
+            NavinError::InvalidShipmentDeadline,
+            NavinError::InvalidPaymentMilestones,
+            NavinError::DuplicatePaymentMilestone,
+            NavinError::InvalidTokenAddress,
+            NavinError::InvalidPaymentMilestoneName,
+            NavinError::MetadataSymbolCollision,
+            NavinError::ExternalIntegrationFailed,
+            NavinError::InvalidSymbol,
+            NavinError::NoteNotFound,
+            NavinError::EvidenceNotFound,
+            NavinError::RoleAlreadyAssigned,
+            NavinError::CarrierAlreadyWhitelisted,
+            NavinError::CarrierNotWhitelisted,
+            NavinError::InvalidAddress,
+            NavinError::RecoveryLimitExceeded,
+            NavinError::RoleMismatch,
+            NavinError::InvalidSymbolEncoding,
+            NavinError::MultiSigProposalPending,
+            NavinError::AuditLogLimitExceeded,
+        ];
+
+        for error in errors {
+            let by_variant = error_info(error);
+            let by_code = get_error_info(by_variant.code);
+            assert_eq!(by_variant.code, error as u32);
+            assert_eq!(by_code.code, by_variant.code);
+            assert_eq!(by_code.category, by_variant.category);
+            assert_eq!(by_code.retry, by_variant.retry);
+            assert_eq!(by_code.message, by_variant.message);
         }
     }
 
