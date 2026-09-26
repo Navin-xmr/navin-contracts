@@ -366,7 +366,12 @@ pub fn record_transfer_failure(env: &Env, config: &CircuitBreakerConfig) {
 pub fn manual_reset(env: &Env, admin: &Address) -> Result<(), NavinError> {
     // Verify admin authorization
     admin.require_auth();
-    if !crate::storage::is_admin(env, admin) {
+    let is_single_admin = env
+        .storage()
+        .instance()
+        .get::<_, Address>(&DataKey::Admin)
+        .is_some_and(|a| a == *admin);
+    if !is_single_admin && !crate::storage::is_admin(env, admin) {
         return Err(NavinError::Unauthorized);
     }
 
