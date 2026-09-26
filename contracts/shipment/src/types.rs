@@ -126,6 +126,27 @@ pub enum DataKey {
     ShipmentDependents(u64),
 }
 
+/// Storage keys for dispute evidence.
+///
+/// Kept separate from [`DataKey`] deliberately: `DataKey` already carries the
+/// maximum number of cases a single `#[contracttype]` enum may declare, so any
+/// further per-shipment collection has to live in its own key type. Splitting
+/// the dispute-evidence keys out also keeps the evidence subsystem
+/// self-contained — it can be removed again without renumbering `DataKey`.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::DisputeKey;
+/// let key = DisputeKey::EvidenceCount(1);
+/// ```
+#[contracttype(export = false)]
+pub enum DisputeKey {
+    /// Number of evidence entries recorded for a shipment's dispute.
+    EvidenceCount(u64),
+    /// A single evidence hash — (shipment_id, zero-based index).
+    Evidence(u64, u32),
+}
+
 /// Structured reason codes for escrow freeze events.
 ///
 /// Attached to `escrow_frozen` events so that off-chain indexers and

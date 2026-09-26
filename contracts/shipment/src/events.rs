@@ -1068,3 +1068,36 @@ pub fn emit_quota_set(env: &Env, company: &Address, count: u32, window_start: u6
         (company.clone(), count, window_start),
     );
 }
+
+/// Emits an `evidence_added` event when a dispute participant attaches evidence.
+///
+/// Follows the contract's hash-and-emit model: the evidence document itself
+/// (photos, inspection reports, correspondence) is stored off-chain and only
+/// its SHA-256 hash is published on the ledger, so the submission is
+/// timestamped and tamper-evident without putting the payload on-chain.
+///
+/// # Event Data
+///
+/// | Field         | Type         | Description                                   |
+/// |---------------|--------------|-----------------------------------------------|
+/// | shipment_id   | `u64`        | Shipment whose dispute the evidence belongs to |
+/// | submitted_by  | `Address`    | Address that submitted the evidence            |
+/// | index         | `u32`        | Zero-based index of the evidence entry         |
+/// | evidence_hash | `BytesN<32>` | SHA-256 hash of the off-chain evidence document |
+pub fn emit_evidence_added(
+    env: &Env,
+    shipment_id: u64,
+    submitted_by: &Address,
+    index: u32,
+    evidence_hash: &BytesN<32>,
+) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::EVIDENCE_ADDED),),
+        (
+            shipment_id,
+            submitted_by.clone(),
+            index,
+            evidence_hash.clone(),
+        ),
+    );
+}

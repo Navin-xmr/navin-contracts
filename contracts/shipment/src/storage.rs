@@ -1730,3 +1730,60 @@ mod tests {
 }
 
 // ============= Settlement State Storage Functions =============
+
+// ============= Dispute Evidence Storage Functions =============
+
+/// Read the number of evidence entries recorded for a shipment's dispute.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// * `u32` - The evidence count, or `0` if none has been recorded.
+pub fn get_evidence_count(env: &Env, shipment_id: u64) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DisputeKey::EvidenceCount(shipment_id))
+        .unwrap_or(0)
+}
+
+/// Append one evidence hash to a shipment's dispute and return its index.
+///
+/// Callers are responsible for enforcing the per-dispute cap before calling
+/// this; the counter saturates rather than wrapping so a full slot can never
+/// silently overwrite index 0.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+/// * `evidence_hash` - SHA-256 hash of the off-chain evidence document.
+///
+/// # Returns
+/// * `u32` - The zero-based index the evidence was stored at.
+pub fn append_evidence(env: &Env, shipment_id: u64, evidence_hash: &BytesN<32>) -> u32 {
+    let index = get_evidence_count(env, shipment_id);
+    env.storage()
+        .persistent()
+        .set(&DisputeKey::Evidence(shipment_id, index), evidence_hash);
+    env.storage().persistent().set(
+        &DisputeKey::EvidenceCount(shipment_id),
+        &index.saturating_add(1),
+    );
+    index
+}
+
+/// Read a single evidence hash by index.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+/// * `index` - Zero-based index of the evidence entry.
+///
+/// # Returns
+/// * `Option<BytesN<32>>` - The hash, or `None` if the index was never written.
+pub fn get_evidence(env: &Env, shipment_id: u64, index: u32) -> Option<BytesN<32>> {
+    env.storage()
+        .persistent()
+        .get(&DisputeKey::Evidence(shipment_id, index))
+}
