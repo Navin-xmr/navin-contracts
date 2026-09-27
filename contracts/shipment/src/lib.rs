@@ -135,6 +135,8 @@ mod test_suspension_cascade;
 #[cfg(test)]
 mod test_ttl_health;
 #[cfg(test)]
+mod test_ttl_coverage;
+#[cfg(test)]
 mod test_verification;
 #[cfg(test)]
 mod test_zero_amount_escrow;
@@ -5219,6 +5221,7 @@ impl NavinShipment {
             computed_at: now,
         };
         storage::set_proposal_digest(&env, proposal_id, &digest_record);
+        storage::extend_proposal_ttl(&env, proposal_id, expires_at);
 
         events::emit_proposal_digest(&env, proposal_id, digest_hash.clone(), now);
 
@@ -5353,6 +5356,7 @@ impl NavinShipment {
         // Add approval
         proposal.approvals.push_back(approver.clone());
         storage::set_proposal(&env, &proposal);
+        storage::extend_proposal_ttl(&env, proposal_id, proposal.expires_at);
 
         env.events().publish(
             (symbol_short!("approve"),),

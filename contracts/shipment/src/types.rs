@@ -151,6 +151,18 @@ pub enum DisputeKey {
     Evidence(u64, u32),
 }
 
+/// Storage keys for settlement bookkeeping that do not fit in [`DataKey`].
+///
+/// `DataKey` is already at the `#[contracttype]` case limit, so additional
+/// settlement keys live here.
+#[contracttype(export = false)]
+pub enum SettlementKey {
+    /// Most recent settlement ID recorded for a shipment. Unlike
+    /// `DataKey::ActiveSettlement`, it is not cleared when the settlement
+    /// completes or fails.
+    Latest(u64),
+}
+
 /// Structured reason codes for escrow freeze events.
 ///
 /// Attached to `escrow_frozen` events so that off-chain indexers and

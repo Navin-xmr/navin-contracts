@@ -771,6 +771,67 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
             .persistent()
             .extend_ttl(&last_status_key, threshold, extend_to);
     }
+
+    // Payload-size guard counters (issue #852). If these lapsed before the
+    // shipment did, the per-shipment milestone/breach caps would reset to 0.
+    let milestone_count_key = DataKey::MilestoneEventCount(shipment_id);
+    if env.storage().persistent().has(&milestone_count_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&milestone_count_key, threshold, extend_to);
+    }
+
+    let breach_count_key = DataKey::BreachEventCount(shipment_id);
+    if env.storage().persistent().has(&breach_count_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&breach_count_key, threshold, extend_to);
+    }
+
+    // One-time deadline warning flag (issue #853). If it lapsed, the warning
+    // would be emitted a second time.
+    let warning_key = DataKey::DeadlineWarningEmitted(shipment_id);
+    if env.storage().persistent().has(&warning_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&warning_key, threshold, extend_to);
+    }
+
+    // Settlement records (issue #854) are renewed in lockstep with the
+    // shipment so settlement history never expires before the shipment.
+    let active_settlement_key = DataKey::ActiveSettlement(shipment_id);
+    if let Some(active_id) = env
+        .storage()
+        .persistent()
+        .get::<DataKey, u64>(&active_settlement_key)
+    {
+        env.storage()
+            .persistent()
+            .extend_ttl(&active_settlement_key, threshold, extend_to);
+        extend_settlement_ttl(env, active_id, threshold, extend_to);
+    }
+
+    let latest_settlement_key = SettlementKey::Latest(shipment_id);
+    if let Some(latest_id) = env
+        .storage()
+        .persistent()
+        .get::<SettlementKey, u64>(&latest_settlement_key)
+    {
+        env.storage()
+            .persistent()
+            .extend_ttl(&latest_settlement_key, threshold, extend_to);
+        extend_settlement_ttl(env, latest_id, threshold, extend_to);
+    }
+}
+
+/// Extend the TTL of a single settlement record if it exists.
+fn extend_settlement_ttl(env: &Env, settlement_id: u64, threshold: u32, extend_to: u32) {
+    let key = DataKey::Settlement(settlement_id);
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, threshold, extend_to);
+    }
 }
 
 /// Backwards-compatible wrapper used by existing contract code/tests.
@@ -1009,6 +1070,48 @@ pub fn set_proposal(env: &Env, proposal: &crate::types::Proposal) {
     env.storage()
         .persistent()
         .set(&DataKey::Proposal(proposal.id), proposal);
+}
+
+/// Approximate ledger close time used to convert seconds into ledgers.
+const SECONDS_PER_LEDGER: u64 = 5;
+
+/// Extra ledgers kept beyond a proposal's expiry so the entry is still
+/// readable (and can report `ProposalExpired`) right after it expires.
+const PROPOSAL_TTL_MARGIN_LEDGERS: u32 = 17_280; // ~1 day
+
+/// Extend the TTL of a proposal and its action digest so both outlive the
+/// proposal's own `expires_at` (issue #855).
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `proposal_id` - The ID of the proposal.
+/// * `expires_at` - Ledger timestamp at which the proposal expires.
+///
+/// # Examples
+/// ```rust
+/// // storage::extend_proposal_ttl(&env, 1, proposal.expires_at);
+/// ```
+pub fn extend_proposal_ttl(env: &Env, proposal_id: u64, expires_at: u64) {
+    let remaining_secs = expires_at.saturating_sub(env.ledger().timestamp());
+    let remaining_ledgers = remaining_secs.div_ceil(SECONDS_PER_LEDGER);
+    let extend_to = u32::try_from(remaining_ledgers)
+        .unwrap_or(u32::MAX)
+        .saturating_add(PROPOSAL_TTL_MARGIN_LEDGERS)
+        .min(env.storage().max_ttl());
+
+    let proposal_key = DataKey::Proposal(proposal_id);
+    if env.storage().persistent().has(&proposal_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&proposal_key, extend_to, extend_to);
+    }
+
+    let digest_key = DataKey::ProposalDigest(proposal_id);
+    if env.storage().persistent().has(&digest_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&digest_key, extend_to, extend_to);
+    }
 }
 
 /// Check if an address is in the admin list.
@@ -1519,6 +1622,27 @@ pub fn set_settlement(env: &Env, settlement: &crate::types::SettlementRecord) {
     env.storage()
         .persistent()
         .set(&DataKey::Settlement(settlement.settlement_id), settlement);
+    env.storage().persistent().set(
+        &SettlementKey::Latest(settlement.shipment_id),
+        &settlement.settlement_id,
+    );
+}
+
+/// Get the most recent settlement ID recorded for a shipment.
+///
+/// Unlike [`get_active_settlement`], this survives settlement completion or
+/// failure, so the shipment's latest settlement record can still be renewed
+/// alongside the shipment's own TTL.
+///
+/// # Examples
+/// ```rust
+/// // let latest_id = storage::get_latest_settlement(&env, 1);
+/// ```
+#[allow(dead_code)]
+pub fn get_latest_settlement(env: &Env, shipment_id: u64) -> Option<u64> {
+    env.storage()
+        .persistent()
+        .get(&SettlementKey::Latest(shipment_id))
 }
 
 /// Get the active settlement ID for a shipment.
