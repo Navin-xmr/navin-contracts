@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, Address, Env, String, Symbol, Vec};
 
 mod errors;
 mod event_topics;
@@ -210,8 +210,13 @@ impl NavinToken {
         storage::extend_balance_ttl_for(&env, &[from.clone(), to.clone()], 1000, 500000);
         storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
 
-        env.events()
-            .publish((symbol_short!("tr_from"),), (from, to, spender, amount));
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::TRANSFER_FROM),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (from, to, spender, amount),
+        );
 
         Ok(())
     }
@@ -383,8 +388,13 @@ impl NavinToken {
 
         storage::set_pending_admin(&env, &new_admin);
 
-        env.events()
-            .publish((symbol_short!("admin_pro"),), (current_admin, new_admin));
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::ADMIN_PROPOSED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (current_admin, new_admin),
+        );
 
         Ok(())
     }
@@ -407,8 +417,13 @@ impl NavinToken {
         storage::set_admin(&env, &new_admin);
         storage::clear_pending_admin(&env);
 
-        env.events()
-            .publish((symbol_short!("admin_tr"),), (old_admin, new_admin));
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::ADMIN_TRANSFERRED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (old_admin, new_admin),
+        );
 
         Ok(())
     }
@@ -744,11 +759,19 @@ impl NavinToken {
             if to == from {
                 continue;
             }
-            env.events()
-                .publish((symbol_short!("batch_leg"),), (from.clone(), to, amount));
+            env.events().publish(
+                (
+                    Symbol::new(&env, event_topics::BATCH_LEG),
+                    Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                ),
+                (from.clone(), to, amount),
+            );
         }
         env.events().publish(
-            (symbol_short!("batch_tr"),),
+            (
+                Symbol::new(&env, event_topics::BATCH_TRANSFER),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
             (from, recipients.clone(), recipients.len()),
         );
 
