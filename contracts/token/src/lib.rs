@@ -6,11 +6,13 @@ mod errors;
 mod event_topics;
 mod storage;
 mod test;
+mod types;
 
 #[cfg(test)]
 mod test_utils;
 
 pub use errors::*;
+pub use types::*;
 
 /// Pass as `expiration_ledger` to `approve` for an allowance that
 /// effectively never expires (issue #659).
