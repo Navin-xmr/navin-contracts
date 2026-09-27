@@ -67,7 +67,8 @@
     - [meta_set](#token-metadata-set)
     - [meta_del](#token-metadata-delete)
 16. [Token Batch Events](#token-batch-events)
-    - [batch_leg](#token-batch-leg)
+    - [batch_leg](#batch_leg)
+    - [batch_tr](#batch_tr)
     - [batch_tr](#token-batch-transfer)
 
 ---
@@ -1284,7 +1285,7 @@ Emitted when the admin removes a metadata entry via `remove_metadata()`.
 
 ### `batch_leg`
 
-Emitted for each recipient leg during a batch transfer execution via `batch_transfer()`.
+Emitted for each recipient leg during a batch transfer executed via `batch_transfer()`.
 
 **Topic:** `"batch_leg"`
 **Emitted by:** `batch_transfer`
