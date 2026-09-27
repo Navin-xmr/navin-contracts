@@ -151,6 +151,17 @@ fn test_config_checksum_reflects_idempotency_and_quota_fields() {
     client.update_config(&admin, &cfg);
     assert_ne!(client.get_config_checksum(), before);
 }
+
+// ── Config checksum diagnostics query path ──────────────────────────────────
+
+/// The config checksum query path used by diagnostics/indexers must return
+/// a stable checksum across multiple invocations and match a raw recompute.
+#[test]
+fn test_config_checksum_diagnostics_query_path() {
+    let (env, client, admin, _token) = prepare_test();
+
+    // Query path: get_config_checksum (what indexers/diagnostics use)
+    let q1 = client.get_config_checksum();
     let q2 = client.get_config_checksum();
     assert_eq!(q1, q2, "diagnostics query path must be idempotent");
 
@@ -190,6 +201,7 @@ fn test_get_non_terminal_count_alignment() {
     client.add_carrier(&admin, &carrier);
 
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let _id1 = client.create_shipment(
         &company,
@@ -199,6 +211,7 @@ fn test_get_non_terminal_count_alignment() {
         &Vec::new(&env),
         &deadline,
     );
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let id2 = client.create_shipment(
         &company,
         &receiver,
@@ -207,6 +220,7 @@ fn test_get_non_terminal_count_alignment() {
         &Vec::new(&env),
         &deadline,
     );
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let id3 = client.create_shipment(
         &company,
         &receiver,
@@ -215,6 +229,7 @@ fn test_get_non_terminal_count_alignment() {
         &Vec::new(&env),
         &deadline,
     );
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let id4 = client.create_shipment(
         &company,
         &receiver,
@@ -223,6 +238,7 @@ fn test_get_non_terminal_count_alignment() {
         &Vec::new(&env),
         &deadline,
     );
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let id5 = client.create_shipment(
         &company,
         &receiver,
@@ -342,6 +358,7 @@ fn test_get_shipment_creator_returns_sender_for_valid_shipment() {
 
     let deadline = env.ledger().timestamp() + 3600;
     let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -417,6 +434,7 @@ fn test_get_shipment_carrier_returns_carrier_for_valid_shipment() {
 
     let deadline = env.ledger().timestamp() + 3600;
     let data_hash = BytesN::from_array(&env, &[8u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -452,6 +470,7 @@ fn test_non_terminal_count_decrements_on_refund() {
 
     let deadline = env.ledger().timestamp() + 3600;
     let data_hash = BytesN::from_array(&env, &[10u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -493,6 +512,7 @@ fn test_non_terminal_count_decrements_for_one_of_many_on_refund() {
     client.add_carrier(&admin, &carrier);
 
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let id1 = client.create_shipment(
         &company,
@@ -502,6 +522,7 @@ fn test_non_terminal_count_decrements_for_one_of_many_on_refund() {
         &Vec::new(&env),
         &deadline,
     );
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let _id2 = client.create_shipment(
         &company,
         &receiver,
@@ -510,6 +531,7 @@ fn test_non_terminal_count_decrements_for_one_of_many_on_refund() {
         &Vec::new(&env),
         &deadline,
     );
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let _id3 = client.create_shipment(
         &company,
         &receiver,
@@ -590,6 +612,7 @@ fn test_get_shipment_receiver_returns_receiver_for_valid_shipment() {
 
     let deadline = env.ledger().timestamp() + 3600;
     let data_hash = BytesN::from_array(&env, &[30u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,

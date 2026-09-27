@@ -12,18 +12,26 @@
 //!
 //! ## Configuration Parameters
 //!
-//! | Parameter                    | Default | Description                                    |
-//! |------------------------------|---------|------------------------------------------------|
-//! | shipment_ttl_threshold       | 17,280  | Min ledgers before TTL extension (~1 day)      |
-//! | shipment_ttl_extension       | 518,400 | Ledgers to extend TTL by (~30 days)            |
-//! | min_status_update_interval   | 60      | Min seconds between status updates             |
-//! | batch_operation_limit        | 10      | Max items per batch operation                  |
-//! | max_metadata_entries         | 5       | Max metadata key-value pairs per shipment      |
-//! | default_shipment_limit       | 100     | Default active shipments per company           |
-//! | multisig_min_admins          | 2       | Min admins for multi-sig                       |
-//! | multisig_max_admins          | 10      | Max admins for multi-sig                       |
-//! | proposal_expiry_seconds      | 604,800 | Proposal expiry time (7 days)                  |
-//! | deadline_grace_seconds       | 0       | Grace window after deadline before expiry fires |
+//! | Parameter                      | Default | Description                                      |
+//! |--------------------------------|---------|--------------------------------------------------|
+//! | shipment_ttl_threshold         | 17,280  | Min ledgers before TTL extension (~1 day)        |
+//! | shipment_ttl_extension         | 518,400 | Ledgers to extend TTL by (~30 days)              |
+//! | min_status_update_interval     | 60      | Min seconds between status updates               |
+//! | batch_operation_limit          | 10      | Max items per batch operation                    |
+//! | max_metadata_entries           | 5       | Max metadata key-value pairs per shipment        |
+//! | default_shipment_limit         | 100     | Default active shipments per company             |
+//! | multisig_min_admins            | 2       | Min admins for multi-sig                         |
+//! | multisig_max_admins            | 10      | Max admins for multi-sig                         |
+//! | proposal_expiry_seconds        | 604,800 | Proposal expiry time (7 days)                    |
+//! | deadline_grace_seconds         | 0       | Grace window after deadline before expiry fires  |
+//! | idempotency_window_seconds     | 300     | Seconds to retain action hashes for dedup (5 min)|
+//! | auto_dispute_breach            | false   | Auto-open dispute on critical condition breach   |
+//! | max_milestones_per_shipment    | 255     | Max milestone events per shipment                |
+//! | max_notes_per_shipment         | 255     | Max note events per shipment                     |
+//! | max_evidence_per_dispute       | 255     | Max evidence hashes per dispute                  |
+//! | max_breaches_per_shipment      | 255     | Max condition breach events per shipment         |
+//! | creation_quota_max             | 0       | Max shipments creatable per quota window (0=off) |
+//! | creation_quota_window_seconds  | 3,600   | Duration of the creation quota window (1 hour)   |
 
 use crate::errors::NavinError;
 use crate::types::DataKey;

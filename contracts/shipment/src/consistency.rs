@@ -78,8 +78,7 @@ pub fn check_shipment_invariants(env: &Env, shipment_id: u64) -> Vec<Consistency
     };
 
     // Escrow: struct field must match dedicated storage entry.
-    let stored_escrow = storage::get_escrow(env, shipment_id);
-    if shipment.escrow_amount != stored_escrow {
+    if storage::has_escrow_mismatch(env, shipment_id, shipment.escrow_amount) {
         violations.push_back(ConsistencyViolation::EscrowMismatch(shipment_id));
     }
 
@@ -190,7 +189,7 @@ fn check_status_count_consistency_range(
     end_id: u64,
 ) -> Vec<ConsistencyViolation> {
     let mut violations: Vec<ConsistencyViolation> = Vec::new(env);
-    let total = storage::get_shipment_count(env);
+    let total = storage::get_shipment_counter(env);
 
     if start_id == 0 || start_id > total {
         return violations;

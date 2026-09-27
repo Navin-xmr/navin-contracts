@@ -104,6 +104,7 @@ fn wallet_auth_happy_path_full_lifecycle() {
 
     let data_hash = non_zero_hash(&env, 1);
     let deadline = env.ledger().timestamp() + 86_400 * 30;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // Company wallet: create shipment
     let id = client.create_shipment(
@@ -177,6 +178,7 @@ fn wallet_auth_cancel_refund_path() {
 
     let data_hash = non_zero_hash(&env, 10);
     let deadline = env.ledger().timestamp() + 86_400 * 30;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let id = client.create_shipment(
         &company,
@@ -221,6 +223,7 @@ fn wallet_auth_dispute_resolution_to_carrier() {
 
     let data_hash = non_zero_hash(&env, 20);
     let deadline = env.ledger().timestamp() + 86_400 * 30;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let id = client.create_shipment(
         &company,
@@ -283,6 +286,7 @@ fn wallet_auth_dispute_resolution_refund_to_company() {
 
     let data_hash = non_zero_hash(&env, 30);
     let deadline = env.ledger().timestamp() + 86_400 * 30;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let id = client.create_shipment(
         &company,
@@ -344,6 +348,7 @@ fn wallet_auth_pause_blocks_operations() {
     // Company wallet: create shipment must fail while paused
     let data_hash = non_zero_hash(&env, 40);
     let deadline = env.ledger().timestamp() + 86_400;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let result = client.try_create_shipment(
         &company,
         &receiver,
@@ -362,6 +367,7 @@ fn wallet_auth_pause_blocks_operations() {
     env.ledger().with_mut(|l| l.timestamp += 2);
     let data_hash2 = non_zero_hash(&env, 41);
     let deadline2 = env.ledger().timestamp() + 86_400;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let result2 = client.try_create_shipment(
         &company,
         &receiver,
@@ -395,6 +401,7 @@ fn wallet_auth_deadline_expiry_auto_cancel() {
     let data_hash = non_zero_hash(&env, 50);
     // Short deadline: 1 hour from now
     let deadline = env.ledger().timestamp() + 3_600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let id = client.create_shipment(
         &company,
@@ -440,6 +447,7 @@ fn wallet_auth_unauthorized_wallet_rejected() {
 
     let data_hash = non_zero_hash(&env, 60);
     let deadline = env.ledger().timestamp() + 86_400;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let id = client.create_shipment(
         &company,

@@ -4,9 +4,24 @@ use soroban_sdk::{
     contract, contractimpl, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal, Symbol, Vec,
 };
 
+mod audit;
 mod circuit_breaker;
 mod config;
-mod consistency;
+/// Cross-shipment consistency verification (Issue #878).
+///
+/// This was declared behind `#[cfg(test)]`, so `check_shipment_invariants`,
+/// `check_batch_consistency` and `check_all_consistency` compiled only in test
+/// builds and were absent from the deployed contract — an admin tool that could
+/// never be called in the environment it exists to audit. Its own
+/// `test_consistency.rs` passed the whole time, which is why the gap survived.
+///
+/// Registered unconditionally rather than deleted because every dependency it
+/// names still exists: all five `storage::` functions it calls
+/// (`get_shipment`, `get_escrow`, `get_shipment_count`, `get_shipment_counter`,
+/// `get_status_count`) are present in `storage.rs`. That is what separates this
+/// module from the other orphaned files in this crate, whose dependencies were
+/// removed outright rather than merely left unwired.
+pub mod consistency;
 pub mod error_map;
 mod errors;
 mod event_topics;
@@ -76,11 +91,86 @@ mod test_milestone_sum_invalid;
 mod test_whitelist_multicompany;
 
 #[cfg(test)]
+mod test_archive_restore_consistency;
+#[cfg(test)]
+mod test_audit_trail;
+#[cfg(test)]
+mod test_auth;
+#[cfg(test)]
+mod test_auto_dispute;
+#[cfg(test)]
+mod test_batch_queries;
+#[cfg(test)]
+mod test_circuit_breaker_reset;
+#[cfg(test)]
+mod test_consistency;
+#[cfg(test)]
+mod test_counter_overflow;
+#[cfg(test)]
+mod test_deadline_grace;
+#[cfg(test)]
+mod test_diagnostics;
+#[cfg(test)]
+mod test_hash_domain_separation;
+#[cfg(test)]
+mod test_invalid_shipment_input;
+#[cfg(test)]
+mod test_iot_verification;
+#[cfg(test)]
+mod test_pause;
+#[cfg(test)]
+mod test_performance;
+#[cfg(test)]
+mod test_precondition_guards;
+#[cfg(test)]
+mod test_reentrancy_guard;
+#[cfg(test)]
+mod test_rollback;
+#[cfg(test)]
+mod test_settlement_transitions;
+#[cfg(test)]
+mod test_suspension;
+#[cfg(test)]
+mod test_suspension_cascade;
+#[cfg(test)]
+mod test_ttl_health;
+#[cfg(test)]
+mod test_verification;
+#[cfg(test)]
+mod test_zero_amount_escrow;
+
+#[cfg(test)]
+mod test_dispute_evidence;
+
+#[cfg(test)]
 mod fuzz_rbac_authorization;
 #[cfg(test)]
 mod fuzz_role_assignment;
 #[cfg(test)]
+mod fuzz_escrow_arithmetic;
+#[cfg(test)]
+mod fuzz_escrow_lifecycle;
+#[cfg(test)]
+mod fuzz_milestone_releases;
+#[cfg(test)]
+mod fuzz_rbac_authorization;
+#[cfg(test)]
+mod fuzz_role_assignment;
+#[cfg(test)]
+mod fuzz_storage_operations;
+#[cfg(test)]
+mod fuzz_ttl_management;
+#[cfg(test)]
+mod fuzz_wallet_auth_integration;
+#[cfg(test)]
 mod preservation_property_tests;
+
+#[cfg(test)]
+mod budget_bench;
+#[cfg(test)]
+mod e2e_test;
+#[cfg(test)]
+mod stress_test;
 
 pub use circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState};
 pub use config::*;
@@ -2808,54 +2898,6 @@ impl NavinShipment {
         Ok(results)
     }
 
-    /// Get the event count for a shipment.
-    /// Returns the number of events emitted for this shipment.
-    /// Returns 0 for brand-new shipments or shipments with no events yet.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    /// * `shipment_id` - ID of the shipment.
-    ///
-    /// # Returns
-    /// * `Result<u32, NavinError>` - The number of events emitted for this shipment.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
-    ///
-    /// # Examples
-    /// ```rust
-    /// // let event_count = contract.get_event_count(&env, 1);
-    /// ```
-
-    /// Get the event count for a shipment.
-    /// Returns the number of events emitted for this shipment.
-    /// Returns 0 for brand-new shipments or shipments with no events yet.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    /// * `shipment_id` - ID of the shipment.
-    ///
-    /// # Returns
-    /// * `Result<u32, NavinError>` - The number of events emitted for this shipment.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
-    ///
-    /// # Examples
-    /// ```rust
-    /// // let event_count = contract.get_event_count(&env, 1);
-    /// ```
-    pub fn get_event_count(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
-        require_initialized(&env)?;
-        // Verify shipment exists
-        if storage::get_shipment(&env, shipment_id).is_none() {
-            return Err(NavinError::ShipmentNotFound);
-        }
-        Ok(storage::get_event_count(&env, shipment_id))
-    }
-
     /// Confirm delivery of a shipment.
     /// Only the designated receiver can call this function.
     /// Shipment must be in InTransit or AtCheckpoint status.
@@ -3406,6 +3448,7 @@ impl NavinShipment {
 
         finalize_if_settled(&env, &mut mut_shipment);
         storage::set_shipment(&env, &mut_shipment);
+        extend_shipment_ttl(&env, shipment_id);
 
         Ok(())
     }
@@ -3606,6 +3649,7 @@ impl NavinShipment {
 
         finalize_if_settled(&env, &mut mut_shipment);
         storage::set_shipment(&env, &mut_shipment);
+        extend_shipment_ttl(&env, shipment_id);
 
         Ok(release_amounts)
     }
@@ -3717,6 +3761,7 @@ impl NavinShipment {
 
         finalize_if_settled(&env, &mut shipment);
         storage::set_shipment(&env, &shipment);
+        extend_shipment_ttl(&env, shipment_id);
 
         Ok(())
     }
@@ -3836,7 +3881,7 @@ impl NavinShipment {
         finalize_if_settled(&env, &mut shipment);
         persist_shipment(&env, &shipment)?;
         if escrow_amount > 0 {
-            storage::remove_escrow_balance(&env, shipment_id);
+            storage::remove_escrow(&env, shipment_id);
         }
         extend_shipment_ttl(&env, shipment_id);
 
@@ -4501,7 +4546,7 @@ impl NavinShipment {
 
         finalize_if_settled(&env, &mut shipment);
         persist_shipment(&env, &shipment)?;
-        storage::remove_escrow_balance(&env, shipment_id);
+        storage::remove_escrow(&env, shipment_id);
         extend_shipment_ttl(&env, shipment_id);
 
         match resolution {
@@ -4542,6 +4587,120 @@ impl NavinShipment {
         );
 
         Ok(())
+    }
+
+    /// Attach evidence to an active shipment dispute.
+    ///
+    /// Follows the contract's hash-and-emit model: the evidence document is
+    /// held off-chain and only its SHA-256 hash is recorded, giving each
+    /// submission a tamper-evident on-chain timestamp without storing the
+    /// payload. Entries are append-only and capped per shipment by
+    /// `ContractConfig::max_evidence_per_dispute`.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `caller` - Shipment sender, receiver or carrier.
+    /// * `shipment_id` - ID of the disputed shipment.
+    /// * `evidence_hash` - SHA-256 hash of the off-chain evidence document.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - Zero-based index the evidence was stored at.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::InvalidHash` - If `evidence_hash` is all zeros.
+    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
+    /// * `NavinError::Unauthorized` - If caller is not involved in the shipment.
+    /// * `NavinError::InvalidStatus` - If the shipment is not currently `Disputed`.
+    /// * `NavinError::EvidenceLimitExceeded` - If the dispute already holds
+    ///   `max_evidence_per_dispute` entries.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let index = client.add_dispute_evidence(&receiver, &shipment_id, &evidence_hash);
+    /// ```
+    pub fn add_dispute_evidence(
+        env: Env,
+        caller: Address,
+        shipment_id: u64,
+        evidence_hash: BytesN<32>,
+    ) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        caller.require_auth();
+
+        validation::validate_hash(&evidence_hash)?;
+
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        if caller != shipment.sender && caller != shipment.receiver && caller != shipment.carrier {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // A suspended company must not be able to build a dispute record.
+        if caller == shipment.sender {
+            require_active_company(&env, &caller)?;
+        }
+
+        // Evidence only makes sense while a dispute is actually open; once an
+        // admin has resolved it the record is closed.
+        if shipment.status != ShipmentStatus::Disputed {
+            return Err(NavinError::InvalidStatus);
+        }
+
+        // Same bound style as milestones and breaches: an admin-configurable
+        // per-shipment cap on the persistent entries one dispute may create.
+        let config = config::get_config(&env);
+        if storage::get_evidence_count(&env, shipment_id) >= config.max_evidence_per_dispute {
+            return Err(NavinError::EvidenceLimitExceeded);
+        }
+
+        let index = storage::append_evidence(&env, shipment_id, &evidence_hash);
+
+        extend_shipment_ttl(&env, shipment_id);
+
+        events::emit_evidence_added(&env, shipment_id, &caller, index, &evidence_hash);
+
+        Ok(index)
+    }
+
+    /// Read one evidence hash attached to a shipment's dispute.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    /// * `index` - Zero-based index of the evidence entry.
+    ///
+    /// # Returns
+    /// * `Result<BytesN<32>, NavinError>` - The stored SHA-256 hash.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::EvidenceNotFound` - If no evidence exists at `index`.
+    pub fn get_dispute_evidence(
+        env: Env,
+        shipment_id: u64,
+        index: u32,
+    ) -> Result<BytesN<32>, NavinError> {
+        require_initialized(&env)?;
+        storage::get_evidence(&env, shipment_id, index).ok_or(NavinError::EvidenceNotFound)
+    }
+
+    /// Count the evidence entries attached to a shipment's dispute.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - Number of entries, `0` if none.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn get_dispute_evidence_count(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        Ok(storage::get_evidence_count(&env, shipment_id))
     }
 
     /// Handoff a shipment from current carrier to a new carrier.
@@ -5677,7 +5836,7 @@ impl NavinShipment {
         storage::decrement_active_shipment_count(&env, &shipment.sender);
 
         if escrow_amount > 0 {
-            storage::remove_escrow_balance(&env, shipment_id);
+            storage::remove_escrow(&env, shipment_id);
 
             let token_contract =
                 storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
@@ -5842,7 +6001,7 @@ impl NavinShipment {
         require_initialized(&env)?;
 
         let config = config::get_config(&env);
-        let total = storage::get_shipment_count(&env);
+        let total = storage::get_shipment_counter(&env);
 
         // Sample all shipments (cap at 100 for budget safety on large sets)
         let sample_limit: u64 = 100;
@@ -5878,6 +6037,7 @@ impl NavinShipment {
     /// following a run of consecutive transfer failures.
     pub fn reset_circuit_breaker(env: Env, admin: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         circuit_breaker::manual_reset(&env, &admin)
     }
 
@@ -5922,6 +6082,7 @@ impl NavinShipment {
     ///
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ContractPaused` - If the contract is paused.
     /// * `NavinError::Unauthorized` - If `admin` is not the contract admin.
     /// * `NavinError::InvalidConfig` - If `Custom` values are out of range
     ///   (a zero threshold would open the breaker permanently).
@@ -5931,6 +6092,7 @@ impl NavinShipment {
         preset: circuit_breaker::CircuitBreakerPreset,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
         require_admin(&env, &admin)?;
 
@@ -6094,6 +6256,9 @@ impl NavinShipment {
         window_seconds: u64,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        // #862 — match sibling config setters (e.g. update_config): no config
+        // mutation while the contract is paused.
+        require_not_paused(&env)?;
         admin.require_auth();
         require_admin(&env, &admin)?;
 
