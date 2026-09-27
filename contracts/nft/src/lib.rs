@@ -5,6 +5,9 @@ use soroban_sdk::{
     Vec,
 };
 
+#[cfg(test)]
+mod test_utils;
+
 // ── Storage Keys ────────────────────────────────────────────────────────────
 
 #[contracttype]
@@ -17,6 +20,7 @@ enum NftKey {
     Symbol,
     Initialized,
     Paused,
+    BurnApproved(u64),
 }
 
 // ── Errors ──────────────────────────────────────────────────────────────────
@@ -33,6 +37,7 @@ pub enum NftError {
     MintToContract = 7,
     ContractPaused = 8,
     InvalidNameOrSymbol = 9,
+    BurnNotApproved = 10,
 }
 
 // ── Events ──────────────────────────────────────────────────────────────────
@@ -43,6 +48,14 @@ const BURN: Symbol = symbol_short!("burn");
 const INIT: Symbol = symbol_short!("init");
 const ADMIN_TRANSFER: Symbol = symbol_short!("admin");
 
+// ── TTL Constants ──────────────────────────────────────────────────────────
+
+/// Minimum ledgers remaining before TTL extension is triggered (~1 day)
+const TTL_THRESHOLD: u32 = 17_280;
+
+/// Number of ledgers to extend TTL by when threshold is reached (~30 days)
+const TTL_EXTENSION: u32 = 518_400;
+
 // ── Contract ────────────────────────────────────────────────────────────────
 
 #[contract]
@@ -50,6 +63,20 @@ pub struct NavinShipmentNft;
 
 #[contractimpl]
 impl NavinShipmentNft {
+    /// Extend instance storage TTL to prevent premature contract expiration
+    fn extend_instance_ttl(env: &Env) {
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTENSION);
+    }
+
+    /// Extend persistent storage TTL for a specific owner's token list
+    fn extend_persistent_ttl(env: &Env, owner: &Address) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&NftKey::OwnerTokens(owner.clone()), TTL_THRESHOLD, TTL_EXTENSION);
+    }
+
     pub fn initialize(
         env: Env,
         admin: Address,
@@ -73,6 +100,7 @@ impl NavinShipmentNft {
             (INIT,),
             (admin, name, symbol, env.ledger().timestamp()),
         );
+        Self::extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -104,7 +132,10 @@ impl NavinShipmentNft {
             .set(&NftKey::TokenCount, &(count + 1));
 
         env.events()
-            .publish((MINT,), (token_id, to, env.ledger().timestamp()));
+            .publish((MINT,), (token_id, to.clone(), env.ledger().timestamp()));
+        
+        Self::extend_instance_ttl(&env);
+        Self::extend_persistent_ttl(&env, &to);
         Ok(token_id)
     }
 
@@ -118,6 +149,7 @@ impl NavinShipmentNft {
         }
 
         if to == from {
+            Self::extend_instance_ttl(&env);
             return Ok(());
         }
 
@@ -130,8 +162,12 @@ impl NavinShipmentNft {
 
         env.events().publish(
             (TRANSFER_NFT,),
-            (token_id, from, to, env.ledger().timestamp()),
+            (token_id, from.clone(), to.clone(), env.ledger().timestamp()),
         );
+        
+        Self::extend_instance_ttl(&env);
+        Self::extend_persistent_ttl(&env, &from);
+        Self::extend_persistent_ttl(&env, &to);
         Ok(())
     }
 
@@ -146,7 +182,20 @@ impl NavinShipmentNft {
             return Err(NftError::NotOwner);
         }
 
+        // Check if burn is approved (unless caller is admin)
+        if caller != admin {
+            let burn_approved = env
+                .storage()
+                .persistent()
+                .get(&NftKey::BurnApproved(token_id))
+                .unwrap_or(false);
+            if !burn_approved {
+                return Err(NftError::BurnNotApproved);
+            }
+        }
+
         env.storage().persistent().remove(&NftKey::Owner(token_id));
+        env.storage().persistent().remove(&NftKey::BurnApproved(token_id));
         Self::remove_token_from_owner(&env, &owner, token_id);
 
         let count: u64 = env
@@ -162,6 +211,9 @@ impl NavinShipmentNft {
 
         env.events()
             .publish((BURN,), (token_id, caller, env.ledger().timestamp()));
+        
+        Self::extend_instance_ttl(&env);
+        Self::extend_persistent_ttl(&env, &owner);
         Ok(())
     }
 
@@ -180,6 +232,7 @@ impl NavinShipmentNft {
             (ADMIN_TRANSFER,),
             (admin, new_admin, env.ledger().timestamp()),
         );
+        Self::extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -189,6 +242,7 @@ impl NavinShipmentNft {
             return Err(NftError::NotAdmin);
         }
         env.storage().instance().set(&NftKey::Paused, &true);
+        Self::extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -198,14 +252,38 @@ impl NavinShipmentNft {
             return Err(NftError::NotAdmin);
         }
         env.storage().instance().set(&NftKey::Paused, &false);
+        Self::extend_instance_ttl(&env);
         Ok(())
     }
 
+    pub fn approve_burn(env: Env, token_id: u64) -> Result<(), NftError> {
+        let owner = Self::get_owner_inner(&env, token_id)?;
+        owner.require_auth();
+
+        env.storage()
+            .persistent()
+            .set(&NftKey::BurnApproved(token_id), &true);
+        Self::extend_instance_ttl(&env);
+        Self::extend_persistent_ttl(&env, &owner);
+        Ok(())
+    }
+
+    pub fn is_burn_approved(env: Env, token_id: u64) -> bool {
+        Self::extend_instance_ttl(&env);
+        env.storage()
+            .persistent()
+            .get(&NftKey::BurnApproved(token_id))
+            .unwrap_or(false)
+    }
+
     pub fn owner_of(env: Env, token_id: u64) -> Result<Address, NftError> {
+        Self::extend_instance_ttl(&env);
         Self::get_owner_inner(&env, token_id)
     }
 
     pub fn balance_of(env: Env, owner: Address) -> u64 {
+        Self::extend_instance_ttl(&env);
+        Self::extend_persistent_ttl(&env, &owner);
         let tokens: Vec<u64> = env
             .storage()
             .persistent()
@@ -215,6 +293,7 @@ impl NavinShipmentNft {
     }
 
     pub fn total_supply(env: Env) -> u64 {
+        Self::extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&NftKey::TokenCount)
@@ -222,6 +301,7 @@ impl NavinShipmentNft {
     }
 
     pub fn name(env: Env) -> Result<Symbol, NftError> {
+        Self::extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&NftKey::Name)
@@ -229,6 +309,7 @@ impl NavinShipmentNft {
     }
 
     pub fn nft_symbol(env: Env) -> Result<Symbol, NftError> {
+        Self::extend_instance_ttl(&env);
         env.storage()
             .instance()
             .get(&NftKey::Symbol)
@@ -236,6 +317,7 @@ impl NavinShipmentNft {
     }
 
     pub fn get_admin(env: Env) -> Result<Address, NftError> {
+        Self::extend_instance_ttl(&env);
         Self::get_admin_inner(&env)
     }
 
@@ -314,11 +396,9 @@ mod tests {
     use soroban_sdk::testutils::Address as _;
 
     fn setup() -> (Env, Address, NavinShipmentNftClient<'static>) {
-        let env = Env::default();
-        let admin = Address::generate(&env);
+        let (env, admin) = test_utils::setup_env();
         let contract_id = env.register(NavinShipmentNft, ());
         let client = NavinShipmentNftClient::new(&env, &contract_id);
-        env.mock_all_auths();
         client.initialize(&admin, &symbol_short!("NavinNFT"), &symbol_short!("NNFT"));
         (env, admin, client)
     }
