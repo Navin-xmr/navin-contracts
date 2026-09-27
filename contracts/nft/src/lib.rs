@@ -1,5 +1,7 @@
 #![no_std]
 
+pub mod event_topics;
+
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, vec, Address, Env, Symbol,
     Vec,
@@ -35,14 +37,6 @@ pub enum NftError {
     InvalidNameOrSymbol = 9,
 }
 
-// ── Events ──────────────────────────────────────────────────────────────────
-
-const MINT: Symbol = symbol_short!("mint");
-const TRANSFER_NFT: Symbol = symbol_short!("xfer");
-const BURN: Symbol = symbol_short!("burn");
-const INIT: Symbol = symbol_short!("init");
-const ADMIN_TRANSFER: Symbol = symbol_short!("admin");
-
 // ── Contract ────────────────────────────────────────────────────────────────
 
 #[contract]
@@ -70,7 +64,7 @@ impl NavinShipmentNft {
         env.storage().instance().set(&NftKey::TokenCount, &0_u64);
         env.storage().instance().set(&NftKey::Initialized, &true);
         env.events().publish(
-            (INIT,),
+            (event_topics::INIT, event_topics::EVENT_SCHEMA_VERSION),
             (admin, name, symbol, env.ledger().timestamp()),
         );
         Ok(())
@@ -103,8 +97,10 @@ impl NavinShipmentNft {
             .instance()
             .set(&NftKey::TokenCount, &(count + 1));
 
-        env.events()
-            .publish((MINT,), (token_id, to, env.ledger().timestamp()));
+        env.events().publish(
+            (event_topics::MINT, event_topics::EVENT_SCHEMA_VERSION),
+            (token_id, to, env.ledger().timestamp()),
+        );
         Ok(token_id)
     }
 
@@ -129,7 +125,7 @@ impl NavinShipmentNft {
         Self::add_token_to_owner(&env, &to, token_id);
 
         env.events().publish(
-            (TRANSFER_NFT,),
+            (event_topics::TRANSFER, event_topics::EVENT_SCHEMA_VERSION),
             (token_id, from, to, env.ledger().timestamp()),
         );
         Ok(())
@@ -160,8 +156,10 @@ impl NavinShipmentNft {
                 .set(&NftKey::TokenCount, &(count - 1));
         }
 
-        env.events()
-            .publish((BURN,), (token_id, caller, env.ledger().timestamp()));
+        env.events().publish(
+            (event_topics::BURN, event_topics::EVENT_SCHEMA_VERSION),
+            (token_id, caller, env.ledger().timestamp()),
+        );
         Ok(())
     }
 
@@ -177,7 +175,7 @@ impl NavinShipmentNft {
 
         env.storage().instance().set(&NftKey::Admin, &new_admin);
         env.events().publish(
-            (ADMIN_TRANSFER,),
+            (event_topics::ADMIN_TRANSFER, event_topics::EVENT_SCHEMA_VERSION),
             (admin, new_admin, env.ledger().timestamp()),
         );
         Ok(())
@@ -306,6 +304,11 @@ impl NavinShipmentNft {
         }
     }
 }
+
+#[cfg(test)]
+mod test_auth;
+#[cfg(test)]
+mod test_events;
 
 #[cfg(test)]
 mod tests {
