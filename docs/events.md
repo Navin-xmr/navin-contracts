@@ -66,7 +66,8 @@
     - [meta_set](#token-metadata-set)
     - [meta_del](#token-metadata-delete)
 16. [Token Batch Events](#token-batch-events)
-    - [batch_tr](#token-batch-transfer)
+    - [batch_leg](#batch_leg)
+    - [batch_tr](#batch_tr)
 
 ---
 
@@ -1260,6 +1261,24 @@ Emitted when the admin removes a metadata entry via `remove_metadata()`.
 ---
 
 ## Token Batch Events
+
+### `batch_leg`
+
+Emitted for each recipient leg during a batch transfer executed via `batch_transfer()`.
+
+**Topic:** `"batch_leg"`
+**Emitted by:** `batch_transfer`
+**Caller role:** Token holder
+
+| #   | Field    | Soroban Type | Description                   |
+| --- | -------- | ------------ | ----------------------------- |
+| 1   | `from`   | `Address`    | Source account sending tokens |
+| 2   | `to`     | `Address`    | Recipient receiving tokens    |
+| 3   | `amount` | `i128`       | Amount of tokens transferred  |
+
+**Backend action:** Record individual leg transfers for off-chain recipient balance indexing and detailed transfer reconstruction.
+
+---
 
 ### `batch_tr`
 
