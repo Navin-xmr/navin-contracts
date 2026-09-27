@@ -204,15 +204,24 @@ pub fn set_paused(env: &Env, paused: bool) {
 
 /// Check if a metadata key is in the allowed list
 pub fn is_metadata_key_allowed(env: &Env, key: &Symbol) -> bool {
-    env.storage()
-        .persistent()
-        .has(&DataKey::AllowedMetadataKey(key.clone()))
+    let metadata_key = DataKey::AllowedMetadataKey(key.clone());
+    if env.storage().persistent().has(&metadata_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&metadata_key, 1000, 500000);
+        true
+    } else {
+        false
+    }
 }
 
 /// Add a key to the allowed metadata keys list
 pub fn add_allowed_metadata_key(env: &Env, key: &Symbol) {
     let metadata_key = DataKey::AllowedMetadataKey(key.clone());
     env.storage().persistent().set(&metadata_key, &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&metadata_key, 1000, 500000);
 
     let mut keys = get_allowed_metadata_keys(env);
     if !keys.contains(key) {

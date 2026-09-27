@@ -1140,4 +1140,28 @@ fn test_add_allowed_metadata_key_instance_storage_footprint() {
     });
 }
 
+#[test]
+fn test_allowed_metadata_key_ttl_expiration_sync() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let key = Symbol::new(&env, "website");
+    client.add_allowed_metadata_key(&admin, &key);
+
+    assert!(client.is_metadata_key_allowed(&key));
+
+    // Advance ledger sequence number past default TTL window
+    env.ledger().with_mut(|l| {
+        l.sequence_number += 10_000;
+    });
+
+    let is_allowed = client.is_metadata_key_allowed(&key);
+    let allowed_keys = client.get_allowed_metadata_keys();
+
+    assert!(is_allowed);
+    assert_eq!(allowed_keys.len(), 1);
+    assert_eq!(allowed_keys.get(0), Some(key));
+}
+
+
 
