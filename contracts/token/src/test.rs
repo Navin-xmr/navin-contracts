@@ -1089,3 +1089,39 @@ fn event_fixtures_approve_and_metadata() {
     }
     assert!(found_meta, "expected a metadata event");
 }
+
+#[test]
+fn test_batch_transfer_with_self_transfer_event_count() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    recipients.push_back((recipient1.clone(), 100));
+    recipients.push_back((admin.clone(), 50)); // self-transfer
+    recipients.push_back((recipient2.clone(), 200));
+
+    client.batch_transfer(&admin, &recipients);
+
+    let events = env.events().all();
+    let mut batch_leg_count = 0;
+    let mut batch_tr_leg_count = None;
+
+    for (_cid, topics, data) in events.iter() {
+        if let Some(first) = topics.get(0).and_then(|t| Symbol::try_from_val(&env, &t).ok()) {
+            if first == Symbol::new(&env, "batch_leg") {
+                batch_leg_count += 1;
+            } else if first == Symbol::new(&env, "batch_tr") {
+                if let Ok((_from, _recips, len)) = <(Address, soroban_sdk::Vec<(Address, i128)>, usize)>::try_from_val(&env, &data) {
+                    batch_tr_leg_count = Some(len);
+                }
+            }
+        }
+    }
+
+    assert_eq!(batch_leg_count, 2);
+    assert_eq!(batch_tr_leg_count, Some(2));
+}
+
