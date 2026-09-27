@@ -6,11 +6,13 @@ mod errors;
 mod event_topics;
 mod storage;
 mod test;
+mod types;
 
 #[cfg(test)]
 mod test_utils;
 
 pub use errors::*;
+pub use types::*;
 
 /// Pass as `expiration_ledger` to `approve` for an allowance that
 /// effectively never expires (issue #659).
@@ -755,24 +757,18 @@ impl NavinToken {
         // `batch_leg` event (from, to, amount) per recipient — mirroring the
         // shape of `transfer`'s event — followed by a `batch_tr` summary
         // carrying the full recipient/amount list and the leg count.
+        let mut filtered_recipients = Vec::new(&env);
         for (to, amount) in recipients.iter() {
             if to == from {
                 continue;
             }
-            env.events().publish(
-                (
-                    Symbol::new(&env, event_topics::BATCH_LEG),
-                    Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
-                ),
-                (from.clone(), to, amount),
-            );
+            filtered_recipients.push_back((to.clone(), amount));
+            env.events()
+                .publish((symbol_short!("batch_leg"),), (from.clone(), to, amount));
         }
         env.events().publish(
-            (
-                Symbol::new(&env, event_topics::BATCH_TRANSFER),
-                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
-            ),
-            (from, recipients.clone(), recipients.len()),
+            (symbol_short!("batch_tr"),),
+            (from, filtered_recipients.clone(), filtered_recipients.len()),
         );
 
         Ok(())
