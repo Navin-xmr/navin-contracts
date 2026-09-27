@@ -213,9 +213,6 @@ pub fn is_metadata_key_allowed(env: &Env, key: &Symbol) -> bool {
 pub fn add_allowed_metadata_key(env: &Env, key: &Symbol) {
     let metadata_key = DataKey::AllowedMetadataKey(key.clone());
     env.storage().persistent().set(&metadata_key, &true);
-    env.storage()
-        .instance()
-        .set(&DataKey::AllowedMetadataKey(key.clone()), &true);
 
     let mut keys = get_allowed_metadata_keys(env);
     if !keys.contains(key) {

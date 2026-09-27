@@ -1125,3 +1125,19 @@ fn test_batch_transfer_with_self_transfer_event_count() {
     assert_eq!(batch_tr_leg_count, Some(2));
 }
 
+#[test]
+fn test_add_allowed_metadata_key_instance_storage_footprint() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let key = Symbol::new(&env, "website");
+    client.add_allowed_metadata_key(&admin, &key);
+
+    assert!(client.is_metadata_key_allowed(&key));
+
+    env.as_contract(&client.address, || {
+        assert!(!env.storage().instance().has(&crate::storage::DataKey::AllowedMetadataKey(key.clone())));
+    });
+}
+
+
