@@ -32,6 +32,7 @@ pub enum NftError {
     TokenAlreadyMinted = 6,
     MintToContract = 7,
     ContractPaused = 8,
+    InvalidNameOrSymbol = 9,
 }
 
 // ── Events ──────────────────────────────────────────────────────────────────
@@ -59,6 +60,9 @@ impl NavinShipmentNft {
 
         if env.storage().instance().has(&NftKey::Initialized) {
             return Err(NftError::AlreadyInitialized);
+        }
+        if name == symbol_short!("") || symbol == symbol_short!("") {
+            return Err(NftError::InvalidNameOrSymbol);
         }
         env.storage().instance().set(&NftKey::Admin, &admin);
         env.storage().instance().set(&NftKey::Name, &name);
@@ -484,6 +488,21 @@ mod tests {
         client.mint(&alice, &1);
         client.transfer(&alice, &alice, &1);
         assert_eq!(client.owner_of(&1), alice);
+    }
+
+    #[test]
+    fn test_initialize_empty_name_or_symbol_fails() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let contract_id = env.register(NavinShipmentNft, ());
+        let client = NavinShipmentNftClient::new(&env, &contract_id);
+        env.mock_all_auths();
+
+        let res1 = client.try_initialize(&admin, &symbol_short!(""), &symbol_short!("NNFT"));
+        assert_eq!(res1, Err(Ok(NftError::InvalidNameOrSymbol)));
+
+        let res2 = client.try_initialize(&admin, &symbol_short!("NavinNFT"), &symbol_short!(""));
+        assert_eq!(res2, Err(Ok(NftError::InvalidNameOrSymbol)));
     }
 }
 
