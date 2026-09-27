@@ -29,6 +29,10 @@ This repository contains Soroban smart contracts for the Navin platform:
 ```text
 .
 ├── contracts
+│   ├── nft                 # Shipment-asset NFT contract scaffold
+│   │   ├── src
+│   │   │   └── lib.rs      # NFT minting, transfer, and ownership logic
+│   │   └── Cargo.toml
 │   ├── shipment            # Core logistics and escrow contract
 │   │   ├── src
 │   │   │   ├── lib.rs      # Main shipment logic
@@ -49,6 +53,15 @@ This repository contains Soroban smart contracts for the Navin platform:
 ├── CONTRIBUTING.md         # Contribution guidelines
 └── README.md
 ```
+
+## Smart Contracts
+
+The repository contains three smart contracts located under `contracts/`:
+
+- **`contracts/shipment`**: Core logistics and escrow contract managing shipment lifecycle, delivery tracking, and state persistence. See tests in [`contracts/shipment/src/test.rs`](contracts/shipment/src/test.rs) and state docs in [`contracts/shipment/docs/`](contracts/shipment/docs/).
+- **`contracts/token`**: Fungible payment token contract providing balance tracking, transfer allowances, and batch transfer events. See tests in [`contracts/token/src/test.rs`](contracts/token/src/test.rs) and event docs in [`docs/events.md`](docs/events.md).
+- **`contracts/nft`**: Shipment-asset NFT scaffold contract implementing unique digital asset minting, ownership, transfer, and burning logic. See contract implementation and tests in [`contracts/nft/src/lib.rs`](contracts/nft/src/lib.rs).
+
 
 ## Quick Start
 

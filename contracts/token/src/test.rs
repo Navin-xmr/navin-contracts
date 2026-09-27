@@ -1165,3 +1165,50 @@ fn test_allowed_metadata_key_ttl_expiration_sync() {
 
 
 
+fn event_fixtures_schema_version_topics_all_events() {
+    let (env, client, admin) = setup_token_env();
+    let spender = Address::generate(&env);
+    let to = Address::generate(&env);
+    initialize_token(&client, &env, &admin, 1000);
+    env.mock_all_auths();
+
+    // 1. tr_from
+    client.approve(&admin, &spender, &100, &u32::MAX);
+    client.transfer_from(&spender, &admin, &to, &50);
+    let tr_from_event = env.events().all().pop_back().unwrap();
+    assert_eq!(tr_from_event.1.len(), 2);
+    assert_eq!(
+        Symbol::try_from_val(&env, &tr_from_event.1.get(0).unwrap()).unwrap(),
+        Symbol::new(&env, "tr_from")
+    );
+    assert_eq!(
+        Symbol::try_from_val(&env, &tr_from_event.1.get(1).unwrap()).unwrap(),
+        Symbol::new(&env, "v1")
+    );
+
+    // 2. admin_pro and admin_tr
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+    let admin_pro_event = env.events().all().pop_back().unwrap();
+    assert_eq!(admin_pro_event.1.len(), 2);
+    assert_eq!(
+        Symbol::try_from_val(&env, &admin_pro_event.1.get(0).unwrap()).unwrap(),
+        Symbol::new(&env, "admin_pro")
+    );
+    assert_eq!(
+        Symbol::try_from_val(&env, &admin_pro_event.1.get(1).unwrap()).unwrap(),
+        Symbol::new(&env, "v1")
+    );
+
+    client.accept_admin_transfer(&new_admin);
+    let admin_tr_event = env.events().all().pop_back().unwrap();
+    assert_eq!(admin_tr_event.1.len(), 2);
+    assert_eq!(
+        Symbol::try_from_val(&env, &admin_tr_event.1.get(0).unwrap()).unwrap(),
+        Symbol::new(&env, "admin_tr")
+    );
+    assert_eq!(
+        Symbol::try_from_val(&env, &admin_tr_event.1.get(1).unwrap()).unwrap(),
+        Symbol::new(&env, "v1")
+    );
+}
