@@ -483,9 +483,34 @@ pub fn has_persistent_shipment(env: &Env, shipment_id: u64) -> bool {
 }
 
 /// Check whether escrow entry exists in persistent storage.
-#[cfg(test)]
 pub fn has_escrow_entry(env: &Env, shipment_id: u64) -> bool {
     env.storage().persistent().has(&escrow_key(shipment_id))
+}
+
+/// Check whether a per-shipment event-count key exists in persistent storage.
+///
+/// Inspects the current schema key `DataKey::EventCount(shipment_id)`. The
+/// key remains in the enum for storage-layout compatibility even when no
+/// live writer increments it; diagnostics still treat a leftover entry as
+/// an orphan after archival.
+pub fn has_event_count_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::EventCount(shipment_id))
+}
+
+/// Check whether a confirmation-hash entry exists in persistent storage.
+pub fn has_confirmation_hash_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&confirmation_hash_key(shipment_id))
+}
+
+/// Check whether a last-status-update timestamp exists in persistent storage.
+pub fn has_last_status_update_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::LastStatusUpdate(shipment_id))
 }
 
 /// Persist a shipment to persistent storage (survives TTL extension).
@@ -1723,6 +1748,45 @@ mod tests {
 
             reactivate_role(&env, &user, &Role::Company);
             assert!(!is_role_suspended(&env, &user, &Role::Company));
+        });
+    }
+
+    #[test]
+    fn has_entry_helpers_match_current_data_key_schema() {
+        let (env, contract_id) = with_contract_env();
+        let shipment_id = 7u64;
+        let hash = BytesN::from_array(&env, &[0xABu8; 32]);
+
+        env.as_contract(&contract_id, || {
+            assert!(!has_event_count_entry(&env, shipment_id));
+            assert!(!has_confirmation_hash_entry(&env, shipment_id));
+            assert!(!has_last_status_update_entry(&env, shipment_id));
+
+            env.storage()
+                .persistent()
+                .set(&DataKey::EventCount(shipment_id), &3u32);
+            set_confirmation_hash(&env, shipment_id, &hash);
+            set_last_status_update(&env, shipment_id, 42);
+
+            assert!(has_event_count_entry(&env, shipment_id));
+            assert!(env
+                .storage()
+                .persistent()
+                .has(&DataKey::EventCount(shipment_id)));
+
+            assert!(has_confirmation_hash_entry(&env, shipment_id));
+            assert!(env
+                .storage()
+                .persistent()
+                .has(&confirmation_hash_key(shipment_id)));
+            assert_eq!(get_confirmation_hash(&env, shipment_id), Some(hash.clone()));
+
+            assert!(has_last_status_update_entry(&env, shipment_id));
+            assert!(env
+                .storage()
+                .persistent()
+                .has(&DataKey::LastStatusUpdate(shipment_id)));
+            assert_eq!(get_last_status_update(&env, shipment_id), Some(42));
         });
     }
 }

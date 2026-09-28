@@ -9,7 +9,7 @@ use crate::{
 use soroban_sdk::{
     contract, contracterror, contractimpl,
     testutils::{Address as _, Events},
-    Address, BytesN, Env, FromVal, IntoVal, Symbol, TryFromVal,
+    Address, BytesN, Env, FromVal, IntoVal, Symbol, TryFromVal, Vec,
 };
 
 #[contract]
@@ -5175,10 +5175,7 @@ fn test_admin_can_check_batch_consistency() {
         &(env.ledger().timestamp() + 3600),
     );
 
-    let violations = client.check_batch_consistency(
-        &admin,
-        &Vec::from_array(&env, &[id1, id2]),
-    );
+    let violations = client.check_batch_consistency(&admin, &Vec::from_array(&env, [id1, id2]));
     assert!(
         violations.is_empty(),
         "healthy batch must return no violations, got: {violations:?}"
@@ -5208,8 +5205,5 @@ fn test_non_admin_cannot_check_batch_consistency() {
     );
 
     let outsider = Address::generate(&env);
-    client.check_batch_consistency(
-        &outsider,
-        &Vec::from_array(&env, &[id1]),
-    );
+    client.check_batch_consistency(&outsider, &Vec::from_array(&env, [id1]));
 }

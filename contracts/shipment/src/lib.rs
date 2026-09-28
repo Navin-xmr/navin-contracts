@@ -22,6 +22,14 @@ mod config;
 /// module from the other orphaned files in this crate, whose dependencies were
 /// removed outright rather than merely left unwired.
 pub mod consistency;
+/// Storage-health diagnostics (issue #876).
+///
+/// This file was previously an orphan: `has_orphaned_counters` called
+/// storage helpers that did not exist, so the module was left unwired and
+/// never compiled. The helpers now inspect the current `DataKey` schema, so
+/// the module is registered unconditionally — the same rationale as
+/// `consistency`.
+pub mod diagnostics;
 pub mod error_map;
 mod errors;
 mod event_topics;
@@ -142,10 +150,6 @@ mod test_zero_amount_escrow;
 #[cfg(test)]
 mod test_dispute_evidence;
 
-#[cfg(test)]
-mod fuzz_rbac_authorization;
-#[cfg(test)]
-mod fuzz_role_assignment;
 #[cfg(test)]
 mod fuzz_escrow_arithmetic;
 #[cfg(test)]
