@@ -395,6 +395,8 @@ pub fn cleanup_audit_logs(
     admin: &Address,
     before_timestamp: u64,
 ) -> Result<u32, NavinError> {
+    crate::require_not_paused(env)?;
+
     // Verify admin authorization. Accept either the primary admin (the
     // single-admin deployment case) or a member of the multi-sig admin list —
     // `storage::is_admin` alone only covers the latter and is empty until
@@ -532,5 +534,64 @@ mod tests {
 
         assert_eq!(entry.entry_id, 1);
         assert_eq!(entry.event_type, AuditEventType::RoleAssigned);
+    }
+
+    #[test]
+    fn cleanup_audit_logs_returns_contract_paused_and_keeps_entries() {
+        use crate::storage;
+        use soroban_sdk::testutils::Address as _;
+
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::NavinShipment, ());
+        let admin = Address::generate(&env);
+        let target = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            storage::set_admin(&env, &admin);
+            let entry_id = log_role_assigned(&env, &admin, &target, &Role::Company).unwrap();
+            assert_eq!(
+                query_audit_history_for_target(&env, &target, 0, 10).len(),
+                1
+            );
+
+            storage::set_paused(&env, true);
+
+            let result = cleanup_audit_logs(&env, &admin, u64::MAX);
+            assert_eq!(result, Err(NavinError::ContractPaused));
+
+            let remaining = query_audit_history_for_target(&env, &target, 0, 10);
+            assert_eq!(remaining.len(), 1, "paused cleanup must not remove entries");
+            assert_eq!(remaining.get(0).unwrap().entry_id, entry_id);
+        });
+    }
+
+    #[test]
+    fn cleanup_audit_logs_removes_old_entries_when_not_paused() {
+        use crate::storage;
+        use soroban_sdk::testutils::Address as _;
+
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::NavinShipment, ());
+        let admin = Address::generate(&env);
+        let target = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            storage::set_admin(&env, &admin);
+            let _ = log_role_assigned(&env, &admin, &target, &Role::Company).unwrap();
+            assert_eq!(
+                query_audit_history_for_target(&env, &target, 0, 10).len(),
+                1
+            );
+
+            let removed = cleanup_audit_logs(&env, &admin, u64::MAX).unwrap();
+            assert_eq!(removed, 1);
+            assert_eq!(
+                query_audit_history_for_target(&env, &target, 0, 10).len(),
+                0,
+                "unpaused cleanup must remove matching entries"
+            );
+        });
     }
 }

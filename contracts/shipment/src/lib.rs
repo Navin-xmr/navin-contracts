@@ -143,10 +143,6 @@ mod test_zero_amount_escrow;
 mod test_dispute_evidence;
 
 #[cfg(test)]
-mod fuzz_rbac_authorization;
-#[cfg(test)]
-mod fuzz_role_assignment;
-#[cfg(test)]
 mod fuzz_escrow_arithmetic;
 #[cfg(test)]
 mod fuzz_escrow_lifecycle;

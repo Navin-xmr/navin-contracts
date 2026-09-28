@@ -661,7 +661,6 @@ pub fn get_error_info(code: u32) -> ContractErrorInfo {
         68 => error_info(NavinError::RoleAlreadyAssigned),
         69 => error_info(NavinError::CarrierNotWhitelisted),
         70 => error_info(NavinError::InvalidAddress),
-        71 => error_info(NavinError::RecoveryLimitExceeded),
         72 => error_info(NavinError::RoleMismatch),
         73 => error_info(NavinError::InvalidSymbolEncoding),
         74 => error_info(NavinError::MultiSigProposalPending),
@@ -795,6 +794,9 @@ mod tests {
         assert_ne!(not_whitelisted.message, already_whitelisted.message);
         assert_eq!(error_info(NavinError::CarrierNotWhitelisted).code, 69);
         assert_eq!(error_info(NavinError::CarrierAlreadyWhitelisted).code, 75);
+    }
+
+    #[test]
     fn test_issue_889_numeric_lookup_covers_live_error_codes() {
         let cases: &[(u32, NavinError, ErrorCategory, Symbol)] = &[
             (
@@ -916,7 +918,6 @@ mod tests {
             NavinError::CarrierAlreadyWhitelisted,
             NavinError::CarrierNotWhitelisted,
             NavinError::InvalidAddress,
-            NavinError::RecoveryLimitExceeded,
             NavinError::RoleMismatch,
             NavinError::InvalidSymbolEncoding,
             NavinError::MultiSigProposalPending,
