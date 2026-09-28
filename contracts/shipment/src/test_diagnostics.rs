@@ -776,3 +776,47 @@ fn test_terminal_persistent_shipment_is_not_flagged_as_orphaned_archive() {
         );
     });
 }
+
+/// Issue #877 — dispute evidence is keyed by `DisputeKey::EvidenceCount`, the
+/// same variant `storage.rs` uses. The old `DataKey::DisputeEvidenceCount` /
+/// `ShipmentNoteCount` / `RecoveryRecordCount` names do not exist.
+#[test]
+fn test_orphaned_counters_use_live_dispute_key_evidence_count() {
+    use crate::storage;
+    use crate::types::DisputeKey;
+
+    let (env, client, _, _) = prepare_test();
+    let shipment_id = 1u64;
+    let hash = BytesN::from_array(&env, &[0xEEu8; 32]);
+
+    env.as_contract(&client.address, || {
+        assert!(!crate::diagnostics::has_orphaned_counters(
+            &env,
+            shipment_id
+        ));
+
+        storage::append_evidence(&env, shipment_id, &hash);
+        assert_eq!(storage::get_evidence_count(&env, shipment_id), 1);
+        assert!(
+            env.storage()
+                .persistent()
+                .has(&DisputeKey::EvidenceCount(shipment_id)),
+            "diagnostics and storage.rs must share DisputeKey::EvidenceCount"
+        );
+        assert!(
+            crate::diagnostics::has_orphaned_counters(&env, shipment_id),
+            "a leftover evidence-count key must be classified as an orphan"
+        );
+
+        env.storage()
+            .persistent()
+            .remove(&DisputeKey::EvidenceCount(shipment_id));
+        env.storage()
+            .persistent()
+            .remove(&DisputeKey::Evidence(shipment_id, 0));
+        assert!(!crate::diagnostics::has_orphaned_counters(
+            &env,
+            shipment_id
+        ));
+    });
+}

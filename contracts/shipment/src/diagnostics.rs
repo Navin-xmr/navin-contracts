@@ -1,5 +1,5 @@
 use crate::storage;
-use crate::types::{DataKey, ShipmentStatus};
+use crate::types::{DataKey, DisputeKey, ShipmentStatus};
 use soroban_sdk::{contracttype, Env, Vec};
 
 /// Reusable response object representing the state of the contract's health.
@@ -152,6 +152,18 @@ pub(crate) fn has_orphaned_counters(env: &Env, shipment_id: u64) -> bool {
         .storage()
         .persistent()
         .has(&storage::escrow_freeze_reason_key(shipment_id))
+    {
+        return true;
+    }
+    // Evidence is stored under DisputeKey, not DataKey. DataKey is already at
+    // the #[contracttype] variant cap, so the evidence subsystem uses its own
+    // key enum — the same keys storage.rs reads and writes. There is no
+    // ShipmentNoteCount or RecoveryRecordCount: notes are hash-and-emit only,
+    // and recovery records are not persisted.
+    if env
+        .storage()
+        .persistent()
+        .has(&DisputeKey::EvidenceCount(shipment_id))
     {
         return true;
     }
