@@ -145,6 +145,11 @@ pub struct ContractConfig {
     /// Only meaningful when `creation_quota_max > 0`.
     /// Default: 3600 (1 hour).
     pub creation_quota_window_seconds: u64,
+
+    /// Enable automatic NFT minting when shipments are created.
+    /// When enabled, requires nft_contract_address to be set.
+    /// Default: false (disabled).
+    pub auto_mint_nft: bool,
 }
 
 impl Default for ContractConfig {
@@ -175,6 +180,7 @@ impl Default for ContractConfig {
             max_breaches_per_shipment: 255,      // 255 breaches
             creation_quota_max: 0,               // disabled by default
             creation_quota_window_seconds: 3600, // 1 hour window
+            auto_mint_nft: false,                // disabled by default
         }
     }
 }

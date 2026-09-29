@@ -41,6 +41,8 @@ mod test_finalization;
 mod test_hash_emit_vectors;
 #[cfg(test)]
 mod test_token_compatibility;
+#[cfg(test)]
+mod test_nft_integration;
 mod types;
 mod validation;
 
@@ -672,6 +674,75 @@ fn invoke_token_transfer(
     }
 }
 
+/// Attempt to mint an NFT for a shipment if NFT contract is configured and auto-minting is enabled.
+/// This is a best-effort operation - if it fails, the shipment creation still succeeds.
+///
+/// # Arguments
+/// * `env` - Execution environment.
+/// * `shipment_id` - The ID of the created shipment.
+/// * `sender` - The shipment sender (will be the NFT recipient).
+/// * `data_hash` - The shipment data hash.
+///
+/// # Returns
+/// * `Option<u64>` - The minted NFT token ID if successful, None otherwise.
+fn try_mint_shipment_nft(
+    env: &Env,
+    shipment_id: u64,
+    sender: &Address,
+    data_hash: &BytesN<32>,
+) -> Option<u64> {
+    // Check if NFT contract is configured
+    let nft_contract = storage::get_nft_contract(env)?;
+    
+    // Check if auto-minting is enabled in configuration
+    let config = config::get_config(env);
+    if !config.auto_mint_nft {
+        return None;
+    }
+
+    // Create basic metadata for the NFT
+    let mut metadata = Map::new(env);
+    metadata.set(
+        Symbol::new(env, "type"),
+        soroban_sdk::String::from_str(env, "shipment"),
+    );
+    metadata.set(
+        Symbol::new(env, "created_at"),
+        soroban_sdk::String::from_str(env, &env.ledger().timestamp().to_string()),
+    );
+
+    // Prepare arguments for NFT minting
+    let mut args: Vec<soroban_sdk::Val> = Vec::new(env);
+    args.push_back(sender.clone().into_val(env));
+    args.push_back(shipment_id.into_val(env));
+    args.push_back(data_hash.clone().into_val(env));
+    args.push_back(metadata.into_val(env));
+
+    // Try to mint the NFT
+    match env.try_invoke_contract::<u64, soroban_sdk::Error>(
+        &nft_contract,
+        &Symbol::new(env, "mint_shipment_nft"),
+        args,
+    ) {
+        Ok(Ok(token_id)) => {
+            // Emit success event
+            env.events().publish(
+                (symbol_short!("nft_mint"),),
+                (shipment_id, sender.clone(), token_id),
+            );
+            Some(token_id)
+        }
+        Ok(Err(_)) | Err(_) => {
+            // Emit failure event for debugging but don't fail the shipment creation
+            env.events().publish(
+                (symbol_short!("nft_fail"),),
+                (shipment_id, sender.clone()),
+            );
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 fn invoke_token_mint(
     env: &Env,
@@ -1092,6 +1163,131 @@ impl NavinShipment {
     pub fn get_admin(env: Env) -> Result<Address, NavinError> {
         require_initialized(&env)?;
         Ok(storage::get_admin(&env))
+    }
+
+    /// Set the NFT contract address for automatic shipment tokenization.
+    /// Only admin can call this function.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - The admin address authorizing the operation.
+    /// * `nft_contract` - The NFT contract address.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if successfully set.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not admin.
+    pub fn set_nft_contract(
+        env: Env,
+        admin: Address,
+        nft_contract: Address,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+        
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // Validate the NFT contract address
+        if nft_contract == admin || nft_contract == env.current_contract_address() {
+            return Err(NavinError::InvalidAddress);
+        }
+
+        storage::set_nft_contract(&env, &nft_contract);
+        
+        env.events().publish(
+            (symbol_short!("nft_set"),),
+            (admin, nft_contract),
+        );
+
+        Ok(())
+    }
+
+    /// Get the NFT contract address.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    ///
+    /// # Returns
+    /// * `Result<Option<Address>, NavinError>` - The NFT contract address if set.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn get_nft_contract(env: Env) -> Result<Option<Address>, NavinError> {
+        require_initialized(&env)?;
+        Ok(storage::get_nft_contract(&env))
+    }
+
+    /// Clear the NFT contract address, disabling automatic tokenization.
+    /// Only admin can call this function.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - The admin address authorizing the operation.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if successfully cleared.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not admin.
+    pub fn clear_nft_contract(env: Env, admin: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+        
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        storage::clear_nft_contract(&env);
+        
+        env.events().publish(
+            (symbol_short!("nft_clear"),),
+            (admin,),
+        );
+
+        Ok(())
+    }
+
+    /// Enable or disable automatic NFT minting for new shipments.
+    /// Only admin can call this function.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - The admin address authorizing the operation.
+    /// * `enabled` - Whether to enable automatic NFT minting.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if successfully updated.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not admin.
+    pub fn set_auto_mint_nft(
+        env: Env,
+        admin: Address,
+        enabled: bool,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+        
+        if storage::get_admin(&env) != admin {
+            return Err(NavinError::Unauthorized);
+        }
+
+        let mut config = config::get_config(&env);
+        config.auto_mint_nft = enabled;
+        config::set_config(&env, &config)?;
+        
+        env.events().publish(
+            (symbol_short!("nft_auto"),),
+            (admin, enabled),
+        );
+
+        Ok(())
     }
 
     /// Get the contract version number.
@@ -2173,6 +2369,9 @@ impl NavinShipment {
             &data_hash,
         );
 
+        // Try to mint NFT if configured (best-effort, doesn't fail shipment creation)
+        try_mint_shipment_nft(&env, shipment_id, &sender, &data_hash);
+
         Ok(shipment_id)
     }
 
@@ -2298,6 +2497,10 @@ impl NavinShipment {
                 shipment_id,
                 &shipment_input.data_hash,
             );
+            
+            // Try to mint NFT if configured (best-effort, doesn't fail shipment creation)
+            try_mint_shipment_nft(&env, shipment_id, &sender, &shipment_input.data_hash);
+            
             ids.push_back(shipment_id);
         }
 

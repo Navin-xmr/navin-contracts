@@ -1055,6 +1055,7 @@ dependencies = [
 name = "shipment"
 version = "0.0.0"
 dependencies = [
+ "navin-nft",
  "navin-token",
  "serde_json",
  "sha2",
