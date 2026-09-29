@@ -287,39 +287,6 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Balance"
-                            },
-                            {
-                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "i128": {
-                            "hi": 0,
-                            "lo": 1000000
-                          }
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
-                              "symbol": "Metadata"
-                            },
-                            {
-                              "symbol": "twitter"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "string": "@navin"
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
                               "symbol": "Name"
                             }
                           ]

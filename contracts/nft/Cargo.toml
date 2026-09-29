@@ -1,10 +1,19 @@
 [package]
 name = "navin-nft"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2021"
+publish = false
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["lib", "cdylib"]
+doctest = false
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
@@ -12,6 +21,8 @@ soroban-sdk = { workspace = true }
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
 
+[features]
+testutils = ["soroban-sdk/testutils"]
 [profile.release]
 opt-level = "z"
 overflow-checks = true

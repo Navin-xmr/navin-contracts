@@ -50,6 +50,8 @@ pub enum DataKey {
     ConfirmationHash(u64),
     /// Token contract address for payments.
     TokenContract,
+    /// NFT contract address for shipment tokenization (optional).
+    NftContract,
     /// Timestamp of the last status update for a shipment (used for rate limiting).
     LastStatusUpdate(u64),
     /// Whether the pre-deadline warning has already been emitted for a shipment.
@@ -124,6 +126,31 @@ pub enum DataKey {
     ProposalSalt(BytesN<32>),
     /// Prerequisite shipment IDs for a dependent — dependent_id -> Vec<u64>.
     ShipmentDependents(u64),
+    /// Counter for audit log entry IDs.
+    AuditEntryCount,
+    /// Individual audit log entry keyed by entry ID.
+    AuditEntry(u64),
+}
+
+/// Storage keys for dispute evidence.
+///
+/// Kept separate from [`DataKey`] deliberately: `DataKey` already carries the
+/// maximum number of cases a single `#[contracttype]` enum may declare, so any
+/// further per-shipment collection has to live in its own key type. Splitting
+/// the dispute-evidence keys out also keeps the evidence subsystem
+/// self-contained — it can be removed again without renumbering `DataKey`.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::DisputeKey;
+/// let key = DisputeKey::EvidenceCount(1);
+/// ```
+#[contracttype(export = false)]
+pub enum DisputeKey {
+    /// Number of evidence entries recorded for a shipment's dispute.
+    EvidenceCount(u64),
+    /// A single evidence hash — (shipment_id, zero-based index).
+    Evidence(u64, u32),
 }
 
 /// Structured reason codes for escrow freeze events.
@@ -359,7 +386,7 @@ pub struct Shipment {
 /// // Struct represents a milestone reached by a shipment.
 /// ```
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Milestone {
     /// ID of the shipment this milestone belongs to.
     pub shipment_id: u64,
@@ -530,7 +557,7 @@ pub struct ShipmentInput {
 /// // Struct holds metadata about the contract state itself.
 /// ```
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ContractMetadata {
     /// Current contract version (starts at 1, incremented on each upgrade).
     pub version: u32,
@@ -601,7 +628,7 @@ pub enum AdminAction {
 /// // Struct represents a pending multi-sig proposal.
 /// ```
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Proposal {
     /// Unique proposal identifier.
     pub id: u64,

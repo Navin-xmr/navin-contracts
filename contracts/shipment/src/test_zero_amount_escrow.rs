@@ -47,6 +47,7 @@ fn test_deposit_escrow_zero_amount_rejected() {
     let (env, client, _admin, company, receiver, carrier) = setup_escrow_env();
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // Create a shipment in Created status
     let shipment_id = client.create_shipment(
@@ -74,6 +75,7 @@ fn test_deposit_escrow_negative_amount_rejected() {
     let (env, client, _admin, company, receiver, carrier) = setup_escrow_env();
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -95,6 +97,7 @@ fn test_deposit_escrow_positive_amount_accepted() {
     let (env, client, _admin, company, receiver, carrier) = setup_escrow_env();
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -122,6 +125,7 @@ fn test_deposit_escrow_zero_rejection_consistency() {
     let (env, client, _admin, company, receiver, carrier) = setup_escrow_env();
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -145,6 +149,7 @@ fn test_deposit_escrow_exceeds_max_amount_rejected() {
     let (env, client, _admin, company, receiver, carrier) = setup_escrow_env();
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -169,6 +174,7 @@ fn test_deposit_escrow_exceeds_max_amount_rejected() {
 fn test_zero_amount_rejection_multiple_shipments() {
     let (env, client, _admin, company, receiver, carrier) = setup_escrow_env();
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // Create multiple shipments
     let shipment_1 = client.create_shipment(
@@ -179,6 +185,7 @@ fn test_zero_amount_rejection_multiple_shipments() {
         &Vec::new(&env),
         &deadline,
     );
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_2 = client.create_shipment(
         &company,
@@ -203,6 +210,7 @@ fn test_release_escrow_zero_escrow_rejected() {
     let (env, client, _admin, company, receiver, carrier) = setup_escrow_env();
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -235,6 +243,7 @@ fn test_refund_escrow_zero_escrow_rejected() {
     let (env, client, _admin, company, _receiver, _carrier) = setup_escrow_env();
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &_carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -259,6 +268,7 @@ fn test_refund_escrow_already_refunded_is_blocked() {
     let (env, client, _admin, company, receiver, carrier) = setup_escrow_env();
     let data_hash = BytesN::from_array(&env, &[0x10u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -310,6 +320,7 @@ fn test_admin_refund_already_refunded_is_blocked() {
     let (env, client, admin, company, receiver, carrier) = setup_escrow_env();
     let data_hash = BytesN::from_array(&env, &[0x11u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -349,6 +360,7 @@ fn test_repeated_refund_attempts_all_blocked_after_first() {
     let (env, client, _admin, company, receiver, carrier) = setup_escrow_env();
     let data_hash = BytesN::from_array(&env, &[0x12u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,

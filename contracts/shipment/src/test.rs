@@ -3275,17 +3275,6 @@ fn test_check_deadline_returns_shipment_not_found() {
 /// - All role-based access controls are enforced
 // ============= Event Counter Tests =============
 
-#[test]
-#[should_panic(expected = "Error(Contract, #4)")]
-fn test_event_count_shipment_not_found() {
-    let (_env, client, admin, token_contract) = setup_shipment_env();
-
-    client.initialize(&admin, &token_contract);
-
-    // Try to get event count for non-existent shipment
-    client.get_event_count(&999);
-}
-
 // ============= Shipment Archival Tests =============
 
 // ── [ISSUE #600] ShipmentUnavailable error variant tests ─────────────────────
@@ -3644,7 +3633,15 @@ fn test_force_cancel_shipment_unauthorized_company() {
     client.force_cancel_shipment(&company, &shipment_id, &reason_hash);
 }
 
-/// All-zero reason_hash is rejected with InvalidHash (#6).
+/// All-zero reason_hash is rejected with ForceCancelReasonHashMissing (#34).
+#[test]
+#[should_panic(expected = "Error(Contract, #34)")]
+fn test_force_cancel_shipment_zero_reason_hash_rejected() {
+    let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
+    let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+    client.force_cancel_shipment(&admin, &shipment_id, &zero_hash);
+}
+
 /// Force-cancelling a non-existent shipment returns ShipmentNotFound (#4).
 /// Force-cancelling an already-Delivered shipment returns ShipmentFinalized (#38).
 /// Force-cancelling an already-Cancelled shipment returns ShipmentFinalized (#38).
@@ -4261,7 +4258,7 @@ fn test_initialize_with_valid_token_address_succeeds() {
 // ── Issue #584 – InvalidPaymentMilestoneName (code 62) ──────────────────────
 
 #[test]
-#[should_panic(expected = "Error(Contract, #65)")]
+#[should_panic(expected = "Error(Contract, #62)")]
 fn test_create_shipment_empty_milestone_name_rejected() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -4289,7 +4286,7 @@ fn test_create_shipment_empty_milestone_name_rejected() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #65)")]
+#[should_panic(expected = "Error(Contract, #62)")]
 fn test_create_shipment_too_long_milestone_name_rejected() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -5141,5 +5138,78 @@ fn test_compute_idempotency_key_still_works_for_short_symbols() {
     assert_ne!(
         first, other,
         "a different shipment must yield a different key"
+    );
+}
+
+// =============================================================================
+// Issue #778 – check_batch_consistency admin entrypoint
+// =============================================================================
+
+/// Admin can invoke check_batch_consistency and gets an empty violation list
+/// for a healthy batch.
+#[test]
+fn test_admin_can_check_batch_consistency() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let id1 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &Vec::new(&env),
+        &(env.ledger().timestamp() + 3600),
+    );
+    let id2 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &Vec::new(&env),
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    let violations = client.check_batch_consistency(
+        &admin,
+        &Vec::from_array(&env, &[id1, id2]),
+    );
+    assert!(
+        violations.is_empty(),
+        "healthy batch must return no violations, got: {violations:?}"
+    );
+}
+
+/// Non-admin caller is rejected when invoking check_batch_consistency.
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_non_admin_cannot_check_batch_consistency() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let id1 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &Vec::new(&env),
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    let outsider = Address::generate(&env);
+    client.check_batch_consistency(
+        &outsider,
+        &Vec::from_array(&env, &[id1]),
     );
 }

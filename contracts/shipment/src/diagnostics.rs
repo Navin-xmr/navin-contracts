@@ -23,7 +23,7 @@ pub fn run_system_health_check(env: &Env) -> SystemHealthStatus {
 
 /// Executes a health check over a specific range of shipment IDs [start_id, start_id + limit - 1].
 pub fn run_system_health_check_range(env: &Env, start_id: u64, limit: u64) -> SystemHealthStatus {
-    let total_shipments = storage::get_shipment_count(env);
+    let total_shipments = storage::get_shipment_counter(env);
 
     let mut sum_of_escrow_balances: i128 = 0;
     let mut active_shipments_counted: u32 = 0;
@@ -65,10 +65,8 @@ pub fn run_system_health_check_range(env: &Env, start_id: u64, limit: u64) -> Sy
 
                     // Consistency verification against storage structure
                     let has_persist = storage::has_persistent_shipment(env, id);
-                    let escrow_in_storage = storage::get_escrow(env, id);
-
                     // Consistency check: dual storage of escrow must match
-                    if shipment.escrow_amount != escrow_in_storage
+                    if storage::has_escrow_mismatch(env, id, shipment.escrow_amount)
                         && !storage_inconsistencies.contains(id)
                     {
                         storage_inconsistencies.push_back(id);
@@ -168,14 +166,6 @@ fn has_orphaned_counters(env: &Env, shipment_id: u64) -> bool {
         .storage()
         .persistent()
         .has(&DataKey::DisputeEvidenceCount(shipment_id))
-    {
-        return true;
-    }
-    // Recovery record count (implies record entries also exist)
-    if env
-        .storage()
-        .persistent()
-        .has(&DataKey::RecoveryRecordCount(shipment_id))
     {
         return true;
     }

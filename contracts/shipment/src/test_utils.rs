@@ -183,6 +183,23 @@ pub fn future_deadline(env: &Env, secs_from_now: u64) -> u64 {
     env.ledger().timestamp() + secs_from_now
 }
 
+/// Grants `carrier` the Carrier role and whitelists it for `company`, as
+/// `create_shipment` requires. Writes storage directly, so it is idempotent,
+/// emits no events and works while paused. No-op when `company == carrier`
+/// so participant-validation tests keep their original roles.
+pub fn allow_carrier(client: &crate::NavinShipmentClient, company: &Address, carrier: &Address) {
+    if company == carrier {
+        return;
+    }
+    let env = &client.env;
+    env.as_contract(&client.address, || {
+        if !crate::storage::has_role(env, carrier, &crate::types::Role::Carrier) {
+            crate::storage::set_carrier_role(env, carrier);
+        }
+        crate::storage::add_carrier_to_whitelist(env, company, carrier);
+    });
+}
+
 /// Normalizes non-deterministic fields in a JSON snapshot.
 #[cfg(any(test, feature = "testutils"))]
 pub fn sanitize_json_snapshot(json: &str) -> std::string::String {
