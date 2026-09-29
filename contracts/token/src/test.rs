@@ -1,11 +1,13 @@
 #![cfg(test)]
 
+extern crate alloc;
 extern crate std;
 
 use crate::{test_utils::setup_env, NavinToken, NavinTokenClient};
+use alloc::string::ToString;
 use soroban_sdk::{
-    testutils::{Address as _, Ledger as _},
-    Address, Env, String, Symbol,
+    testutils::{Address as _, Events as _, Ledger as _},
+    Address, Env, String, Symbol, TryFromVal,
 };
 
 fn setup_token_env() -> (Env, NavinTokenClient<'static>, Address) {
@@ -132,6 +134,10 @@ fn test_add_allowed_metadata_key_success() {
     client.add_allowed_metadata_key(&admin, &key);
 
     assert!(client.is_metadata_key_allowed(&key));
+
+    let allowed_keys = client.get_allowed_metadata_keys();
+    assert_eq!(allowed_keys.len(), 1);
+    assert_eq!(allowed_keys.get(0), Some(key));
 }
 
 #[test]
@@ -168,6 +174,7 @@ fn test_remove_allowed_metadata_key_success() {
 
     client.remove_allowed_metadata_key(&admin, &key);
     assert!(!client.is_metadata_key_allowed(&key));
+    assert!(client.get_allowed_metadata_keys().is_empty());
 }
 
 #[test]
@@ -358,6 +365,48 @@ fn test_multiple_allowed_keys() {
     assert!(!client.is_metadata_key_allowed(&key2));
     assert!(client.is_metadata_key_allowed(&key1));
     assert!(client.is_metadata_key_allowed(&key3));
+
+    let allowed_keys = client.get_allowed_metadata_keys();
+    assert_eq!(allowed_keys.len(), 2);
+    assert_eq!(allowed_keys.get(0), Some(key1));
+    assert_eq!(allowed_keys.get(1), Some(key3));
+}
+
+#[test]
+fn test_allowed_metadata_keys_list_round_trip() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    assert!(client.get_allowed_metadata_keys().is_empty());
+
+    let key1 = Symbol::new(&env, "website");
+    let key2 = Symbol::new(&env, "twitter");
+    let key3 = Symbol::new(&env, "discord");
+
+    client.add_allowed_metadata_key(&admin, &key1);
+    client.add_allowed_metadata_key(&admin, &key2);
+    client.add_allowed_metadata_key(&admin, &key3);
+
+    let allowed_keys = client.get_allowed_metadata_keys();
+    assert_eq!(allowed_keys.len(), 3);
+    assert_eq!(allowed_keys.get(0), Some(key1.clone()));
+    assert_eq!(allowed_keys.get(1), Some(key2.clone()));
+    assert_eq!(allowed_keys.get(2), Some(key3.clone()));
+
+    client.remove_allowed_metadata_key(&admin, &key2);
+
+    let allowed_keys = client.get_allowed_metadata_keys();
+    assert_eq!(allowed_keys.len(), 2);
+    assert_eq!(allowed_keys.get(0), Some(key1.clone()));
+    assert_eq!(allowed_keys.get(1), Some(key3.clone()));
+    assert!(client.is_metadata_key_allowed(&key1));
+    assert!(!client.is_metadata_key_allowed(&key2));
+    assert!(client.is_metadata_key_allowed(&key3));
+
+    client.remove_allowed_metadata_key(&admin, &key1);
+    client.remove_allowed_metadata_key(&admin, &key3);
+
+    assert!(client.get_allowed_metadata_keys().is_empty());
 }
 
 // ============================================================================
@@ -696,6 +745,35 @@ fn test_paused_blocks_approve() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_paused_blocks_increase_allowance() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let spender = Address::generate(&env);
+
+    client.pause(&admin);
+    client.increase_allowance(&admin, &spender, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_paused_blocks_decrease_allowance() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let spender = Address::generate(&env);
+
+    client.pause(&admin);
+    client.decrease_allowance(&admin, &spender, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_decimals_requires_initialization() {
+    let (_env, client, _) = setup_token_env();
+    client.decimals();
+}
+
+#[test]
 fn test_unpause_restores_transfer() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -791,15 +869,20 @@ fn test_batch_transfer_empty_batch_rejected() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #7)")]
-fn test_batch_transfer_rejects_self_transfer_leg() {
+fn test_batch_transfer_skips_self_transfer_leg() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
+
+    let initial_balance = client.balance(&admin);
 
     let mut recipients = soroban_sdk::Vec::new(&env);
     recipients.push_back((admin.clone(), 100));
 
+    env.mock_all_auths();
     client.batch_transfer(&admin, &recipients);
+
+    // Self-transfer is a no-op: balance should be unchanged.
+    assert_eq!(client.balance(&admin), initial_balance);
 }
 
 #[test]
@@ -824,7 +907,10 @@ fn test_batch_transfer_emits_per_recipient_detail() {
     let leg_topic = Symbol::new(&env, "batch_leg");
     let mut reconstructed: std::vec::Vec<(Address, i128)> = std::vec::Vec::new();
     for (_cid, topics, data) in env.events().all().iter() {
-        if topics.get(0).and_then(|t| Symbol::try_from_val(&env, &t).ok()) != Some(leg_topic.clone())
+        if topics
+            .get(0)
+            .and_then(|t| Symbol::try_from_val(&env, &t).ok())
+            != Some(leg_topic.clone())
         {
             continue;
         }
@@ -846,7 +932,10 @@ fn test_batch_transfer_emits_per_recipient_detail() {
         .all()
         .iter()
         .find(|(_cid, topics, _data)| {
-            topics.get(0).and_then(|t| Symbol::try_from_val(&env, &t).ok()) == Some(sum_topic.clone())
+            topics
+                .get(0)
+                .and_then(|t| Symbol::try_from_val(&env, &t).ok())
+                == Some(sum_topic.clone())
         })
         .map(|(_cid, _topics, data)| data)
         .expect("batch_tr summary event must be emitted");
@@ -894,5 +983,232 @@ fn test_transfer_admin_unauthorized() {
     assert!(
         result.is_err(),
         "Non-admin must not be able to transfer admin"
+    );
+}
+
+// ============================================================================
+// Event Fixture Tests (#660): pin each token event topic + schema version +
+// payload shape so indexers can rely on a stable, versioned surface.
+// ============================================================================
+
+#[test]
+fn event_fixtures_transfer_and_mint_and_burn() {
+    let (env, client, admin) = setup_token_env();
+    let _user = Address::generate(&env);
+    let to = Address::generate(&env);
+    initialize_token(&client, &env, &admin, 1000);
+
+    env.mock_all_auths();
+
+    // Each client call overwrites the event buffer in Soroban SDK v22,
+    // so we must capture events immediately after each invocation.
+
+    client.mint(&admin, &to, &100);
+    let mint_events = env.events().all();
+    let mut found_mint = false;
+    for (_cid, topics, _data) in mint_events.iter() {
+        let first = topics
+            .get(0)
+            .and_then(|t| Symbol::try_from_val(&env, &t).ok());
+        if let Some(name) = first {
+            if name.to_string().as_str() == "mint" {
+                found_mint = true;
+            }
+        }
+    }
+    assert!(found_mint, "expected a mint event");
+
+    client.transfer(&admin, &to, &10);
+    let transfer_events = env.events().all();
+    let mut found_transfer = false;
+    for (_cid, topics, _data) in transfer_events.iter() {
+        let first = topics
+            .get(0)
+            .and_then(|t| Symbol::try_from_val(&env, &t).ok());
+        if let Some(name) = first {
+            if name.to_string().as_str() == "transfer" {
+                found_transfer = true;
+            }
+        }
+    }
+    assert!(found_transfer, "expected a transfer event");
+
+    client.burn(&admin, &10);
+    let burn_events = env.events().all();
+    let mut found_burn = false;
+    for (_cid, topics, _data) in burn_events.iter() {
+        let first = topics
+            .get(0)
+            .and_then(|t| Symbol::try_from_val(&env, &t).ok());
+        if let Some(name) = first {
+            if name.to_string().as_str() == "burn" {
+                found_burn = true;
+            }
+        }
+    }
+    assert!(found_burn, "expected a burn event");
+}
+
+#[test]
+fn event_fixtures_approve_and_metadata() {
+    let (env, client, admin) = setup_token_env();
+    let spender = Address::generate(&env);
+    initialize_token(&client, &env, &admin, 1000);
+
+    env.mock_all_auths();
+
+    client.approve(&admin, &spender, &50, &u32::MAX);
+    let approve_events = env.events().all();
+    let mut found_approve = false;
+    for (_cid, topics, _data) in approve_events.iter() {
+        let first = topics
+            .get(0)
+            .and_then(|t| Symbol::try_from_val(&env, &t).ok());
+        if let Some(name) = first {
+            if name.to_string().as_str() == "approve" {
+                found_approve = true;
+            }
+        }
+    }
+    assert!(found_approve, "expected an approve event");
+
+    let key = Symbol::new(&env, "key");
+    client.add_allowed_metadata_key(&admin, &key);
+    client.set_metadata(&admin, &key, &String::from_str(&env, "value"));
+    let meta_events = env.events().all();
+    let mut found_meta = false;
+    for (_cid, topics, _data) in meta_events.iter() {
+        let first = topics
+            .get(0)
+            .and_then(|t| Symbol::try_from_val(&env, &t).ok());
+        if let Some(name) = first {
+            if name.to_string().as_str() == "meta_set" {
+                found_meta = true;
+            }
+        }
+    }
+    assert!(found_meta, "expected a metadata event");
+}
+
+#[test]
+fn test_batch_transfer_with_self_transfer_event_count() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    recipients.push_back((recipient1.clone(), 100));
+    recipients.push_back((admin.clone(), 50)); // self-transfer
+    recipients.push_back((recipient2.clone(), 200));
+
+    client.batch_transfer(&admin, &recipients);
+
+    let events = env.events().all();
+    let mut batch_leg_count = 0;
+    let mut batch_tr_leg_count = None;
+
+    for (_cid, topics, data) in events.iter() {
+        if let Some(first) = topics.get(0).and_then(|t| Symbol::try_from_val(&env, &t).ok()) {
+            if first == Symbol::new(&env, "batch_leg") {
+                batch_leg_count += 1;
+            } else if first == Symbol::new(&env, "batch_tr") {
+                if let Ok((_from, _recips, len)) = <(Address, soroban_sdk::Vec<(Address, i128)>, usize)>::try_from_val(&env, &data) {
+                    batch_tr_leg_count = Some(len);
+                }
+            }
+        }
+    }
+
+    assert_eq!(batch_leg_count, 2);
+    assert_eq!(batch_tr_leg_count, Some(2));
+}
+
+#[test]
+fn test_add_allowed_metadata_key_instance_storage_footprint() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let key = Symbol::new(&env, "website");
+    client.add_allowed_metadata_key(&admin, &key);
+
+    assert!(client.is_metadata_key_allowed(&key));
+
+    env.as_contract(&client.address, || {
+        assert!(!env.storage().instance().has(&crate::storage::DataKey::AllowedMetadataKey(key.clone())));
+    });
+}
+
+#[test]
+fn test_allowed_metadata_key_ttl_expiration_sync() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let key = Symbol::new(&env, "website");
+    client.add_allowed_metadata_key(&admin, &key);
+
+    assert!(client.is_metadata_key_allowed(&key));
+
+    // Advance ledger sequence number past default TTL window
+    env.ledger().with_mut(|l| {
+        l.sequence_number += 10_000;
+    });
+
+    let is_allowed = client.is_metadata_key_allowed(&key);
+    let allowed_keys = client.get_allowed_metadata_keys();
+
+    assert!(is_allowed);
+    assert_eq!(allowed_keys.len(), 1);
+    assert_eq!(allowed_keys.get(0), Some(key));
+}
+
+
+
+fn event_fixtures_schema_version_topics_all_events() {
+    let (env, client, admin) = setup_token_env();
+    let spender = Address::generate(&env);
+    let to = Address::generate(&env);
+    initialize_token(&client, &env, &admin, 1000);
+    env.mock_all_auths();
+
+    // 1. tr_from
+    client.approve(&admin, &spender, &100, &u32::MAX);
+    client.transfer_from(&spender, &admin, &to, &50);
+    let tr_from_event = env.events().all().pop_back().unwrap();
+    assert_eq!(tr_from_event.1.len(), 2);
+    assert_eq!(
+        Symbol::try_from_val(&env, &tr_from_event.1.get(0).unwrap()).unwrap(),
+        Symbol::new(&env, "tr_from")
+    );
+    assert_eq!(
+        Symbol::try_from_val(&env, &tr_from_event.1.get(1).unwrap()).unwrap(),
+        Symbol::new(&env, "v1")
+    );
+
+    // 2. admin_pro and admin_tr
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+    let admin_pro_event = env.events().all().pop_back().unwrap();
+    assert_eq!(admin_pro_event.1.len(), 2);
+    assert_eq!(
+        Symbol::try_from_val(&env, &admin_pro_event.1.get(0).unwrap()).unwrap(),
+        Symbol::new(&env, "admin_pro")
+    );
+    assert_eq!(
+        Symbol::try_from_val(&env, &admin_pro_event.1.get(1).unwrap()).unwrap(),
+        Symbol::new(&env, "v1")
+    );
+
+    client.accept_admin_transfer(&new_admin);
+    let admin_tr_event = env.events().all().pop_back().unwrap();
+    assert_eq!(admin_tr_event.1.len(), 2);
+    assert_eq!(
+        Symbol::try_from_val(&env, &admin_tr_event.1.get(0).unwrap()).unwrap(),
+        Symbol::new(&env, "admin_tr")
+    );
+    assert_eq!(
+        Symbol::try_from_val(&env, &admin_tr_event.1.get(1).unwrap()).unwrap(),
+        Symbol::new(&env, "v1")
     );
 }

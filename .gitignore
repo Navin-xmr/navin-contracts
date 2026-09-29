@@ -9,6 +9,15 @@ fuzz/artifacts
 issue.md
 skills-lock.json
 PR_DESCRIPTION.md
+*DESCRIPTION*.md
+
+# Logs and test outputs
+*.log
+test_output.txt
+
+# OS artifacts
+.DS_Store
+Thumbs.db
 
 # Testnet deployment configuration
 .env.testnet

@@ -279,12 +279,22 @@ pub fn query_audit_history(
     env: &Env,
     start_time: u64,
     end_time: u64,
+    start_id: u64,
+    limit: u64,
 ) -> soroban_sdk::Vec<AuditLogEntry> {
     let mut results = soroban_sdk::Vec::new(env);
-    let total_entries = get_audit_entry_count(env);
+    let total_entries = get_audit_entry_count(env) as u64;
 
-    for i in 0..total_entries {
-        if let Some(entry) = get_audit_entry(env, i as u64) {
+    if start_id >= total_entries || limit == 0 {
+        return results;
+    }
+    let end_id = start_id
+        .saturating_add(limit)
+        .saturating_sub(1)
+        .min(total_entries.saturating_sub(1));
+
+    for id in start_id..=end_id {
+        if let Some(entry) = get_audit_entry(env, id) {
             if entry.timestamp >= start_time && entry.timestamp <= end_time {
                 results.push_back(entry);
             }
@@ -294,23 +304,35 @@ pub fn query_audit_history(
     results
 }
 
-/// Query audit history for a specific target
+/// Query audit history for a specific target with pagination window `[start_id, start_id + limit - 1]`
 ///
 /// # Arguments
 /// * `env` - The execution environment
 /// * `target` - The target address to query
+/// * `start_id` - Starting entry ID
+/// * `limit` - Maximum entries to inspect
 ///
 /// # Returns
 /// * Vector of audit entries for the target
 pub fn query_audit_history_for_target(
     env: &Env,
     target: &Address,
+    start_id: u64,
+    limit: u64,
 ) -> soroban_sdk::Vec<AuditLogEntry> {
     let mut results = soroban_sdk::Vec::new(env);
-    let total_entries = get_audit_entry_count(env);
+    let total_entries = get_audit_entry_count(env) as u64;
 
-    for i in 0..total_entries {
-        if let Some(entry) = get_audit_entry(env, i as u64) {
+    if start_id >= total_entries || limit == 0 {
+        return results;
+    }
+    let end_id = start_id
+        .saturating_add(limit)
+        .saturating_sub(1)
+        .min(total_entries.saturating_sub(1));
+
+    for id in start_id..=end_id {
+        if let Some(entry) = get_audit_entry(env, id) {
             if entry.target == *target {
                 results.push_back(entry);
             }
@@ -320,20 +342,35 @@ pub fn query_audit_history_for_target(
     results
 }
 
-/// Query audit history for a specific actor
+/// Query audit history for a specific actor with pagination window `[start_id, start_id + limit - 1]`
 ///
 /// # Arguments
 /// * `env` - The execution environment
 /// * `actor` - The actor (admin) to query
+/// * `start_id` - Starting entry ID
+/// * `limit` - Maximum entries to inspect
 ///
 /// # Returns
 /// * Vector of audit entries by the actor
-pub fn query_audit_history_by_actor(env: &Env, actor: &Address) -> soroban_sdk::Vec<AuditLogEntry> {
+pub fn query_audit_history_by_actor(
+    env: &Env,
+    actor: &Address,
+    start_id: u64,
+    limit: u64,
+) -> soroban_sdk::Vec<AuditLogEntry> {
     let mut results = soroban_sdk::Vec::new(env);
-    let total_entries = get_audit_entry_count(env);
+    let total_entries = get_audit_entry_count(env) as u64;
 
-    for i in 0..total_entries {
-        if let Some(entry) = get_audit_entry(env, i as u64) {
+    if start_id >= total_entries || limit == 0 {
+        return results;
+    }
+    let end_id = start_id
+        .saturating_add(limit)
+        .saturating_sub(1)
+        .min(total_entries.saturating_sub(1));
+
+    for id in start_id..=end_id {
+        if let Some(entry) = get_audit_entry(env, id) {
             if entry.actor == *actor {
                 results.push_back(entry);
             }
@@ -389,8 +426,14 @@ pub fn cleanup_audit_logs(
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Maximum allowed audit log entries in persistent storage before rejection.
+pub const MAX_AUDIT_LOG_ENTRIES: u32 = 1000;
+
 pub(crate) fn get_next_audit_entry_id(env: &Env) -> Result<u64, NavinError> {
     let count = get_audit_entry_count(env);
+    if count >= MAX_AUDIT_LOG_ENTRIES {
+        return Err(NavinError::AuditLogLimitExceeded);
+    }
     Ok(count as u64)
 }
 
@@ -431,17 +474,17 @@ fn remove_audit_entry(env: &Env, entry_id: u64) {
 fn emit_audit_event(env: &Env, entry: &AuditLogEntry) {
     // Emit audit event for off-chain indexing
     let event_type = match entry.event_type {
-        AuditEventType::RoleAssigned => "audit_role_assigned",
-        AuditEventType::RoleRevoked => "audit_role_revoked",
-        AuditEventType::RoleSuspended => "audit_role_suspended",
-        AuditEventType::RoleReactivated => "audit_role_reactivated",
-        AuditEventType::AdminTransferred => "audit_admin_transferred",
-        AuditEventType::CarrierWhitelisted => "audit_carrier_whitelisted",
-        AuditEventType::CarrierUnwhitelisted => "audit_carrier_unwhitelisted",
-        AuditEventType::CompanySuspended => "audit_company_suspended",
-        AuditEventType::CompanyReactivated => "audit_company_reactivated",
-        AuditEventType::CarrierSuspended => "audit_carrier_suspended",
-        AuditEventType::CarrierReactivated => "audit_carrier_reactivated",
+        AuditEventType::RoleAssigned => crate::event_topics::AUDIT_ROLE_ASSIGNED,
+        AuditEventType::RoleRevoked => crate::event_topics::AUDIT_ROLE_REVOKED,
+        AuditEventType::RoleSuspended => crate::event_topics::AUDIT_ROLE_SUSPENDED,
+        AuditEventType::RoleReactivated => crate::event_topics::AUDIT_ROLE_REACTIVATED,
+        AuditEventType::AdminTransferred => crate::event_topics::AUDIT_ADMIN_TRANSFERRED,
+        AuditEventType::CarrierWhitelisted => crate::event_topics::AUDIT_CARRIER_WHITELISTED,
+        AuditEventType::CarrierUnwhitelisted => crate::event_topics::AUDIT_CARRIER_UNWHITELISTED,
+        AuditEventType::CompanySuspended => crate::event_topics::AUDIT_COMPANY_SUSPENDED,
+        AuditEventType::CompanyReactivated => crate::event_topics::AUDIT_COMPANY_REACTIVATED,
+        AuditEventType::CarrierSuspended => crate::event_topics::AUDIT_CARRIER_SUSPENDED,
+        AuditEventType::CarrierReactivated => crate::event_topics::AUDIT_CARRIER_REACTIVATED,
     };
 
     env.events().publish(

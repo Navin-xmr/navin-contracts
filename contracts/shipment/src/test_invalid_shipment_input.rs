@@ -38,6 +38,9 @@ fn test_batch_receiver_equals_carrier_returns_error() {
     let mut shipments = soroban_sdk::Vec::new(&env);
     shipments.push_back(make_input(&env, &shared, &shared, 1));
 
+    for s in shipments.iter() {
+        crate::test_utils::allow_carrier(&client, &company, &s.carrier);
+    }
     let result = client.try_create_shipments_batch(&company, &shipments);
     assert_eq!(
         result,
@@ -62,6 +65,9 @@ fn test_batch_second_entry_invalid_first_valid() {
     shipments.push_back(make_input(&env, &r1, &c1, 10)); // valid
     shipments.push_back(make_input(&env, &shared, &shared, 20)); // invalid — receiver == carrier
 
+    for s in shipments.iter() {
+        crate::test_utils::allow_carrier(&client, &company, &s.carrier);
+    }
     let result = client.try_create_shipments_batch(&company, &shipments);
     assert_eq!(
         result,
@@ -85,6 +91,9 @@ fn test_batch_all_entries_invalid() {
     shipments.push_back(make_input(&env, &s1, &s1, 30)); // receiver == carrier
     shipments.push_back(make_input(&env, &s2, &s2, 40)); // receiver == carrier
 
+    for s in shipments.iter() {
+        crate::test_utils::allow_carrier(&client, &company, &s.carrier);
+    }
     let result = client.try_create_shipments_batch(&company, &shipments);
     assert_eq!(
         result,
@@ -109,6 +118,9 @@ fn test_batch_distinct_participants_succeeds() {
     let mut shipments = soroban_sdk::Vec::new(&env);
     shipments.push_back(make_input(&env, &receiver, &carrier, 50));
 
+    for s in shipments.iter() {
+        crate::test_utils::allow_carrier(&client, &company, &s.carrier);
+    }
     let result = client.try_create_shipments_batch(&company, &shipments);
     assert!(
         result.is_ok(),
@@ -131,9 +143,93 @@ fn test_batch_multiple_valid_entries_all_succeed() {
         shipments.push_back(make_input(&env, &receiver, &carrier, i + 60));
     }
 
+    for s in shipments.iter() {
+        crate::test_utils::allow_carrier(&client, &company, &s.carrier);
+    }
     let ids = client.try_create_shipments_batch(&company, &shipments);
     assert!(ids.is_ok(), "all-valid batch must succeed");
     assert_eq!(ids.unwrap().unwrap().len(), 3);
+}
+
+#[test]
+fn test_create_single_shipment_rejects_sender_receiver_duplicate() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xA1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
+
+    let result = client.try_create_shipment(
+        &company,
+        &company,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::InvalidShipmentParticipants)),
+        "sender == receiver must return InvalidShipmentParticipants"
+    );
+}
+
+#[test]
+fn test_create_single_shipment_rejects_sender_carrier_duplicate() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let receiver = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xA2u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let company = Address::generate(&env);
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &company);
+
+    let result = client.try_create_shipment(
+        &company,
+        &receiver,
+        &company,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::InvalidShipmentParticipants)),
+        "sender == carrier must return InvalidShipmentParticipants"
+    );
+}
+
+#[test]
+fn test_create_single_shipment_rejects_receiver_carrier_duplicate() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let shared = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[0xA3u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &shared);
+
+    let result = client.try_create_shipment(
+        &company,
+        &shared,
+        &shared,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::InvalidShipmentParticipants)),
+        "receiver == carrier must return InvalidShipmentParticipants"
+    );
 }
 
 #[test]
@@ -147,6 +243,7 @@ fn test_create_single_shipment_distinct_participants_succeeds() {
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let result = client.try_create_shipment(
         &company,
@@ -174,6 +271,9 @@ fn test_error_code_is_17() {
     let mut shipments = soroban_sdk::Vec::new(&env);
     shipments.push_back(make_input(&env, &shared, &shared, 99));
 
+    for s in shipments.iter() {
+        crate::test_utils::allow_carrier(&client, &company, &s.carrier);
+    }
     let result = client.try_create_shipments_batch(&company, &shipments);
     assert_eq!(
         result,

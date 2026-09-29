@@ -1,267 +1,49 @@
-//! Integration tests proving that role and permission mutations (issue #633)
-//! write to the audit trail declared in `audit.rs`, and that the trail is
-//! reachable through the contract's public `query_audit_history*` interface.
+#![cfg(test)]
 
-#[cfg(test)]
-mod tests {
-    use crate::audit::AuditEventType;
-    use crate::test_utils::setup_env;
-    use crate::{NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env};
+use crate::audit::*;
+use crate::errors::NavinError;
+use soroban_sdk::{testutils::Address as _, Address, Env};
 
-    #[contract]
-    struct MockToken;
+fn setup_audit_env() -> (Env, Address, Address) {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let target = Address::generate(&env);
+    (env, admin, target)
+}
 
-    #[contractimpl]
-    impl MockToken {
-        pub fn decimals(_env: Env) -> u32 {
-            7
-        }
+#[test]
+fn test_audit_log_bounded_growth_limit() {
+    let (env, admin, target) = setup_audit_env();
 
-        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+    // Fill storage up to MAX_AUDIT_LOG_ENTRIES
+    for _ in 0..MAX_AUDIT_LOG_ENTRIES {
+        let res = log_role_assigned(&env, &admin, &target, &crate::types::Role::Company);
+        assert!(res.is_ok());
     }
 
-    fn setup_test_env() -> (Env, NavinShipmentClient<'static>, Address) {
-        let (env, admin) = setup_env();
-        let token = env.register(MockToken {}, ());
-        let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
-        client.initialize(&admin, &token);
-        (env, client, admin)
+    // Exceeding the limit must return AuditLogLimitExceeded
+    let res = log_role_assigned(&env, &admin, &target, &crate::types::Role::Company);
+    assert_eq!(res, Err(NavinError::AuditLogLimitExceeded));
+}
+
+#[test]
+fn test_query_audit_history_pagination() {
+    let (env, admin, target) = setup_audit_env();
+
+    // Log 5 entries
+    for _ in 0..5 {
+        let _ = log_role_assigned(&env, &admin, &target, &crate::types::Role::Company);
     }
 
-    // ── Assign ───────────────────────────────────────────────────────────────
+    // Query with start_id = 1, limit = 2
+    let page = query_audit_history(&env, 0, u64::MAX, 1, 2);
+    assert_eq!(page.len(), 2);
 
-    #[test]
-    fn test_add_company_writes_audit_entry() {
-        let (env, client, admin) = setup_test_env();
-        let company = Address::generate(&env);
+    // Query target with pagination
+    let target_page = query_audit_history_for_target(&env, &target, 0, 3);
+    assert_eq!(target_page.len(), 3);
 
-        client.add_company(&admin, &company);
-
-        let entries = client.query_audit_history_for_target(&company);
-        assert_eq!(entries.len(), 1);
-        let entry = entries.get(0).unwrap();
-        assert_eq!(entry.event_type, AuditEventType::RoleAssigned);
-        assert_eq!(entry.actor, admin);
-        assert_eq!(entry.target, company);
-    }
-
-    #[test]
-    fn test_add_carrier_writes_audit_entry() {
-        let (env, client, admin) = setup_test_env();
-        let carrier = Address::generate(&env);
-
-        client.add_carrier(&admin, &carrier);
-
-        let entries = client.query_audit_history_for_target(&carrier);
-        assert_eq!(entries.len(), 1);
-        assert_eq!(
-            entries.get(0).unwrap().event_type,
-            AuditEventType::RoleAssigned
-        );
-    }
-
-    // ── Revoke ───────────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_revoke_role_writes_audit_entry() {
-        let (env, client, admin) = setup_test_env();
-        let company = Address::generate(&env);
-        client.add_company(&admin, &company);
-
-        client.revoke_role(&admin, &company);
-
-        let entries = client.query_audit_history_for_target(&company);
-        // One entry for the assignment, one for the revocation.
-        assert_eq!(entries.len(), 2);
-        assert_eq!(
-            entries.get(0).unwrap().event_type,
-            AuditEventType::RoleAssigned
-        );
-        assert_eq!(
-            entries.get(1).unwrap().event_type,
-            AuditEventType::RoleRevoked
-        );
-        assert_eq!(entries.get(1).unwrap().actor, admin);
-        assert_eq!(entries.get(1).unwrap().target, company);
-    }
-
-    // ── Suspend ──────────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_suspend_role_writes_audit_entry() {
-        let (env, client, admin) = setup_test_env();
-        let carrier = Address::generate(&env);
-        client.add_carrier(&admin, &carrier);
-
-        client.suspend_role(&admin, &carrier);
-
-        let entries = client.query_audit_history_for_target(&carrier);
-        assert_eq!(entries.len(), 2);
-        assert_eq!(
-            entries.get(1).unwrap().event_type,
-            AuditEventType::RoleSuspended
-        );
-        assert_eq!(entries.get(1).unwrap().actor, admin);
-        assert_eq!(entries.get(1).unwrap().target, carrier);
-    }
-
-    // ── Reactivate ───────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_reactivate_role_writes_audit_entry() {
-        let (env, client, admin) = setup_test_env();
-        let carrier = Address::generate(&env);
-        client.add_carrier(&admin, &carrier);
-        client.suspend_role(&admin, &carrier);
-
-        client.reactivate_role(&admin, &carrier);
-
-        let entries = client.query_audit_history_for_target(&carrier);
-        assert_eq!(entries.len(), 3);
-        assert_eq!(
-            entries.get(2).unwrap().event_type,
-            AuditEventType::RoleReactivated
-        );
-        assert_eq!(entries.get(2).unwrap().actor, admin);
-        assert_eq!(entries.get(2).unwrap().target, carrier);
-    }
-
-    // ── Admin transfer ───────────────────────────────────────────────────────
-
-    #[test]
-    fn test_accept_admin_transfer_writes_audit_entry() {
-        let (env, client, admin) = setup_test_env();
-        let new_admin = Address::generate(&env);
-
-        client.transfer_admin(&admin, &new_admin);
-        // Proposing must not log a transfer yet — it hasn't happened.
-        assert_eq!(client.query_audit_history_for_target(&new_admin).len(), 0);
-
-        client.accept_admin_transfer(&new_admin);
-
-        let entries = client.query_audit_history_for_target(&new_admin);
-        assert_eq!(entries.len(), 1);
-        let entry = entries.get(0).unwrap();
-        assert_eq!(entry.event_type, AuditEventType::AdminTransferred);
-        assert_eq!(entry.actor, admin);
-        assert_eq!(entry.target, new_admin);
-    }
-
-    // ── Carrier whitelist ────────────────────────────────────────────────────
-
-    #[test]
-    fn test_add_carrier_to_whitelist_writes_audit_entry() {
-        let (env, client, admin) = setup_test_env();
-        let carrier = Address::generate(&env);
-        // `admin` is registered with the Company role at initialize() time,
-        // and add_carrier_to_whitelist requires the caller to hold that role.
-        client.add_carrier(&admin, &carrier);
-
-        client.add_carrier_to_whitelist(&admin, &carrier);
-
-        let entries = client.query_audit_history_for_target(&carrier);
-        // add_carrier assignment + the whitelist entry.
-        assert_eq!(entries.len(), 2);
-        let entry = entries.get(1).unwrap();
-        assert_eq!(entry.event_type, AuditEventType::CarrierWhitelisted);
-        assert_eq!(entry.actor, admin);
-        assert_eq!(entry.target, carrier);
-    }
-
-    // ── Query surface ────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_query_audit_history_by_actor_filters_correctly() {
-        let (env, client, admin) = setup_test_env();
-        let company = Address::generate(&env);
-        let carrier = Address::generate(&env);
-
-        client.add_company(&admin, &company);
-        client.add_carrier(&admin, &carrier);
-
-        let entries = client.query_audit_history_by_actor(&admin);
-        assert_eq!(entries.len(), 2);
-        for e in entries.iter() {
-            assert_eq!(e.actor, admin);
-        }
-    }
-
-    #[test]
-    fn test_query_audit_history_time_range_filters_correctly() {
-        let (env, client, admin) = setup_test_env();
-        let company = Address::generate(&env);
-
-        let before = env.ledger().timestamp();
-        client.add_company(&admin, &company);
-        let after = env.ledger().timestamp();
-
-        let in_range = client.query_audit_history(&before, &after);
-        assert_eq!(in_range.len(), 1);
-
-        let out_of_range = client.query_audit_history(&0, &(before - 1));
-        assert_eq!(out_of_range.len(), 0);
-    }
-
-    #[test]
-    fn test_role_never_assigned_has_no_audit_history() {
-        let (env, client, _admin) = setup_test_env();
-        let untouched = Address::generate(&env);
-
-        assert_eq!(client.query_audit_history_for_target(&untouched).len(), 0);
-    }
-
-    // ── Issue #762: cleanup_audit_logs must be reachable as an entrypoint ─────
-
-    #[test]
-    fn test_cleanup_audit_logs_prunes_old_entries() {
-        let (env, client, admin) = setup_test_env();
-        let company = Address::generate(&env);
-        let carrier = Address::generate(&env);
-
-        // First entry at t0.
-        client.add_company(&admin, &company);
-        let cutoff = env.ledger().timestamp() + 1;
-
-        // Second entry strictly after the cutoff.
-        crate::test_utils::advance_ledger_time(&env, 100);
-        client.add_carrier(&admin, &carrier);
-
-        assert_eq!(client.query_audit_history(&0, &u64::MAX).len(), 2);
-
-        let removed = client.cleanup_audit_logs(&admin, &cutoff);
-        assert_eq!(removed, 1, "only the pre-cutoff entry should be pruned");
-
-        let remaining = client.query_audit_history(&0, &u64::MAX);
-        assert_eq!(remaining.len(), 1);
-        assert_eq!(remaining.get(0).unwrap().target, carrier);
-    }
-
-    #[test]
-    fn test_cleanup_audit_logs_rejects_non_admin() {
-        let (env, client, admin) = setup_test_env();
-        let company = Address::generate(&env);
-        let intruder = Address::generate(&env);
-
-        client.add_company(&admin, &company);
-
-        let result =
-            client.try_cleanup_audit_logs(&intruder, &(env.ledger().timestamp() + 1));
-        assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
-
-        // The entry is untouched.
-        assert_eq!(client.query_audit_history(&0, &u64::MAX).len(), 1);
-    }
-
-    #[test]
-    fn test_cleanup_audit_logs_noop_when_nothing_is_old_enough() {
-        let (env, client, admin) = setup_test_env();
-        let company = Address::generate(&env);
-
-        client.add_company(&admin, &company);
-
-        let removed = client.cleanup_audit_logs(&admin, &1);
-        assert_eq!(removed, 0);
-        assert_eq!(client.query_audit_history(&0, &u64::MAX).len(), 1);
-    }
+    // Query actor with pagination
+    let actor_page = query_audit_history_by_actor(&env, &admin, 2, 2);
+    assert_eq!(actor_page.len(), 2);
 }

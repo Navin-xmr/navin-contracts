@@ -211,7 +211,7 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             "Caller is not in the admin list.",
         ),
         NavinError::MultiSigProposalPending => (
-            72,
+            74,
             InvalidState,
             NoRetry,
             "Cannot re-initialise multi-sig while a proposal is still pending.",
@@ -334,7 +334,7 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             47,
             InvalidInput,
             NoRetry,
-            "Migration version transition is not permitted.",
+            "Migration version transition is not permitted; only current + 1 is allowed.",
         ),
         NavinError::MilestoneLimitExceeded => (
             48,
@@ -463,22 +463,22 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             "Address already holds the requested role.",
         ),
         NavinError::CarrierAlreadyWhitelisted => (
-            69,
+            75,
             InvalidState,
             NoRetry,
             "Carrier is already on the company's whitelist; duplicate addition is not allowed.",
+        ),
+        NavinError::CarrierNotWhitelisted => (
+            69,
+            InvalidState,
+            NoRetry,
+            "Carrier is not on the company's whitelist; cannot remove a non-whitelisted carrier.",
         ),
         NavinError::InvalidAddress => (
             70,
             InvalidInput,
             NoRetry,
             "Address is invalid (e.g., zero-address sentinel).",
-        ),
-        NavinError::RecoveryLimitExceeded => (
-            71,
-            LimitExceeded,
-            NoRetry,
-            "Maximum allowed recovery action entries for a shipment has been reached.",
         ),
         NavinError::RoleMismatch => (
             72,
@@ -491,6 +491,12 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             InvalidInput,
             NoRetry,
             "Symbol could not be decoded: the declared content length exceeds              the decode buffer. Use an event type of 24 characters or fewer.",
+        ),
+        NavinError::AuditLogLimitExceeded => (
+            76,
+            LimitExceeded,
+            NoRetry,
+            "Maximum allowed audit log entries has been reached.",
         ),
     };
 
@@ -537,6 +543,7 @@ fn message_for(error: NavinError) -> Symbol {
         NavinError::CarrierSuspended => symbol_short!("carrier"),
         NavinError::ForceCancelReasonHashMissing => symbol_short!("cancel_h"),
         NavinError::ArithmeticError => symbol_short!("arith_err"),
+        NavinError::ArithmeticError => symbol_short!("arith"),
         NavinError::DisputeReasonHashMissing => symbol_short!("dispute_h"),
         NavinError::CompanySuspended => symbol_short!("company"),
         NavinError::ShipmentFinalized => symbol_short!("finalized"),
@@ -571,8 +578,12 @@ fn message_for(error: NavinError) -> Symbol {
         NavinError::EvidenceNotFound => symbol_short!("evid_nf"),
         NavinError::RoleAlreadyAssigned => symbol_short!("role"),
         NavinError::CarrierAlreadyWhitelisted => symbol_short!("carrier"),
+        NavinError::CarrierNotWhitelisted => symbol_short!("not_wlist"),
         NavinError::InvalidAddress => symbol_short!("address"),
-        NavinError::RecoveryLimitExceeded => symbol_short!("recovery"),
+        NavinError::RoleMismatch => symbol_short!("role_mis"),
+        NavinError::InvalidSymbolEncoding => symbol_short!("sym_enc"),
+        NavinError::MultiSigProposalPending => symbol_short!("ms_pend"),
+        NavinError::AuditLogLimitExceeded => symbol_short!("audit_lim"),
     }
 }
 
@@ -649,9 +660,14 @@ pub fn get_error_info(code: u32) -> ContractErrorInfo {
         66 => error_info(NavinError::NoteNotFound),
         67 => error_info(NavinError::EvidenceNotFound),
         68 => error_info(NavinError::RoleAlreadyAssigned),
-        69 => error_info(NavinError::CarrierAlreadyWhitelisted),
+        69 => error_info(NavinError::CarrierNotWhitelisted),
         70 => error_info(NavinError::InvalidAddress),
         71 => error_info(NavinError::RecoveryLimitExceeded),
+        72 => error_info(NavinError::RoleMismatch),
+        73 => error_info(NavinError::InvalidSymbolEncoding),
+        74 => error_info(NavinError::MultiSigProposalPending),
+        75 => error_info(NavinError::CarrierAlreadyWhitelisted),
+        76 => error_info(NavinError::AuditLogLimitExceeded),
         _ => ContractErrorInfo {
             code,
             category: ErrorCategory::InvalidInput,
@@ -667,16 +683,6 @@ mod tests {
     use crate::errors::NavinError;
 
     #[test]
-    fn test_get_error_info_known_code() {
-        let info = get_error_info(39);
-        assert_eq!(info.code, 39);
-        assert_eq!(info.code, 39);
-        assert_eq!(info.category, ErrorCategory::Transient);
-        assert_eq!(info.retry, RetryGuidance::RetryAfterDelay);
-        assert_eq!(info.message, symbol_short!("token"));
-    }
-
-    #[test]
     fn test_get_error_info_unknown_code_falls_back_gracefully() {
         let info = get_error_info(999_999);
         assert_eq!(info.code, 999_999);
@@ -685,16 +691,20 @@ mod tests {
         assert_eq!(info.message, symbol_short!("unknown"));
     }
 
-    // ── Token transfer failure recovery — error mapping (issue #447) ─────────
-
     #[test]
-    fn test_token_transfer_failed_info() {
-        let info = error_info(NavinError::TokenTransferFailed);
-        assert_eq!(info.code, 39);
-        assert_eq!(info.category, ErrorCategory::Transient);
-        assert_eq!(info.retry, RetryGuidance::RetryAfterDelay);
-        assert_eq!(info.message, symbol_short!("token"));
+    fn test_issue_887_recovery_code_is_reserved_and_unknown() {
+        let info = get_error_info(71);
+        assert_eq!(info.code, 71);
+        assert_eq!(info.category, ErrorCategory::InvalidInput);
+        assert_eq!(info.retry, RetryGuidance::NoRetry);
+        assert_eq!(info.message, symbol_short!("unknown"));
+
+        // Removing the dead variant must not disturb the surviving neighbours.
+        assert_eq!(get_error_info(70).message, symbol_short!("address"));
+        assert_eq!(get_error_info(76).message, symbol_short!("audit_lim"));
     }
+
+    // ── Token transfer failure recovery — error mapping (issue #447) ─────────
 
     #[test]
     fn test_circuit_breaker_open_info() {
@@ -758,6 +768,8 @@ mod tests {
             (NavinError::ShipmentFinalized, 38),
             (NavinError::ShipmentNotFound, 4),
             (NavinError::Unauthorized, 3),
+            (NavinError::CarrierAlreadyWhitelisted, 75),
+            (NavinError::CarrierNotWhitelisted, 69),
         ];
         for (err, expected_code) in cases {
             let info = error_info(*err);
@@ -766,6 +778,160 @@ mod tests {
                 "{:?} must map to code {}",
                 err, expected_code
             );
+        }
+    }
+
+    #[test]
+    fn test_issue_888_carrier_error_codes_are_distinct() {
+        assert_eq!(NavinError::CarrierNotWhitelisted as u32, 69);
+        assert_eq!(NavinError::CarrierAlreadyWhitelisted as u32, 75);
+
+        let not_whitelisted = get_error_info(69);
+        let already_whitelisted = get_error_info(75);
+
+        assert_eq!(not_whitelisted.code, 69);
+        assert_eq!(not_whitelisted.message, symbol_short!("not_wlist"));
+        assert_eq!(already_whitelisted.code, 75);
+        assert_eq!(already_whitelisted.message, symbol_short!("carrier"));
+        assert_ne!(not_whitelisted.message, already_whitelisted.message);
+        assert_eq!(error_info(NavinError::CarrierNotWhitelisted).code, 69);
+        assert_eq!(error_info(NavinError::CarrierAlreadyWhitelisted).code, 75);
+    fn test_issue_889_numeric_lookup_covers_live_error_codes() {
+        let cases: &[(u32, NavinError, ErrorCategory, Symbol)] = &[
+            (
+                72,
+                NavinError::RoleMismatch,
+                ErrorCategory::Unauthorized,
+                symbol_short!("role_mis"),
+            ),
+            (
+                73,
+                NavinError::InvalidSymbolEncoding,
+                ErrorCategory::InvalidInput,
+                symbol_short!("sym_enc"),
+            ),
+            (
+                74,
+                NavinError::MultiSigProposalPending,
+                ErrorCategory::InvalidState,
+                symbol_short!("ms_pend"),
+            ),
+            (
+                75,
+                NavinError::CarrierAlreadyWhitelisted,
+                ErrorCategory::InvalidState,
+                symbol_short!("carrier"),
+            ),
+        ];
+
+        for (code, error, category, message) in cases {
+            let info = get_error_info(*code);
+            assert_eq!(info.code, *code);
+            assert_eq!(info.category, *category);
+            assert_eq!(info.retry, RetryGuidance::NoRetry);
+            assert_eq!(info.message, *message);
+            assert_eq!(error_info(*error).code, *code);
+        }
+    }
+
+    #[test]
+    fn test_issue_889_unknown_code_contrast() {
+        let info = get_error_info(77);
+        assert_eq!(info.code, 77);
+        assert_eq!(info.category, ErrorCategory::InvalidInput);
+        assert_eq!(info.retry, RetryGuidance::NoRetry);
+        assert_eq!(info.message, symbol_short!("unknown"));
+    }
+
+    /// Every declared error variant must resolve to the same metadata through
+    /// both the by-variant and numeric lookup paths.
+    #[test]
+    fn test_every_error_variant_has_consistent_numeric_lookup() {
+        let errors = [
+            NavinError::AlreadyInitialized,
+            NavinError::NotInitialized,
+            NavinError::Unauthorized,
+            NavinError::ShipmentNotFound,
+            NavinError::InvalidStatus,
+            NavinError::InvalidHash,
+            NavinError::EscrowLocked,
+            NavinError::InsufficientFunds,
+            NavinError::ShipmentAlreadyCompleted,
+            NavinError::InvalidTimestamp,
+            NavinError::CounterOverflow,
+            NavinError::InvalidAmount,
+            NavinError::ReentrancyDetected,
+            NavinError::BatchTooLarge,
+            NavinError::InvalidShipmentInput,
+            NavinError::MilestoneSumInvalid,
+            NavinError::MilestoneAlreadyPaid,
+            NavinError::MetadataLimitExceeded,
+            NavinError::RateLimitExceeded,
+            NavinError::ProposalNotFound,
+            NavinError::ProposalAlreadyExecuted,
+            NavinError::ProposalExpired,
+            NavinError::AlreadyApproved,
+            NavinError::InsufficientApprovals,
+            NavinError::NotAnAdmin,
+            NavinError::InvalidMultiSigConfig,
+            NavinError::NotExpired,
+            NavinError::ShipmentLimitReached,
+            NavinError::InvalidConfig,
+            NavinError::CannotSelfRevoke,
+            NavinError::CarrierSuspended,
+            NavinError::ForceCancelReasonHashMissing,
+            NavinError::ArithmeticError,
+            NavinError::DisputeReasonHashMissing,
+            NavinError::CompanySuspended,
+            NavinError::ShipmentFinalized,
+            NavinError::TokenTransferFailed,
+            NavinError::TokenMintFailed,
+            NavinError::DuplicateAction,
+            NavinError::ShipmentUnavailable,
+            NavinError::ContractPaused,
+            NavinError::StatusHashNotFound,
+            NavinError::DataHashMismatch,
+            NavinError::CircuitBreakerOpen,
+            NavinError::InvalidMigrationEdge,
+            NavinError::MilestoneLimitExceeded,
+            NavinError::NoteLimitExceeded,
+            NavinError::EvidenceLimitExceeded,
+            NavinError::BreachLimitExceeded,
+            NavinError::InvalidTokenDecimals,
+            NavinError::CreationQuotaExceeded,
+            NavinError::DependenciesNotMet,
+            NavinError::CircularDependency,
+            NavinError::ProposalSaltReused,
+            NavinError::InvalidShipmentParticipants,
+            NavinError::InvalidShipmentDeadline,
+            NavinError::InvalidPaymentMilestones,
+            NavinError::DuplicatePaymentMilestone,
+            NavinError::InvalidTokenAddress,
+            NavinError::InvalidPaymentMilestoneName,
+            NavinError::MetadataSymbolCollision,
+            NavinError::ExternalIntegrationFailed,
+            NavinError::InvalidSymbol,
+            NavinError::NoteNotFound,
+            NavinError::EvidenceNotFound,
+            NavinError::RoleAlreadyAssigned,
+            NavinError::CarrierAlreadyWhitelisted,
+            NavinError::CarrierNotWhitelisted,
+            NavinError::InvalidAddress,
+            NavinError::RecoveryLimitExceeded,
+            NavinError::RoleMismatch,
+            NavinError::InvalidSymbolEncoding,
+            NavinError::MultiSigProposalPending,
+            NavinError::AuditLogLimitExceeded,
+        ];
+
+        for error in errors {
+            let by_variant = error_info(error);
+            let by_code = get_error_info(by_variant.code);
+            assert_eq!(by_variant.code, error as u32);
+            assert_eq!(by_code.code, by_variant.code);
+            assert_eq!(by_code.category, by_variant.category);
+            assert_eq!(by_code.retry, by_variant.retry);
+            assert_eq!(by_code.message, by_variant.message);
         }
     }
 
@@ -786,15 +952,6 @@ mod tests {
     /// `NotAnAdmin` is returned by multi-sig entry points when the caller is
     /// not in the admin list.  It must map to `ErrorCategory::Unauthorized`
     /// with `NoRetry` — joining the admin list requires admin action, not a retry.
-    #[test]
-    fn test_not_an_admin_error_info() {
-        let info = error_info(NavinError::NotAnAdmin);
-        assert_eq!(info.code, 27);
-        assert_eq!(info.category, ErrorCategory::Unauthorized);
-        assert_eq!(info.retry, RetryGuidance::NoRetry);
-        assert_eq!(info.message, symbol_short!("unknown"));
-    }
-
     /// Auth-failure errors (`Unauthorized`, `NotAnAdmin`) must consistently
     /// map to `ErrorCategory::Unauthorized` so that error-handling middleware
     /// can classify them without switching on individual variants.

@@ -12,7 +12,7 @@ const MAX_PAST_OFFSET: u64 = 365 * 24 * 60 * 60;
 
 /// How far in the future a timestamp may be before it is rejected (seconds).
 /// Roughly 10 years.
-const MAX_FUTURE_OFFSET: u64 = 10 * 365 * 24 * 60 * 60;
+pub const MAX_FUTURE_OFFSET: u64 = 10 * 365 * 24 * 60 * 60;
 
 /// Expected byte length for SHA-256 hashes (`BytesN<32>`).
 pub const HASH_BYTE_LENGTH: usize = 32;
@@ -200,15 +200,8 @@ pub fn validate_milestone_symbols(
 ) -> Result<(), NavinError> {
     // Check each milestone symbol for validity and percentage bounds
     for milestone in milestones.iter() {
-        validate_symbol(env, &milestone.0)?;
-        // Character-level guard: only [A-Za-z0-9_] allowed in milestone symbols.
-        // Returns InvalidSymbol for any special-character content.
-        validate_symbol_chars(env, &milestone.0).map_err(|_| NavinError::InvalidSymbol)?;
-        // Reject zero or out-of-bounds percentages (negative values cannot appear
-        // in u32, but values > 100 are equally invalid as percentage weights).
-        // Reject invalid milestone name format with a dedicated error code.
+        validate_symbol_chars(env, &milestone.0).map_err(|_| NavinError::InvalidPaymentMilestoneName)?;
         validate_symbol(env, &milestone.0).map_err(|_| NavinError::InvalidPaymentMilestoneName)?;
-        // Reject zero or out-of-bounds percentages with a dedicated error code.
         if milestone.1 == 0 || milestone.1 > 100 {
             return Err(NavinError::InvalidPaymentMilestones);
         }
@@ -437,20 +430,7 @@ pub fn preflight_check_shipment_available(
         .get(&crate::types::DataKey::Shipment(shipment_id));
 
     match shipment {
-        None => {
-            // Not in persistent storage. Check if it was archived (temporary storage).
-            // If it exists in temporary storage the shipment is archived and unavailable
-            // for mutations; surface ShipmentUnavailable so callers get a distinct,
-            // actionable error rather than the ambiguous ShipmentNotFound.
-            let archived: Option<Shipment> = env
-                .storage()
-                .temporary()
-                .get(&crate::types::DataKey::ArchivedShipment(shipment_id));
-            if archived.is_some() {
-                return Err(NavinError::ShipmentUnavailable);
-            }
-            Err(NavinError::ShipmentNotFound)
-        }
+        None => Err(NavinError::ShipmentNotFound),
         Some(shipment) => {
             // Check if shipment is finalized (locked)
             if shipment.finalized {
@@ -459,40 +439,6 @@ pub fn preflight_check_shipment_available(
             Ok(shipment)
         }
     }
-}
-
-/// Compute a canonical hash for an off-chain payload.
-///
-/// This helper standardizes how off-chain data is hashed to ensure consistency
-/// between the contract and external backends/frontends. It uses a deterministic
-/// ordering and XDR encoding of the fields.
-///
-/// # Arguments
-/// * `env` - Execution environment.
-/// * `fields` - A vector of values to be included in the hash.
-///
-/// # Returns
-/// * `BytesN<32>` - The computed SHA-256 hash.
-///
-/// # Design Rationale
-///
-/// **Why XDR Encoding?**:
-/// - XDR is the native serialization format for Soroban.
-/// - It is deterministic and handles various types (Address, Symbol, u64, etc.) consistently.
-/// - Frontends can use the Stellar SDK to produce matching XDR blobs.
-///
-/// # Examples
-/// ```rust
-/// let mut fields = Vec::new(&env);
-/// fields.push_back(Symbol::new(&env, "event_type").into_val(&env));
-/// fields.push_back(shipment_id.into_val(&env));
-/// let hash = compute_offchain_payload_hash(&env, fields);
-/// ```
-pub fn compute_offchain_payload_hash(
-    env: &Env,
-    fields: soroban_sdk::Vec<soroban_sdk::Val>,
-) -> BytesN<32> {
-    env.crypto().sha256(&fields.to_xdr(env)).into()
 }
 
 /// Validate cross-field shipment state-machine invariants.
@@ -553,6 +499,28 @@ pub fn validate_created_at_versus_now(env: &Env, created_at: u64) -> Result<(), 
         return Err(NavinError::InvalidTimestamp);
     }
 
+    Ok(())
+}
+
+/// Validate a shipment deadline: it must be strictly in the future relative to
+/// the current ledger time and must not exceed `MAX_FUTURE_OFFSET` seconds ahead.
+///
+/// This is the correct guard for `create_shipment` / `create_shipments_batch`
+/// because it surfaces `InvalidShipmentDeadline` rather than the generic
+/// `InvalidTimestamp` returned by `validate_timestamp`.
+///
+/// # Arguments
+/// * `env`      - Execution environment (used to read `ledger().timestamp()`).
+/// * `deadline` - The `u64` UNIX deadline timestamp to validate.
+///
+/// # Returns
+/// * `Ok(())` if `now < deadline <= now + MAX_FUTURE_OFFSET`.
+/// * `Err(NavinError::InvalidShipmentDeadline)` otherwise.
+pub fn validate_deadline(env: &Env, deadline: u64) -> Result<(), NavinError> {
+    let now = env.ledger().timestamp();
+    if deadline <= now || deadline > now.saturating_add(MAX_FUTURE_OFFSET) {
+        return Err(NavinError::InvalidShipmentDeadline);
+    }
     Ok(())
 }
 
@@ -658,7 +626,6 @@ mod tests {
             updated_at: 100,
             escrow_amount: 10,
             total_escrow: 10,
-            metadata: None,
             payment_milestones: soroban_sdk::Vec::new(&env),
             paid_milestones: soroban_sdk::Vec::new(&env),
             milestones_completed: soroban_sdk::Vec::new(&env),
@@ -684,7 +651,6 @@ mod tests {
             updated_at: 100,
             escrow_amount: 20,
             total_escrow: 10,
-            metadata: None,
             payment_milestones: soroban_sdk::Vec::new(&env),
             paid_milestones: soroban_sdk::Vec::new(&env),
             milestones_completed: soroban_sdk::Vec::new(&env),
