@@ -40,9 +40,6 @@ pub const SHIPMENT_CANCELLED: &str = "shipment_cancelled";
 /// Emitted when a shipment misses its deadline and is auto-cancelled.
 pub const SHIPMENT_EXPIRED: &str = "shipment_expired";
 
-/// Emitted when a shipment is moved to temporary (archived) storage.
-pub const SHIPMENT_ARCHIVED: &str = "shipment_archived";
-
 /// Emitted when a shipment is successfully delivered.
 pub const DELIVERY_SUCCESS: &str = "delivery_success";
 
@@ -136,6 +133,41 @@ pub const ROLE_REVOKED: &str = "role_revoked";
 /// Emitted on every RBAC change (assign / revoke / suspend / reactivate).
 pub const ROLE_CHANGED: &str = "role_changed";
 
+// ── Audit trail ───────────────────────────────────────────────────────────────
+
+/// Emitted when an audit-log entry records a role assignment.
+pub const AUDIT_ROLE_ASSIGNED: &str = "audit_role_assigned";
+
+/// Emitted when an audit-log entry records a role revocation.
+pub const AUDIT_ROLE_REVOKED: &str = "audit_role_revoked";
+
+/// Emitted when an audit-log entry records a role suspension.
+pub const AUDIT_ROLE_SUSPENDED: &str = "audit_role_suspended";
+
+/// Emitted when an audit-log entry records a role reactivation.
+pub const AUDIT_ROLE_REACTIVATED: &str = "audit_role_reactivated";
+
+/// Emitted when an audit-log entry records an admin transfer.
+pub const AUDIT_ADMIN_TRANSFERRED: &str = "audit_admin_transferred";
+
+/// Emitted when an audit-log entry records a carrier whitelist addition.
+pub const AUDIT_CARRIER_WHITELISTED: &str = "audit_carrier_whitelisted";
+
+/// Emitted when an audit-log entry records a carrier whitelist removal.
+pub const AUDIT_CARRIER_UNWHITELISTED: &str = "audit_carrier_unwhitelisted";
+
+/// Emitted when an audit-log entry records a company suspension.
+pub const AUDIT_COMPANY_SUSPENDED: &str = "audit_company_suspended";
+
+/// Emitted when an audit-log entry records a company reactivation.
+pub const AUDIT_COMPANY_REACTIVATED: &str = "audit_company_reactivated";
+
+/// Emitted when an audit-log entry records a carrier suspension.
+pub const AUDIT_CARRIER_SUSPENDED: &str = "audit_carrier_suspended";
+
+/// Emitted when an audit-log entry records a carrier reactivation.
+pub const AUDIT_CARRIER_REACTIVATED: &str = "audit_carrier_reactivated";
+
 // ── Carrier handoff ───────────────────────────────────────────────────────────
 
 /// Emitted when a shipment is handed off to a new carrier.
@@ -201,8 +233,7 @@ pub const HASH_DOMAIN_CARRIER: u8 = 0x05;
 /// Domain tag for admin / governance events
 /// (`admin_proposed`, `admin_transferred`, `contract_upgraded`,
 ///  `migration_reported`, `contract_paused`, `contract_unpaused`,
-///  `force_cancelled`, `recovery_event`, `escrow_unlock_event`,
-///  `finalization_clear_event`).
+///  `force_cancelled`).
 #[allow(dead_code)]
 pub const HASH_DOMAIN_ADMIN: u8 = 0x06;
 
@@ -319,29 +350,6 @@ pub fn hash_domain_for_symbol(env: &soroban_sdk::Env, event_type: &soroban_sdk::
 /// Unknown topics fall back to [`HASH_DOMAIN_SHIPMENT`], which keeps the
 /// function total and preserves keys previously emitted for shipment events.
 ///
-/// Only reachable from `#[cfg(test)]` code today (it exercises the `&str`
-/// twin of [`hash_domain_for_symbol`] to prove the two mappings agree) — kept
-/// as the documented reference implementation for off-chain indexers, who
-/// work with plain strings rather than a live `Symbol`.
-#[cfg(test)]
-pub fn hash_domain_for_event(event_type: &str) -> u8 {
-    let mut i = 0;
-    while i < NON_DEFAULT_HASH_DOMAINS.len() {
-        let (topic, domain) = NON_DEFAULT_HASH_DOMAINS[i];
-        if str_eq(topic, event_type) {
-            return domain;
-        }
-        i += 1;
-    }
-    HASH_DOMAIN_SHIPMENT
-}
-
-/// `str` equality usable in this no_std context.
-#[cfg(test)]
-fn str_eq(a: &str, b: &str) -> bool {
-    a.as_bytes() == b.as_bytes()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -358,7 +366,6 @@ mod tests {
             MILESTONE_RECORDED,
             SHIPMENT_CANCELLED,
             SHIPMENT_EXPIRED,
-            SHIPMENT_ARCHIVED,
             DELIVERY_SUCCESS,
             ESCROW_DEPOSITED,
             ESCROW_RELEASED,
@@ -380,6 +387,17 @@ mod tests {
             FORCE_CANCELLED,
             ROLE_REVOKED,
             ROLE_CHANGED,
+            AUDIT_ROLE_ASSIGNED,
+            AUDIT_ROLE_REVOKED,
+            AUDIT_ROLE_SUSPENDED,
+            AUDIT_ROLE_REACTIVATED,
+            AUDIT_ADMIN_TRANSFERRED,
+            AUDIT_CARRIER_WHITELISTED,
+            AUDIT_CARRIER_UNWHITELISTED,
+            AUDIT_COMPANY_SUSPENDED,
+            AUDIT_COMPANY_REACTIVATED,
+            AUDIT_CARRIER_SUSPENDED,
+            AUDIT_CARRIER_REACTIVATED,
             CARRIER_HANDOFF,
             NOTIFICATION,
             NOTE_APPENDED,
@@ -419,7 +437,6 @@ mod tests {
         assert_eq!(MILESTONE_RECORDED, "milestone_recorded");
         assert_eq!(SHIPMENT_CANCELLED, "shipment_cancelled");
         assert_eq!(SHIPMENT_EXPIRED, "shipment_expired");
-        assert_eq!(SHIPMENT_ARCHIVED, "shipment_archived");
         assert_eq!(DELIVERY_SUCCESS, "delivery_success");
         assert_eq!(ESCROW_DEPOSITED, "escrow_deposited");
         assert_eq!(ESCROW_RELEASED, "escrow_released");
@@ -441,6 +458,17 @@ mod tests {
         assert_eq!(FORCE_CANCELLED, "force_cancelled");
         assert_eq!(ROLE_REVOKED, "role_revoked");
         assert_eq!(ROLE_CHANGED, "role_changed");
+        assert_eq!(AUDIT_ROLE_ASSIGNED, "audit_role_assigned");
+        assert_eq!(AUDIT_ROLE_REVOKED, "audit_role_revoked");
+        assert_eq!(AUDIT_ROLE_SUSPENDED, "audit_role_suspended");
+        assert_eq!(AUDIT_ROLE_REACTIVATED, "audit_role_reactivated");
+        assert_eq!(AUDIT_ADMIN_TRANSFERRED, "audit_admin_transferred");
+        assert_eq!(AUDIT_CARRIER_WHITELISTED, "audit_carrier_whitelisted");
+        assert_eq!(AUDIT_CARRIER_UNWHITELISTED, "audit_carrier_unwhitelisted");
+        assert_eq!(AUDIT_COMPANY_SUSPENDED, "audit_company_suspended");
+        assert_eq!(AUDIT_COMPANY_REACTIVATED, "audit_company_reactivated");
+        assert_eq!(AUDIT_CARRIER_SUSPENDED, "audit_carrier_suspended");
+        assert_eq!(AUDIT_CARRIER_REACTIVATED, "audit_carrier_reactivated");
         assert_eq!(CARRIER_HANDOFF, "carrier_handoff");
         assert_eq!(NOTIFICATION, "notification");
         assert_eq!(NOTE_APPENDED, "note_appended");
@@ -468,7 +496,6 @@ mod tests {
             MILESTONE_RECORDED,
             SHIPMENT_CANCELLED,
             SHIPMENT_EXPIRED,
-            SHIPMENT_ARCHIVED,
             DELIVERY_SUCCESS,
             ESCROW_DEPOSITED,
             ESCROW_RELEASED,
@@ -490,6 +517,17 @@ mod tests {
             FORCE_CANCELLED,
             ROLE_REVOKED,
             ROLE_CHANGED,
+            AUDIT_ROLE_ASSIGNED,
+            AUDIT_ROLE_REVOKED,
+            AUDIT_ROLE_SUSPENDED,
+            AUDIT_ROLE_REACTIVATED,
+            AUDIT_ADMIN_TRANSFERRED,
+            AUDIT_CARRIER_WHITELISTED,
+            AUDIT_CARRIER_UNWHITELISTED,
+            AUDIT_COMPANY_SUSPENDED,
+            AUDIT_COMPANY_REACTIVATED,
+            AUDIT_CARRIER_SUSPENDED,
+            AUDIT_CARRIER_REACTIVATED,
             CARRIER_HANDOFF,
             NOTIFICATION,
             NOTE_APPENDED,

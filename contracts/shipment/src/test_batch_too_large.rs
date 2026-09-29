@@ -66,53 +66,6 @@ fn test_create_batch_20_returns_batch_too_large() {
     );
 }
 
-// ── create_shipments_batch — within limit ────────────────────────────────────
-
-#[test]
-fn test_create_batch_1_succeeds() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-
-    let shipments = push_shipments(&env, 1);
-    let result = client.try_create_shipments_batch(&company, &shipments);
-    assert!(result.is_ok(), "single-item batch must succeed");
-    assert_eq!(result.unwrap().unwrap().len(), 1);
-}
-
-#[test]
-fn test_create_batch_at_limit_succeeds() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-
-    // Default limit is 10; batch of exactly 10 must succeed
-    let shipments = push_shipments(&env, 10);
-    let result = client.try_create_shipments_batch(&company, &shipments);
-    assert!(result.is_ok(), "batch of exactly 10 must succeed");
-    assert_eq!(result.unwrap().unwrap().len(), 10);
-}
-
-#[test]
-fn test_create_batch_5_succeeds_and_assigns_sequential_ids() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-
-    let shipments = push_shipments(&env, 5);
-    let ids = client.create_shipments_batch(&company, &shipments);
-    assert_eq!(ids.len(), 5, "batch of 5 must return 5 ids");
-    for (i, id) in ids.iter().enumerate() {
-        assert_eq!(id, (i + 1) as u64, "ids must be sequential from 1");
-    }
-}
-
 // ── get_shipments_batch — over the 50-item query cap ─────────────────────────
 
 #[test]

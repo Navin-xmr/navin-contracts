@@ -12,18 +12,26 @@
 //!
 //! ## Configuration Parameters
 //!
-//! | Parameter                    | Default | Description                                    |
-//! |------------------------------|---------|------------------------------------------------|
-//! | shipment_ttl_threshold       | 17,280  | Min ledgers before TTL extension (~1 day)      |
-//! | shipment_ttl_extension       | 518,400 | Ledgers to extend TTL by (~30 days)            |
-//! | min_status_update_interval   | 60      | Min seconds between status updates             |
-//! | batch_operation_limit        | 10      | Max items per batch operation                  |
-//! | max_metadata_entries         | 5       | Max metadata key-value pairs per shipment      |
-//! | default_shipment_limit       | 100     | Default active shipments per company           |
-//! | multisig_min_admins          | 2       | Min admins for multi-sig                       |
-//! | multisig_max_admins          | 10      | Max admins for multi-sig                       |
-//! | proposal_expiry_seconds      | 604,800 | Proposal expiry time (7 days)                  |
-//! | deadline_grace_seconds       | 0       | Grace window after deadline before expiry fires |
+//! | Parameter                      | Default | Description                                      |
+//! |--------------------------------|---------|--------------------------------------------------|
+//! | shipment_ttl_threshold         | 17,280  | Min ledgers before TTL extension (~1 day)        |
+//! | shipment_ttl_extension         | 518,400 | Ledgers to extend TTL by (~30 days)              |
+//! | min_status_update_interval     | 60      | Min seconds between status updates               |
+//! | batch_operation_limit          | 10      | Max items per batch operation                    |
+//! | max_metadata_entries           | 5       | Max metadata key-value pairs per shipment        |
+//! | default_shipment_limit         | 100     | Default active shipments per company             |
+//! | multisig_min_admins            | 2       | Min admins for multi-sig                         |
+//! | multisig_max_admins            | 10      | Max admins for multi-sig                         |
+//! | proposal_expiry_seconds        | 604,800 | Proposal expiry time (7 days)                    |
+//! | deadline_grace_seconds         | 0       | Grace window after deadline before expiry fires  |
+//! | idempotency_window_seconds     | 300     | Seconds to retain action hashes for dedup (5 min)|
+//! | auto_dispute_breach            | false   | Auto-open dispute on critical condition breach   |
+//! | max_milestones_per_shipment    | 255     | Max milestone events per shipment                |
+//! | max_notes_per_shipment         | 255     | Max note events per shipment                     |
+//! | max_evidence_per_dispute       | 255     | Max evidence hashes per dispute                  |
+//! | max_breaches_per_shipment      | 255     | Max condition breach events per shipment         |
+//! | creation_quota_max             | 0       | Max shipments creatable per quota window (0=off) |
+//! | creation_quota_window_seconds  | 3,600   | Duration of the creation quota window (1 hour)   |
 
 use crate::errors::NavinError;
 use crate::types::DataKey;
@@ -370,11 +378,11 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// 13. max_notes_per_shipment (u32, 4 bytes, big-endian)
 /// 14. max_evidence_per_dispute (u32, 4 bytes, big-endian)
 /// 15. max_breaches_per_shipment (u32, 4 bytes, big-endian)
-/// 16. creation_quota_max (u32, 4 bytes, big-endian)
-/// 17. creation_quota_window_seconds (u64, 8 bytes, big-endian)
-/// 18. auto_mint_nft (bool, 1 byte: 1 = true, 0 = false)
+/// 16. idempotency_window_seconds (u64, 8 bytes, big-endian)
+/// 17. creation_quota_max (u32, 4 bytes, big-endian)
+/// 18. creation_quota_window_seconds (u64, 8 bytes, big-endian)
 ///
-/// Total: 71 bytes serialized, hashed to 32-byte SHA-256 digest.
+/// Total: 89 bytes serialized, hashed to 32-byte SHA-256 digest.
 ///
 /// # Arguments
 /// * `config` - The configuration to checksum.
@@ -390,8 +398,8 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// assert_eq!(checksum1, checksum2); // Deterministic
 /// ```
 pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32> {
-    // Serialize all fields in fixed order (71 bytes total)
-    let mut bytes: [u8; 71] = [0; 71];
+    // Serialize all fields in fixed order (89 bytes total)
+    let mut bytes: [u8; 89] = [0; 89];
     let mut offset = 0;
 
     // 1. shipment_ttl_threshold (u32, big-endian)
@@ -454,16 +462,16 @@ pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32>
     bytes[offset..offset + 4].copy_from_slice(&config.max_breaches_per_shipment.to_be_bytes());
     offset += 4;
 
-    // 16. creation_quota_max (u32, big-endian)
+    // 16. idempotency_window_seconds (u64, big-endian)
+    bytes[offset..offset + 8].copy_from_slice(&config.idempotency_window_seconds.to_be_bytes());
+    offset += 8;
+
+    // 17. creation_quota_max (u32, big-endian)
     bytes[offset..offset + 4].copy_from_slice(&config.creation_quota_max.to_be_bytes());
     offset += 4;
 
-    // 17. creation_quota_window_seconds (u64, big-endian)
+    // 18. creation_quota_window_seconds (u64, big-endian)
     bytes[offset..offset + 8].copy_from_slice(&config.creation_quota_window_seconds.to_be_bytes());
-    offset += 8;
-
-    // 18. auto_mint_nft (bool, 1 byte)
-    bytes[offset] = if config.auto_mint_nft { 1 } else { 0 };
 
     // Compute SHA-256 hash and convert to BytesN<32>
     let hash = env
@@ -913,6 +921,30 @@ mod tests {
         assert_ne!(
             checksum, checksum_original,
             "Changing max_breaches_per_shipment must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.idempotency_window_seconds = 600;
+        let checksum = compute_config_checksum(&config, &env);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing idempotency_window_seconds must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.creation_quota_max = 50;
+        let checksum = compute_config_checksum(&config, &env);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing creation_quota_max must change checksum"
+        );
+
+        let mut config = config_original.clone();
+        config.creation_quota_window_seconds = 7200;
+        let checksum = compute_config_checksum(&config, &env);
+        assert_ne!(
+            checksum, checksum_original,
+            "Changing creation_quota_window_seconds must change checksum"
         );
     }
 

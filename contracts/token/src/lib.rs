@@ -1,15 +1,18 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, Address, Env, String, Symbol, Vec};
 
 mod errors;
+mod event_topics;
 mod storage;
 mod test;
+mod types;
 
 #[cfg(test)]
 mod test_utils;
 
 pub use errors::*;
+pub use types::*;
 
 /// Pass as `expiration_ledger` to `approve` for an allowance that
 /// effectively never expires (issue #659).
@@ -56,8 +59,13 @@ impl NavinToken {
         storage::set_total_supply(&env, total_supply);
         storage::set_balance(&env, &admin, total_supply);
 
-        env.events()
-            .publish((symbol_short!("init"),), (admin.clone(), total_supply));
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::INIT),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (admin.clone(), total_supply),
+        );
 
         Ok(())
     }
@@ -79,7 +87,10 @@ impl NavinToken {
     }
 
     /// Get token decimals
-    pub fn decimals(_env: Env) -> Result<u32, TokenError> {
+    pub fn decimals(env: Env) -> Result<u32, TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
         Ok(7)
     }
 
@@ -140,8 +151,13 @@ impl NavinToken {
         // Extend TTL for affected balances
         storage::extend_balance_ttl_for(&env, &[from.clone(), to.clone()], 1000, 500000);
 
-        env.events()
-            .publish((symbol_short!("transfer"),), (from, to, amount));
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::TRANSFER),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (from, to, amount),
+        );
 
         Ok(())
     }
@@ -185,11 +201,24 @@ impl NavinToken {
             .map(|v| v.expiration_ledger)
             .unwrap_or(0);
         storage::set_balance(&env, &from, from_balance - amount);
-        storage::set_balance(&env, &to, storage::get_balance(&env, &to) + amount);
-        storage::set_allowance(&env, &from, &spender, allowance - amount, expiration_ledger);
+        let recipient_balance = storage::get_balance(&env, &to);
+        let updated_recipient_balance = recipient_balance
+            .checked_add(amount)
+            .ok_or(TokenError::Overflow)?;
+        let updated_allowance = allowance.checked_sub(amount).ok_or(TokenError::Overflow)?;
+        storage::set_balance(&env, &to, updated_recipient_balance);
+        storage::set_allowance(&env, &from, &spender, updated_allowance, expiration_ledger);
 
-        env.events()
-            .publish((symbol_short!("tr_from"),), (from, to, spender, amount));
+        storage::extend_balance_ttl_for(&env, &[from.clone(), to.clone()], 1000, 500000);
+        storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
+
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::TRANSFER_FROM),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (from, to, spender, amount),
+        );
 
         Ok(())
     }
@@ -232,7 +261,10 @@ impl NavinToken {
         storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
 
         env.events().publish(
-            (symbol_short!("approve"),),
+            (
+                Symbol::new(&env, event_topics::APPROVE),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
             (from, spender, amount, expiration_ledger),
         );
 
@@ -261,6 +293,7 @@ impl NavinToken {
         if !storage::is_initialized(&env) {
             return Err(TokenError::NotInitialized);
         }
+        require_not_paused(&env)?;
 
         owner.require_auth();
 
@@ -279,7 +312,10 @@ impl NavinToken {
         storage::extend_allowance_ttl(&env, &owner, &spender, 1000, 500000);
 
         env.events().publish(
-            (symbol_short!("inc_alw"),),
+            (
+                Symbol::new(&env, event_topics::ALLOWANCE_INCREASED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
             (owner, spender, delta, new_allowance),
         );
 
@@ -299,6 +335,7 @@ impl NavinToken {
         if !storage::is_initialized(&env) {
             return Err(TokenError::NotInitialized);
         }
+        require_not_paused(&env)?;
 
         owner.require_auth();
 
@@ -320,7 +357,10 @@ impl NavinToken {
         storage::extend_allowance_ttl(&env, &owner, &spender, 1000, 500000);
 
         env.events().publish(
-            (symbol_short!("dec_alw"),),
+            (
+                Symbol::new(&env, event_topics::ALLOWANCE_DECREASED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
             (owner, spender, delta, new_allowance),
         );
 
@@ -350,8 +390,13 @@ impl NavinToken {
 
         storage::set_pending_admin(&env, &new_admin);
 
-        env.events()
-            .publish((symbol_short!("adm_prop"),), (current_admin, new_admin));
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::ADMIN_PROPOSED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (current_admin, new_admin),
+        );
 
         Ok(())
     }
@@ -374,8 +419,13 @@ impl NavinToken {
         storage::set_admin(&env, &new_admin);
         storage::clear_pending_admin(&env);
 
-        env.events()
-            .publish((symbol_short!("admin_tr"),), (old_admin, new_admin));
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::ADMIN_TRANSFERRED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (old_admin, new_admin),
+        );
 
         Ok(())
     }
@@ -409,7 +459,13 @@ impl NavinToken {
         // Extend TTL for the recipient's balance
         storage::extend_balance_ttl(&env, &to, 1000, 500000);
 
-        env.events().publish((symbol_short!("mint"),), (to, amount));
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::MINT),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (to, amount),
+        );
 
         Ok(())
     }
@@ -457,8 +513,13 @@ impl NavinToken {
         // Extend TTL for the source's balance
         storage::extend_balance_ttl(&env, &from, 1000, 500000);
 
-        env.events()
-            .publish((symbol_short!("adm_burn"),), (from, amount));
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::ADMIN_BURN),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (from, amount),
+        );
 
         Ok(())
     }
@@ -483,13 +544,23 @@ impl NavinToken {
         }
 
         let current_supply = storage::get_total_supply(&env);
-        let new_supply = current_supply.checked_sub(amount).ok_or(TokenError::Overflow)?;
-        let new_from_balance = from_balance.checked_sub(amount).ok_or(TokenError::Overflow)?;
+        let new_supply = current_supply
+            .checked_sub(amount)
+            .ok_or(TokenError::Overflow)?;
+        let new_from_balance = from_balance
+            .checked_sub(amount)
+            .ok_or(TokenError::Overflow)?;
         storage::set_total_supply(&env, new_supply);
         storage::set_balance(&env, &from, new_from_balance);
+        storage::extend_balance_ttl(&env, &from, 1000, 500000);
 
-        env.events()
-            .publish((symbol_short!("burn"),), (from, amount));
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::BURN),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (from, amount),
+        );
 
         Ok(())
     }
@@ -528,15 +599,26 @@ impl NavinToken {
             .map(|v| v.expiration_ledger)
             .unwrap_or(0);
         let current_supply = storage::get_total_supply(&env);
-        let new_supply = current_supply.checked_sub(amount).ok_or(TokenError::Overflow)?;
-        let new_from_balance = from_balance.checked_sub(amount).ok_or(TokenError::Overflow)?;
+        let new_supply = current_supply
+            .checked_sub(amount)
+            .ok_or(TokenError::Overflow)?;
+        let new_from_balance = from_balance
+            .checked_sub(amount)
+            .ok_or(TokenError::Overflow)?;
         let new_allowance = allowance.checked_sub(amount).ok_or(TokenError::Overflow)?;
         storage::set_total_supply(&env, new_supply);
         storage::set_balance(&env, &from, new_from_balance);
         storage::set_allowance(&env, &from, &spender, new_allowance, expiration_ledger);
+        storage::extend_balance_ttl(&env, &from, 1000, 500000);
+        storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
 
-        env.events()
-            .publish((symbol_short!("burn_from"),), (from, spender, amount));
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::BURN_FROM),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (from, spender, amount),
+        );
 
         Ok(())
     }
@@ -556,7 +638,13 @@ impl NavinToken {
         }
 
         storage::set_paused(&env, true);
-        env.events().publish((symbol_short!("paused"),), (admin,));
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::PAUSED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (admin,),
+        );
 
         Ok(())
     }
@@ -575,7 +663,13 @@ impl NavinToken {
         }
 
         storage::set_paused(&env, false);
-        env.events().publish((symbol_short!("unpaused"),), (admin,));
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::UNPAUSED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (admin,),
+        );
 
         Ok(())
     }
@@ -638,9 +732,14 @@ impl NavinToken {
         storage::set_balance(
             &env,
             &from,
-            from_balance.checked_sub(total).ok_or(TokenError::Overflow)?,
+            from_balance
+                .checked_sub(total)
+                .ok_or(TokenError::Overflow)?,
         );
         for (to, amount) in recipients.iter() {
+            if to == from {
+                continue;
+            }
             let recipient_balance = storage::get_balance(&env, &to);
             let new_recipient_balance = recipient_balance
                 .checked_add(amount)
@@ -658,13 +757,18 @@ impl NavinToken {
         // `batch_leg` event (from, to, amount) per recipient — mirroring the
         // shape of `transfer`'s event — followed by a `batch_tr` summary
         // carrying the full recipient/amount list and the leg count.
+        let mut filtered_recipients = Vec::new(&env);
         for (to, amount) in recipients.iter() {
+            if to == from {
+                continue;
+            }
+            filtered_recipients.push_back((to.clone(), amount));
             env.events()
                 .publish((symbol_short!("batch_leg"),), (from.clone(), to, amount));
         }
         env.events().publish(
             (symbol_short!("batch_tr"),),
-            (from, recipients.clone(), recipients.len()),
+            (from, filtered_recipients.clone(), filtered_recipients.len()),
         );
 
         Ok(())
@@ -714,8 +818,13 @@ impl NavinToken {
 
         storage::add_allowed_metadata_key(&env, &key);
 
-        env.events()
-            .publish((symbol_short!("meta_add"),), (admin, key));
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::METADATA_ADDED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (admin, key),
+        );
 
         Ok(())
     }
@@ -753,8 +862,13 @@ impl NavinToken {
 
         storage::remove_allowed_metadata_key(&env, &key);
 
-        env.events()
-            .publish((symbol_short!("meta_rm"),), (admin, key));
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::METADATA_REMOVED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (admin, key),
+        );
 
         Ok(())
     }
@@ -772,6 +886,21 @@ impl NavinToken {
         }
 
         Ok(storage::is_metadata_key_allowed(&env, &key))
+    }
+
+    /// Get all metadata keys in the admin-registered allowlist.
+    ///
+    /// # Returns
+    /// * `Vec<Symbol>` - The currently allowed metadata keys in insertion order.
+    ///
+    /// # Errors
+    /// * `MetadataError::NotInitialized` - If contract is not initialized.
+    pub fn get_allowed_metadata_keys(env: Env) -> Result<Vec<Symbol>, MetadataError> {
+        if !storage::is_initialized(&env) {
+            return Err(MetadataError::NotInitialized);
+        }
+
+        Ok(storage::get_allowed_metadata_keys(&env))
     }
 
     // ========================================================================
@@ -819,8 +948,13 @@ impl NavinToken {
 
         storage::set_metadata(&env, &key, &value);
 
-        env.events()
-            .publish((symbol_short!("meta_set"),), (admin, key, value));
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::METADATA_SET),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (admin, key, value),
+        );
 
         Ok(())
     }
@@ -872,8 +1006,13 @@ impl NavinToken {
 
         storage::remove_metadata(&env, &key);
 
-        env.events()
-            .publish((symbol_short!("meta_del"),), (admin, key));
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::METADATA_DELETED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (admin, key),
+        );
 
         Ok(())
     }

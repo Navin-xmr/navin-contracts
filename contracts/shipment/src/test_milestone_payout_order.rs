@@ -333,8 +333,12 @@ fn test_record_milestone_out_of_order_rejected() {
     let (env, client, admin) = setup();
     let (id, _company, carrier) = create_milestone_shipment(&env, &client, &admin);
 
-    let result =
-        client.try_record_milestone(&carrier, &id, &symbol_short!("beta"), &data_hash(&env, 0x11));
+    let result = client.try_record_milestone(
+        &carrier,
+        &id,
+        &symbol_short!("beta"),
+        &data_hash(&env, 0x11),
+    );
     assert_eq!(
         result,
         Err(Ok(NavinError::InvalidStatus)),
@@ -352,9 +356,24 @@ fn test_record_milestone_in_order_succeeds() {
     let (env, client, admin) = setup();
     let (id, _company, carrier) = create_milestone_shipment(&env, &client, &admin);
 
-    client.record_milestone(&carrier, &id, &symbol_short!("alpha"), &data_hash(&env, 0x11));
-    client.record_milestone(&carrier, &id, &symbol_short!("beta"), &data_hash(&env, 0x22));
-    client.record_milestone(&carrier, &id, &symbol_short!("gamma"), &data_hash(&env, 0x33));
+    client.record_milestone(
+        &carrier,
+        &id,
+        &symbol_short!("alpha"),
+        &data_hash(&env, 0x11),
+    );
+    client.record_milestone(
+        &carrier,
+        &id,
+        &symbol_short!("beta"),
+        &data_hash(&env, 0x22),
+    );
+    client.record_milestone(
+        &carrier,
+        &id,
+        &symbol_short!("gamma"),
+        &data_hash(&env, 0x33),
+    );
 
     let shipment = client.get_shipment(&id);
     assert_eq!(shipment.milestones_completed.len(), 3);
@@ -368,14 +387,28 @@ fn test_record_milestone_third_blocked_after_one_recorded() {
     let (env, client, admin) = setup();
     let (id, _company, carrier) = create_milestone_shipment(&env, &client, &admin);
 
-    client.record_milestone(&carrier, &id, &symbol_short!("alpha"), &data_hash(&env, 0x11));
+    client.record_milestone(
+        &carrier,
+        &id,
+        &symbol_short!("alpha"),
+        &data_hash(&env, 0x11),
+    );
 
-    let blocked =
-        client.try_record_milestone(&carrier, &id, &symbol_short!("gamma"), &data_hash(&env, 0x33));
+    let blocked = client.try_record_milestone(
+        &carrier,
+        &id,
+        &symbol_short!("gamma"),
+        &data_hash(&env, 0x33),
+    );
     assert_eq!(blocked, Err(Ok(NavinError::InvalidStatus)));
 
     assert!(client
-        .try_record_milestone(&carrier, &id, &symbol_short!("beta"), &data_hash(&env, 0x22))
+        .try_record_milestone(
+            &carrier,
+            &id,
+            &symbol_short!("beta"),
+            &data_hash(&env, 0x22)
+        )
         .is_ok());
 }
 
@@ -450,7 +483,12 @@ fn test_ordering_consistent_across_all_three_entrypoints() {
     let via_record = {
         let (id, _c, carrier) = create_milestone_shipment(&env, &client, &admin);
         client
-            .try_record_milestone(&carrier, &id, &symbol_short!("beta"), &data_hash(&env, 0x22))
+            .try_record_milestone(
+                &carrier,
+                &id,
+                &symbol_short!("beta"),
+                &data_hash(&env, 0x22),
+            )
             .map(|r| r.map(|_| ()))
     };
     let via_batch = {

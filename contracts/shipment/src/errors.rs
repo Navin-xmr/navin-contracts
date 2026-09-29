@@ -106,7 +106,7 @@ pub enum NavinError {
     DataHashMismatch = 45,
     /// Circuit breaker is open; token transfers are temporarily disabled.
     CircuitBreakerOpen = 46,
-    /// Migration version transition is not allowed.
+    /// Migration version transition is not allowed (only current + 1 is permitted).
     InvalidMigrationEdge = 47,
     /// Maximum allowed milestone events for a shipment has been reached.
     MilestoneLimitExceeded = 48,
@@ -156,11 +156,15 @@ pub enum NavinError {
     /// duplicate additions are rejected with this dedicated error so
     /// off-chain monitors can distinguish a no-op from a real failure
     /// without falling back on the generic `AlreadyInitialized` code.
-    CarrierAlreadyWhitelisted = 69,
+    CarrierAlreadyWhitelisted = 75,
+    /// Issue #699 — caller attempted to remove a carrier from a company's
+    /// whitelist that was never whitelisted. This mirrors the symmetric
+    /// check in add_carrier_to_whitelist, ensuring removal events are
+    /// only emitted for actual removals, not spurious no-ops.
+    CarrierNotWhitelisted = 69,
     /// Address is invalid (e.g., zero-address sentinel).
     InvalidAddress = 70,
-    /// Maximum allowed recovery action entries for a shipment has been reached.
-    RecoveryLimitExceeded = 71,
+    // Code 71 is reserved; the orphaned recovery-limit variant was never reachable (#887).
     /// Issue #749 — the target of a role-specific revocation does not hold
     /// the role being revoked. Raised instead of silently revoking whatever
     /// role the address happens to have, which previously let
@@ -176,4 +180,6 @@ pub enum NavinError {
     /// after a merge collision on discriminant 72 with `RoleMismatch` dropped
     /// it from the enum.)
     MultiSigProposalPending = 74,
+    /// Maximum allowed audit log entries has been reached.
+    AuditLogLimitExceeded = 76,
 }
