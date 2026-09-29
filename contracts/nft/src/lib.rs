@@ -6,67 +6,57 @@ mod errors;
 mod storage;
 mod test;
 mod test_cross_contract;
-use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, vec, Address, Env, Symbol,
-    Vec,
-};
 
 #[cfg(test)]
 mod test_utils;
 
 pub use errors::*;
-// ── Storage Keys ────────────────────────────────────────────────────────────
-
-#[contracttype]
-enum NftKey {
-    Owner(u64),
-    OwnerTokens(Address),
-    TokenCount,
-    Admin,
-    Name,
-    Symbol,
-    Initialized,
-    Paused,
-    BurnApproved(u64),
-}
-
-// ── Errors ──────────────────────────────────────────────────────────────────
-
-#[contracterror]
-#[derive(Clone, Debug, PartialEq)]
-pub enum NftError {
-    AlreadyInitialized = 1,
-    NotInitialized = 2,
-    NotAdmin = 3,
-    TokenDoesNotExist = 4,
-    NotOwner = 5,
-    TokenAlreadyMinted = 6,
-    MintToContract = 7,
-    ContractPaused = 8,
-    InvalidNameOrSymbol = 9,
-    BurnNotApproved = 10,
-}
-
-// ── Events ──────────────────────────────────────────────────────────────────
-
-const MINT: Symbol = symbol_short!("mint");
-const TRANSFER_NFT: Symbol = symbol_short!("xfer");
-const BURN: Symbol = symbol_short!("burn");
-const INIT: Symbol = symbol_short!("init");
-const ADMIN_TRANSFER: Symbol = symbol_short!("admin");
-
-// ── TTL Constants ──────────────────────────────────────────────────────────
-
-/// Minimum ledgers remaining before TTL extension is triggered (~1 day)
-const TTL_THRESHOLD: u32 = 17_280;
-
-/// Number of ledgers to extend TTL by when threshold is reached (~30 days)
-const TTL_EXTENSION: u32 = 518_400;
-
-// ── Contract ────────────────────────────────────────────────────────────────
 
 #[contract]
 pub struct NavinShipmentNft;
+
+#[contractimpl]
+impl NavinShipmentNft {
+    /// Initialize the NFT contract with admin and collection metadata
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        name: String,
+        symbol: String,
+    ) -> Result<(), NftError> {
+        if storage::is_initialized(&env) {
+            return Err(NftError::AlreadyInitialized);
+        }
+
+        if name.is_empty() || symbol.is_empty() {
+            return Err(NftError::InvalidInput);
+        }
+
+        storage::set_admin(&env, &admin);
+        storage::set_name(&env, &name);
+        storage::set_symbol(&env, &symbol);
+        storage::set_next_token_id(&env, 1);
+
+        env.events()
+            .publish((symbol_short!("init"),), (admin.clone(), name, symbol));
+
+        Ok(())
+    }
+
+    /// Mint a new NFT representing a shipment
+    pub fn mint_shipment_nft(
+        env: Env,
+        to: Address,
+        shipment_id: u64,
+        data_hash: BytesN<32>,
+        metadata: Map<Symbol, String>,
+    ) -> Result<u64, NftError> {
+        if !storage::is_initialized(&env) {
+            return Err(NftError::NotInitialized);
+        }
+
+        // For now, anyone can mint. In future versions, this might be restricted to authorized contracts
+        to.require_auth();
 
 #[contractimpl]
 impl NavinShipmentNft {
