@@ -137,6 +137,11 @@ pub struct ContractConfig {
     /// Only meaningful when `creation_quota_max > 0`.
     /// Default: 3600 (1 hour).
     pub creation_quota_window_seconds: u64,
+
+    /// Enable automatic NFT minting when shipments are created.
+    /// When enabled, requires nft_contract_address to be set.
+    /// Default: false (disabled).
+    pub auto_mint_nft: bool,
 }
 
 impl Default for ContractConfig {
@@ -167,6 +172,7 @@ impl Default for ContractConfig {
             max_breaches_per_shipment: 255,      // 255 breaches
             creation_quota_max: 0,               // disabled by default
             creation_quota_window_seconds: 3600, // 1 hour window
+            auto_mint_nft: false,                // disabled by default
         }
     }
 }
@@ -363,8 +369,12 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// 12. max_milestones_per_shipment (u32, 4 bytes, big-endian)
 /// 13. max_notes_per_shipment (u32, 4 bytes, big-endian)
 /// 14. max_evidence_per_dispute (u32, 4 bytes, big-endian)
+/// 15. max_breaches_per_shipment (u32, 4 bytes, big-endian)
+/// 16. creation_quota_max (u32, 4 bytes, big-endian)
+/// 17. creation_quota_window_seconds (u64, 8 bytes, big-endian)
+/// 18. auto_mint_nft (bool, 1 byte: 1 = true, 0 = false)
 ///
-/// Total: 65 bytes serialized, hashed to 32-byte SHA-256 digest.
+/// Total: 71 bytes serialized, hashed to 32-byte SHA-256 digest.
 ///
 /// # Arguments
 /// * `config` - The configuration to checksum.
@@ -380,8 +390,8 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// assert_eq!(checksum1, checksum2); // Deterministic
 /// ```
 pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32> {
-    // Serialize all fields in fixed order (69 bytes total)
-    let mut bytes: [u8; 69] = [0; 69];
+    // Serialize all fields in fixed order (71 bytes total)
+    let mut bytes: [u8; 71] = [0; 71];
     let mut offset = 0;
 
     // 1. shipment_ttl_threshold (u32, big-endian)
@@ -442,6 +452,18 @@ pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32>
 
     // 15. max_breaches_per_shipment (u32, big-endian)
     bytes[offset..offset + 4].copy_from_slice(&config.max_breaches_per_shipment.to_be_bytes());
+    offset += 4;
+
+    // 16. creation_quota_max (u32, big-endian)
+    bytes[offset..offset + 4].copy_from_slice(&config.creation_quota_max.to_be_bytes());
+    offset += 4;
+
+    // 17. creation_quota_window_seconds (u64, big-endian)
+    bytes[offset..offset + 8].copy_from_slice(&config.creation_quota_window_seconds.to_be_bytes());
+    offset += 8;
+
+    // 18. auto_mint_nft (bool, 1 byte)
+    bytes[offset] = if config.auto_mint_nft { 1 } else { 0 };
 
     // Compute SHA-256 hash and convert to BytesN<32>
     let hash = env

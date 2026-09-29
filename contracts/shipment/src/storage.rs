@@ -868,6 +868,21 @@ pub fn get_token_contract(env: &Env) -> Option<Address> {
     env.storage().instance().get(&DataKey::TokenContract)
 }
 
+/// Get the NFT contract address
+pub fn get_nft_contract(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::NftContract)
+}
+
+/// Set the NFT contract address
+pub fn set_nft_contract(env: &Env, address: &Address) {
+    env.storage().instance().set(&DataKey::NftContract, address);
+}
+
+/// Remove the NFT contract address
+pub fn clear_nft_contract(env: &Env) {
+    env.storage().instance().remove(&DataKey::NftContract);
+}
+
 /// Set the token contract address
 ///
 /// # Arguments

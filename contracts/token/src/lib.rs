@@ -351,7 +351,7 @@ impl NavinToken {
         storage::set_pending_admin(&env, &new_admin);
 
         env.events()
-            .publish((symbol_short!("admin_prop"),), (current_admin, new_admin));
+            .publish((symbol_short!("adm_prop"),), (current_admin, new_admin));
 
         Ok(())
     }
