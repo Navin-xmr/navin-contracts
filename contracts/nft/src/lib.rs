@@ -58,6 +58,49 @@ impl NavinShipmentNft {
         // For now, anyone can mint. In future versions, this might be restricted to authorized contracts
         to.require_auth();
 
+#[contractimpl]
+impl NavinShipmentNft {
+    /// Initialize the NFT contract with admin and collection metadata
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        name: String,
+        symbol: String,
+    ) -> Result<(), NftError> {
+        if storage::is_initialized(&env) {
+            return Err(NftError::AlreadyInitialized);
+        }
+
+        if name.is_empty() || symbol.is_empty() {
+            return Err(NftError::InvalidInput);
+        }
+
+        storage::set_admin(&env, &admin);
+        storage::set_name(&env, &name);
+        storage::set_symbol(&env, &symbol);
+        storage::set_next_token_id(&env, 1);
+
+        env.events()
+            .publish((symbol_short!("init"),), (admin.clone(), name, symbol));
+
+        Ok(())
+    }
+
+    /// Mint a new NFT representing a shipment
+    pub fn mint_shipment_nft(
+        env: Env,
+        to: Address,
+        shipment_id: u64,
+        data_hash: BytesN<32>,
+        metadata: Map<Symbol, String>,
+    ) -> Result<u64, NftError> {
+        if !storage::is_initialized(&env) {
+            return Err(NftError::NotInitialized);
+        }
+
+        // For now, anyone can mint. In future versions, this might be restricted to authorized contracts
+        to.require_auth();
+
         let token_id = storage::get_next_token_id(&env);
         
         // Store NFT data

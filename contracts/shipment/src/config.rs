@@ -378,6 +378,11 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// 13. max_notes_per_shipment (u32, 4 bytes, big-endian)
 /// 14. max_evidence_per_dispute (u32, 4 bytes, big-endian)
 /// 15. max_breaches_per_shipment (u32, 4 bytes, big-endian)
+/// 16. creation_quota_max (u32, 4 bytes, big-endian)
+/// 17. creation_quota_window_seconds (u64, 8 bytes, big-endian)
+/// 18. auto_mint_nft (bool, 1 byte: 1 = true, 0 = false)
+///
+/// Total: 71 bytes serialized, hashed to 32-byte SHA-256 digest.
 /// 16. idempotency_window_seconds (u64, 8 bytes, big-endian)
 /// 17. creation_quota_max (u32, 4 bytes, big-endian)
 /// 18. creation_quota_window_seconds (u64, 8 bytes, big-endian)
@@ -398,6 +403,8 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// assert_eq!(checksum1, checksum2); // Deterministic
 /// ```
 pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32> {
+    // Serialize all fields in fixed order (71 bytes total)
+    let mut bytes: [u8; 71] = [0; 71];
     // Serialize all fields in fixed order (89 bytes total)
     let mut bytes: [u8; 89] = [0; 89];
     let mut offset = 0;
@@ -462,6 +469,16 @@ pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32>
     bytes[offset..offset + 4].copy_from_slice(&config.max_breaches_per_shipment.to_be_bytes());
     offset += 4;
 
+    // 16. creation_quota_max (u32, big-endian)
+    bytes[offset..offset + 4].copy_from_slice(&config.creation_quota_max.to_be_bytes());
+    offset += 4;
+
+    // 17. creation_quota_window_seconds (u64, big-endian)
+    bytes[offset..offset + 8].copy_from_slice(&config.creation_quota_window_seconds.to_be_bytes());
+    offset += 8;
+
+    // 18. auto_mint_nft (bool, 1 byte)
+    bytes[offset] = if config.auto_mint_nft { 1 } else { 0 };
     // 16. idempotency_window_seconds (u64, big-endian)
     bytes[offset..offset + 8].copy_from_slice(&config.idempotency_window_seconds.to_be_bytes());
     offset += 8;
