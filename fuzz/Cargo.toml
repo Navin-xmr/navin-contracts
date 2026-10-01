@@ -10,6 +10,8 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 shipment = { path = "../contracts/shipment" }
+# This crate is intentionally kept as a standalone workspace, so the SDK pin
+# must be updated manually to match the version in the root Cargo.toml.
 soroban-sdk = { version = "22.0.0", features = ["testutils"] }
 
 [[bin]]
