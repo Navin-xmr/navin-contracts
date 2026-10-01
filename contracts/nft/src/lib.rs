@@ -1,16 +1,43 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String, Symbol, Map, BytesN};
+pub mod event_topics;
 
-mod errors;
-mod storage;
-mod test;
-mod test_cross_contract;
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, symbol_short, vec, Address, Env, Symbol,
+    Vec,
+};
 
-#[cfg(test)]
-mod test_utils;
+// ── Storage Keys ────────────────────────────────────────────────────────────
 
-pub use errors::*;
+#[contracttype]
+enum NftKey {
+    Owner(u64),
+    OwnerTokens(Address),
+    TokenCount,
+    Admin,
+    Name,
+    Symbol,
+    Initialized,
+    Paused,
+}
+
+// ── Errors ──────────────────────────────────────────────────────────────────
+
+#[contracterror]
+#[derive(Clone, Debug, PartialEq)]
+pub enum NftError {
+    AlreadyInitialized = 1,
+    NotInitialized = 2,
+    NotAdmin = 3,
+    TokenDoesNotExist = 4,
+    NotOwner = 5,
+    TokenAlreadyMinted = 6,
+    MintToContract = 7,
+    ContractPaused = 8,
+    InvalidNameOrSymbol = 9,
+}
+
+// ── Contract ────────────────────────────────────────────────────────────────
 
 #[contract]
 pub struct NavinShipmentNft;
@@ -253,7 +280,7 @@ impl NavinShipmentNft {
         env.storage().instance().set(&NftKey::TokenCount, &0_u64);
         env.storage().instance().set(&NftKey::Initialized, &true);
         env.events().publish(
-            (INIT,),
+            (event_topics::INIT, event_topics::EVENT_SCHEMA_VERSION),
             (admin, name, symbol, env.ledger().timestamp()),
         );
         Self::extend_instance_ttl(&env);
@@ -287,11 +314,10 @@ impl NavinShipmentNft {
             .instance()
             .set(&NftKey::TokenCount, &(count + 1));
 
-        env.events()
-            .publish((MINT,), (token_id, to.clone(), env.ledger().timestamp()));
-        
-        Self::extend_instance_ttl(&env);
-        Self::extend_persistent_ttl(&env, &to);
+        env.events().publish(
+            (event_topics::MINT, event_topics::EVENT_SCHEMA_VERSION),
+            (token_id, to, env.ledger().timestamp()),
+        );
         Ok(token_id)
     }
 
@@ -317,8 +343,8 @@ impl NavinShipmentNft {
         Self::add_token_to_owner(&env, &to, token_id);
 
         env.events().publish(
-            (TRANSFER_NFT,),
-            (token_id, from.clone(), to.clone(), env.ledger().timestamp()),
+            (event_topics::TRANSFER, event_topics::EVENT_SCHEMA_VERSION),
+            (token_id, from, to, env.ledger().timestamp()),
         );
         
         Self::extend_instance_ttl(&env);
@@ -365,11 +391,10 @@ impl NavinShipmentNft {
                 .set(&NftKey::TokenCount, &(count - 1));
         }
 
-        env.events()
-            .publish((BURN,), (token_id, caller, env.ledger().timestamp()));
-        
-        Self::extend_instance_ttl(&env);
-        Self::extend_persistent_ttl(&env, &owner);
+        env.events().publish(
+            (event_topics::BURN, event_topics::EVENT_SCHEMA_VERSION),
+            (token_id, caller, env.ledger().timestamp()),
+        );
         Ok(())
     }
 
@@ -385,7 +410,7 @@ impl NavinShipmentNft {
 
         env.storage().instance().set(&NftKey::Admin, &new_admin);
         env.events().publish(
-            (ADMIN_TRANSFER,),
+            (event_topics::ADMIN_TRANSFER, event_topics::EVENT_SCHEMA_VERSION),
             (admin, new_admin, env.ledger().timestamp()),
         );
         Self::extend_instance_ttl(&env);
@@ -544,6 +569,11 @@ impl NavinShipmentNft {
         }
     }
 }
+
+#[cfg(test)]
+mod test_auth;
+#[cfg(test)]
+mod test_events;
 
 #[cfg(test)]
 mod tests {
