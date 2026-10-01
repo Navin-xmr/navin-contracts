@@ -50,6 +50,8 @@ pub enum DataKey {
     ConfirmationHash(u64),
     /// Token contract address for payments.
     TokenContract,
+    /// NFT contract address for shipment tokenization (optional).
+    NftContract,
     /// Timestamp of the last status update for a shipment (used for rate limiting).
     LastStatusUpdate(u64),
     /// Whether the pre-deadline warning has already been emitted for a shipment.
