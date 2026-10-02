@@ -919,7 +919,6 @@ mod tests {
             NavinError::CarrierAlreadyWhitelisted,
             NavinError::CarrierNotWhitelisted,
             NavinError::InvalidAddress,
-            NavinError::RecoveryLimitExceeded,
             NavinError::RoleMismatch,
             NavinError::InvalidSymbolEncoding,
             NavinError::MultiSigProposalPending,

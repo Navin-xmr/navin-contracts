@@ -441,6 +441,51 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "AllowedMetadataKey"
+                            },
+                            {
+                              "symbol": "discord"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": true
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "AllowedMetadataKey"
+                            },
+                            {
+                              "symbol": "twitter"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": true
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "AllowedMetadataKey"
+                            },
+                            {
+                              "symbol": "website"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": true
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "AllowedMetadataKeys"
                             }
                           ]

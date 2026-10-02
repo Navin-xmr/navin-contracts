@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String, Symbol, Vec};
 
 mod errors;
 mod event_topics;

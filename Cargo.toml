@@ -1,7 +1,18 @@
 [workspace]
 resolver = "2"
+# `fuzz/` is deliberately NOT a member. It is a standalone workspace (its own
+# Cargo.toml ends with an empty `[workspace]` table) because libfuzzer-sys links
+# C++ libFuzzer objects via cc-rs, which cannot target wasm32-unknown-unknown.
+# Folding it in would break `cargo build --workspace --target
+# wasm32-unknown-unknown` in scripts/release-check.sh and the wasm-build job in
+# .github/workflows/test.yml, and would make stable-toolchain clippy --all-targets
+# try to compile the fuzz binaries. It also needs nightly + -Zsanitizer, while CI
+# builds on stable. Rationale and the drift guard: fuzz/README.md.
 members = [
   "contracts/*",
+]
+exclude = [
+  "fuzz",
 ]
 
 [workspace.dependencies]
