@@ -275,6 +275,21 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "AllowedMetadataKey"
+                            },
+                            {
+                              "symbol": "twitter"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": true
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "AllowedMetadataKeys"
                             }
                           ]

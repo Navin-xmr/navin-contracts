@@ -4,24 +4,9 @@ use soroban_sdk::{
     contract, contractimpl, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal, Symbol, Vec,
 };
 
-mod audit;
+pub mod audit;
 mod circuit_breaker;
 mod config;
-/// Cross-shipment consistency verification (Issue #878).
-///
-/// This was declared behind `#[cfg(test)]`, so `check_shipment_invariants`,
-/// `check_batch_consistency` and `check_all_consistency` compiled only in test
-/// builds and were absent from the deployed contract — an admin tool that could
-/// never be called in the environment it exists to audit. Its own
-/// `test_consistency.rs` passed the whole time, which is why the gap survived.
-///
-/// Registered unconditionally rather than deleted because every dependency it
-/// names still exists: all five `storage::` functions it calls
-/// (`get_shipment`, `get_escrow`, `get_shipment_count`, `get_shipment_counter`,
-/// `get_status_count`) are present in `storage.rs`. That is what separates this
-/// module from the other orphaned files in this crate, whose dependencies were
-/// removed outright rather than merely left unwired.
-pub mod consistency;
 pub mod error_map;
 mod errors;
 mod event_topics;
@@ -29,9 +14,13 @@ mod events;
 mod storage;
 pub mod test;
 #[cfg(test)]
+mod test_audit_trail;
+#[cfg(test)]
 mod test_cross_contract_integration;
 #[cfg(test)]
 mod test_mixed_token_shipments;
+#[cfg(test)]
+mod test_zero_amount_escrow;
 
 #[cfg(test)]
 mod test_event_fixtures;
@@ -41,8 +30,6 @@ mod test_finalization;
 mod test_hash_emit_vectors;
 #[cfg(test)]
 mod test_token_compatibility;
-#[cfg(test)]
-mod test_nft_integration;
 mod types;
 mod validation;
 
@@ -93,86 +80,11 @@ mod test_milestone_sum_invalid;
 mod test_whitelist_multicompany;
 
 #[cfg(test)]
-mod test_archive_restore_consistency;
-#[cfg(test)]
-mod test_audit_trail;
-#[cfg(test)]
-mod test_auth;
-#[cfg(test)]
-mod test_auto_dispute;
-#[cfg(test)]
-mod test_batch_queries;
-#[cfg(test)]
-mod test_circuit_breaker_reset;
-#[cfg(test)]
-mod test_consistency;
-#[cfg(test)]
-mod test_counter_overflow;
-#[cfg(test)]
-mod test_deadline_grace;
-#[cfg(test)]
-mod test_diagnostics;
-#[cfg(test)]
-mod test_hash_domain_separation;
-#[cfg(test)]
-mod test_invalid_shipment_input;
-#[cfg(test)]
-mod test_iot_verification;
-#[cfg(test)]
-mod test_pause;
-#[cfg(test)]
-mod test_performance;
-#[cfg(test)]
-mod test_precondition_guards;
-#[cfg(test)]
-mod test_reentrancy_guard;
-#[cfg(test)]
-mod test_rollback;
-#[cfg(test)]
-mod test_settlement_transitions;
-#[cfg(test)]
-mod test_suspension;
-#[cfg(test)]
-mod test_suspension_cascade;
-#[cfg(test)]
-mod test_ttl_health;
-#[cfg(test)]
-mod test_verification;
-#[cfg(test)]
-mod test_zero_amount_escrow;
-
-#[cfg(test)]
-mod test_dispute_evidence;
-
-#[cfg(test)]
 mod fuzz_rbac_authorization;
 #[cfg(test)]
 mod fuzz_role_assignment;
-#[cfg(test)]
-mod fuzz_escrow_arithmetic;
-#[cfg(test)]
-mod fuzz_escrow_lifecycle;
-#[cfg(test)]
-mod fuzz_milestone_releases;
-#[cfg(test)]
-mod fuzz_rbac_authorization;
-#[cfg(test)]
-mod fuzz_role_assignment;
-#[cfg(test)]
-mod fuzz_storage_operations;
-#[cfg(test)]
-mod fuzz_ttl_management;
-#[cfg(test)]
-mod fuzz_wallet_auth_integration;
 #[cfg(test)]
 mod preservation_property_tests;
-
-#[cfg(test)]
-mod budget_bench;
-#[cfg(test)]
-mod e2e_test;
-#[cfg(test)]
-mod stress_test;
 
 pub use circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState};
 pub use config::*;
@@ -674,75 +586,6 @@ fn invoke_token_transfer(
     }
 }
 
-/// Attempt to mint an NFT for a shipment if NFT contract is configured and auto-minting is enabled.
-/// This is a best-effort operation - if it fails, the shipment creation still succeeds.
-///
-/// # Arguments
-/// * `env` - Execution environment.
-/// * `shipment_id` - The ID of the created shipment.
-/// * `sender` - The shipment sender (will be the NFT recipient).
-/// * `data_hash` - The shipment data hash.
-///
-/// # Returns
-/// * `Option<u64>` - The minted NFT token ID if successful, None otherwise.
-fn try_mint_shipment_nft(
-    env: &Env,
-    shipment_id: u64,
-    sender: &Address,
-    data_hash: &BytesN<32>,
-) -> Option<u64> {
-    // Check if NFT contract is configured
-    let nft_contract = storage::get_nft_contract(env)?;
-    
-    // Check if auto-minting is enabled in configuration
-    let config = config::get_config(env);
-    if !config.auto_mint_nft {
-        return None;
-    }
-
-    // Create basic metadata for the NFT
-    let mut metadata = Map::new(env);
-    metadata.set(
-        Symbol::new(env, "type"),
-        soroban_sdk::String::from_str(env, "shipment"),
-    );
-    metadata.set(
-        Symbol::new(env, "created_at"),
-        soroban_sdk::String::from_str(env, &env.ledger().timestamp().to_string()),
-    );
-
-    // Prepare arguments for NFT minting
-    let mut args: Vec<soroban_sdk::Val> = Vec::new(env);
-    args.push_back(sender.clone().into_val(env));
-    args.push_back(shipment_id.into_val(env));
-    args.push_back(data_hash.clone().into_val(env));
-    args.push_back(metadata.into_val(env));
-
-    // Try to mint the NFT
-    match env.try_invoke_contract::<u64, soroban_sdk::Error>(
-        &nft_contract,
-        &Symbol::new(env, "mint_shipment_nft"),
-        args,
-    ) {
-        Ok(Ok(token_id)) => {
-            // Emit success event
-            env.events().publish(
-                (symbol_short!("nft_mint"),),
-                (shipment_id, sender.clone(), token_id),
-            );
-            Some(token_id)
-        }
-        Ok(Err(_)) | Err(_) => {
-            // Emit failure event for debugging but don't fail the shipment creation
-            env.events().publish(
-                (symbol_short!("nft_fail"),),
-                (shipment_id, sender.clone()),
-            );
-            None
-        }
-    }
-}
-
 #[cfg(test)]
 fn invoke_token_mint(
     env: &Env,
@@ -1165,131 +1008,6 @@ impl NavinShipment {
         Ok(storage::get_admin(&env))
     }
 
-    /// Set the NFT contract address for automatic shipment tokenization.
-    /// Only admin can call this function.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    /// * `admin` - The admin address authorizing the operation.
-    /// * `nft_contract` - The NFT contract address.
-    ///
-    /// # Returns
-    /// * `Result<(), NavinError>` - Ok if successfully set.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::Unauthorized` - If caller is not admin.
-    pub fn set_nft_contract(
-        env: Env,
-        admin: Address,
-        nft_contract: Address,
-    ) -> Result<(), NavinError> {
-        require_initialized(&env)?;
-        admin.require_auth();
-        
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
-        }
-
-        // Validate the NFT contract address
-        if nft_contract == admin || nft_contract == env.current_contract_address() {
-            return Err(NavinError::InvalidAddress);
-        }
-
-        storage::set_nft_contract(&env, &nft_contract);
-        
-        env.events().publish(
-            (symbol_short!("nft_set"),),
-            (admin, nft_contract),
-        );
-
-        Ok(())
-    }
-
-    /// Get the NFT contract address.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    ///
-    /// # Returns
-    /// * `Result<Option<Address>, NavinError>` - The NFT contract address if set.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    pub fn get_nft_contract(env: Env) -> Result<Option<Address>, NavinError> {
-        require_initialized(&env)?;
-        Ok(storage::get_nft_contract(&env))
-    }
-
-    /// Clear the NFT contract address, disabling automatic tokenization.
-    /// Only admin can call this function.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    /// * `admin` - The admin address authorizing the operation.
-    ///
-    /// # Returns
-    /// * `Result<(), NavinError>` - Ok if successfully cleared.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::Unauthorized` - If caller is not admin.
-    pub fn clear_nft_contract(env: Env, admin: Address) -> Result<(), NavinError> {
-        require_initialized(&env)?;
-        admin.require_auth();
-        
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
-        }
-
-        storage::clear_nft_contract(&env);
-        
-        env.events().publish(
-            (symbol_short!("nft_clear"),),
-            (admin,),
-        );
-
-        Ok(())
-    }
-
-    /// Enable or disable automatic NFT minting for new shipments.
-    /// Only admin can call this function.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    /// * `admin` - The admin address authorizing the operation.
-    /// * `enabled` - Whether to enable automatic NFT minting.
-    ///
-    /// # Returns
-    /// * `Result<(), NavinError>` - Ok if successfully updated.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::Unauthorized` - If caller is not admin.
-    pub fn set_auto_mint_nft(
-        env: Env,
-        admin: Address,
-        enabled: bool,
-    ) -> Result<(), NavinError> {
-        require_initialized(&env)?;
-        admin.require_auth();
-        
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
-        }
-
-        let mut config = config::get_config(&env);
-        config.auto_mint_nft = enabled;
-        config::set_config(&env, &config)?;
-        
-        env.events().publish(
-            (symbol_short!("nft_auto"),),
-            (admin, enabled),
-        );
-
-        Ok(())
-    }
-
     /// Get the contract version number.
     ///
     /// # Arguments
@@ -1645,6 +1363,8 @@ impl NavinShipment {
             (company.clone(), carrier.clone()),
         );
 
+        audit::log_carrier_whitelisted(&env, &company, &company, &carrier)?;
+
         Ok(())
     }
 
@@ -1687,6 +1407,8 @@ impl NavinShipment {
             (symbol_short!("rm_wl"),),
             (company.clone(), carrier.clone()),
         );
+
+        audit::log_carrier_unwhitelisted(&env, &company, &company, &carrier)?;
 
         Ok(())
     }
@@ -1780,6 +1502,8 @@ impl NavinShipment {
             &Role::Company,
         );
 
+        audit::log_role_assigned(&env, &admin, &company, &Role::Company)?;
+
         Ok(())
     }
 
@@ -1823,6 +1547,8 @@ impl NavinShipment {
             &Role::Carrier,
         );
 
+        audit::log_role_assigned(&env, &admin, &carrier, &Role::Carrier)?;
+
         Ok(())
     }
 
@@ -1862,6 +1588,8 @@ impl NavinShipment {
             &guardian,
             &Role::Guardian,
         );
+
+        audit::log_role_assigned(&env, &admin, &guardian, &Role::Guardian)?;
 
         Ok(())
     }
@@ -1903,6 +1631,8 @@ impl NavinShipment {
             &Role::Operator,
         );
 
+        audit::log_role_assigned(&env, &admin, &operator, &Role::Operator)?;
+
         Ok(())
     }
 
@@ -1918,7 +1648,7 @@ impl NavinShipment {
         // role; if the target does not hold it, that is a mistake worth
         // surfacing rather than a different role worth destroying.
         Self::require_exact_role(&env, &guardian, &Role::Guardian)?;
-        Self::revoke_role(env, admin, guardian, Role::Guardian)
+        Self::revoke_role(env, admin, guardian)
     }
 
     /// Revoke an Operator role using the ergonomic counterpart to [`Self::add_operator`].
@@ -1929,7 +1659,7 @@ impl NavinShipment {
     pub fn remove_operator(env: Env, admin: Address, operator: Address) -> Result<(), NavinError> {
         // Issue #749 — see the note on `remove_guardian`.
         Self::require_exact_role(&env, &operator, &Role::Operator)?;
-        Self::revoke_role(env, admin, operator, Role::Operator)
+        Self::revoke_role(env, admin, operator)
     }
 
     /// Fail unless `target` currently holds exactly `expected` (Issue #749).
@@ -1939,7 +1669,8 @@ impl NavinShipment {
     /// authorization error — the caller needs to know which of the two went
     /// wrong.
     fn require_exact_role(env: &Env, target: &Address, expected: &Role) -> Result<(), NavinError> {
-        if !storage::has_role(env, target, expected) {
+        let current = storage::get_role(env, target).unwrap_or(Role::Unassigned);
+        if current != *expected {
             return Err(NavinError::RoleMismatch);
         }
         Ok(())
@@ -1957,6 +1688,7 @@ impl NavinShipment {
 
         storage::suspend_carrier(&env, &carrier);
         events::emit_carrier_suspended(&env, &admin, &carrier);
+        audit::log_carrier_suspended(&env, &admin, &carrier)?;
         Ok(())
     }
 
@@ -1976,6 +1708,7 @@ impl NavinShipment {
 
         storage::reactivate_carrier(&env, &carrier);
         events::emit_carrier_reactivated(&env, &admin, &carrier);
+        audit::log_carrier_reactivated(&env, &admin, &carrier)?;
         Ok(())
     }
 
@@ -2006,6 +1739,98 @@ impl NavinShipment {
         Ok(storage::is_company_suspended(&env, &company))
     }
 
+    /// Query the audit trail for every role/permission change recorded against
+    /// a specific address, whether it was the actor (e.g. the admin) or the
+    /// target (e.g. the address whose role changed).
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `target` - The address to fetch audit entries for.
+    ///
+    /// # Returns
+    /// * `Result<Vec<audit::AuditLogEntry>, NavinError>` - All entries recorded
+    ///   with `target` as the affected address, oldest first.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn query_audit_history_for_target(
+        env: Env,
+        target: Address,
+    ) -> Result<Vec<audit::AuditLogEntry>, NavinError> {
+        require_initialized(&env)?;
+        Ok(audit::query_audit_history_for_target(&env, &target))
+    }
+
+    /// Query the audit trail for every role/permission change performed by a
+    /// specific actor (e.g. an admin who assigned, revoked, or suspended roles).
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `actor` - The address that performed the audited actions.
+    ///
+    /// # Returns
+    /// * `Result<Vec<audit::AuditLogEntry>, NavinError>` - All entries recorded
+    ///   with `actor` as the performing address, oldest first.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn query_audit_history_by_actor(
+        env: Env,
+        actor: Address,
+    ) -> Result<Vec<audit::AuditLogEntry>, NavinError> {
+        require_initialized(&env)?;
+        Ok(audit::query_audit_history_by_actor(&env, &actor))
+    }
+
+    /// Query the audit trail for role/permission changes within a timestamp
+    /// window, inclusive of both bounds.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `start_time` - Start timestamp (inclusive).
+    /// * `end_time` - End timestamp (inclusive).
+    ///
+    /// # Returns
+    /// * `Result<Vec<audit::AuditLogEntry>, NavinError>` - All entries whose
+    ///   timestamp falls within `[start_time, end_time]`.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn query_audit_history(
+        env: Env,
+        start_time: u64,
+        end_time: u64,
+    ) -> Result<Vec<audit::AuditLogEntry>, NavinError> {
+        require_initialized(&env)?;
+        Ok(audit::query_audit_history(&env, start_time, end_time))
+    }
+
+    /// Prune audit-trail entries older than `before_timestamp`. Admin only.
+    ///
+    /// The audit log is append-only and otherwise unbounded, so this is the
+    /// only way to reclaim storage from stale `AuditEntry` records on a live
+    /// contract.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Admin address executing the cleanup.
+    /// * `before_timestamp` - Remove entries strictly before this timestamp.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - Number of entries removed.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If called by a non-admin.
+    pub fn cleanup_audit_logs(
+        env: Env,
+        admin: Address,
+        before_timestamp: u64,
+    ) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        audit::cleanup_audit_logs(&env, &admin, before_timestamp)
+    }
+
     /// Revoke a previously assigned role from an address.
     ///
     /// Only the admin can revoke roles. The admin cannot revoke their own role;
@@ -2028,7 +1853,7 @@ impl NavinShipment {
     /// ```rust
     /// // contract.revoke_role(&env, &admin, &target_addr);
     /// ```
-    pub fn revoke_role(env: Env, admin: Address, target: Address, role: Role) -> Result<(), NavinError> {
+    pub fn revoke_role(env: Env, admin: Address, target: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
         admin.require_auth();
@@ -2041,13 +1866,17 @@ impl NavinShipment {
             return Err(NavinError::CannotSelfRevoke);
         }
 
-        if !storage::has_role(&env, &target, &role) {
-            return Err(NavinError::RoleMismatch);
+        let current_role = storage::get_role(&env, &target).unwrap_or(Role::Unassigned);
+
+        match current_role {
+            Role::Company => storage::revoke_role(&env, &target, &Role::Company),
+            Role::Carrier => storage::revoke_role(&env, &target, &Role::Carrier),
+            Role::Guardian => storage::revoke_role(&env, &target, &Role::Guardian),
+            Role::Operator => storage::revoke_role(&env, &target, &Role::Operator),
+            Role::Unassigned => {}
         }
 
-        storage::revoke_role(&env, &target, &role);
-
-        events::emit_role_revoked(&env, &admin, &target, &role);
+        events::emit_role_revoked(&env, &admin, &target, &current_role);
 
         // Emit role history event for audit trail
         events::emit_role_changed(
@@ -2055,8 +1884,10 @@ impl NavinShipment {
             &RoleChangeAction::Revoked,
             &admin,
             &target,
-            &role,
+            &current_role,
         );
+
+        audit::log_role_revoked(&env, &admin, &target, &current_role)?;
 
         Ok(())
     }
@@ -2114,6 +1945,8 @@ impl NavinShipment {
             &current_role,
         );
 
+        audit::log_role_suspended(&env, &admin, &target, &current_role)?;
+
         Ok(())
     }
 
@@ -2165,6 +1998,8 @@ impl NavinShipment {
             &current_role,
         );
 
+        audit::log_role_reactivated(&env, &admin, &target, &current_role)?;
+
         Ok(())
     }
 
@@ -2191,6 +2026,8 @@ impl NavinShipment {
             &Role::Company,
         );
 
+        audit::log_company_suspended(&env, &admin, &company)?;
+
         Ok(())
     }
 
@@ -2216,6 +2053,8 @@ impl NavinShipment {
             &company,
             &Role::Company,
         );
+
+        audit::log_company_reactivated(&env, &admin, &company)?;
 
         Ok(())
     }
@@ -2307,7 +2146,9 @@ impl NavinShipment {
         check_idempotency(&env, payload)?;
 
         let now = env.ledger().timestamp();
-        validation::validate_deadline(&env, deadline)?;
+        if deadline <= now {
+            return Err(NavinError::InvalidShipmentDeadline);
+        }
 
         // Check company active shipment limit
         let current_active = storage::get_active_shipment_count(&env, &sender);
@@ -2363,9 +2204,6 @@ impl NavinShipment {
             shipment_id,
             &data_hash,
         );
-
-        // Try to mint NFT if configured (best-effort, doesn't fail shipment creation)
-        try_mint_shipment_nft(&env, shipment_id, &sender, &data_hash);
 
         Ok(shipment_id)
     }
@@ -2440,7 +2278,9 @@ impl NavinShipment {
             validate_milestones(&env, &shipment_input.payment_milestones)?;
             validate_hash(&shipment_input.data_hash)?;
 
-            validation::validate_deadline(&env, shipment_input.deadline)?;
+            if shipment_input.deadline <= now {
+                return Err(NavinError::InvalidShipmentDeadline);
+            }
 
             let shipment_id = storage::get_shipment_counter(&env)
                 .checked_add(1)
@@ -2492,10 +2332,6 @@ impl NavinShipment {
                 shipment_id,
                 &shipment_input.data_hash,
             );
-            
-            // Try to mint NFT if configured (best-effort, doesn't fail shipment creation)
-            try_mint_shipment_nft(&env, shipment_id, &sender, &shipment_input.data_hash);
-            
             ids.push_back(shipment_id);
         }
 
@@ -2687,7 +2523,7 @@ impl NavinShipment {
         require_role(&env, &from, Role::Company)?;
 
         with_reentrancy_lock(&env, || {
-            validation::validate_positive_amount(amount)?;
+            validation::validate_amount(amount)?;
 
             let mut shipment =
                 storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
@@ -3094,6 +2930,44 @@ impl NavinShipment {
         }
 
         Ok(results)
+    }
+
+    /// Get the event count for a shipment.
+    /// Returns the number of events emitted for this shipment.
+    /// Returns 0 for brand-new shipments or shipments with no events yet.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - The number of events emitted for this shipment.
+    /// Get the event count for a shipment.
+    /// Returns the number of events emitted for this shipment.
+    /// Returns 0 for brand-new shipments or shipments with no events yet.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - The number of events emitted for this shipment.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let event_count = contract.get_event_count(&env, 1);
+    /// ```
+    pub fn get_event_count(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        // Verify shipment exists
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+        Ok(storage::get_event_count(&env, shipment_id))
     }
 
     /// Confirm delivery of a shipment.
@@ -3646,7 +3520,6 @@ impl NavinShipment {
 
         finalize_if_settled(&env, &mut mut_shipment);
         storage::set_shipment(&env, &mut_shipment);
-        extend_shipment_ttl(&env, shipment_id);
 
         Ok(())
     }
@@ -3847,7 +3720,6 @@ impl NavinShipment {
 
         finalize_if_settled(&env, &mut mut_shipment);
         storage::set_shipment(&env, &mut_shipment);
-        extend_shipment_ttl(&env, shipment_id);
 
         Ok(release_amounts)
     }
@@ -3959,7 +3831,6 @@ impl NavinShipment {
 
         finalize_if_settled(&env, &mut shipment);
         storage::set_shipment(&env, &shipment);
-        extend_shipment_ttl(&env, shipment_id);
 
         Ok(())
     }
@@ -4079,7 +3950,7 @@ impl NavinShipment {
         finalize_if_settled(&env, &mut shipment);
         persist_shipment(&env, &shipment)?;
         if escrow_amount > 0 {
-            storage::remove_escrow(&env, shipment_id);
+            storage::remove_escrow_balance(&env, shipment_id);
         }
         extend_shipment_ttl(&env, shipment_id);
 
@@ -4140,9 +4011,7 @@ impl NavinShipment {
         }
 
         // Reason hash is mandatory and must be non-zero.
-        if reason_hash.to_array().iter().all(|&b| b == 0) {
-            return Err(NavinError::ForceCancelReasonHashMissing);
-        }
+        validation::validate_hash(&reason_hash)?;
 
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
@@ -4177,40 +4046,6 @@ impl NavinShipment {
 
         let _ = old_status;
         Ok(())
-    }
-
-    /// Run cross-shipment consistency checks on a batch of shipment IDs.
-    ///
-    /// Admin or guardian only. Returns every violation detected across the
-    /// provided IDs so the caller can correlate them back to storage for
-    /// manual correction.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    /// * `caller` - Must be the contract admin or an active guardian.
-    /// * `ids` - Shipment IDs to audit.
-    ///
-    /// # Returns
-    /// * `Result<Vec<ConsistencyViolation>, NavinError>` - Detected violations.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::Unauthorized` - If `caller` is neither admin nor guardian.
-    ///
-    /// # Examples
-    /// ```rust
-    /// // let violations = contract.check_batch_consistency(&env, &admin, &vec![1, 2, 3]);
-    /// ```
-    pub fn check_batch_consistency(
-        env: Env,
-        caller: Address,
-        ids: Vec<u64>,
-    ) -> Result<Vec<crate::consistency::ConsistencyViolation>, NavinError> {
-        require_initialized(&env)?;
-        caller.require_auth();
-        require_admin_or_guardian(&env, &caller)?;
-        let result = consistency::check_batch_consistency(&env, &ids);
-        Ok(result)
     }
 
     /// Upgrade the contract to a new WASM implementation.
@@ -4744,7 +4579,7 @@ impl NavinShipment {
 
         finalize_if_settled(&env, &mut shipment);
         persist_shipment(&env, &shipment)?;
-        storage::remove_escrow(&env, shipment_id);
+        storage::remove_escrow_balance(&env, shipment_id);
         extend_shipment_ttl(&env, shipment_id);
 
         match resolution {
@@ -4785,120 +4620,6 @@ impl NavinShipment {
         );
 
         Ok(())
-    }
-
-    /// Attach evidence to an active shipment dispute.
-    ///
-    /// Follows the contract's hash-and-emit model: the evidence document is
-    /// held off-chain and only its SHA-256 hash is recorded, giving each
-    /// submission a tamper-evident on-chain timestamp without storing the
-    /// payload. Entries are append-only and capped per shipment by
-    /// `ContractConfig::max_evidence_per_dispute`.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    /// * `caller` - Shipment sender, receiver or carrier.
-    /// * `shipment_id` - ID of the disputed shipment.
-    /// * `evidence_hash` - SHA-256 hash of the off-chain evidence document.
-    ///
-    /// # Returns
-    /// * `Result<u32, NavinError>` - Zero-based index the evidence was stored at.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::InvalidHash` - If `evidence_hash` is all zeros.
-    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
-    /// * `NavinError::Unauthorized` - If caller is not involved in the shipment.
-    /// * `NavinError::InvalidStatus` - If the shipment is not currently `Disputed`.
-    /// * `NavinError::EvidenceLimitExceeded` - If the dispute already holds
-    ///   `max_evidence_per_dispute` entries.
-    ///
-    /// # Examples
-    /// ```rust
-    /// // let index = client.add_dispute_evidence(&receiver, &shipment_id, &evidence_hash);
-    /// ```
-    pub fn add_dispute_evidence(
-        env: Env,
-        caller: Address,
-        shipment_id: u64,
-        evidence_hash: BytesN<32>,
-    ) -> Result<u32, NavinError> {
-        require_initialized(&env)?;
-        require_not_paused(&env)?;
-        caller.require_auth();
-
-        validation::validate_hash(&evidence_hash)?;
-
-        let shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
-
-        if caller != shipment.sender && caller != shipment.receiver && caller != shipment.carrier {
-            return Err(NavinError::Unauthorized);
-        }
-
-        // A suspended company must not be able to build a dispute record.
-        if caller == shipment.sender {
-            require_active_company(&env, &caller)?;
-        }
-
-        // Evidence only makes sense while a dispute is actually open; once an
-        // admin has resolved it the record is closed.
-        if shipment.status != ShipmentStatus::Disputed {
-            return Err(NavinError::InvalidStatus);
-        }
-
-        // Same bound style as milestones and breaches: an admin-configurable
-        // per-shipment cap on the persistent entries one dispute may create.
-        let config = config::get_config(&env);
-        if storage::get_evidence_count(&env, shipment_id) >= config.max_evidence_per_dispute {
-            return Err(NavinError::EvidenceLimitExceeded);
-        }
-
-        let index = storage::append_evidence(&env, shipment_id, &evidence_hash);
-
-        extend_shipment_ttl(&env, shipment_id);
-
-        events::emit_evidence_added(&env, shipment_id, &caller, index, &evidence_hash);
-
-        Ok(index)
-    }
-
-    /// Read one evidence hash attached to a shipment's dispute.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    /// * `shipment_id` - ID of the shipment.
-    /// * `index` - Zero-based index of the evidence entry.
-    ///
-    /// # Returns
-    /// * `Result<BytesN<32>, NavinError>` - The stored SHA-256 hash.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::EvidenceNotFound` - If no evidence exists at `index`.
-    pub fn get_dispute_evidence(
-        env: Env,
-        shipment_id: u64,
-        index: u32,
-    ) -> Result<BytesN<32>, NavinError> {
-        require_initialized(&env)?;
-        storage::get_evidence(&env, shipment_id, index).ok_or(NavinError::EvidenceNotFound)
-    }
-
-    /// Count the evidence entries attached to a shipment's dispute.
-    ///
-    /// # Arguments
-    /// * `env` - Execution environment.
-    /// * `shipment_id` - ID of the shipment.
-    ///
-    /// # Returns
-    /// * `Result<u32, NavinError>` - Number of entries, `0` if none.
-    ///
-    /// # Errors
-    /// * `NavinError::NotInitialized` - If contract is not initialized.
-    pub fn get_dispute_evidence_count(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
-        require_initialized(&env)?;
-        Ok(storage::get_evidence_count(&env, shipment_id))
     }
 
     /// Handoff a shipment from current carrier to a new carrier.
@@ -5245,6 +4966,7 @@ impl NavinShipment {
         // Logged here (not in `transfer_admin`) because the transfer only
         // takes effect once the proposed admin accepts it — logging at
         // proposal time would record transfers that never complete.
+        audit::log_admin_transferred(&env, &old_admin, &new_admin)?;
 
         Ok(())
     }
@@ -6034,7 +5756,7 @@ impl NavinShipment {
         storage::decrement_active_shipment_count(&env, &shipment.sender);
 
         if escrow_amount > 0 {
-            storage::remove_escrow(&env, shipment_id);
+            storage::remove_escrow_balance(&env, shipment_id);
 
             let token_contract =
                 storage::get_token_contract(&env).ok_or(NavinError::NotInitialized)?;
@@ -6199,7 +5921,7 @@ impl NavinShipment {
         require_initialized(&env)?;
 
         let config = config::get_config(&env);
-        let total = storage::get_shipment_counter(&env);
+        let total = storage::get_shipment_count(&env);
 
         // Sample all shipments (cap at 100 for budget safety on large sets)
         let sample_limit: u64 = 100;
@@ -6235,7 +5957,6 @@ impl NavinShipment {
     /// following a run of consecutive transfer failures.
     pub fn reset_circuit_breaker(env: Env, admin: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
-        require_not_paused(&env)?;
         circuit_breaker::manual_reset(&env, &admin)
     }
 
@@ -6280,7 +6001,6 @@ impl NavinShipment {
     ///
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::ContractPaused` - If the contract is paused.
     /// * `NavinError::Unauthorized` - If `admin` is not the contract admin.
     /// * `NavinError::InvalidConfig` - If `Custom` values are out of range
     ///   (a zero threshold would open the breaker permanently).
@@ -6290,7 +6010,6 @@ impl NavinShipment {
         preset: circuit_breaker::CircuitBreakerPreset,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
-        require_not_paused(&env)?;
         admin.require_auth();
         require_admin(&env, &admin)?;
 
@@ -6454,9 +6173,6 @@ impl NavinShipment {
         window_seconds: u64,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
-        // #862 — match sibling config setters (e.g. update_config): no config
-        // mutation while the contract is paused.
-        require_not_paused(&env)?;
         admin.require_auth();
         require_admin(&env, &admin)?;
 
