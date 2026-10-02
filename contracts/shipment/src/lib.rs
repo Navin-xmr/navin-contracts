@@ -1,7 +1,11 @@
 #![no_std]
 
+extern crate alloc;
+
+use alloc::string::ToString;
 use soroban_sdk::{
-    contract, contractimpl, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal, Symbol, Vec,
+    contract, contractimpl, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal, Map, Symbol,
+    Vec,
 };
 
 pub mod audit;
