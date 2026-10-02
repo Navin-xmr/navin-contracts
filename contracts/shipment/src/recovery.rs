@@ -268,9 +268,22 @@ fn is_valid_recovery_transition(from: &ShipmentStatus, to: &ShipmentStatus) -> b
         // Allow transition to Cancelled from any state
         (_, Cancelled) => true,
         // Allow transition to Disputed from non-terminal states
-        (Created | InTransit | AtCheckpoint, Disputed) => true,
-        // Allow transition to Delivered from Disputed or InTransit
-        (Disputed | InTransit | AtCheckpoint, Delivered) => true,
+        (Created | InTransit | AtCheckpoint | PartiallyDelivered | PartiallyRefunded, Disputed) => true,
+        // Allow transition to Delivered from Disputed, InTransit, AtCheckpoint, PartiallyDelivered, PartiallyRefunded
+        (Disputed | InTransit | AtCheckpoint | PartiallyDelivered | PartiallyRefunded, Delivered) => true,
+        // Allow normal state machine transitions
+        (Created, InTransit) => true,
+        (InTransit, AtCheckpoint) => true,
+        (AtCheckpoint, InTransit) => true,
+        // Recovery transitions from PartiallyDelivered
+        (PartiallyDelivered, Delivered) => true,
+        (PartiallyDelivered, Disputed) => true,
+        (PartiallyDelivered, Cancelled) => true,
+        // Recovery transitions from PartiallyRefunded
+        (PartiallyRefunded, Delivered) => true,
+        (PartiallyRefunded, Disputed) => true,
+        (PartiallyRefunded, Cancelled) => true,
+        (PartiallyRefunded, PartiallyDelivered) => true,
         // Allow normal state machine transitions
         (Created, InTransit) => true,
         (InTransit, AtCheckpoint) => true,
