@@ -1,16 +1,43 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String, Symbol, Map, BytesN};
+pub mod event_topics;
 
-mod errors;
-mod storage;
-mod test;
-mod test_cross_contract;
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, symbol_short, vec, Address, Env, Symbol,
+    Vec,
+};
 
-#[cfg(test)]
-mod test_utils;
+// ── Storage Keys ────────────────────────────────────────────────────────────
 
-pub use errors::*;
+#[contracttype]
+enum NftKey {
+    Owner(u64),
+    OwnerTokens(Address),
+    TokenCount,
+    Admin,
+    Name,
+    Symbol,
+    Initialized,
+    Paused,
+}
+
+// ── Errors ──────────────────────────────────────────────────────────────────
+
+#[contracterror]
+#[derive(Clone, Debug, PartialEq)]
+pub enum NftError {
+    AlreadyInitialized = 1,
+    NotInitialized = 2,
+    NotAdmin = 3,
+    TokenDoesNotExist = 4,
+    NotOwner = 5,
+    TokenAlreadyMinted = 6,
+    MintToContract = 7,
+    ContractPaused = 8,
+    InvalidNameOrSymbol = 9,
+}
+
+// ── Contract ────────────────────────────────────────────────────────────────
 
 #[contract]
 pub struct NavinShipmentNft;
@@ -253,13 +280,19 @@ impl NavinShipmentNft {
         env.storage().instance().set(&NftKey::TokenCount, &0_u64);
         env.storage().instance().set(&NftKey::Initialized, &true);
         env.events().publish(
-            (INIT,),
+            (event_topics::INIT, event_topics::EVENT_SCHEMA_VERSION),
             (admin, name, symbol, env.ledger().timestamp()),
         );
         Self::extend_instance_ttl(&env);
         Ok(())
     }
 
+    /// Mint `token_id` to `to`.
+    ///
+    /// Re-minting after burn: `burn` removes the `Owner(token_id)` entry, so a
+    /// burned `token_id` counts as unminted and may be minted again (by the
+    /// admin). This is intentional — only a *currently owned* id is rejected
+    /// with `TokenAlreadyMinted`.
     pub fn mint(env: Env, to: Address, token_id: u64) -> Result<u64, NftError> {
         Self::require_not_paused(&env)?;
         Self::require_admin(&env)?;
@@ -287,11 +320,10 @@ impl NavinShipmentNft {
             .instance()
             .set(&NftKey::TokenCount, &(count + 1));
 
-        env.events()
-            .publish((MINT,), (token_id, to.clone(), env.ledger().timestamp()));
-        
-        Self::extend_instance_ttl(&env);
-        Self::extend_persistent_ttl(&env, &to);
+        env.events().publish(
+            (event_topics::MINT, event_topics::EVENT_SCHEMA_VERSION),
+            (token_id, to, env.ledger().timestamp()),
+        );
         Ok(token_id)
     }
 
@@ -317,8 +349,8 @@ impl NavinShipmentNft {
         Self::add_token_to_owner(&env, &to, token_id);
 
         env.events().publish(
-            (TRANSFER_NFT,),
-            (token_id, from.clone(), to.clone(), env.ledger().timestamp()),
+            (event_topics::TRANSFER, event_topics::EVENT_SCHEMA_VERSION),
+            (token_id, from, to, env.ledger().timestamp()),
         );
         
         Self::extend_instance_ttl(&env);
@@ -365,11 +397,10 @@ impl NavinShipmentNft {
                 .set(&NftKey::TokenCount, &(count - 1));
         }
 
-        env.events()
-            .publish((BURN,), (token_id, caller, env.ledger().timestamp()));
-        
-        Self::extend_instance_ttl(&env);
-        Self::extend_persistent_ttl(&env, &owner);
+        env.events().publish(
+            (event_topics::BURN, event_topics::EVENT_SCHEMA_VERSION),
+            (token_id, caller, env.ledger().timestamp()),
+        );
         Ok(())
     }
 
@@ -385,7 +416,7 @@ impl NavinShipmentNft {
 
         env.storage().instance().set(&NftKey::Admin, &new_admin);
         env.events().publish(
-            (ADMIN_TRANSFER,),
+            (event_topics::ADMIN_TRANSFER, event_topics::EVENT_SCHEMA_VERSION),
             (admin, new_admin, env.ledger().timestamp()),
         );
         Self::extend_instance_ttl(&env);
@@ -444,8 +475,7 @@ impl NavinShipmentNft {
             .storage()
             .persistent()
             .get(&NftKey::OwnerTokens(owner))
-            .unwrap_or_else(|| vec![&env]);
-        tokens.len() as u64
+            .unwrap_or_else(|| vec![&env])
     }
 
     pub fn total_supply(env: Env) -> u64 {
@@ -544,6 +574,11 @@ impl NavinShipmentNft {
         }
     }
 }
+
+#[cfg(test)]
+mod test_auth;
+#[cfg(test)]
+mod test_events;
 
 #[cfg(test)]
 mod tests {
@@ -689,6 +724,45 @@ mod tests {
     }
 
     #[test]
+    fn test_double_burn_fails() {
+        let (env, _admin, client) = setup();
+        let owner = Address::generate(&env);
+        client.mint(&owner, &1);
+        client.burn(&owner, &1);
+        let result = client.try_burn(&owner, &1);
+        assert_eq!(result, Err(Ok(NftError::TokenDoesNotExist)));
+        assert_eq!(client.total_supply(), 0);
+    }
+
+    #[test]
+    fn test_remint_after_burn_succeeds() {
+        let (env, _admin, client) = setup();
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        client.mint(&alice, &1);
+        client.burn(&alice, &1);
+
+        // A burned id is free again (see the doc comment on `mint`).
+        assert_eq!(client.mint(&bob, &1), 1);
+        assert_eq!(client.owner_of(&1), bob);
+        assert_eq!(client.balance_of(&alice), 0);
+        assert_eq!(client.balance_of(&bob), 1);
+        assert_eq!(client.total_supply(), 1);
+    }
+
+    #[test]
+    fn test_burn_by_unrelated_caller_fails() {
+        let (env, _admin, client) = setup();
+        let owner = Address::generate(&env);
+        let stranger = Address::generate(&env);
+        client.mint(&owner, &1);
+        let result = client.try_burn(&stranger, &1);
+        assert_eq!(result, Err(Ok(NftError::NotOwner)));
+        assert_eq!(client.owner_of(&1), owner);
+        assert_eq!(client.total_supply(), 1);
+    }
+
+    #[test]
     fn test_balance_of() {
         let (env, _admin, client) = setup();
         let alice = Address::generate(&env);
@@ -708,6 +782,41 @@ mod tests {
         client.mint(&alice, &9999);
         assert_eq!(client.balance_of(&alice), 2);
         assert_eq!(client.total_supply(), 2);
+    }
+
+    #[test]
+    fn test_tokens_of_owner_tracks_mint() {
+        let (env, _admin, client) = setup();
+        let alice = Address::generate(&env);
+        assert_eq!(client.tokens_of_owner(&alice), vec![&env]);
+        client.mint(&alice, &7);
+        client.mint(&alice, &42);
+        assert_eq!(client.tokens_of_owner(&alice), vec![&env, 7_u64, 42_u64]);
+    }
+
+    #[test]
+    fn test_tokens_of_owner_moves_on_transfer() {
+        let (env, _admin, client) = setup();
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        client.mint(&alice, &1);
+        client.mint(&alice, &2);
+        client.transfer(&alice, &bob, &1);
+        assert_eq!(client.tokens_of_owner(&alice), vec![&env, 2_u64]);
+        assert_eq!(client.tokens_of_owner(&bob), vec![&env, 1_u64]);
+    }
+
+    #[test]
+    fn test_tokens_of_owner_pruned_on_burn() {
+        let (env, _admin, client) = setup();
+        let alice = Address::generate(&env);
+        client.mint(&alice, &1);
+        client.mint(&alice, &2);
+        client.burn(&alice, &1);
+        assert_eq!(client.tokens_of_owner(&alice), vec![&env, 2_u64]);
+        client.burn(&alice, &2);
+        assert_eq!(client.tokens_of_owner(&alice), vec![&env]);
+        assert_eq!(client.balance_of(&alice), 0);
     }
 
     #[test]

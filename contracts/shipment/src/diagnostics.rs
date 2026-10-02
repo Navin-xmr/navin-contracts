@@ -1,5 +1,5 @@
 use crate::storage;
-use crate::types::{DataKey, ShipmentStatus};
+use crate::types::{DataKey, DisputeKey, ShipmentStatus};
 use soroban_sdk::{contracttype, Env, Vec};
 
 /// Reusable response object representing the state of the contract's health.
@@ -110,9 +110,11 @@ pub fn run_system_health_check_range(env: &Env, start_id: u64, limit: u64) -> Sy
 /// persistent storage for a shipment that has already been archived.
 ///
 /// Used by `run_system_health_check_range` to detect orphaned keys left
-/// behind by a prior (unfixed) `archive_shipment` call.
-fn has_orphaned_counters(env: &Env, shipment_id: u64) -> bool {
-    // Scalar counter/index keys
+/// behind after the shipment payload is removed from persistent storage.
+/// There is currently no `archive_shipment` entrypoint; this helper checks
+/// the keys the live schema actually writes (or still reserves).
+pub(crate) fn has_orphaned_counters(env: &Env, shipment_id: u64) -> bool {
+    // Scalar counter/index keys — helpers wrap the current DataKey names.
     if storage::has_event_count_entry(env, shipment_id) {
         return true;
     }
@@ -153,19 +155,15 @@ fn has_orphaned_counters(env: &Env, shipment_id: u64) -> bool {
     {
         return true;
     }
-    // Note count (implies note hashes also exist)
+    // Evidence is stored under DisputeKey, not DataKey. DataKey is already at
+    // the #[contracttype] variant cap, so the evidence subsystem uses its own
+    // key enum — the same keys storage.rs reads and writes. There is no
+    // ShipmentNoteCount or RecoveryRecordCount: notes are hash-and-emit only,
+    // and recovery records are not persisted.
     if env
         .storage()
         .persistent()
-        .has(&DataKey::ShipmentNoteCount(shipment_id))
-    {
-        return true;
-    }
-    // Evidence count (implies evidence hashes also exist)
-    if env
-        .storage()
-        .persistent()
-        .has(&DataKey::DisputeEvidenceCount(shipment_id))
+        .has(&DisputeKey::EvidenceCount(shipment_id))
     {
         return true;
     }

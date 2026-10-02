@@ -244,6 +244,23 @@ To ensure our contracts remain deployable on-chain, we enforce strict size limit
 - Use `cargo fmt` to automatically format code
 - Use descriptive variable names relevant to the feature
 
+### Contract Package Versioning
+
+Every contract crate stays at `version = "0.0.0"`. **Do not bump it.**
+
+The `version` field is a crates.io publication mechanism, and nothing here publishes to a
+registry: all three crates are `publish = false`, workspace members depend on each other by
+path, no script or CI job reads the number, and deployments are identified by WASM hash
+rather than version. It has already drifted once with no recorded decision, which is the
+problem a fixed value removes.
+
+Version the things that are actually verifiable instead: git commit SHA for a source
+revision, WASM hash for a deployed binary, `schema_version` /
+`EVENT_SCHEMA_VERSION_STR` for event payload compatibility, and [`docs/storage.md`](docs/storage.md)
+for on-chain layout.
+
+Full rationale and contributor rules: **[`docs/versioning.md`](docs/versioning.md)**.
+
 ### Contract-Specific Guidelines
 
 1. **Error Handling**

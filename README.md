@@ -189,6 +189,10 @@ Quick deployment:
 - **[Freighter Integration Checklist](docs/freighter-integration-checklist.md)** - End-to-end checklist for frontend teams: preflight checks, signing, error handling, on-chain verification, and common failure modes
 - **[Client Examples](docs/client-examples.md)** - Copy-paste Rust contract call shapes for common shipment operations
 
+### Contributor Guides
+
+- **[Contract Package Versioning](docs/versioning.md)** - Why every contract crate stays at `version = "0.0.0"`, and which mechanisms to version instead
+
 ### Operational Guides
 
 - **[TTL Maintenance Playbook](contracts/shipment/docs/TTL_MAINTENANCE_PLAYBOOK.md)** - Complete operational procedures for maintaining contract state TTL health, including routine maintenance, monitoring, and emergency response
