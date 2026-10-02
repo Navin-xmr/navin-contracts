@@ -1034,3 +1034,30 @@ fn test_check_deadline_auto_expiry_emits_shipment_cancelled_and_expired() {
     let event_shipment_id: u64 = payload.get(0).unwrap().try_into_val(&env).unwrap();
     assert_eq!(event_shipment_id, id);
 }
+
+// ── #837: escrow data_hash reflects the payload ──────────────────────────────
+//
+// Two escrow deposits of different amounts on the same shipment must emit
+// different `data_hash` values (index 2), and neither may be the zero hash.
+
+#[test]
+fn test_escrow_deposited_data_hash_differs_by_amount() {
+    let (env, client, _admin, company, _carrier, _receiver) = fixture_env();
+
+    let emitted_hash = |amount: i128| -> BytesN<32> {
+        env.as_contract(&client.address, || {
+            crate::events::emit_escrow_deposited(&env, 1, &company, amount);
+        });
+        let payload = find_event_data(&env, crate::event_topics::ESCROW_DEPOSITED)
+            .expect("escrow_deposited event not emitted");
+        payload.get(2).unwrap().try_into_val(&env).unwrap()
+    };
+
+    let first = emitted_hash(1_000);
+    let second = emitted_hash(2_000);
+
+    let zero = BytesN::from_array(&env, &[0u8; 32]);
+    assert_ne!(first, zero, "data_hash must not be the zero placeholder");
+    assert_ne!(second, zero, "data_hash must not be the zero placeholder");
+    assert_ne!(first, second, "different amounts must yield different data_hash");
+}
