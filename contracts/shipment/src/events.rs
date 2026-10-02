@@ -1209,3 +1209,10 @@ pub fn emit_evidence_added(
         ),
     );
 }
+
+pub fn emit_shipment_archived(env: &Env, shipment_id: u64, timestamp: u64) {
+    env.events().publish(
+        (Symbol::new(env, "shipment_archived"),),
+        (shipment_id, timestamp),
+    );
+}

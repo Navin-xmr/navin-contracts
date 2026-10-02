@@ -140,6 +140,8 @@ pub enum DataKey {
     AuditEntryCount,
     /// Individual audit log entry keyed by entry ID.
     AuditEntry(u64),
+    /// Archived shipment data in temporary storage (for terminal state shipments).
+    ArchivedShipment(u64),
 }
 
 /// Storage keys for dispute evidence.
@@ -619,6 +621,10 @@ pub enum DisputeResolution {
     ReleaseToCarrier,
     /// Refund escrowed funds to the company.
     RefundToCompany,
+    /// Split escrowed funds between carrier and company (partial refund).
+    /// Results in `PartiallyRefunded` status. Arbiter provides the split
+    /// via this flag — escrow is divided evenly between carrier and company.
+    PartialRefund,
 }
 
 /// Admin action types for multi-signature proposals.
@@ -717,12 +723,16 @@ pub struct Analytics {
     pub in_transit_count: u64,
     /// Number of shipments currently in 'AtCheckpoint' state.
     pub at_checkpoint_count: u64,
+    /// Number of shipments currently in 'PartiallyDelivered' state.
+    pub partially_delivered_count: u64,
     /// Number of shipments currently in 'Delivered' state.
     pub delivered_count: u64,
     /// Number of shipments currently in 'Disputed' state.
     pub disputed_count: u64,
     /// Number of shipments currently in 'Cancelled' state.
     pub cancelled_count: u64,
+    /// Number of shipments currently in 'PartiallyRefunded' state.
+    pub partially_refunded_count: u64,
 }
 
 /// Compact summary of shipment counts aggregated by status.
@@ -743,6 +753,8 @@ pub struct ShipmentStatusSummary {
     pub disputed: u64,
     /// Count of shipments in 'Cancelled' state.
     pub cancelled: u64,
+    /// Count of shipments in 'PartiallyRefunded' state.
+    pub partially_refunded: u64,
 }
 
 /// Paginated result for company-carrier relationship queries (issue #295).
