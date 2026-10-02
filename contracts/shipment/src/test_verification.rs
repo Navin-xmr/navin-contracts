@@ -21,6 +21,7 @@ fn test_assert_delivery_hash_wrong_hash_returns_data_hash_mismatch() {
 
     client.add_company(&admin, &sender);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &sender, &carrier);
 
     let shipment_id = client.create_shipment(
         &sender,
@@ -67,6 +68,7 @@ fn test_assert_delivery_hash_correct_hash_returns_ok() {
 
     client.add_company(&admin, &sender);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &sender, &carrier);
 
     let shipment_id = client.create_shipment(
         &sender,
@@ -130,6 +132,7 @@ fn test_assert_delivery_hash_no_confirmation_returns_status_hash_not_found() {
 
     client.add_company(&admin, &sender);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &sender, &carrier);
 
     let shipment_id = client.create_shipment(
         &sender,
@@ -150,6 +153,7 @@ fn test_assert_delivery_hash_no_confirmation_returns_status_hash_not_found() {
     );
 }
 
+/// DataHashMismatch (#45) and StatusHashNotFound (#44) are distinct error codes.
 #[test]
 fn test_assert_delivery_hash_error_codes_distinct() {
     use crate::NavinError;
@@ -177,6 +181,7 @@ fn test_assert_delivery_hash_single_byte_difference_returns_mismatch() {
 
     client.add_company(&admin, &sender);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &sender, &carrier);
 
     let shipment_id = client.create_shipment(
         &sender,
@@ -230,6 +235,7 @@ fn test_frontend_verification_flow() {
     // Register roles for sender and carrier using admin
     client.add_company(&admin, &sender);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &sender, &carrier);
 
     client.create_shipment(
         &sender,

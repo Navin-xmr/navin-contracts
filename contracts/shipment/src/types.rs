@@ -50,6 +50,8 @@ pub enum DataKey {
     ConfirmationHash(u64),
     /// Token contract address for payments.
     TokenContract,
+    /// NFT contract address for shipment tokenization (optional).
+    NftContract,
     /// Timestamp of the last status update for a shipment (used for rate limiting).
     LastStatusUpdate(u64),
     /// Whether the pre-deadline warning has already been emitted for a shipment.
@@ -102,6 +104,10 @@ pub enum DataKey {
     /// Admin-configured circuit breaker thresholds. Absent means the built-in
     /// default is in effect.
     CircuitBreakerConfig,
+    /// Audit log entry keyed by entry ID.
+    AuditEntry(u64),
+    /// Total count of audit log entries.
+    AuditEntryCount,
     /// Counter for condition breach events emitted for a shipment.
     BreachEventCount(u64),
     /// Contract-wide reentrancy lock flag for escrow-sensitive execution paths.
@@ -120,10 +126,55 @@ pub enum DataKey {
     CreationQuotaConfig,
     /// Deterministic action digest stored on proposal creation.
     ProposalDigest(u64),
+    /// Per-shipment recovery action record (shipment_id, index) -> RecoveryRecord.
+    /// Discriminant reserved for storage compatibility.
+    RecoveryRecord(u64, u32),
+    /// Total count of recovery action records for a shipment.
+    /// Discriminant reserved for storage compatibility.
+    RecoveryRecordCount(u64),
     /// Proposal salt used to prevent replay attacks — salt -> bool.
     ProposalSalt(BytesN<32>),
     /// Prerequisite shipment IDs for a dependent — dependent_id -> Vec<u64>.
     ShipmentDependents(u64),
+    /// Counter for audit log entry IDs.
+    AuditEntryCount,
+    /// Individual audit log entry keyed by entry ID.
+    AuditEntry(u64),
+    /// Archived shipment data in temporary storage (for terminal state shipments).
+    ArchivedShipment(u64),
+}
+
+/// Storage keys for dispute evidence.
+///
+/// Kept separate from [`DataKey`] deliberately: `DataKey` already carries the
+/// maximum number of cases a single `#[contracttype]` enum may declare, so any
+/// further per-shipment collection has to live in its own key type. Splitting
+/// the dispute-evidence keys out also keeps the evidence subsystem
+/// self-contained — it can be removed again without renumbering `DataKey`.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::DisputeKey;
+/// let key = DisputeKey::EvidenceCount(1);
+/// ```
+#[contracttype(export = false)]
+pub enum DisputeKey {
+    /// Number of evidence entries recorded for a shipment's dispute.
+    EvidenceCount(u64),
+    /// A single evidence hash — (shipment_id, zero-based index).
+    Evidence(u64, u32),
+}
+
+/// Storage keys for settlement bookkeeping that do not fit in [`DataKey`].
+///
+/// `DataKey` is already at the `#[contracttype]` case limit, so additional
+/// settlement keys live here.
+#[contracttype(export = false)]
+pub enum SettlementKey {
+    /// Most recent settlement ID recorded for a shipment. Unlike
+    /// `DataKey::ActiveSettlement`, it is not cleared when the settlement
+    /// completes or fails.
+    Latest(u64),
 }
 
 /// Structured reason codes for escrow freeze events.
@@ -570,6 +621,10 @@ pub enum DisputeResolution {
     ReleaseToCarrier,
     /// Refund escrowed funds to the company.
     RefundToCompany,
+    /// Split escrowed funds between carrier and company (partial refund).
+    /// Results in `PartiallyRefunded` status. Arbiter provides the split
+    /// via this flag — escrow is divided evenly between carrier and company.
+    PartialRefund,
 }
 
 /// Admin action types for multi-signature proposals.
@@ -668,12 +723,16 @@ pub struct Analytics {
     pub in_transit_count: u64,
     /// Number of shipments currently in 'AtCheckpoint' state.
     pub at_checkpoint_count: u64,
+    /// Number of shipments currently in 'PartiallyDelivered' state.
+    pub partially_delivered_count: u64,
     /// Number of shipments currently in 'Delivered' state.
     pub delivered_count: u64,
     /// Number of shipments currently in 'Disputed' state.
     pub disputed_count: u64,
     /// Number of shipments currently in 'Cancelled' state.
     pub cancelled_count: u64,
+    /// Number of shipments currently in 'PartiallyRefunded' state.
+    pub partially_refunded_count: u64,
 }
 
 /// Compact summary of shipment counts aggregated by status.
@@ -694,6 +753,8 @@ pub struct ShipmentStatusSummary {
     pub disputed: u64,
     /// Count of shipments in 'Cancelled' state.
     pub cancelled: u64,
+    /// Count of shipments in 'PartiallyRefunded' state.
+    pub partially_refunded: u64,
 }
 
 /// Paginated result for company-carrier relationship queries (issue #295).

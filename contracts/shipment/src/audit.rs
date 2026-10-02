@@ -1,0 +1,770 @@
+//! # Audit Trail Module
+//!
+//! Implements comprehensive audit trail for all role and permission changes.
+//! Enables forensic analysis and compliance reporting for all user-facing operations.
+//!
+//! ## Audit Events
+//!
+//! - Role assignments and revocations
+//! - Permission changes
+//! - Administrative actions
+//! - Suspension and reactivation
+//!
+//! ## Features
+//!
+//! - Time-windowed audit log cleanup
+//! - Query functions for audit history
+//! - Event emission for all logged operations
+//! - Before/after state tracking
+
+use crate::{errors::NavinError, types::*};
+use soroban_sdk::{contracttype, Address, Env};
+
+/// Audit event types for role and permission operations
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum AuditEventType {
+    /// Role was assigned to an address
+    RoleAssigned,
+    /// Role was revoked from an address
+    RoleRevoked,
+    /// Role was suspended
+    RoleSuspended,
+    /// Role was reactivated
+    RoleReactivated,
+    /// Admin transferred
+    AdminTransferred,
+    /// Carrier whitelisted
+    CarrierWhitelisted,
+    /// Carrier removed from whitelist
+    CarrierUnwhitelisted,
+    /// Company suspended
+    CompanySuspended,
+    /// Company reactivated
+    CompanyReactivated,
+    /// Carrier suspended
+    CarrierSuspended,
+    /// Carrier reactivated
+    CarrierReactivated,
+}
+
+/// Audit log entry for role and permission changes
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct AuditLogEntry {
+    /// Unique entry ID
+    pub entry_id: u64,
+    /// Type of audit event
+    pub event_type: AuditEventType,
+    /// Actor performing the action (admin)
+    pub actor: Address,
+    /// Target of the action (user whose role changed)
+    pub target: Address,
+    /// Timestamp of the event
+    pub timestamp: u64,
+}
+
+/// Log a role assignment event
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `admin` - The admin performing the action
+/// * `target` - The address receiving the role
+/// * `role` - The role being assigned
+///
+/// # Returns
+/// * `Ok(entry_id)` on success
+/// * `Err(NavinError)` on failure
+pub fn log_role_assigned(
+    env: &Env,
+    admin: &Address,
+    target: &Address,
+    _role: &Role,
+) -> Result<u64, NavinError> {
+    let entry_id = get_next_audit_entry_id(env)?;
+    let timestamp = env.ledger().timestamp();
+
+    let entry = AuditLogEntry {
+        entry_id,
+        event_type: AuditEventType::RoleAssigned,
+        actor: admin.clone(),
+        target: target.clone(),
+        timestamp,
+    };
+
+    store_audit_entry(env, &entry);
+    emit_audit_event(env, &entry);
+
+    Ok(entry_id)
+}
+
+/// Log a role revocation event
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `admin` - The admin performing the action
+/// * `target` - The address losing the role
+/// * `role` - The role being revoked
+///
+/// # Returns
+/// * `Ok(entry_id)` on success
+/// * `Err(NavinError)` on failure
+pub fn log_role_revoked(
+    env: &Env,
+    admin: &Address,
+    target: &Address,
+    _role: &Role,
+) -> Result<u64, NavinError> {
+    let entry_id = get_next_audit_entry_id(env)?;
+    let timestamp = env.ledger().timestamp();
+
+    let entry = AuditLogEntry {
+        entry_id,
+        event_type: AuditEventType::RoleRevoked,
+        actor: admin.clone(),
+        target: target.clone(),
+        timestamp,
+    };
+
+    store_audit_entry(env, &entry);
+    emit_audit_event(env, &entry);
+
+    Ok(entry_id)
+}
+
+/// Log a role suspension event
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `admin` - The admin performing the action
+/// * `target` - The address whose role is suspended
+/// * `role` - The role being suspended
+///
+/// # Returns
+/// * `Ok(entry_id)` on success
+/// * `Err(NavinError)` on failure
+pub fn log_role_suspended(
+    env: &Env,
+    admin: &Address,
+    target: &Address,
+    _role: &Role,
+) -> Result<u64, NavinError> {
+    let entry_id = get_next_audit_entry_id(env)?;
+    let timestamp = env.ledger().timestamp();
+
+    let entry = AuditLogEntry {
+        entry_id,
+        event_type: AuditEventType::RoleSuspended,
+        actor: admin.clone(),
+        target: target.clone(),
+        timestamp,
+    };
+
+    store_audit_entry(env, &entry);
+    emit_audit_event(env, &entry);
+
+    Ok(entry_id)
+}
+
+/// Log a role reactivation event
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `admin` - The admin performing the action
+/// * `target` - The address whose role is reactivated
+/// * `role` - The role being reactivated
+///
+/// # Returns
+/// * `Ok(entry_id)` on success
+/// * `Err(NavinError)` on failure
+pub fn log_role_reactivated(
+    env: &Env,
+    admin: &Address,
+    target: &Address,
+    _role: &Role,
+) -> Result<u64, NavinError> {
+    let entry_id = get_next_audit_entry_id(env)?;
+    let timestamp = env.ledger().timestamp();
+
+    let entry = AuditLogEntry {
+        entry_id,
+        event_type: AuditEventType::RoleReactivated,
+        actor: admin.clone(),
+        target: target.clone(),
+        timestamp,
+    };
+
+    store_audit_entry(env, &entry);
+    emit_audit_event(env, &entry);
+
+    Ok(entry_id)
+}
+
+/// Log an admin transfer event
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `old_admin` - The previous admin
+/// * `new_admin` - The new admin
+///
+/// # Returns
+/// * `Ok(entry_id)` on success
+/// * `Err(NavinError)` on failure
+pub fn log_admin_transferred(
+    env: &Env,
+    old_admin: &Address,
+    new_admin: &Address,
+) -> Result<u64, NavinError> {
+    let entry_id = get_next_audit_entry_id(env)?;
+    let timestamp = env.ledger().timestamp();
+
+    let entry = AuditLogEntry {
+        entry_id,
+        event_type: AuditEventType::AdminTransferred,
+        actor: old_admin.clone(),
+        target: new_admin.clone(),
+        timestamp,
+    };
+
+    store_audit_entry(env, &entry);
+    emit_audit_event(env, &entry);
+
+    Ok(entry_id)
+}
+
+/// Log a carrier whitelist event
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `admin` - The admin performing the action
+/// * `_company` - The company
+/// * `carrier` - The carrier being whitelisted
+///
+/// # Returns
+/// * `Ok(entry_id)` on success
+/// * `Err(NavinError)` on failure
+pub fn log_carrier_whitelisted(
+    env: &Env,
+    admin: &Address,
+    _company: &Address,
+    carrier: &Address,
+) -> Result<u64, NavinError> {
+    let entry_id = get_next_audit_entry_id(env)?;
+    let timestamp = env.ledger().timestamp();
+
+    let entry = AuditLogEntry {
+        entry_id,
+        event_type: AuditEventType::CarrierWhitelisted,
+        actor: admin.clone(),
+        target: carrier.clone(),
+        timestamp,
+    };
+
+    store_audit_entry(env, &entry);
+    emit_audit_event(env, &entry);
+
+    Ok(entry_id)
+}
+
+/// Log a carrier unwhitelisted event
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `actor` - The actor performing the action (admin or company)
+/// * `_company` - The company whose whitelist was modified
+/// * `carrier` - The carrier removed from the whitelist
+///
+/// # Returns
+/// * `Ok(entry_id)` on success
+/// * `Err(NavinError)` on failure
+pub fn log_carrier_unwhitelisted(
+    env: &Env,
+    actor: &Address,
+    _company: &Address,
+    carrier: &Address,
+) -> Result<u64, NavinError> {
+    let entry_id = get_next_audit_entry_id(env)?;
+    let timestamp = env.ledger().timestamp();
+
+    let entry = AuditLogEntry {
+        entry_id,
+        event_type: AuditEventType::CarrierUnwhitelisted,
+        actor: actor.clone(),
+        target: carrier.clone(),
+        timestamp,
+    };
+
+    store_audit_entry(env, &entry);
+    emit_audit_event(env, &entry);
+
+    Ok(entry_id)
+}
+
+/// Log a company suspension event
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `admin` - The admin performing the suspension
+/// * `company` - The company being suspended
+///
+/// # Returns
+/// * `Ok(entry_id)` on success
+/// * `Err(NavinError)` on failure
+pub fn log_company_suspended(
+    env: &Env,
+    admin: &Address,
+    company: &Address,
+) -> Result<u64, NavinError> {
+    let entry_id = get_next_audit_entry_id(env)?;
+    let timestamp = env.ledger().timestamp();
+
+    let entry = AuditLogEntry {
+        entry_id,
+        event_type: AuditEventType::CompanySuspended,
+        actor: admin.clone(),
+        target: company.clone(),
+        timestamp,
+    };
+
+    store_audit_entry(env, &entry);
+    emit_audit_event(env, &entry);
+
+    Ok(entry_id)
+}
+
+/// Log a company reactivation event
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `admin` - The admin performing the reactivation
+/// * `company` - The company being reactivated
+///
+/// # Returns
+/// * `Ok(entry_id)` on success
+/// * `Err(NavinError)` on failure
+pub fn log_company_reactivated(
+    env: &Env,
+    admin: &Address,
+    company: &Address,
+) -> Result<u64, NavinError> {
+    let entry_id = get_next_audit_entry_id(env)?;
+    let timestamp = env.ledger().timestamp();
+
+    let entry = AuditLogEntry {
+        entry_id,
+        event_type: AuditEventType::CompanyReactivated,
+        actor: admin.clone(),
+        target: company.clone(),
+        timestamp,
+    };
+
+    store_audit_entry(env, &entry);
+    emit_audit_event(env, &entry);
+
+    Ok(entry_id)
+}
+
+/// Log a carrier suspension event
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `admin` - The admin performing the suspension
+/// * `carrier` - The carrier being suspended
+///
+/// # Returns
+/// * `Ok(entry_id)` on success
+/// * `Err(NavinError)` on failure
+pub fn log_carrier_suspended(
+    env: &Env,
+    admin: &Address,
+    carrier: &Address,
+) -> Result<u64, NavinError> {
+    let entry_id = get_next_audit_entry_id(env)?;
+    let timestamp = env.ledger().timestamp();
+
+    let entry = AuditLogEntry {
+        entry_id,
+        event_type: AuditEventType::CarrierSuspended,
+        actor: admin.clone(),
+        target: carrier.clone(),
+        timestamp,
+    };
+
+    store_audit_entry(env, &entry);
+    emit_audit_event(env, &entry);
+
+    Ok(entry_id)
+}
+
+/// Log a carrier reactivation event
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `admin` - The admin performing the reactivation
+/// * `carrier` - The carrier being reactivated
+///
+/// # Returns
+/// * `Ok(entry_id)` on success
+/// * `Err(NavinError)` on failure
+pub fn log_carrier_reactivated(
+    env: &Env,
+    admin: &Address,
+    carrier: &Address,
+) -> Result<u64, NavinError> {
+    let entry_id = get_next_audit_entry_id(env)?;
+    let timestamp = env.ledger().timestamp();
+
+    let entry = AuditLogEntry {
+        entry_id,
+        event_type: AuditEventType::CarrierReactivated,
+        actor: admin.clone(),
+        target: carrier.clone(),
+        timestamp,
+    };
+
+    store_audit_entry(env, &entry);
+    emit_audit_event(env, &entry);
+
+    Ok(entry_id)
+}
+
+/// Query audit history by date range
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `start_time` - Start timestamp (inclusive)
+/// * `end_time` - End timestamp (inclusive)
+///
+/// # Returns
+/// * Vector of audit entries within the time range
+pub fn query_audit_history(
+    env: &Env,
+    start_time: u64,
+    end_time: u64,
+    start_id: u64,
+    limit: u64,
+) -> soroban_sdk::Vec<AuditLogEntry> {
+    let mut results = soroban_sdk::Vec::new(env);
+    let total_entries = get_audit_entry_count(env) as u64;
+
+    if start_id >= total_entries || limit == 0 {
+        return results;
+    }
+    let end_id = start_id
+        .saturating_add(limit)
+        .saturating_sub(1)
+        .min(total_entries.saturating_sub(1));
+
+    for id in start_id..=end_id {
+        if let Some(entry) = get_audit_entry(env, id) {
+            if entry.timestamp >= start_time && entry.timestamp <= end_time {
+                results.push_back(entry);
+            }
+        }
+    }
+
+    results
+}
+
+/// Query audit history for a specific target with pagination window `[start_id, start_id + limit - 1]`
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `target` - The target address to query
+/// * `start_id` - Starting entry ID
+/// * `limit` - Maximum entries to inspect
+///
+/// # Returns
+/// * Vector of audit entries for the target
+pub fn query_audit_history_for_target(
+    env: &Env,
+    target: &Address,
+    start_id: u64,
+    limit: u64,
+) -> soroban_sdk::Vec<AuditLogEntry> {
+    let mut results = soroban_sdk::Vec::new(env);
+    let total_entries = get_audit_entry_count(env) as u64;
+
+    if start_id >= total_entries || limit == 0 {
+        return results;
+    }
+    let end_id = start_id
+        .saturating_add(limit)
+        .saturating_sub(1)
+        .min(total_entries.saturating_sub(1));
+
+    for id in start_id..=end_id {
+        if let Some(entry) = get_audit_entry(env, id) {
+            if entry.target == *target {
+                results.push_back(entry);
+            }
+        }
+    }
+
+    results
+}
+
+/// Query audit history for a specific actor with pagination window `[start_id, start_id + limit - 1]`
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `actor` - The actor (admin) to query
+/// * `start_id` - Starting entry ID
+/// * `limit` - Maximum entries to inspect
+///
+/// # Returns
+/// * Vector of audit entries by the actor
+pub fn query_audit_history_by_actor(
+    env: &Env,
+    actor: &Address,
+    start_id: u64,
+    limit: u64,
+) -> soroban_sdk::Vec<AuditLogEntry> {
+    let mut results = soroban_sdk::Vec::new(env);
+    let total_entries = get_audit_entry_count(env) as u64;
+
+    if start_id >= total_entries || limit == 0 {
+        return results;
+    }
+    let end_id = start_id
+        .saturating_add(limit)
+        .saturating_sub(1)
+        .min(total_entries.saturating_sub(1));
+
+    for id in start_id..=end_id {
+        if let Some(entry) = get_audit_entry(env, id) {
+            if entry.actor == *actor {
+                results.push_back(entry);
+            }
+        }
+    }
+
+    results
+}
+
+/// Clean up old audit entries (admin-only)
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `admin` - The admin address
+/// * `before_timestamp` - Remove entries before this timestamp
+///
+/// # Returns
+/// * `Ok(count)` - Number of entries removed
+/// * `Err(NavinError)` - If not authorized
+pub fn cleanup_audit_logs(
+    env: &Env,
+    admin: &Address,
+    before_timestamp: u64,
+) -> Result<u32, NavinError> {
+    crate::require_not_paused(env)?;
+
+    // Verify admin authorization. Accept either the primary admin (the
+    // single-admin deployment case) or a member of the multi-sig admin list —
+    // `storage::is_admin` alone only covers the latter and is empty until
+    // `init_multisig` runs, which would make this entrypoint uncallable on a
+    // contract that never enabled multi-sig.
+    admin.require_auth();
+    let authorized =
+        crate::storage::get_admin(env) == *admin || crate::storage::is_admin(env, admin);
+    if !authorized {
+        return Err(NavinError::Unauthorized);
+    }
+
+    let mut removed_count = 0u32;
+    let total_entries = get_audit_entry_count(env);
+
+    for i in 0..total_entries {
+        if let Some(entry) = get_audit_entry(env, i as u64) {
+            if entry.timestamp < before_timestamp {
+                remove_audit_entry(env, i as u64);
+                removed_count = removed_count.saturating_add(1);
+            }
+        }
+    }
+
+    Ok(removed_count)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Internal helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Maximum allowed audit log entries in persistent storage before rejection.
+pub const MAX_AUDIT_LOG_ENTRIES: u32 = 1000;
+
+pub(crate) fn get_next_audit_entry_id(env: &Env) -> Result<u64, NavinError> {
+    let count = get_audit_entry_count(env);
+    if count >= MAX_AUDIT_LOG_ENTRIES {
+        return Err(NavinError::AuditLogLimitExceeded);
+    }
+    Ok(count as u64)
+}
+
+pub(crate) fn get_audit_entry_count(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::AuditEntryCount)
+        .unwrap_or(0)
+}
+
+fn increment_audit_entry_count(env: &Env) {
+    let count = get_audit_entry_count(env);
+    env.storage()
+        .persistent()
+        .set(&DataKey::AuditEntryCount, &count.saturating_add(1));
+}
+
+pub(crate) fn store_audit_entry(env: &Env, entry: &AuditLogEntry) {
+    let entry_id = entry.entry_id;
+    env.storage()
+        .persistent()
+        .set(&DataKey::AuditEntry(entry_id), entry);
+    increment_audit_entry_count(env);
+}
+
+fn get_audit_entry(env: &Env, entry_id: u64) -> Option<AuditLogEntry> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::AuditEntry(entry_id))
+}
+
+fn remove_audit_entry(env: &Env, entry_id: u64) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::AuditEntry(entry_id));
+}
+
+fn emit_audit_event(env: &Env, entry: &AuditLogEntry) {
+    // Emit audit event for off-chain indexing
+    let event_type = match entry.event_type {
+        AuditEventType::RoleAssigned => crate::event_topics::AUDIT_ROLE_ASSIGNED,
+        AuditEventType::RoleRevoked => crate::event_topics::AUDIT_ROLE_REVOKED,
+        AuditEventType::RoleSuspended => crate::event_topics::AUDIT_ROLE_SUSPENDED,
+        AuditEventType::RoleReactivated => crate::event_topics::AUDIT_ROLE_REACTIVATED,
+        AuditEventType::AdminTransferred => crate::event_topics::AUDIT_ADMIN_TRANSFERRED,
+        AuditEventType::CarrierWhitelisted => crate::event_topics::AUDIT_CARRIER_WHITELISTED,
+        AuditEventType::CarrierUnwhitelisted => crate::event_topics::AUDIT_CARRIER_UNWHITELISTED,
+        AuditEventType::CompanySuspended => crate::event_topics::AUDIT_COMPANY_SUSPENDED,
+        AuditEventType::CompanyReactivated => crate::event_topics::AUDIT_COMPANY_REACTIVATED,
+        AuditEventType::CarrierSuspended => crate::event_topics::AUDIT_CARRIER_SUSPENDED,
+        AuditEventType::CarrierReactivated => crate::event_topics::AUDIT_CARRIER_REACTIVATED,
+    };
+
+    env.events().publish(
+        (soroban_sdk::Symbol::new(env, event_type),),
+        (
+            entry.entry_id,
+            entry.actor.clone(),
+            entry.target.clone(),
+            entry.timestamp,
+        ),
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_audit_event_type_variants() {
+        let assigned = AuditEventType::RoleAssigned;
+        let revoked = AuditEventType::RoleRevoked;
+        let suspended = AuditEventType::RoleSuspended;
+        let reactivated = AuditEventType::RoleReactivated;
+        let admin_transferred = AuditEventType::AdminTransferred;
+        let whitelisted = AuditEventType::CarrierWhitelisted;
+        let unwhitelisted = AuditEventType::CarrierUnwhitelisted;
+        let comp_suspended = AuditEventType::CompanySuspended;
+        let comp_reactivated = AuditEventType::CompanyReactivated;
+        let carr_suspended = AuditEventType::CarrierSuspended;
+        let carr_reactivated = AuditEventType::CarrierReactivated;
+
+        assert_ne!(assigned, revoked);
+        assert_ne!(suspended, reactivated);
+        assert_ne!(whitelisted, unwhitelisted);
+        assert_ne!(comp_suspended, comp_reactivated);
+        assert_ne!(carr_suspended, carr_reactivated);
+        assert_ne!(admin_transferred, assigned);
+    }
+
+    #[test]
+    fn test_audit_log_entry_creation() {
+        let env = soroban_sdk::Env::default();
+        let entry = AuditLogEntry {
+            entry_id: 1,
+            event_type: AuditEventType::RoleAssigned,
+            actor: Address::from_str(
+                &env,
+                "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H",
+            ),
+            target: Address::from_str(
+                &env,
+                "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H",
+            ),
+            timestamp: 1000,
+        };
+
+        assert_eq!(entry.entry_id, 1);
+        assert_eq!(entry.event_type, AuditEventType::RoleAssigned);
+    }
+
+    #[test]
+    fn cleanup_audit_logs_returns_contract_paused_and_keeps_entries() {
+        use crate::storage;
+        use soroban_sdk::testutils::Address as _;
+
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::NavinShipment, ());
+        let admin = Address::generate(&env);
+        let target = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            storage::set_admin(&env, &admin);
+            let entry_id = log_role_assigned(&env, &admin, &target, &Role::Company).unwrap();
+            assert_eq!(
+                query_audit_history_for_target(&env, &target, 0, 10).len(),
+                1
+            );
+
+            storage::set_paused(&env, true);
+
+            let result = cleanup_audit_logs(&env, &admin, u64::MAX);
+            assert_eq!(result, Err(NavinError::ContractPaused));
+
+            let remaining = query_audit_history_for_target(&env, &target, 0, 10);
+            assert_eq!(remaining.len(), 1, "paused cleanup must not remove entries");
+            assert_eq!(remaining.get(0).unwrap().entry_id, entry_id);
+        });
+    }
+
+    #[test]
+    fn cleanup_audit_logs_removes_old_entries_when_not_paused() {
+        use crate::storage;
+        use soroban_sdk::testutils::Address as _;
+
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(crate::NavinShipment, ());
+        let admin = Address::generate(&env);
+        let target = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            storage::set_admin(&env, &admin);
+            let _ = log_role_assigned(&env, &admin, &target, &Role::Company).unwrap();
+            assert_eq!(
+                query_audit_history_for_target(&env, &target, 0, 10).len(),
+                1
+            );
+
+            let removed = cleanup_audit_logs(&env, &admin, u64::MAX).unwrap();
+            assert_eq!(removed, 1);
+            assert_eq!(
+                query_audit_history_for_target(&env, &target, 0, 10).len(),
+                0,
+                "unpaused cleanup must remove matching entries"
+            );
+        });
+    }
+}

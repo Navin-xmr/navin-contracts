@@ -1,34 +1,6 @@
-use soroban_sdk::{contracttype, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{Address, Env, String, Symbol, Vec};
 
-/// Storage keys for token contract data
-#[contracttype]
-pub enum DataKey {
-    Admin,
-    PendingAdmin,
-    Name,
-    Symbol,
-    TotalSupply,
-    Balance(Address),
-    Allowance(Address, Address),
-    /// Allowed metadata keys (admin-registered allowlist)
-    AllowedMetadataKey(Symbol),
-    /// Ordered index of all allowed metadata keys
-    AllowedMetadataKeys,
-    /// Token metadata key-value pairs
-    Metadata(Symbol),
-    /// Contract-wide pause flag (issue #657)
-    Paused,
-}
-
-/// An allowance amount plus the ledger sequence it expires on (issue #659),
-/// matching the standard Soroban token interface's `approve`/`allowance`
-/// shape. `u32::MAX` is used as the "never expires" sentinel.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AllowanceValue {
-    pub amount: i128,
-    pub expiration_ledger: u32,
-}
+pub use crate::types::{AllowanceValue, DataKey};
 
 /// Check if the contract has been initialized
 pub fn is_initialized(env: &Env) -> bool {
@@ -204,9 +176,15 @@ pub fn set_paused(env: &Env, paused: bool) {
 
 /// Check if a metadata key is in the allowed list
 pub fn is_metadata_key_allowed(env: &Env, key: &Symbol) -> bool {
-    env.storage()
-        .persistent()
-        .has(&DataKey::AllowedMetadataKey(key.clone()))
+    let metadata_key = DataKey::AllowedMetadataKey(key.clone());
+    if env.storage().persistent().has(&metadata_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&metadata_key, 1000, 500000);
+        true
+    } else {
+        false
+    }
 }
 
 /// Add a key to the allowed metadata keys list
@@ -214,8 +192,8 @@ pub fn add_allowed_metadata_key(env: &Env, key: &Symbol) {
     let metadata_key = DataKey::AllowedMetadataKey(key.clone());
     env.storage().persistent().set(&metadata_key, &true);
     env.storage()
-        .instance()
-        .set(&DataKey::AllowedMetadataKey(key.clone()), &true);
+        .persistent()
+        .extend_ttl(&metadata_key, 1000, 500000);
 
     let mut keys = get_allowed_metadata_keys(env);
     if !keys.contains(key) {
@@ -224,6 +202,7 @@ pub fn add_allowed_metadata_key(env: &Env, key: &Symbol) {
             .instance()
             .set(&DataKey::AllowedMetadataKeys, &keys);
     }
+    env.storage().instance().extend_ttl(1000, 500000);
 }
 
 /// Remove a key from the allowed metadata keys list
