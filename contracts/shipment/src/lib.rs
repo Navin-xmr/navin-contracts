@@ -7,6 +7,29 @@ use soroban_sdk::{
 pub mod audit;
 mod circuit_breaker;
 mod config;
+/// Cross-shipment consistency verification (Issue #878).
+///
+/// This was declared behind `#[cfg(test)]`, so `check_shipment_invariants`,
+/// `check_batch_consistency` and `check_all_consistency` compiled only in test
+/// builds and were absent from the deployed contract — an admin tool that could
+/// never be called in the environment it exists to audit. Its own
+/// `test_consistency.rs` passed the whole time, which is why the gap survived.
+///
+/// Registered unconditionally rather than deleted because every dependency it
+/// names still exists: all five `storage::` functions it calls
+/// (`get_shipment`, `get_escrow`, `get_shipment_count`, `get_shipment_counter`,
+/// `get_status_count`) are present in `storage.rs`. That is what separates this
+/// module from the other orphaned files in this crate, whose dependencies were
+/// removed outright rather than merely left unwired.
+pub mod consistency;
+/// Storage-health diagnostics (issue #876).
+///
+/// This file was previously an orphan: `has_orphaned_counters` called
+/// storage helpers that did not exist, so the module was left unwired and
+/// never compiled. The helpers now inspect the current `DataKey` schema, so
+/// the module is registered unconditionally — the same rationale as
+/// `consistency`.
+pub mod diagnostics;
 pub mod error_map;
 mod errors;
 mod event_topics;
