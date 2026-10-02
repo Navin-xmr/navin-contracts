@@ -1,6 +1,6 @@
 [package]
 name = "navin-nft"
-version = "0.0.0" # Always 0.0.0 — see docs/versioning.md
+version = "0.1.0"
 edition = "2021"
 publish = false
 
@@ -16,6 +16,7 @@ soroban-sdk = { workspace = true, features = ["testutils"] }
 
 [features]
 testutils = ["soroban-sdk/testutils"]
+
 [profile.release]
 opt-level = "z"
 overflow-checks = true
