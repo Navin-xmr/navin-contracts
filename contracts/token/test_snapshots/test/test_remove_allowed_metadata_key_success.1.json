@@ -217,6 +217,21 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "AllowedMetadataKey"
+                            },
+                            {
+                              "symbol": "website"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": true
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "AllowedMetadataKeys"
                             }
                           ]

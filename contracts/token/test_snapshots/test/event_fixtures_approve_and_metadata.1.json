@@ -442,6 +442,21 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "AllowedMetadataKey"
+                            },
+                            {
+                              "symbol": "key"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": true
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "AllowedMetadataKeys"
                             }
                           ]

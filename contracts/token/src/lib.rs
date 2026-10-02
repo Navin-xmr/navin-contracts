@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, String, Symbol, Vec};
 
 mod errors;
 mod event_topics;
@@ -390,6 +390,8 @@ impl NavinToken {
 
         storage::set_pending_admin(&env, &new_admin);
 
+        env.events()
+            .publish((symbol_short!("adm_prop"),), (current_admin, new_admin));
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::ADMIN_PROPOSED),
