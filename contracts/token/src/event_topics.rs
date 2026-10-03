@@ -46,6 +46,9 @@ pub const INIT: &str = "init";
 /// Single-party transfer (`transfer`).
 pub const TRANSFER: &str = "transfer";
 
+/// Transfer from allowance (`transfer_from`).
+pub const TRANSFER_FROM: &str = "tr_from";
+
 // ── Allowances ───────────────────────────────────────────────────────────────
 
 /// Allowance approval.
@@ -70,6 +73,22 @@ pub const BURN: &str = "burn";
 
 /// Burn by spender (`burn_from` variant).
 pub const BURN_FROM: &str = "burn_from";
+
+// ── Admin ────────────────────────────────────────────────────────────────────
+
+/// Admin transfer proposed.
+pub const ADMIN_PROPOSED: &str = "admin_pro";
+
+/// Admin transfer accepted.
+pub const ADMIN_TRANSFERRED: &str = "admin_tr";
+
+// ── Batch ────────────────────────────────────────────────────────────────────
+
+/// Batch leg transfer.
+pub const BATCH_LEG: &str = "batch_leg";
+
+/// Batch transfer summary.
+pub const BATCH_TRANSFER: &str = "batch_tr";
 
 // ── Pause ────────────────────────────────────────────────────────────────────
 

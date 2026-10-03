@@ -131,6 +131,7 @@ fn fuzz_milestone_sum_must_be_100() {
         let mut bad_milestones = Vec::new(&env);
         bad_milestones.push_back((Symbol::new(&env, "alpha"), p1));
         bad_milestones.push_back((Symbol::new(&env, "beta"), p2));
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let result = client.try_create_shipment(
             &company,
@@ -174,6 +175,7 @@ fn fuzz_milestone_valid_sum_accepted() {
         // Random count 1..=5
         let count = (seed % 5 + 1) as usize;
         let milestones = build_milestones_summing_to_100(&env, count);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let result = client.try_create_shipment(
             &company,
@@ -217,6 +219,7 @@ fn fuzz_milestone_partial_releases_never_exceed_escrow() {
         let mut milestones = Vec::new(&env);
         milestones.push_back((Symbol::new(&env, "alpha"), 50u32));
         milestones.push_back((Symbol::new(&env, "beta"), 50u32));
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let id = client.create_shipment(
             &company,
@@ -303,6 +306,7 @@ fn fuzz_milestone_idempotency_single_payment() {
         let mut milestones = Vec::new(&env);
         milestones.push_back((Symbol::new(&env, "alpha"), 50u32));
         milestones.push_back((Symbol::new(&env, "beta"), 50u32));
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let id = client.create_shipment(
             &company,
@@ -375,6 +379,7 @@ fn fuzz_milestone_random_valid_percentages() {
         let mut milestones = Vec::new(&env);
         milestones.push_back((Symbol::new(&env, "alpha"), p1));
         milestones.push_back((Symbol::new(&env, "beta"), p2));
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let result = client.try_create_shipment(
             &company,
@@ -422,6 +427,7 @@ fn fuzz_milestone_order_enforced() {
         milestones.push_back((Symbol::new(&env, "alpha"), 40u32));
         milestones.push_back((Symbol::new(&env, "beta"), 35u32));
         milestones.push_back((Symbol::new(&env, "gamma"), 25u32));
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let id = client.create_shipment(
             &company,
@@ -505,6 +511,7 @@ fn fuzz_milestone_fractional_allocation() {
         milestones.push_back((Symbol::new(&env, "alpha"), p1));
         milestones.push_back((Symbol::new(&env, "beta"), p2));
         milestones.push_back((Symbol::new(&env, "gamma"), p3));
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
 
         let id = client.create_shipment(
             &company,

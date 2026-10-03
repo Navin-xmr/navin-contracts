@@ -151,6 +151,17 @@ fn test_config_checksum_reflects_idempotency_and_quota_fields() {
     client.update_config(&admin, &cfg);
     assert_ne!(client.get_config_checksum(), before);
 }
+
+// ── Config checksum diagnostics query path ──────────────────────────────────
+
+/// The config checksum query path used by diagnostics/indexers must return
+/// a stable checksum across multiple invocations and match a raw recompute.
+#[test]
+fn test_config_checksum_diagnostics_query_path() {
+    let (env, client, admin, _token) = prepare_test();
+
+    // Query path: get_config_checksum (what indexers/diagnostics use)
+    let q1 = client.get_config_checksum();
     let q2 = client.get_config_checksum();
     assert_eq!(q1, q2, "diagnostics query path must be idempotent");
 
@@ -190,6 +201,7 @@ fn test_get_non_terminal_count_alignment() {
     client.add_carrier(&admin, &carrier);
 
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let _id1 = client.create_shipment(
         &company,
@@ -199,6 +211,7 @@ fn test_get_non_terminal_count_alignment() {
         &Vec::new(&env),
         &deadline,
     );
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let id2 = client.create_shipment(
         &company,
         &receiver,
@@ -207,6 +220,7 @@ fn test_get_non_terminal_count_alignment() {
         &Vec::new(&env),
         &deadline,
     );
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let id3 = client.create_shipment(
         &company,
         &receiver,
@@ -215,6 +229,7 @@ fn test_get_non_terminal_count_alignment() {
         &Vec::new(&env),
         &deadline,
     );
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let id4 = client.create_shipment(
         &company,
         &receiver,
@@ -223,6 +238,7 @@ fn test_get_non_terminal_count_alignment() {
         &Vec::new(&env),
         &deadline,
     );
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let id5 = client.create_shipment(
         &company,
         &receiver,
@@ -342,6 +358,7 @@ fn test_get_shipment_creator_returns_sender_for_valid_shipment() {
 
     let deadline = env.ledger().timestamp() + 3600;
     let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -417,6 +434,7 @@ fn test_get_shipment_carrier_returns_carrier_for_valid_shipment() {
 
     let deadline = env.ledger().timestamp() + 3600;
     let data_hash = BytesN::from_array(&env, &[8u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -452,6 +470,7 @@ fn test_non_terminal_count_decrements_on_refund() {
 
     let deadline = env.ledger().timestamp() + 3600;
     let data_hash = BytesN::from_array(&env, &[10u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -493,6 +512,7 @@ fn test_non_terminal_count_decrements_for_one_of_many_on_refund() {
     client.add_carrier(&admin, &carrier);
 
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let id1 = client.create_shipment(
         &company,
@@ -502,6 +522,7 @@ fn test_non_terminal_count_decrements_for_one_of_many_on_refund() {
         &Vec::new(&env),
         &deadline,
     );
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let _id2 = client.create_shipment(
         &company,
         &receiver,
@@ -510,6 +531,7 @@ fn test_non_terminal_count_decrements_for_one_of_many_on_refund() {
         &Vec::new(&env),
         &deadline,
     );
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let _id3 = client.create_shipment(
         &company,
         &receiver,
@@ -590,6 +612,7 @@ fn test_get_shipment_receiver_returns_receiver_for_valid_shipment() {
 
     let deadline = env.ledger().timestamp() + 3600;
     let data_hash = BytesN::from_array(&env, &[30u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -610,4 +633,190 @@ fn test_get_shipment_receiver_returns_receiver_for_valid_shipment() {
         receiver,
         "get_shipment_receiver must return the receiver address for a valid shipment"
     );
+}
+
+// ── Issue #876 — orphaned-counter helpers match the live storage schema ───────
+
+/// `has_orphaned_counters` must inspect only keys that exist in the current
+/// schema, via the `has_*_entry` helpers and live `DataKey` variants.
+#[test]
+fn test_has_orphaned_counters_false_when_no_per_shipment_keys() {
+    let (env, client, _, _) = prepare_test();
+    env.as_contract(&client.address, || {
+        assert!(
+            !crate::diagnostics::has_orphaned_counters(&env, 1),
+            "empty storage must not be classified as orphaned"
+        );
+    });
+}
+
+/// Each live leftover key must be reported as an orphan independently.
+#[test]
+fn test_has_orphaned_counters_detects_current_schema_keys() {
+    use crate::storage;
+    use crate::types::DataKey;
+
+    let (env, client, _, _) = prepare_test();
+    let shipment_id = 1u64;
+    let hash = BytesN::from_array(&env, &[0xCDu8; 32]);
+
+    env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .set(&DataKey::EventCount(shipment_id), &1u32);
+        assert!(crate::diagnostics::has_orphaned_counters(&env, shipment_id));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::EventCount(shipment_id));
+
+        storage::set_confirmation_hash(&env, shipment_id, &hash);
+        assert!(crate::diagnostics::has_orphaned_counters(&env, shipment_id));
+        env.storage()
+            .persistent()
+            .remove(&storage::confirmation_hash_key(shipment_id));
+
+        storage::set_last_status_update(&env, shipment_id, 99);
+        assert!(crate::diagnostics::has_orphaned_counters(&env, shipment_id));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::LastStatusUpdate(shipment_id));
+
+        storage::set_escrow(&env, shipment_id, 10);
+        assert!(crate::diagnostics::has_orphaned_counters(&env, shipment_id));
+        storage::remove_escrow(&env, shipment_id);
+
+        storage::increment_milestone_event_count(&env, shipment_id);
+        assert!(crate::diagnostics::has_orphaned_counters(&env, shipment_id));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::MilestoneEventCount(shipment_id));
+
+        storage::increment_breach_event_count(&env, shipment_id);
+        assert!(crate::diagnostics::has_orphaned_counters(&env, shipment_id));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::BreachEventCount(shipment_id));
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::ActiveSettlement(shipment_id), &1u64);
+        assert!(crate::diagnostics::has_orphaned_counters(&env, shipment_id));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::ActiveSettlement(shipment_id));
+
+        env.storage()
+            .persistent()
+            .set(&storage::escrow_freeze_reason_key(shipment_id), &1u32);
+        assert!(crate::diagnostics::has_orphaned_counters(&env, shipment_id));
+        env.storage()
+            .persistent()
+            .remove(&storage::escrow_freeze_reason_key(shipment_id));
+
+        assert!(
+            !crate::diagnostics::has_orphaned_counters(&env, shipment_id),
+            "clearing every live schema key must clear the orphan flag"
+        );
+    });
+}
+
+/// There is no `archive_shipment` entrypoint today. A terminal shipment that
+/// remains in persistent storage (the actual cleanup behavior) must not be
+/// flagged as an archival orphan just because rate-limit / confirmation keys
+/// exist — those keys are expected while the payload is still persisted.
+#[test]
+fn test_terminal_persistent_shipment_is_not_flagged_as_orphaned_archive() {
+    use crate::storage;
+
+    let (env, client, admin, _token) = prepare_test();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0x11u8; 32]),
+        &Vec::new(&env),
+        &(env.ledger().timestamp() + 3600),
+    );
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[0x12u8; 32]),
+    );
+    crate::test_utils::advance_ledger_time(&env, 3600);
+    client.confirm_delivery(
+        &receiver,
+        &shipment_id,
+        &BytesN::from_array(&env, &[0x13u8; 32]),
+    );
+
+    let health = env.as_contract(&client.address, || {
+        crate::diagnostics::run_system_health_check(&env)
+    });
+    assert!(
+        !health.storage_inconsistencies.contains(shipment_id),
+        "delivered shipment still in persistent storage must not be an archive orphan"
+    );
+
+    env.as_contract(&client.address, || {
+        assert!(
+            storage::has_persistent_shipment(&env, shipment_id),
+            "payload must still occupy persistent storage — there is no archive_shipment cleanup"
+        );
+        assert!(
+            storage::has_confirmation_hash_entry(&env, shipment_id),
+            "confirm_delivery writes ConfirmationHash, which remains while the payload is persisted"
+        );
+    });
+}
+
+/// Issue #877 — dispute evidence is keyed by `DisputeKey::EvidenceCount`, the
+/// same variant `storage.rs` uses. The old `DataKey::DisputeEvidenceCount` /
+/// `ShipmentNoteCount` / `RecoveryRecordCount` names do not exist.
+#[test]
+fn test_orphaned_counters_use_live_dispute_key_evidence_count() {
+    use crate::storage;
+    use crate::types::DisputeKey;
+
+    let (env, client, _, _) = prepare_test();
+    let shipment_id = 1u64;
+    let hash = BytesN::from_array(&env, &[0xEEu8; 32]);
+
+    env.as_contract(&client.address, || {
+        assert!(!crate::diagnostics::has_orphaned_counters(
+            &env,
+            shipment_id
+        ));
+
+        storage::append_evidence(&env, shipment_id, &hash);
+        assert_eq!(storage::get_evidence_count(&env, shipment_id), 1);
+        assert!(
+            env.storage()
+                .persistent()
+                .has(&DisputeKey::EvidenceCount(shipment_id)),
+            "diagnostics and storage.rs must share DisputeKey::EvidenceCount"
+        );
+        assert!(
+            crate::diagnostics::has_orphaned_counters(&env, shipment_id),
+            "a leftover evidence-count key must be classified as an orphan"
+        );
+
+        env.storage()
+            .persistent()
+            .remove(&DisputeKey::EvidenceCount(shipment_id));
+        env.storage()
+            .persistent()
+            .remove(&DisputeKey::Evidence(shipment_id, 0));
+        assert!(!crate::diagnostics::has_orphaned_counters(
+            &env,
+            shipment_id
+        ));
+    });
 }

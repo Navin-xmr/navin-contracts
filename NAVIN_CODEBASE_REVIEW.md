@@ -12,7 +12,7 @@
 > **The current codebase has suffered from severe architectural drift and scope creep across past pull requests.** It currently diverges from the core architectural philosophy defined in the Guide in two fundamental ways:
 >
 > 1. **Storage Anti-Pattern vs. "Hash & Emit"**: While the guide explicitly states that the smart contract must remain a lightweight state machine and event emitter to avoid expensive Soroban state-rent, the contract has ballooned into an on-chain database with over **40 persistent storage keys**, on-chain search indexing, pagination, audit logs, and diagnostic scans.
-> 2. **Missing Shipment Tokenization**: The guide specifies *"Shipment tokenization – Each shipment becomes a unique digital asset on the Stellar blockchain"*. The codebase has **no shipment tokenization** (no NFT or unique digital asset). Instead, it implemented a standard fungible payment token (`NavinToken`) for escrow payments, while shipments remain simple database-like structs identified only by an auto-incrementing integer (`u64`).
+> 2. **Unintegrated Shipment Tokenization Scaffold**: The guide specifies *"Shipment tokenization – Each shipment becomes a unique digital asset on the Stellar blockchain"*. While `contracts/nft/` exists in the codebase with a working `NavinShipmentNft` contract (supporting mint, transfer, burn, and owner_of logic), it remains standalone and is never referenced or invoked from `contracts/shipment/`. Shipments within `contracts/shipment/` are still managed via auto-incrementing integer IDs (`u64`) without cross-contract NFT minting.
 
 ---
 
@@ -21,7 +21,7 @@
 | Feature / Architectural Concept in Guide | Status in Codebase | Assessment & Findings |
 | :--- | :--- | :--- |
 | **Hash-and-Emit Pattern**<br>*(Contract only validates logic & emits hashes)* | ⚠️ **Partially Implemented, Contradicted by State Bloat** | Event emission exists for status updates and milestones, but the contract stores immense state (notes, evidence, audit logs, search indexes) directly violating the pattern. |
-| **Shipment Tokenization**<br>*(Each shipment as a unique digital asset / NFT)* | ❌ **NOT Implemented** | There is no Non-Fungible Token or unique digital asset minted for shipments. The token contract in `contracts/token` is just an ERC-20/SEP-41 fungible payment currency. |
+| **Shipment Tokenization**<br>*(Each shipment as a unique digital asset / NFT)* | ⚠️ **Scaffolded, Not Integrated** | `contracts/nft/` implements a standalone `NavinShipmentNft` contract (minting, transfers, ownership), but it is never referenced or automatically invoked from `contracts/shipment/`. |
 | **Immutable Milestone Tracking**<br>*(Checkpoints anchored to cryptographic hashes)* | ✅ **Implemented** | Checkpoints (`record_milestone`, `record_milestones_batch`) validate hashes, verify carrier authorization, and emit events without saving milestone bodies to storage. |
 | **Automated Escrow Settlements**<br>*(Automated payouts on delivery/milestone completion)* | ✅ **Implemented** | Escrow funds are locked upon creation/deposit and released to the carrier upon `confirm_delivery` or milestone payout. |
 | **IoT Sensor Integration**<br>*(Real-time temperature, humidity, GPS tracking)* | ⚠️ **Superficial** | Methods like `report_condition_breach` and `report_geofence_event` exist, but they only record an enum and emit an event. There is no cryptographic oracle/device verification or automated dispute/penalty triggering. |
@@ -58,10 +58,11 @@ These components directly violate Soroban state-rent economics and contradict th
 
 ## 4. What Should Be IMPLEMENTED
 
-### 1. True Shipment Tokenization (Digital Asset / NFT Representation)
-- **The Gap:** The core value proposition of Section 3 ("Shipment tokenization – Each shipment becomes a unique digital asset on the Stellar blockchain, creating an immutable identity and ownership record").
-- **Implementation:** Implement an NFT/Non-Fungible Asset interface (or SEP-equivalent digital asset) representing the Bill of Lading / physical shipment.
-- **Benefit:** The shipment can be held in an enterprise Stellar wallet (e.g., Freighter), transferred upon change of physical custody/consignee, or used as collateral for trade financing and invoice factoring.
+### 1. Cross-Contract Integration of Shipment NFT Tokenization
+- **The Gap:** Although `contracts/nft/` provides a functional `NavinShipmentNft` contract, it exists only as a standalone component and is not integrated into `contracts/shipment/`. Creating a shipment does not automatically mint or link a shipment NFT.
+- **Implementation:** Integrate `contracts/nft/` with `contracts/shipment/` so that `create_shipment` cross-calls the NFT contract to mint a shipment-asset NFT to the sender or consignee, linking the on-chain shipment ID to the NFT token ID.
+- **Benefit:** Enables shipments to be held, transferred, or used as collateral via enterprise Stellar wallets (e.g., Freighter) while keeping state synced across both contracts.
+
 
 ### 2. IoT Device/Oracle Cryptographic Attestation
 - **The Gap:** In the guide: *"IoT sensor integration – Real-time environmental data... flows through secure middleware to verify handling conditions"*.

@@ -119,3 +119,33 @@ fn test_error_code_is_58() {
         "InvalidShipmentDeadline discriminant must be 58"
     );
 }
+
+/// A deadline more than MAX_FUTURE_OFFSET seconds in the future is rejected.
+#[test]
+fn test_far_future_deadline_returns_error() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let sender = Address::generate(&env);
+    client.add_company(&admin, &sender);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&sender, &carrier);
+    let data_hash = BytesN::from_array(&env, &[0xFFu8; 32]);
+    let now = env.ledger().timestamp();
+    let far_future = now + super::validation::MAX_FUTURE_OFFSET + 1;
+
+    let result = client.try_create_shipment(
+        &sender,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &far_future,
+    );
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::InvalidShipmentDeadline)),
+        "deadline beyond MAX_FUTURE_OFFSET must return InvalidShipmentDeadline"
+    );
+}

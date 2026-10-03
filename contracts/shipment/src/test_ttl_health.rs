@@ -44,6 +44,7 @@ fn create_test_shipment(
     // Use hash_bytes + 1 to avoid all-zero hash which is rejected by validation
     let data_hash = BytesN::from_array(env, &[hash_bytes.wrapping_add(1); 32]);
     let deadline = env.ledger().timestamp() + 86400;
+    crate::test_utils::allow_carrier(&client, company, carrier);
 
     client.create_shipment(
         company,
@@ -173,6 +174,7 @@ fn test_ttl_extended_on_active_mutation() {
     let receiver = Address::generate(&env);
     let create_hash = BytesN::from_array(&env, &[0x01u8; 32]);
     let deadline = env.ledger().timestamp() + 86_400;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -219,9 +221,7 @@ fn test_ttl_extended_on_active_mutation() {
 fn test_instance_ttl_refreshes_on_active_read() {
     let (env, client, _admin, _token) = setup_shipment_env();
 
-    let ttl_before_read = env.as_contract(&client.address, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl_before_read = env.as_contract(&client.address, || env.storage().instance().get_ttl());
 
     // Move close to the expiry window without allowing the instance entry to
     // expire. A normal read must refresh the contract-wide instance storage.
@@ -232,9 +232,7 @@ fn test_instance_ttl_refreshes_on_active_read() {
 
     client.get_status_summary();
 
-    let ttl_after_read = env.as_contract(&client.address, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl_after_read = env.as_contract(&client.address, || env.storage().instance().get_ttl());
     assert!(
         ttl_after_read > ttl_before_read.saturating_sub(500_000),
         "active reads must refresh the instance storage TTL"
@@ -315,50 +313,4 @@ fn test_ttl_health_output_matches_storage_state() {
             "Health output must match actual storage state"
         );
     });
-}
-
-/// Cover the public `get_ttl_health_summary` entry point directly through the
-/// contract client with a mixed-state fixture and assert every returned field
-/// against the known input. (issue #703)
-#[test]
-fn test_ttl_health_summary_matches_mixed_fixture() {
-    let (env, client, admin, _token_contract) = setup_shipment_env();
-    env.mock_all_auths();
-
-    let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    // 4 active shipments: present in persistent storage.
-    for i in 0u8..4 {
-        create_test_shipment(&client, &env, &company, &carrier, i);
-    }
-
-    // 2 shipments cancelled then archived: removed from persistent storage.
-    for i in 10u8..12 {
-        let id = create_test_shipment(&client, &env, &company, &carrier, i);
-        let reason_hash = BytesN::from_array(&env, &[i; 32]);
-        client.cancel_shipment(&company, &id, &reason_hash);
-        client.archive_shipment(&admin, &id);
-    }
-
-    let total: u64 = 6;
-    let archived: u64 = 2;
-    let active = total - archived; // 4 persistent
-
-    let summary = client.get_ttl_health_summary();
-
-    assert_eq!(summary.total_shipment_count, total);
-    assert_eq!(summary.sampled_count, total);
-    assert_eq!(summary.persistent_count, active);
-    assert_eq!(summary.missing_or_archived_count, archived);
-    assert_eq!(
-        summary.persistent_percentage,
-        ((active * 100) / total) as u32
-    );
-    assert_eq!(summary.ttl_threshold, 17_280);
-    assert_eq!(summary.ttl_extension, 518_400);
-    assert_eq!(summary.current_ledger, env.ledger().sequence());
-    assert_eq!(summary.query_timestamp, env.ledger().timestamp());
 }

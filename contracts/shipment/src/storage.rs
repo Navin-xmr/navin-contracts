@@ -468,11 +468,20 @@ pub fn is_company_suspended(env: &Env, company: &Address) -> bool {
         .unwrap_or(false)
 }
 
-/// Canonical single source of truth helper to retrieve a shipment by ID from persistent storage.
+/// Canonical single source of truth helper to retrieve a shipment by ID.
+/// Checks persistent storage first, then falls back to temporary archived storage.
+/// When an archived shipment is read, its TTL is refreshed to prevent silent eviction.
 pub fn get_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
-    env.storage()
+    // First check persistent storage (active shipments)
+    if let Some(shipment) = env
+        .storage()
         .persistent()
         .get(&DataKey::Shipment(shipment_id))
+    {
+        return Some(shipment);
+    }
+    // Fallback to archived (temporary) storage; refresh TTL on read
+    get_archived_shipment(env, shipment_id)
 }
 
 /// Canonical single source of truth helper to check whether shipment payload exists in persistent storage.
@@ -483,9 +492,34 @@ pub fn has_persistent_shipment(env: &Env, shipment_id: u64) -> bool {
 }
 
 /// Check whether escrow entry exists in persistent storage.
-#[cfg(test)]
 pub fn has_escrow_entry(env: &Env, shipment_id: u64) -> bool {
     env.storage().persistent().has(&escrow_key(shipment_id))
+}
+
+/// Check whether a per-shipment event-count key exists in persistent storage.
+///
+/// Inspects the current schema key `DataKey::EventCount(shipment_id)`. The
+/// key remains in the enum for storage-layout compatibility even when no
+/// live writer increments it; diagnostics still treat a leftover entry as
+/// an orphan after archival.
+pub fn has_event_count_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::EventCount(shipment_id))
+}
+
+/// Check whether a confirmation-hash entry exists in persistent storage.
+pub fn has_confirmation_hash_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&confirmation_hash_key(shipment_id))
+}
+
+/// Check whether a last-status-update timestamp exists in persistent storage.
+pub fn has_last_status_update_entry(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::LastStatusUpdate(shipment_id))
 }
 
 /// Persist a shipment to persistent storage (survives TTL extension).
@@ -505,6 +539,79 @@ pub fn set_shipment(env: &Env, shipment: &Shipment) {
     env.storage()
         .persistent()
         .set(&shipment_key(shipment.id), shipment);
+}
+
+// ============= Archived Shipment (Temporary Storage) =============
+
+/// Archive a shipment by moving it from persistent to temporary storage.
+/// Extends TTL on the archived entry to prevent silent eviction.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment to archive.
+/// * `shipment` - The shipment data to archive.
+pub fn archive_shipment(env: &Env, shipment_id: u64, shipment: &Shipment) {
+    let key = DataKey::ArchivedShipment(shipment_id);
+    env.storage().temporary().set(&key, shipment);
+    // Extend TTL immediately on write - critical to prevent silent eviction
+    let config = crate::config::get_config(env);
+    env.storage().temporary().extend_ttl(
+        &key,
+        config.shipment_ttl_threshold,
+        config.shipment_ttl_extension,
+    );
+    // Remove from persistent storage
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Shipment(shipment_id));
+}
+
+/// Get an archived shipment from temporary storage.
+/// Refreshes TTL on read to keep archived data alive while it is being accessed.
+pub fn get_archived_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
+    let key = DataKey::ArchivedShipment(shipment_id);
+    let shipment: Option<Shipment> = env.storage().temporary().get(&key);
+    if shipment.is_some() {
+        let config = crate::config::get_config(env);
+        env.storage().temporary().extend_ttl(
+            &key,
+            config.shipment_ttl_threshold,
+            config.shipment_ttl_extension,
+        );
+    }
+    shipment
+}
+
+/// Check if a shipment is archived in temporary storage.
+pub fn is_shipment_archived(env: &Env, shipment_id: u64) -> bool {
+    env.storage()
+        .temporary()
+        .has(&DataKey::ArchivedShipment(shipment_id))
+}
+
+/// Explicitly refresh TTL for an archived shipment entry.
+/// Useful for background keep-alive jobs.
+pub fn refresh_archived_shipment_ttl(env: &Env, shipment_id: u64) {
+    let key = DataKey::ArchivedShipment(shipment_id);
+    if env.storage().temporary().has(&key) {
+        let config = crate::config::get_config(env);
+        env.storage().temporary().extend_ttl(
+            &key,
+            config.shipment_ttl_threshold,
+            config.shipment_ttl_extension,
+        );
+    }
+}
+
+/// Extend TTL for archived shipment in temporary storage alongside persistent entries.
+/// Called by `extend_shipment_ttl` to ensure archived entries don't silently expire.
+pub fn extend_archived_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_to: u32) {
+    let key = DataKey::ArchivedShipment(shipment_id);
+    if env.storage().temporary().has(&key) {
+        env.storage()
+            .temporary()
+            .extend_ttl(&key, threshold, extend_to);
+    }
 }
 
 /// Get escrow amount for a shipment from persistent storage. Returns 0 if unset.
@@ -796,6 +903,28 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
             .persistent()
             .extend_ttl(&freeze_reason_key, threshold, extend_to);
     }
+
+    let last_status_key = DataKey::LastStatusUpdate(shipment_id);
+    if env.storage().persistent().has(&last_status_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&last_status_key, threshold, extend_to);
+    }
+
+    let dependents_key = DataKey::ShipmentDependents(shipment_id);
+    if env.storage().persistent().has(&dependents_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&dependents_key, threshold, extend_to);
+    }
+
+    // Also extend TTL for archived shipment in temporary storage to prevent silent eviction
+    let archived_key = DataKey::ArchivedShipment(shipment_id);
+    if env.storage().temporary().has(&archived_key) {
+        env.storage()
+            .temporary()
+            .extend_ttl(&archived_key, threshold, extend_to);
+    }
 }
 
 /// Backwards-compatible wrapper used by existing contract code/tests.
@@ -1034,6 +1163,48 @@ pub fn set_proposal(env: &Env, proposal: &crate::types::Proposal) {
     env.storage()
         .persistent()
         .set(&DataKey::Proposal(proposal.id), proposal);
+}
+
+/// Approximate ledger close time used to convert seconds into ledgers.
+const SECONDS_PER_LEDGER: u64 = 5;
+
+/// Extra ledgers kept beyond a proposal's expiry so the entry is still
+/// readable (and can report `ProposalExpired`) right after it expires.
+const PROPOSAL_TTL_MARGIN_LEDGERS: u32 = 17_280; // ~1 day
+
+/// Extend the TTL of a proposal and its action digest so both outlive the
+/// proposal's own `expires_at` (issue #855).
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `proposal_id` - The ID of the proposal.
+/// * `expires_at` - Ledger timestamp at which the proposal expires.
+///
+/// # Examples
+/// ```rust
+/// // storage::extend_proposal_ttl(&env, 1, proposal.expires_at);
+/// ```
+pub fn extend_proposal_ttl(env: &Env, proposal_id: u64, expires_at: u64) {
+    let remaining_secs = expires_at.saturating_sub(env.ledger().timestamp());
+    let remaining_ledgers = remaining_secs.div_ceil(SECONDS_PER_LEDGER);
+    let extend_to = u32::try_from(remaining_ledgers)
+        .unwrap_or(u32::MAX)
+        .saturating_add(PROPOSAL_TTL_MARGIN_LEDGERS)
+        .min(env.storage().max_ttl());
+
+    let proposal_key = DataKey::Proposal(proposal_id);
+    if env.storage().persistent().has(&proposal_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&proposal_key, extend_to, extend_to);
+    }
+
+    let digest_key = DataKey::ProposalDigest(proposal_id);
+    if env.storage().persistent().has(&digest_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&digest_key, extend_to, extend_to);
+    }
 }
 
 /// Check if an address is in the admin list.
@@ -1430,15 +1601,6 @@ pub fn increment_global_event_count(env: &Env) -> u32 {
     next
 }
 
-/// Increment the event count for a shipment.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `shipment_id` - The ID of the shipment.
-///
-/// # Returns
-/// No return value.
-
 // ============= Per-Shipment Cleanup Helpers =============
 
 // ============= Milestone Event Counter Storage Functions =============
@@ -1492,13 +1654,6 @@ pub fn set_reentrancy_lock(env: &Env, locked: bool) {
         .instance()
         .set(&DataKey::ReentrancyLock, &locked);
 }
-
-// ============= TTL Health Monitoring Functions =============
-
-/// Check if a shipment exists in persistent storage.
-///
-/// This is used for TTL health monitoring to determine which shipments
-/// are still active in persistent storage vs archived.
 
 // ============= Settlement Tracking Functions =============
 
@@ -1600,6 +1755,27 @@ pub fn set_settlement(env: &Env, settlement: &crate::types::SettlementRecord) {
     env.storage()
         .persistent()
         .set(&DataKey::Settlement(settlement.settlement_id), settlement);
+    env.storage().persistent().set(
+        &SettlementKey::Latest(settlement.shipment_id),
+        &settlement.settlement_id,
+    );
+}
+
+/// Get the most recent settlement ID recorded for a shipment.
+///
+/// Unlike [`get_active_settlement`], this survives settlement completion or
+/// failure, so the shipment's latest settlement record can still be renewed
+/// alongside the shipment's own TTL.
+///
+/// # Examples
+/// ```rust
+/// // let latest_id = storage::get_latest_settlement(&env, 1);
+/// ```
+#[allow(dead_code)]
+pub fn get_latest_settlement(env: &Env, shipment_id: u64) -> Option<u64> {
+    env.storage()
+        .persistent()
+        .get(&SettlementKey::Latest(shipment_id))
 }
 
 /// Get the active settlement ID for a shipment.
@@ -1730,7 +1906,7 @@ pub fn set_proposal_salt_used(env: &Env, salt: &BytesN<32>) {
 /// Get the prerequisite IDs for a dependent shipment.
 pub fn get_shipment_dependents(env: &Env, dependent_id: u64) -> Vec<u64> {
     env.storage()
-        .instance()
+        .persistent()
         .get(&DataKey::ShipmentDependents(dependent_id))
         .unwrap_or(Vec::new(env))
 }
@@ -1739,13 +1915,82 @@ pub fn get_shipment_dependents(env: &Env, dependent_id: u64) -> Vec<u64> {
 pub fn set_shipment_dependency(env: &Env, dependent_id: u64, prereq_id: u64) {
     let mut prereqs: Vec<u64> = env
         .storage()
-        .instance()
+        .persistent()
         .get(&DataKey::ShipmentDependents(dependent_id))
         .unwrap_or(Vec::new(env));
     prereqs.push_back(prereq_id);
     env.storage()
-        .instance()
+        .persistent()
         .set(&DataKey::ShipmentDependents(dependent_id), &prereqs);
+}
+
+/// Remove the prerequisite list for a dependent shipment from persistent storage.
+///
+/// Called by `archive_shipment`'s purge list to prevent unbounded growth of
+/// `ShipmentDependents` entries (issue #786). Without this, dependents would
+/// remain in instance storage indefinitely and inflate rent.
+pub fn remove_shipment_dependents(env: &Env, dependent_id: u64) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::ShipmentDependents(dependent_id));
+}
+
+/// Purge per-shipment hash/state entries when a shipment reaches a terminal state.
+///
+/// Cleanup list includes Delivered, Cancelled, and PartiallyRefunded (issue #783).
+/// Called by `archive_shipment` in `lib.rs` after moving the shipment to temporary storage;
+/// also exposed for direct invocation in tests. Each key is removed from persistent storage
+/// if present, preventing unbounded growth of `ConfirmationHash`, `LastStatusUpdate`,
+/// `DeadlineWarningEmitted`, `BreachEventCount`, `MilestoneEventCount`, `EventCount`,
+/// `ShipmentDependents`, `EscrowFreezeReasonByShipment`, and `ActiveSettlement` entries.
+pub fn purge_status_hashes(env: &Env, shipment_id: u64) {
+    // Resolve status from persistent or archived storage. Archived shipments are terminal by definition.
+    let status_opt: Option<ShipmentStatus> = if let Some(s) = get_shipment(env, shipment_id) {
+        Some(s.status)
+    } else {
+        None
+    };
+
+    let is_terminal = matches!(
+        status_opt,
+        Some(ShipmentStatus::Delivered)
+            | Some(ShipmentStatus::Cancelled)
+            | Some(ShipmentStatus::PartiallyRefunded)
+    );
+
+    if !is_terminal {
+        return;
+    }
+
+    env.storage()
+        .persistent()
+        .remove(&DataKey::ConfirmationHash(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::LastStatusUpdate(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::DeadlineWarningEmitted(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::BreachEventCount(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::MilestoneEventCount(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::EventCount(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::ShipmentDependents(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::EscrowFreezeReasonByShipment(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::ActiveSettlement(shipment_id));
+    // Also ensure dependents helper is cleared (covers instance->persistent migration per diff in storage.rs)
+    remove_shipment_dependents(env, shipment_id);
 }
 
 #[cfg(test)]
@@ -1804,6 +2049,45 @@ mod tests {
 
             reactivate_role(&env, &user, &Role::Company);
             assert!(!is_role_suspended(&env, &user, &Role::Company));
+        });
+    }
+
+    #[test]
+    fn has_entry_helpers_match_current_data_key_schema() {
+        let (env, contract_id) = with_contract_env();
+        let shipment_id = 7u64;
+        let hash = BytesN::from_array(&env, &[0xABu8; 32]);
+
+        env.as_contract(&contract_id, || {
+            assert!(!has_event_count_entry(&env, shipment_id));
+            assert!(!has_confirmation_hash_entry(&env, shipment_id));
+            assert!(!has_last_status_update_entry(&env, shipment_id));
+
+            env.storage()
+                .persistent()
+                .set(&DataKey::EventCount(shipment_id), &3u32);
+            set_confirmation_hash(&env, shipment_id, &hash);
+            set_last_status_update(&env, shipment_id, 42);
+
+            assert!(has_event_count_entry(&env, shipment_id));
+            assert!(env
+                .storage()
+                .persistent()
+                .has(&DataKey::EventCount(shipment_id)));
+
+            assert!(has_confirmation_hash_entry(&env, shipment_id));
+            assert!(env
+                .storage()
+                .persistent()
+                .has(&confirmation_hash_key(shipment_id)));
+            assert_eq!(get_confirmation_hash(&env, shipment_id), Some(hash.clone()));
+
+            assert!(has_last_status_update_entry(&env, shipment_id));
+            assert!(env
+                .storage()
+                .persistent()
+                .has(&DataKey::LastStatusUpdate(shipment_id)));
+            assert_eq!(get_last_status_update(&env, shipment_id), Some(42));
         });
     }
 }

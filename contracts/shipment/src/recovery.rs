@@ -16,7 +16,7 @@
 //! - Escrow consistency verified before and after operations
 //! - All operations emit recovery events for audit trail
 
-use crate::{errors::NavinError, events, storage, types::*};
+use crate::{errors::NavinError, events, storage, types::*, validation};
 use soroban_sdk::{Address, BytesN, Env};
 
 /// Recover a shipment from a stuck state by resetting to a valid target state.
@@ -83,8 +83,10 @@ pub fn recover_shipment(
     // Verify escrow consistency after transition
     verify_escrow_consistency(env, &shipment)?;
 
-    // Persist updated shipment
+    // Validate invariants and persist both shipment and escrow storage atomically
+    validation::validate_shipment_invariants(&shipment)?;
     storage::set_shipment(env, &shipment);
+    storage::set_escrow(env, shipment.id, shipment.escrow_amount);
     crate::extend_shipment_ttl(env, shipment_id);
 
     // Emit recovery event
@@ -161,8 +163,10 @@ pub fn unlock_escrow(
     shipment.escrow_amount = 0;
     shipment.updated_at = env.ledger().timestamp();
 
-    // Persist updated shipment
+    // Validate invariants and persist both shipment and escrow storage atomically
+    validation::validate_shipment_invariants(&shipment)?;
     storage::set_shipment(env, &shipment);
+    storage::set_escrow(env, shipment.id, shipment.escrow_amount);
     crate::extend_shipment_ttl(env, shipment_id);
 
     // Emit unlock event
@@ -228,8 +232,10 @@ pub fn clear_finalization(
     shipment.finalized = false;
     shipment.updated_at = env.ledger().timestamp();
 
-    // Persist updated shipment
+    // Validate invariants and persist both shipment and escrow storage atomically
+    validation::validate_shipment_invariants(&shipment)?;
     storage::set_shipment(env, &shipment);
+    storage::set_escrow(env, shipment.id, shipment.escrow_amount);
     crate::extend_shipment_ttl(env, shipment_id);
 
     // Emit clear finalization event
@@ -262,9 +268,22 @@ fn is_valid_recovery_transition(from: &ShipmentStatus, to: &ShipmentStatus) -> b
         // Allow transition to Cancelled from any state
         (_, Cancelled) => true,
         // Allow transition to Disputed from non-terminal states
-        (Created | InTransit | AtCheckpoint, Disputed) => true,
-        // Allow transition to Delivered from Disputed or InTransit
-        (Disputed | InTransit | AtCheckpoint, Delivered) => true,
+        (Created | InTransit | AtCheckpoint | PartiallyDelivered | PartiallyRefunded, Disputed) => true,
+        // Allow transition to Delivered from Disputed, InTransit, AtCheckpoint, PartiallyDelivered, PartiallyRefunded
+        (Disputed | InTransit | AtCheckpoint | PartiallyDelivered | PartiallyRefunded, Delivered) => true,
+        // Allow normal state machine transitions
+        (Created, InTransit) => true,
+        (InTransit, AtCheckpoint) => true,
+        (AtCheckpoint, InTransit) => true,
+        // Recovery transitions from PartiallyDelivered
+        (PartiallyDelivered, Delivered) => true,
+        (PartiallyDelivered, Disputed) => true,
+        (PartiallyDelivered, Cancelled) => true,
+        // Recovery transitions from PartiallyRefunded
+        (PartiallyRefunded, Delivered) => true,
+        (PartiallyRefunded, Disputed) => true,
+        (PartiallyRefunded, Cancelled) => true,
+        (PartiallyRefunded, PartiallyDelivered) => true,
         // Allow normal state machine transitions
         (Created, InTransit) => true,
         (InTransit, AtCheckpoint) => true,
@@ -338,7 +357,9 @@ pub fn rollback_on_external_failure(
     // Increment integration nonce to prevent replay of the failed state
     shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
 
+    validation::validate_shipment_invariants(&shipment)?;
     storage::set_shipment(env, &shipment);
+    storage::set_escrow(env, shipment.id, shipment.escrow_amount);
     crate::extend_shipment_ttl(env, shipment_id);
 
     events::emit_recovery_event(

@@ -217,30 +217,27 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "AllowedMetadataKeys"
+                              "symbol": "AllowedMetadataKey"
+                            },
+                            {
+                              "symbol": "website"
                             }
                           ]
                         },
                         "val": {
-                          "vec": []
+                          "bool": true
                         }
                       },
                       {
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Balance"
-                            },
-                            {
-                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                              "symbol": "AllowedMetadataKeys"
                             }
                           ]
                         },
                         "val": {
-                          "i128": {
-                            "hi": 0,
-                            "lo": 1000000
-                          }
+                          "vec": []
                         }
                       },
                       {

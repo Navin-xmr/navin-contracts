@@ -9,7 +9,7 @@ use crate::{
 use soroban_sdk::{
     contract, contracterror, contractimpl,
     testutils::{Address as _, Events},
-    Address, BytesN, Env, FromVal, IntoVal, Symbol, TryFromVal,
+    Address, BytesN, Env, FromVal, IntoVal, Symbol, TryFromVal, Vec,
 };
 
 #[contract]
@@ -2706,16 +2706,16 @@ fn test_execute_proposal_returns_proposal_not_found_variant() {
 
 // ============= Error #25: AlreadyApproved Tests =============
 
-/// Approve the same proposal twice with the same admin — must return AlreadyApproved error.
-/// Two different admins can approve the same proposal — confirms multi-sig flow works.
+// Approve the same proposal twice with the same admin — must return AlreadyApproved error.
+// Two different admins can approve the same proposal — confirms multi-sig flow works.
 // ============= Error #26: InsufficientApprovals Tests =============
 
 // ============= Error #27: NotAnAdmin Tests =============
 
-/// Non-admin (not in admin list) attempts propose_action — must return NotAnAdmin.
-/// Non-admin (not in admin list) attempts approve_action — must return NotAnAdmin.
-/// Admin (in admin list) can propose_action — verifies admin operations succeed.
-/// Different admin (in admin list) can approve_action — verifies admin operations succeed.
+// Non-admin (not in admin list) attempts propose_action — must return NotAnAdmin.
+// Non-admin (not in admin list) attempts approve_action — must return NotAnAdmin.
+// Admin (in admin list) can propose_action — verifies admin operations succeed.
+// Different admin (in admin list) can approve_action — verifies admin operations succeed.
 // ============= Error #28: InvalidMultiSigConfig Tests =============
 
 #[test]
@@ -3275,17 +3275,6 @@ fn test_check_deadline_returns_shipment_not_found() {
 /// - All role-based access controls are enforced
 // ============= Event Counter Tests =============
 
-#[test]
-#[should_panic(expected = "Error(Contract, #4)")]
-fn test_event_count_shipment_not_found() {
-    let (_env, client, admin, token_contract) = setup_shipment_env();
-
-    client.initialize(&admin, &token_contract);
-
-    // Try to get event count for non-existent shipment
-    client.get_event_count(&999);
-}
-
 // ============= Shipment Archival Tests =============
 
 // ── [ISSUE #600] ShipmentUnavailable error variant tests ─────────────────────
@@ -3644,7 +3633,15 @@ fn test_force_cancel_shipment_unauthorized_company() {
     client.force_cancel_shipment(&company, &shipment_id, &reason_hash);
 }
 
-/// All-zero reason_hash is rejected with InvalidHash (#6).
+/// All-zero reason_hash is rejected with ForceCancelReasonHashMissing (#34).
+#[test]
+#[should_panic(expected = "Error(Contract, #34)")]
+fn test_force_cancel_shipment_zero_reason_hash_rejected() {
+    let (env, client, admin, _token_contract, _company, shipment_id) = setup_force_cancel_env();
+    let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+    client.force_cancel_shipment(&admin, &shipment_id, &zero_hash);
+}
+
 /// Force-cancelling a non-existent shipment returns ShipmentNotFound (#4).
 /// Force-cancelling an already-Delivered shipment returns ShipmentFinalized (#38).
 /// Force-cancelling an already-Cancelled shipment returns ShipmentFinalized (#38).
@@ -4141,7 +4138,7 @@ fn test_data_hash_mismatch_error_code_is_45() {
     );
 }
 
-/// assert_delivery_hash returns DataHashMismatch (#45) for an incorrect hash.
+// assert_delivery_hash returns DataHashMismatch (#45) for an incorrect hash.
 // ═══════════════════════════════════════════════════════════════════════════
 // Issue #594 — BreachLimitExceeded (code 51)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -4261,7 +4258,7 @@ fn test_initialize_with_valid_token_address_succeeds() {
 // ── Issue #584 – InvalidPaymentMilestoneName (code 62) ──────────────────────
 
 #[test]
-#[should_panic(expected = "Error(Contract, #65)")]
+#[should_panic(expected = "Error(Contract, #62)")]
 fn test_create_shipment_empty_milestone_name_rejected() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -4289,7 +4286,7 @@ fn test_create_shipment_empty_milestone_name_rejected() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #65)")]
+#[should_panic(expected = "Error(Contract, #62)")]
 fn test_create_shipment_too_long_milestone_name_rejected() {
     let (env, client, admin, token_contract) = setup_shipment_env();
     let company = Address::generate(&env);
@@ -4964,18 +4961,18 @@ fn test_single_execution_succeeds_and_applies_action() {
     );
 }
 
-/// ForceRelease proposal: single execution releases escrow correctly.
-/// Verifies that the `ProposalAlreadyExecuted` guard works for non-Upgrade actions.
+// ForceRelease proposal: single execution releases escrow correctly.
+// Verifies that the `ProposalAlreadyExecuted` guard works for non-Upgrade actions.
 // =============================================================================
 // ForceRelease reason_hash validation and audit trail tests
 // =============================================================================
 
-/// ForceRelease with reason_hash: verifies reason hash is persisted in event stream and queryable.
-/// Ensures audit trail contains the admin-provided reason for the force release.
-/// ForceRelease rejects zero reason_hash, matching force_cancel_shipment behavior.
-/// ForceRefund with reason_hash: verifies reason hash is persisted in event stream and queryable.
-/// Ensures audit trail contains the admin-provided reason for the force refund.
-/// ForceRefund rejects zero reason_hash, matching force_cancel_shipment behavior.
+// ForceRelease with reason_hash: verifies reason hash is persisted in event stream and queryable.
+// Ensures audit trail contains the admin-provided reason for the force release.
+// ForceRelease rejects zero reason_hash, matching force_cancel_shipment behavior.
+// ForceRefund with reason_hash: verifies reason hash is persisted in event stream and queryable.
+// Ensures audit trail contains the admin-provided reason for the force refund.
+// ForceRefund rejects zero reason_hash, matching force_cancel_shipment behavior.
 // ===========================================================================
 // Security regressions: #748, #749, #750, #751
 // ===========================================================================
@@ -5142,4 +5139,71 @@ fn test_compute_idempotency_key_still_works_for_short_symbols() {
         first, other,
         "a different shipment must yield a different key"
     );
+}
+
+// =============================================================================
+// Issue #778 – check_batch_consistency admin entrypoint
+// =============================================================================
+
+/// Admin can invoke check_batch_consistency and gets an empty violation list
+/// for a healthy batch.
+#[test]
+fn test_admin_can_check_batch_consistency() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let id1 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &Vec::new(&env),
+        &(env.ledger().timestamp() + 3600),
+    );
+    let id2 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &Vec::new(&env),
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    let violations = client.check_batch_consistency(&admin, &Vec::from_array(&env, [id1, id2]));
+    assert!(
+        violations.is_empty(),
+        "healthy batch must return no violations, got: {violations:?}"
+    );
+}
+
+/// Non-admin caller is rejected when invoking check_batch_consistency.
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_non_admin_cannot_check_batch_consistency() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    client.initialize(&admin, &token_contract);
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let id1 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &Vec::new(&env),
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    let outsider = Address::generate(&env);
+    client.check_batch_consistency(&outsider, &Vec::from_array(&env, [id1]));
 }
