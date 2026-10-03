@@ -110,9 +110,9 @@ pub fn run_system_health_check_range(env: &Env, start_id: u64, limit: u64) -> Sy
 /// persistent storage for a shipment that has already been archived.
 ///
 /// Used by `run_system_health_check_range` to detect orphaned keys left
-/// behind after the shipment payload is removed from persistent storage.
-/// There is currently no `archive_shipment` entrypoint; this helper checks
-/// the keys the live schema actually writes (or still reserves).
+/// behind after `archive_shipment` removes the shipment payload from persistent
+/// storage. The helper checks keys the live schema actually writes (or still
+/// reserves).
 pub(crate) fn has_orphaned_counters(env: &Env, shipment_id: u64) -> bool {
     // Scalar counter/index keys — helpers wrap the current DataKey names.
     if storage::has_event_count_entry(env, shipment_id) {
