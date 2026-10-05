@@ -149,9 +149,9 @@ mod test_suspension;
 #[cfg(test)]
 mod test_suspension_cascade;
 #[cfg(test)]
-mod test_ttl_health;
-#[cfg(test)]
 mod test_ttl_coverage;
+#[cfg(test)]
+mod test_ttl_health;
 #[cfg(test)]
 mod test_verification;
 #[cfg(test)]
@@ -202,6 +202,37 @@ fn extend_shipment_ttl(env: &Env, shipment_id: u64) {
 #[inline]
 fn extend_shipment_ttl_cached(env: &Env, shipment_id: u64, threshold: u32, extension: u32) {
     storage::extend_shipment_ttl(env, shipment_id, threshold, extension);
+}
+
+/// Shared existence check for the status-hash read paths (issue #698).
+///
+/// Accepts archived shipments too: their hash log is purged on archival, so the
+/// lookup falls through to `StatusHashNotFound`, but an archived shipment is
+/// still a real shipment and reporting `ShipmentNotFound` for it would be
+/// misleading.
+fn require_shipment_exists(env: &Env, shipment_id: u64) -> Result<(), NavinError> {
+    if storage::get_shipment(env, shipment_id).is_none()
+        && storage::get_archived_shipment(env, shipment_id).is_none()
+    {
+        return Err(NavinError::ShipmentNotFound);
+    }
+    Ok(())
+}
+
+/// Resolve one recorded status visit (issue #698).
+///
+/// Backs `get_status_hash`, `verify_data_hash` and `assert_data_hash` so all
+/// three agree on what counts as a missing shipment versus a missing visit.
+fn status_hash_record(
+    env: &Env,
+    shipment_id: u64,
+    status: &ShipmentStatus,
+    visit_index: u32,
+) -> Result<StatusHashRecord, NavinError> {
+    require_initialized(env)?;
+    require_shipment_exists(env, shipment_id)?;
+    storage::find_status_hash(env, shipment_id, status, visit_index)
+        .ok_or(NavinError::StatusHashNotFound)
 }
 
 fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(), NavinError> {
@@ -1251,10 +1282,7 @@ impl NavinShipment {
             delivered: storage::get_status_count(&env, &ShipmentStatus::Delivered),
             disputed: storage::get_status_count(&env, &ShipmentStatus::Disputed),
             cancelled: storage::get_status_count(&env, &ShipmentStatus::Cancelled),
-            partially_refunded: storage::get_status_count(
-                &env,
-                &ShipmentStatus::PartiallyRefunded,
-            ),
+            partially_refunded: storage::get_status_count(&env, &ShipmentStatus::PartiallyRefunded),
         })
     }
 
@@ -2895,7 +2923,11 @@ impl NavinShipment {
         storage::set_last_status_update(&env, shipment_id, env.ledger().timestamp());
         extend_shipment_ttl(&env, shipment_id);
 
-        // Store the data hash for this status transition (IoT verification)
+        // Record this visit's IoT data hash in the per-visit status-hash log
+        // (issue #698). Keyed by a monotonic sequence rather than by status, so
+        // a shipment cycling InTransit -> AtCheckpoint -> InTransit keeps the
+        // first InTransit hash instead of overwriting it.
+        storage::append_status_hash(&env, shipment_id, &new_status, &data_hash, &caller);
 
         events::emit_status_updated(&env, shipment_id, &new_status, &data_hash, &caller);
         events::emit_notification(
@@ -2921,6 +2953,146 @@ impl NavinShipment {
         );
 
         Ok(())
+    }
+
+    /// Read back the IoT data hash recorded for one visit to a status (issue #698).
+    ///
+    /// Status is *not* unique per shipment: a shipment may enter
+    /// `InTransit`, reach `AtCheckpoint`, then re-enter `InTransit`. Each of
+    /// those visits recorded its own hash, and this call addresses them
+    /// individually by the per-status `visit_index` (`0` for the first visit to
+    /// that status).
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - The shipment to query.
+    /// * `status` - The status that was visited.
+    /// * `visit_index` - Zero-based visit number within `status`.
+    ///
+    /// # Returns
+    /// * `Result<StatusHashRecord, NavinError>` - The recorded hash plus its
+    ///   position in the log, who recorded it and when.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
+    /// * `NavinError::StatusHashNotFound` - If that visit was never recorded, or
+    ///   has been evicted because the bounded log wrapped.
+    ///
+    /// # Examples
+    /// ```rust,no_run
+    /// # use soroban_sdk::Env;
+    /// # use shipment::{NavinShipment, NavinShipmentClient, ShipmentStatus};
+    /// # let env = Env::default();
+    /// # let contract_id = env.register(NavinShipment, ());
+    /// # let client = NavinShipmentClient::new(&env, &contract_id);
+    /// let first_leg = client.get_status_hash(&7, &ShipmentStatus::InTransit, &0);
+    /// // The InTransit visit after the checkpoint is a different record.
+    /// let second_leg = client.get_status_hash(&7, &ShipmentStatus::InTransit, &1);
+    /// ```
+    pub fn get_status_hash(
+        env: Env,
+        shipment_id: u64,
+        status: ShipmentStatus,
+        visit_index: u32,
+    ) -> Result<StatusHashRecord, NavinError> {
+        status_hash_record(&env, shipment_id, &status, visit_index)
+    }
+
+    /// Read the retained IoT data-hash log for a shipment, oldest visit first.
+    ///
+    /// Every status update appends one entry, so a shipment that ping-pongs
+    /// `InTransit <-> AtCheckpoint` yields one entry per visit rather than one
+    /// entry per status. The log is bounded to
+    /// [`MAX_STATUS_HASHES_PER_SHIPMENT`] entries — the oldest are dropped once
+    /// it wraps, while each visit's hash remains permanently available in its
+    /// `status_updated` event.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - The shipment to query.
+    ///
+    /// # Returns
+    /// * `Result<Vec<StatusHashRecord>, NavinError>` - Retained visits, oldest
+    ///   first.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
+    pub fn get_status_hash_history(
+        env: Env,
+        shipment_id: u64,
+    ) -> Result<Vec<StatusHashRecord>, NavinError> {
+        require_initialized(&env)?;
+        require_shipment_exists(&env, shipment_id)?;
+        Ok(storage::status_hash_history(&env, shipment_id))
+    }
+
+    /// Check whether a visit's recorded data hash equals `expected_hash` (issue #698).
+    ///
+    /// Unlike `assert_data_hash` this reports a mismatch as `Ok(false)`. A visit
+    /// that was never recorded is still an error, because "no hash to compare"
+    /// is a different failure from "the hash disagrees".
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - The shipment to query.
+    /// * `status` - The status that was visited.
+    /// * `visit_index` - Zero-based visit number within `status`.
+    /// * `expected_hash` - The hash to compare against.
+    ///
+    /// # Returns
+    /// * `Result<bool, NavinError>` - `true` when the recorded hash matches.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
+    /// * `NavinError::StatusHashNotFound` - If that visit was never recorded.
+    pub fn verify_data_hash(
+        env: Env,
+        shipment_id: u64,
+        status: ShipmentStatus,
+        visit_index: u32,
+        expected_hash: BytesN<32>,
+    ) -> Result<bool, NavinError> {
+        let record = status_hash_record(&env, shipment_id, &status, visit_index)?;
+        Ok(record.data_hash == expected_hash)
+    }
+
+    /// Assert a visit's recorded data hash equals `expected_hash` (issue #698).
+    ///
+    /// The panicking-on-nothing form of [`verify_data_hash`]: usable as a guard
+    /// by callers that must reject a shipment whose telemetry hash does not match
+    /// what they observed.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - The shipment to check.
+    /// * `status` - The status that was visited.
+    /// * `visit_index` - Zero-based visit number within `status`.
+    /// * `expected_hash` - The hash the visit must have recorded.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok when the recorded hash matches.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
+    /// * `NavinError::StatusHashNotFound` - If that visit was never recorded.
+    /// * `NavinError::DataHashMismatch` - If the recorded hash differs.
+    pub fn assert_data_hash(
+        env: Env,
+        shipment_id: u64,
+        status: ShipmentStatus,
+        visit_index: u32,
+        expected_hash: BytesN<32>,
+    ) -> Result<(), NavinError> {
+        let record = status_hash_record(&env, shipment_id, &status, visit_index)?;
+        if record.data_hash == expected_hash {
+            Ok(())
+        } else {
+            Err(NavinError::DataHashMismatch)
+        }
     }
 
     /// Returns the current escrowed amount for a specific shipment.
@@ -4789,10 +4961,20 @@ impl NavinShipment {
                 let carrier_share = escrow_amount / 2;
                 let company_share = escrow_amount - carrier_share;
                 if carrier_share > 0 {
-                    events::emit_escrow_released(&env, shipment_id, &shipment.carrier, carrier_share);
+                    events::emit_escrow_released(
+                        &env,
+                        shipment_id,
+                        &shipment.carrier,
+                        carrier_share,
+                    );
                 }
                 if company_share > 0 {
-                    events::emit_escrow_refunded(&env, shipment_id, &shipment.sender, company_share);
+                    events::emit_escrow_refunded(
+                        &env,
+                        shipment_id,
+                        &shipment.sender,
+                        company_share,
+                    );
                 }
                 // Partial refund still penalizes carrier partially but we emit the loss event for indexing
                 events::emit_carrier_dispute_loss(&env, &shipment.carrier, shipment_id);
