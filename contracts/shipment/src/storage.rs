@@ -555,9 +555,11 @@ pub fn archive_shipment(env: &Env, shipment_id: u64, shipment: &Shipment) {
     env.storage().temporary().set(&key, shipment);
     // Extend TTL immediately on write - critical to prevent silent eviction
     let config = crate::config::get_config(env);
-    env.storage()
-        .temporary()
-        .extend_ttl(&key, config.shipment_ttl_threshold, config.shipment_ttl_extension);
+    env.storage().temporary().extend_ttl(
+        &key,
+        config.shipment_ttl_threshold,
+        config.shipment_ttl_extension,
+    );
     // Remove from persistent storage
     env.storage()
         .persistent()
@@ -571,9 +573,11 @@ pub fn get_archived_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
     let shipment: Option<Shipment> = env.storage().temporary().get(&key);
     if shipment.is_some() {
         let config = crate::config::get_config(env);
-        env.storage()
-            .temporary()
-            .extend_ttl(&key, config.shipment_ttl_threshold, config.shipment_ttl_extension);
+        env.storage().temporary().extend_ttl(
+            &key,
+            config.shipment_ttl_threshold,
+            config.shipment_ttl_extension,
+        );
     }
     shipment
 }
@@ -591,9 +595,11 @@ pub fn refresh_archived_shipment_ttl(env: &Env, shipment_id: u64) {
     let key = DataKey::ArchivedShipment(shipment_id);
     if env.storage().temporary().has(&key) {
         let config = crate::config::get_config(env);
-        env.storage()
-            .temporary()
-            .extend_ttl(&key, config.shipment_ttl_threshold, config.shipment_ttl_extension);
+        env.storage().temporary().extend_ttl(
+            &key,
+            config.shipment_ttl_threshold,
+            config.shipment_ttl_extension,
+        );
     }
 }
 
@@ -602,7 +608,9 @@ pub fn refresh_archived_shipment_ttl(env: &Env, shipment_id: u64) {
 pub fn extend_archived_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_to: u32) {
     let key = DataKey::ArchivedShipment(shipment_id);
     if env.storage().temporary().has(&key) {
-        env.storage().temporary().extend_ttl(&key, threshold, extend_to);
+        env.storage()
+            .temporary()
+            .extend_ttl(&key, threshold, extend_to);
     }
 }
 
@@ -1574,6 +1582,23 @@ pub fn get_event_count(env: &Env, shipment_id: u64) -> u32 {
         .persistent()
         .get(&DataKey::EventCount(shipment_id))
         .unwrap_or(0)
+}
+
+/// Return the contract-wide event counter used by events without a shipment ID.
+pub fn get_global_event_count(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::GlobalEventCount)
+        .unwrap_or(0)
+}
+
+/// Increment and return the next contract-wide event counter.
+pub fn increment_global_event_count(env: &Env) -> u32 {
+    let next = get_global_event_count(env).saturating_add(1);
+    env.storage()
+        .instance()
+        .set(&DataKey::GlobalEventCount, &next);
+    next
 }
 
 // ============= Per-Shipment Cleanup Helpers =============

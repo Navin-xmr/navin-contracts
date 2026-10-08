@@ -217,6 +217,74 @@ fn test_ttl_extended_on_active_mutation() {
     );
 }
 
+#[test]
+fn test_instance_ttl_refreshes_on_active_read() {
+    let (env, client, _admin, _token) = setup_shipment_env();
+
+    let ttl_before_read = env.as_contract(&client.address, || env.storage().instance().get_ttl());
+
+    // Move close to the expiry window without allowing the instance entry to
+    // expire. A normal read must refresh the contract-wide instance storage.
+    env.ledger().with_mut(|ledger| {
+        ledger.sequence_number += 500_000;
+        ledger.timestamp += 500_000;
+    });
+
+    client.get_status_summary();
+
+    let ttl_after_read = env.as_contract(&client.address, || env.storage().instance().get_ttl());
+    assert!(
+        ttl_after_read > ttl_before_read.saturating_sub(500_000),
+        "active reads must refresh the instance storage TTL"
+    );
+}
+
+#[test]
+fn test_ttl_not_extended_for_archived_terminal_shipment() {
+    let (env, client, admin, _token) = setup_shipment_env();
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let receiver = Address::generate(&env);
+    let create_hash = BytesN::from_array(&env, &[0x03u8; 32]);
+    let deadline = env.ledger().timestamp() + 86_400;
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &create_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let present_before = env.as_contract(&client.address, || {
+        let key = crate::types::DataKey::Shipment(shipment_id);
+        env.storage().persistent().has(&key)
+    });
+    assert!(
+        present_before,
+        "Shipment must be in persistent storage after creation"
+    );
+
+    let reason_hash = BytesN::from_array(&env, &[0x04u8; 32]);
+    client.cancel_shipment(&company, &shipment_id, &reason_hash);
+
+    client.archive_shipment(&admin, &shipment_id);
+
+    let present_after_archive = env.as_contract(&client.address, || {
+        let key = crate::types::DataKey::Shipment(shipment_id);
+        env.storage().persistent().has(&key)
+    });
+    assert!(
+        !present_after_archive,
+        "Archived terminal shipment must not remain in persistent storage"
+    );
+}
+
 /// Verify that health output matches actual storage state at TTL boundaries.
 #[test]
 fn test_ttl_health_output_matches_storage_state() {
