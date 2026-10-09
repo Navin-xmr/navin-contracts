@@ -1,5 +1,5 @@
 use crate::{errors::NavinError, types::*};
-use soroban_sdk::{Address, BytesN, Env, Vec};
+use soroban_sdk::{Address, BytesN, Env, Map, Vec};
 
 /// Check if the contract has been initialized (admin set).
 ///
@@ -925,6 +925,10 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
             .temporary()
             .extend_ttl(&archived_key, threshold, extend_to);
     }
+
+    // Keep the per-visit status-hash log alive as long as the shipment is
+    // (issue #698); verified hashes must not expire under a live shipment.
+    extend_status_hash_ttl(env, shipment_id, threshold, extend_to);
 }
 
 /// Backwards-compatible wrapper used by existing contract code/tests.
@@ -1934,6 +1938,170 @@ pub fn remove_shipment_dependents(env: &Env, dependent_id: u64) {
         .persistent()
         .remove(&DataKey::ShipmentDependents(dependent_id));
 }
+/// Read a shipment's status-hash log, or an empty log if it has none.
+///
+/// Reads from persistent storage first and falls back to temporary storage so a
+/// shipment mid-migration still reads back its own hashes.
+pub fn get_status_hash_log(env: &Env, shipment_id: u64) -> StatusHashLog {
+    let key = StatusHashKey::Log(shipment_id);
+    if let Some(log) = env
+        .storage()
+        .persistent()
+        .get::<StatusHashKey, StatusHashLog>(&key)
+    {
+        return log;
+    }
+    env.storage()
+        .temporary()
+        .get(&key)
+        .unwrap_or_else(|| StatusHashLog {
+            next_seq: 0,
+            entries: Map::new(env),
+            visits: Map::new(env),
+        })
+}
+
+/// Persist a shipment's status-hash log with the shipment TTL window.
+///
+/// Also writes the temporary-storage copy so a shipment mid-migration keeps its
+/// hashes readable from either store.
+fn set_status_hash_log(env: &Env, shipment_id: u64, log: &StatusHashLog) {
+    let config = crate::config::get_config(env);
+    let key = StatusHashKey::Log(shipment_id);
+    env.storage().persistent().set(&key, log);
+    env.storage().persistent().extend_ttl(
+        &key,
+        config.shipment_ttl_threshold,
+        config.shipment_ttl_extension,
+    );
+}
+
+/// Append one visit's data hash to a shipment's bounded status-hash log.
+///
+/// Returns the stored [`StatusHashRecord`], including the per-status
+/// `visit_index` assigned to this visit and the absolute `seq`.
+///
+/// This never overwrites a *retained* entry: a shipment revisiting a status
+/// records a brand-new entry, and every earlier visit stays readable until the
+/// log wraps (issue #698).
+pub fn append_status_hash(
+    env: &Env,
+    shipment_id: u64,
+    status: &ShipmentStatus,
+    data_hash: &BytesN<32>,
+    actor: &Address,
+) -> StatusHashRecord {
+    let mut log = get_status_hash_log(env, shipment_id);
+
+    let seq = log.next_seq;
+    let visit_index = log.visits.get(status.clone()).unwrap_or(0);
+
+    let record = StatusHashRecord {
+        status: status.clone(),
+        data_hash: data_hash.clone(),
+        visit_index,
+        seq,
+        timestamp: env.ledger().timestamp(),
+        actor: actor.clone(),
+    };
+
+    log.entries.set(seq, record.clone());
+    log.visits
+        .set(status.clone(), visit_index.saturating_add(1));
+    log.next_seq = seq.saturating_add(1);
+
+    // Bound the log: drop the visit that just fell out of the window. This is
+    // what keeps a ping-ponging shipment's state footprint constant.
+    let evicted = log.next_seq.checked_sub(MAX_STATUS_HASHES_PER_SHIPMENT + 1);
+    if let Some(seq) = evicted {
+        if seq < log.next_seq {
+            log.entries.remove(seq);
+        }
+    }
+
+    set_status_hash_log(env, shipment_id, &log);
+    record
+}
+
+/// Look up the recorded data hash for one visit to a status.
+///
+/// `visit_index` is the per-status visit index reported by
+/// [`append_status_hash`] — `0` is the first time the shipment entered
+/// `status`. Returns `None` when that visit was never recorded or has been
+/// evicted by the bound.
+pub fn find_status_hash(
+    env: &Env,
+    shipment_id: u64,
+    status: &ShipmentStatus,
+    visit_index: u32,
+) -> Option<StatusHashRecord> {
+    if visit_index
+        >= get_status_hash_log(env, shipment_id)
+            .visits
+            .get(status.clone())?
+    {
+        return None;
+    }
+    status_hash_history_for(env, shipment_id, status)
+        .into_iter()
+        .find(|record| record.visit_index == visit_index)
+}
+
+/// Return every retained entry of a shipment's status-hash log, oldest first.
+///
+/// At most [`MAX_STATUS_HASHES_PER_SHIPMENT`] entries are returned, so the
+/// result is bounded regardless of how many status updates a shipment has
+/// taken.
+pub fn status_hash_history(env: &Env, shipment_id: u64) -> Vec<StatusHashRecord> {
+    let log = get_status_hash_log(env, shipment_id);
+    let oldest = log.next_seq.saturating_sub(MAX_STATUS_HASHES_PER_SHIPMENT);
+
+    let mut out = Vec::new(env);
+    for seq in oldest..log.next_seq {
+        if let Some(record) = log.entries.get(seq) {
+            out.push_back(record);
+        }
+    }
+    out
+}
+
+/// Return the retained visits to a single status, oldest first.
+pub fn status_hash_history_for(
+    env: &Env,
+    shipment_id: u64,
+    status: &ShipmentStatus,
+) -> Vec<StatusHashRecord> {
+    let mut out = Vec::new(env);
+    for record in status_hash_history(env, shipment_id).iter() {
+        if &record.status == status {
+            out.push_back(record);
+        }
+    }
+    out
+}
+
+/// Extend the TTL of a shipment's entire status-hash log.
+///
+/// Called alongside the other shipment-key TTL bumps so an in-flight shipment's
+/// hashes do not expire while the shipment itself is still alive.
+pub fn extend_status_hash_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_to: u32) {
+    let key = StatusHashKey::Log(shipment_id);
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, threshold, extend_to);
+    }
+}
+
+/// Remove a shipment's entire status-hash log.
+///
+/// Called from [`purge_status_hashes`] on terminal shipments so archived
+/// shipments do not keep paying rent for IoT verification hashes.
+pub fn purge_status_hash_log(env: &Env, shipment_id: u64) {
+    let key = StatusHashKey::Log(shipment_id);
+    env.storage().persistent().remove(&key);
+    env.storage().temporary().remove(&key);
+}
 
 /// Purge per-shipment hash/state entries when a shipment reaches a terminal state.
 ///
@@ -1943,12 +2111,17 @@ pub fn remove_shipment_dependents(env: &Env, dependent_id: u64) {
 /// if present, preventing unbounded growth of `ConfirmationHash`, `LastStatusUpdate`,
 /// `DeadlineWarningEmitted`, `BreachEventCount`, `MilestoneEventCount`, `EventCount`,
 /// `ShipmentDependents`, `EscrowFreezeReasonByShipment`, and `ActiveSettlement` entries.
+/// The per-visit status-hash log (issue #698) is purged alongside them.
 pub fn purge_status_hashes(env: &Env, shipment_id: u64) {
-    // Resolve status from persistent or archived storage. Archived shipments are terminal by definition.
-    let status_opt: Option<ShipmentStatus> = if let Some(s) = get_shipment(env, shipment_id) {
-        Some(s.status)
-    } else {
-        None
+    // Resolve status from persistent or archived storage. `archive_shipment`
+    // moves the shipment to temporary storage *before* calling this, so the
+    // archived read is the one that actually matches on the archive path —
+    // checking only persistent storage made this function return early
+    // without removing anything, and no caller noticed because the purge
+    // targets are all optional keys.
+    let status_opt: Option<ShipmentStatus> = match get_shipment(env, shipment_id) {
+        Some(shipment) => Some(shipment.status),
+        None => get_archived_shipment(env, shipment_id).map(|shipment| shipment.status),
     };
 
     let is_terminal = matches!(
@@ -1991,6 +2164,9 @@ pub fn purge_status_hashes(env: &Env, shipment_id: u64) {
         .remove(&DataKey::ActiveSettlement(shipment_id));
     // Also ensure dependents helper is cleared (covers instance->persistent migration per diff in storage.rs)
     remove_shipment_dependents(env, shipment_id);
+    // Drop the per-visit IoT status-hash log (issue #698) so archived shipments
+    // stop paying rent for verification hashes they can no longer transition.
+    purge_status_hash_log(env, shipment_id);
 }
 
 #[cfg(test)]

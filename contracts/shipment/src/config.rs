@@ -373,21 +373,21 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// 8. multisig_max_admins (u32, 4 bytes, big-endian)
 /// 9. proposal_expiry_seconds (u64, 8 bytes, big-endian)
 /// 10. deadline_grace_seconds (u64, 8 bytes, big-endian)
-/// 11. auto_dispute_breach (bool, 1 byte: 1 = true, 0 = false)
-/// 12. max_milestones_per_shipment (u32, 4 bytes, big-endian)
-/// 13. max_notes_per_shipment (u32, 4 bytes, big-endian)
-/// 14. max_evidence_per_dispute (u32, 4 bytes, big-endian)
-/// 15. max_breaches_per_shipment (u32, 4 bytes, big-endian)
-/// 16. creation_quota_max (u32, 4 bytes, big-endian)
-/// 17. creation_quota_window_seconds (u64, 8 bytes, big-endian)
-/// 18. auto_mint_nft (bool, 1 byte: 1 = true, 0 = false)
-///
-/// Total: 71 bytes serialized, hashed to 32-byte SHA-256 digest.
-/// 16. idempotency_window_seconds (u64, 8 bytes, big-endian)
+/// 11. idempotency_window_seconds (u64, 8 bytes, big-endian)
+/// 12. auto_dispute_breach (bool, 1 byte: 1 = true, 0 = false)
+/// 13. max_milestones_per_shipment (u32, 4 bytes, big-endian)
+/// 14. max_notes_per_shipment (u32, 4 bytes, big-endian)
+/// 15. max_evidence_per_dispute (u32, 4 bytes, big-endian)
+/// 16. max_breaches_per_shipment (u32, 4 bytes, big-endian)
 /// 17. creation_quota_max (u32, 4 bytes, big-endian)
 /// 18. creation_quota_window_seconds (u64, 8 bytes, big-endian)
+/// 19. auto_mint_nft (bool, 1 byte: 1 = true, 0 = false)
 ///
-/// Total: 89 bytes serialized, hashed to 32-byte SHA-256 digest.
+/// Total: 90 bytes serialized, hashed to a 32-byte SHA-256 digest.
+///
+/// Every field is serialized exactly once, in `ContractConfig` declaration
+/// order, so adding a field without extending the buffer here is caught by
+/// the `debug_assert` in `compute_config_checksum`.
 ///
 /// # Arguments
 /// * `config` - The configuration to checksum.
@@ -403,92 +403,78 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// assert_eq!(checksum1, checksum2); // Deterministic
 /// ```
 pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32> {
-    // Serialize all fields in fixed order (71 bytes total)
-    let mut bytes: [u8; 71] = [0; 71];
-    // Serialize all fields in fixed order (89 bytes total)
-    let mut bytes: [u8; 89] = [0; 89];
+    // Serialize every ContractConfig field exactly once, in declaration
+    // order, big-endian. The buffer size is the exact serialized length;
+    // `debug_assert` catches any drift between the two at test time instead
+    // of panicking inside a contract call at runtime.
+    //
+    // Layout (90 bytes):
+    //   u32 shipment_ttl_threshold        4
+    //   u32 shipment_ttl_extension        4
+    //   u64 min_status_update_interval    8
+    //   u32 batch_operation_limit         4
+    //   u32 max_metadata_entries          4
+    //   u32 default_shipment_limit        4
+    //   u32 multisig_min_admins           4
+    //   u32 multisig_max_admins           4
+    //   u64 proposal_expiry_seconds       8
+    //   u64 deadline_grace_seconds        8
+    //   u64 idempotency_window_seconds    8
+    //   bool auto_dispute_breach          1
+    //   u32 max_milestones_per_shipment   4
+    //   u32 max_notes_per_shipment        4
+    //   u32 max_evidence_per_dispute      4
+    //   u32 max_breaches_per_shipment     4
+    //   u32 creation_quota_max            4
+    //   u64 creation_quota_window_seconds 8
+    //   bool auto_mint_nft                1
+    let mut bytes: [u8; 90] = [0; 90];
     let mut offset = 0;
 
-    // 1. shipment_ttl_threshold (u32, big-endian)
-    bytes[offset..offset + 4].copy_from_slice(&config.shipment_ttl_threshold.to_be_bytes());
-    offset += 4;
+    macro_rules! put_u32 {
+        ($value:expr) => {
+            bytes[offset..offset + 4].copy_from_slice(&$value.to_be_bytes());
+            offset += 4;
+        };
+    }
+    macro_rules! put_u64 {
+        ($value:expr) => {
+            bytes[offset..offset + 8].copy_from_slice(&$value.to_be_bytes());
+            offset += 8;
+        };
+    }
+    macro_rules! put_bool {
+        ($value:expr) => {
+            bytes[offset] = u8::from($value);
+            offset += 1;
+        };
+    }
 
-    // 2. shipment_ttl_extension (u32, big-endian)
-    bytes[offset..offset + 4].copy_from_slice(&config.shipment_ttl_extension.to_be_bytes());
-    offset += 4;
+    put_u32!(config.shipment_ttl_threshold);
+    put_u32!(config.shipment_ttl_extension);
+    put_u64!(config.min_status_update_interval);
+    put_u32!(config.batch_operation_limit);
+    put_u32!(config.max_metadata_entries);
+    put_u32!(config.default_shipment_limit);
+    put_u32!(config.multisig_min_admins);
+    put_u32!(config.multisig_max_admins);
+    put_u64!(config.proposal_expiry_seconds);
+    put_u64!(config.deadline_grace_seconds);
+    put_u64!(config.idempotency_window_seconds);
+    put_bool!(config.auto_dispute_breach);
+    put_u32!(config.max_milestones_per_shipment);
+    put_u32!(config.max_notes_per_shipment);
+    put_u32!(config.max_evidence_per_dispute);
+    put_u32!(config.max_breaches_per_shipment);
+    put_u32!(config.creation_quota_max);
+    put_u64!(config.creation_quota_window_seconds);
+    put_bool!(config.auto_mint_nft);
 
-    // 3. min_status_update_interval (u64, big-endian)
-    bytes[offset..offset + 8].copy_from_slice(&config.min_status_update_interval.to_be_bytes());
-    offset += 8;
-
-    // 4. batch_operation_limit (u32, big-endian)
-    bytes[offset..offset + 4].copy_from_slice(&config.batch_operation_limit.to_be_bytes());
-    offset += 4;
-
-    // 5. max_metadata_entries (u32, big-endian)
-    bytes[offset..offset + 4].copy_from_slice(&config.max_metadata_entries.to_be_bytes());
-    offset += 4;
-
-    // 6. default_shipment_limit (u32, big-endian)
-    bytes[offset..offset + 4].copy_from_slice(&config.default_shipment_limit.to_be_bytes());
-    offset += 4;
-
-    // 7. multisig_min_admins (u32, big-endian)
-    bytes[offset..offset + 4].copy_from_slice(&config.multisig_min_admins.to_be_bytes());
-    offset += 4;
-
-    // 8. multisig_max_admins (u32, big-endian)
-    bytes[offset..offset + 4].copy_from_slice(&config.multisig_max_admins.to_be_bytes());
-    offset += 4;
-
-    // 9. proposal_expiry_seconds (u64, big-endian)
-    bytes[offset..offset + 8].copy_from_slice(&config.proposal_expiry_seconds.to_be_bytes());
-    offset += 8;
-
-    // 10. deadline_grace_seconds (u64, big-endian)
-    bytes[offset..offset + 8].copy_from_slice(&config.deadline_grace_seconds.to_be_bytes());
-    offset += 8;
-
-    // 11. auto_dispute_breach (bool, 1 byte)
-    bytes[offset] = if config.auto_dispute_breach { 1 } else { 0 };
-    offset += 1;
-
-    // 12. max_milestones_per_shipment (u32, big-endian)
-    bytes[offset..offset + 4].copy_from_slice(&config.max_milestones_per_shipment.to_be_bytes());
-    offset += 4;
-
-    // 13. max_notes_per_shipment (u32, big-endian)
-    bytes[offset..offset + 4].copy_from_slice(&config.max_notes_per_shipment.to_be_bytes());
-    offset += 4;
-
-    // 14. max_evidence_per_dispute (u32, big-endian)
-    bytes[offset..offset + 4].copy_from_slice(&config.max_evidence_per_dispute.to_be_bytes());
-    offset += 4;
-
-    // 15. max_breaches_per_shipment (u32, big-endian)
-    bytes[offset..offset + 4].copy_from_slice(&config.max_breaches_per_shipment.to_be_bytes());
-    offset += 4;
-
-    // 16. creation_quota_max (u32, big-endian)
-    bytes[offset..offset + 4].copy_from_slice(&config.creation_quota_max.to_be_bytes());
-    offset += 4;
-
-    // 17. creation_quota_window_seconds (u64, big-endian)
-    bytes[offset..offset + 8].copy_from_slice(&config.creation_quota_window_seconds.to_be_bytes());
-    offset += 8;
-
-    // 18. auto_mint_nft (bool, 1 byte)
-    bytes[offset] = if config.auto_mint_nft { 1 } else { 0 };
-    // 16. idempotency_window_seconds (u64, big-endian)
-    bytes[offset..offset + 8].copy_from_slice(&config.idempotency_window_seconds.to_be_bytes());
-    offset += 8;
-
-    // 17. creation_quota_max (u32, big-endian)
-    bytes[offset..offset + 4].copy_from_slice(&config.creation_quota_max.to_be_bytes());
-    offset += 4;
-
-    // 18. creation_quota_window_seconds (u64, big-endian)
-    bytes[offset..offset + 8].copy_from_slice(&config.creation_quota_window_seconds.to_be_bytes());
+    debug_assert_eq!(
+        offset,
+        bytes.len(),
+        "config checksum layout drifted from the serialized length"
+    );
 
     // Compute SHA-256 hash and convert to BytesN<32>
     let hash = env

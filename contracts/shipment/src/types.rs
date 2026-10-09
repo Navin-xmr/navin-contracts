@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, BytesN, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, BytesN, Map, Symbol, Vec};
 
 pub const HASH_ALGO_SHA256: u32 = 1;
 pub const DEFAULT_HASH_ALGO: u32 = HASH_ALGO_SHA256;
@@ -177,6 +177,87 @@ pub enum SettlementKey {
     /// `DataKey::ActiveSettlement`, it is not cleared when the settlement
     /// completes or fails.
     Latest(u64),
+}
+
+/// Storage key for a shipment's per-visit status data-hash log (issue #698).
+///
+/// `DataKey` is already at the `#[contracttype]` case limit, so this log lives
+/// in its own key type — the same pattern as [`DisputeKey`] and
+/// [`SettlementKey`].
+///
+/// One key per shipment holds the whole log ([`StatusHashLog`]) rather than one
+/// key per visit: `update_status` runs on the hot path under a rate limit, and a
+/// per-visit key scheme needs ~29 extra reads/writes/TTL bumps per call (ring
+/// slot + sequence + per-status visit counter, then re-extending all of them).
+/// A single bounded map keeps the cost at one read and one write.
+///
+/// # Examples
+/// ```text
+/// let key = StatusHashKey::Log(shipment_id);
+/// ```
+#[contracttype(export = false)]
+pub enum StatusHashKey {
+    /// Bounded status-hash log for one shipment.
+    Log(u64),
+}
+
+/// Maximum number of status data-hash entries retained per shipment (issue #698).
+///
+/// The log is append-only but bounded: once this many visits have been recorded,
+/// appending visit N evicts visit `N - MAX_STATUS_HASHES_PER_SHIPMENT`, i.e. the
+/// oldest retained one. Bounding it is deliberate — an unbounded per-status map
+/// is exactly the state growth removed upstream in #824, and every visit's hash
+/// is already emitted permanently as a `status_updated` event for off-chain
+/// indexing.
+///
+/// Sized to comfortably cover a full shipment lifecycle (typically well under
+/// ten status updates) while keeping the per-shipment footprint small and
+/// predictable.
+pub const MAX_STATUS_HASHES_PER_SHIPMENT: u32 = 20;
+
+/// A shipment's bounded status data-hash log (issue #698).
+///
+/// Stored as a single value under [`StatusHashKey::Log`] so that recording one
+/// visit costs one read and one write.
+///
+/// `entries` is keyed by absolute visit sequence, which is monotonic across the
+/// whole shipment, and holds at most [`MAX_STATUS_HASHES_PER_SHIPMENT`] items.
+/// `visits` counts visits per status and yields each visit's `visit_index`, so
+/// repeated visits to one status never overwrite one another.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct StatusHashLog {
+    /// Sequence the next visit will receive. Monotonic, never reset.
+    pub next_seq: u32,
+    /// Retained visits by absolute sequence number, oldest first.
+    pub entries: Map<u32, StatusHashRecord>,
+    /// Visit count per status, used to assign `visit_index`.
+    pub visits: Map<ShipmentStatus, u32>,
+}
+
+/// One recorded status-visit hash from a shipment's bounded status-hash log.
+///
+/// Returned by `get_status_hash` / `get_status_hash_history` so a caller can
+/// tell *which* visit a hash belongs to, not just read the latest value.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct StatusHashRecord {
+    /// Status the shipment held when this hash was recorded.
+    pub status: ShipmentStatus,
+    /// SHA-256 hash of the off-chain IoT payload supplied for this visit.
+    pub data_hash: BytesN<32>,
+    /// Zero-based index of this visit *among visits to `status`*. Distinct
+    /// visits to the same status get distinct indices, so neither overwrites
+    /// the other. Monotonic per status and never reused.
+    pub visit_index: u32,
+    /// Position of this entry in the shipment's log. Always
+    /// strictly increasing; `seq % MAX_STATUS_HASHES_PER_SHIPMENT` is the ring
+    /// slot the entry occupies.
+    pub seq: u32,
+    /// Ledger timestamp of the visit.
+    pub timestamp: u64,
+    /// Address that performed the status update.
+    pub actor: Address,
 }
 
 /// Structured reason codes for escrow freeze events.
