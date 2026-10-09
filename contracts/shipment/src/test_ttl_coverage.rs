@@ -134,7 +134,10 @@ fn test_deadline_warning_stays_noop_after_flag_original_ttl() {
     let data_hash = BytesN::from_array(&env, &[9u8; 32]);
 
     // Enter the grace window before the deadline and emit the warning.
-    let grace = client.get_contract_config().deadline_grace_seconds;
+    let grace = 86_400u64;
+    let mut cfg = client.get_contract_config();
+    cfg.deadline_grace_seconds = grace;
+    client.update_config(&admin, &cfg);
     env.ledger()
         .set_timestamp(shipment.deadline.saturating_sub(grace));
     client.check_deadline_warning(&shipment_id, &data_hash);
@@ -150,8 +153,9 @@ fn test_deadline_warning_stays_noop_after_flag_original_ttl() {
     // Renew the shipment, then move past the flag's original TTL while
     // staying inside the grace window.
     client.extend_shipment_ttl(&shipment_id);
+    let past_ttl = past_min_persistent_ttl(&env);
     env.ledger().with_mut(|l| {
-        l.sequence_number += past_min_persistent_ttl(&env);
+        l.sequence_number += past_ttl;
     });
 
     env.as_contract(&client.address, || {

@@ -127,9 +127,10 @@ pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
 /// 4-byte big-endian length field stored in bytes 4–7.
 pub fn validate_symbol_chars(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
     let xdr = symbol.to_xdr(env);
-    let raw: [u8; 32] = {
-        let mut buf = [0u8; 32];
-        let src_len = (xdr.len() as usize).min(32);
+    // 8 header bytes plus the 32-character Symbol maximum.
+    let raw: [u8; 40] = {
+        let mut buf = [0u8; 40];
+        let src_len = (xdr.len() as usize).min(40);
         for (i, byte) in xdr.iter().take(src_len).enumerate() {
             buf[i] = byte;
         }
@@ -138,7 +139,7 @@ pub fn validate_symbol_chars(env: &Env, symbol: &Symbol) -> Result<(), NavinErro
 
     let char_count = u32::from_be_bytes([raw[4], raw[5], raw[6], raw[7]]) as usize;
 
-    if char_count == 0 {
+    if char_count == 0 || char_count > 32 {
         return Err(NavinError::InvalidSymbol);
     }
 
@@ -200,8 +201,8 @@ pub fn validate_milestone_symbols(
 ) -> Result<(), NavinError> {
     // Check each milestone symbol for validity and percentage bounds
     for milestone in milestones.iter() {
-        validate_symbol_chars(env, &milestone.0).map_err(|_| NavinError::InvalidPaymentMilestoneName)?;
-        validate_symbol(env, &milestone.0).map_err(|_| NavinError::InvalidPaymentMilestoneName)?;
+        validate_symbol_chars(env, &milestone.0)?;
+        validate_symbol(env, &milestone.0)?;
         if milestone.1 == 0 || milestone.1 > 100 {
             return Err(NavinError::InvalidPaymentMilestones);
         }

@@ -732,6 +732,7 @@ mod tests {
         // Invalid: zero
         let config = ContractConfig {
             creation_quota_window_seconds: 0,
+            auto_mint_nft: false,
             ..Default::default()
         };
         assert_eq!(
@@ -742,6 +743,7 @@ mod tests {
         // Invalid: one below minimum (59 seconds)
         let config = ContractConfig {
             creation_quota_window_seconds: 59,
+            auto_mint_nft: false,
             ..Default::default()
         };
         assert_eq!(
@@ -752,6 +754,7 @@ mod tests {
         // Invalid: one above maximum (86,401 seconds)
         let config = ContractConfig {
             creation_quota_window_seconds: 86_401,
+            auto_mint_nft: false,
             ..Default::default()
         };
         assert_eq!(
@@ -762,6 +765,7 @@ mod tests {
         // Valid: minimum boundary (60 seconds)
         let config = ContractConfig {
             creation_quota_window_seconds: 60,
+            auto_mint_nft: false,
             ..Default::default()
         };
         assert!(validate_config(&config).is_ok());
@@ -769,6 +773,7 @@ mod tests {
         // Valid: maximum boundary (86,400 seconds = 1 day)
         let config = ContractConfig {
             creation_quota_window_seconds: 86_400,
+            auto_mint_nft: false,
             ..Default::default()
         };
         assert!(validate_config(&config).is_ok());
@@ -776,6 +781,7 @@ mod tests {
         // Valid: default value (3,600 seconds = 1 hour)
         let config = ContractConfig {
             creation_quota_window_seconds: 3_600,
+            auto_mint_nft: false,
             ..Default::default()
         };
         assert!(validate_config(&config).is_ok());
@@ -996,6 +1002,7 @@ mod tests {
             max_breaches_per_shipment: 100,
             creation_quota_max: 0,
             creation_quota_window_seconds: 3600,
+            auto_mint_nft: false,
         };
 
         let checksums = [
@@ -1085,6 +1092,7 @@ mod tests {
             max_breaches_per_shipment: 1,
             creation_quota_max: 0,
             creation_quota_window_seconds: 3600,
+            auto_mint_nft: false,
         };
 
         let config_max = ContractConfig {
@@ -1106,6 +1114,7 @@ mod tests {
             max_breaches_per_shipment: 1000,
             creation_quota_max: 100,
             creation_quota_window_seconds: 86_400,
+            auto_mint_nft: false,
         };
 
         let checksum_min = compute_config_checksum(&config_min, &env);

@@ -253,7 +253,7 @@ mod tests {
             &Vec::new(&env),
             &past_deadline,
         );
-        assert_eq!(result, Err(Ok(NavinError::InvalidTimestamp)));
+        assert_eq!(result, Err(Ok(NavinError::InvalidShipmentDeadline)));
     }
 
     #[test]

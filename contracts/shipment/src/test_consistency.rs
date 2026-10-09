@@ -49,7 +49,7 @@ fn create_one(
     seed: u8,
 ) -> u64 {
     let deadline = test_utils::future_deadline(env, 7200);
-    crate::test_utils::allow_carrier(&client, company, carrier);
+    crate::test_utils::allow_carrier(client, company, carrier);
     client.create_shipment(
         company,
         &Address::generate(env),
@@ -1122,7 +1122,7 @@ fn test_carrier_whitelist_add_idempotent() {
 /// Test: Repeated remove operations are idempotent.
 /// This ensures removing a non-existent entry has no adverse effects.
 #[test]
-fn test_carrier_whitelist_remove_idempotent() {
+fn test_carrier_whitelist_remove_is_rejected_when_not_whitelisted() {
     let (env, client, admin, _) = setup();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1130,23 +1130,25 @@ fn test_carrier_whitelist_remove_idempotent() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    // Remove without adding (no-op)
-    client.remove_carrier_from_whitelist(&company, &carrier);
+    // Removing a carrier that was never added is rejected.
+    assert_eq!(
+        client.try_remove_carrier_from_whitelist(&company, &carrier),
+        Err(Ok(crate::NavinError::CarrierNotWhitelisted))
+    );
     assert!(!client.is_carrier_whitelisted(&company, &carrier));
 
-    // Add, then remove multiple times
     client.add_carrier_to_whitelist(&company, &carrier);
     assert!(client.is_carrier_whitelisted(&company, &carrier));
 
     client.remove_carrier_from_whitelist(&company, &carrier);
-    client.remove_carrier_from_whitelist(&company, &carrier);
-    client.remove_carrier_from_whitelist(&company, &carrier);
+    assert!(!client.is_carrier_whitelisted(&company, &carrier));
 
-    // Should still be not whitelisted
-    assert!(
-        !client.is_carrier_whitelisted(&company, &carrier),
-        "carrier should not be whitelisted after multiple removes"
+    // A second removal hits the same guard and leaves state untouched.
+    assert_eq!(
+        client.try_remove_carrier_from_whitelist(&company, &carrier),
+        Err(Ok(crate::NavinError::CarrierNotWhitelisted))
     );
+    assert!(!client.is_carrier_whitelisted(&company, &carrier));
 }
 
 #[test]

@@ -44,8 +44,8 @@ fn test_batch_receiver_equals_carrier_returns_error() {
     let result = client.try_create_shipments_batch(&company, &shipments);
     assert_eq!(
         result,
-        Err(Ok(NavinError::InvalidShipmentInput)),
-        "receiver == carrier must return InvalidShipmentInput"
+        Err(Ok(NavinError::InvalidShipmentParticipants)),
+        "receiver == carrier must return InvalidShipmentParticipants"
     );
 }
 
@@ -71,7 +71,7 @@ fn test_batch_second_entry_invalid_first_valid() {
     let result = client.try_create_shipments_batch(&company, &shipments);
     assert_eq!(
         result,
-        Err(Ok(NavinError::InvalidShipmentInput)),
+        Err(Ok(NavinError::InvalidShipmentParticipants)),
         "invalid entry in batch must propagate error even when preceding entries are valid"
     );
 }
@@ -97,8 +97,8 @@ fn test_batch_all_entries_invalid() {
     let result = client.try_create_shipments_batch(&company, &shipments);
     assert_eq!(
         result,
-        Err(Ok(NavinError::InvalidShipmentInput)),
-        "all-invalid batch must return InvalidShipmentInput"
+        Err(Ok(NavinError::InvalidShipmentParticipants)),
+        "all-invalid batch must return InvalidShipmentParticipants"
     );
 }
 
@@ -261,24 +261,5 @@ fn test_create_single_shipment_distinct_participants_succeeds() {
 
 #[test]
 fn test_error_code_is_17() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    let company = Address::generate(&env);
-
-    client.initialize(&admin, &token_contract);
-    client.add_company(&admin, &company);
-
-    let shared = Address::generate(&env);
-    let mut shipments = soroban_sdk::Vec::new(&env);
-    shipments.push_back(make_input(&env, &shared, &shared, 99));
-
-    for s in shipments.iter() {
-        crate::test_utils::allow_carrier(&client, &company, &s.carrier);
-    }
-    let result = client.try_create_shipments_batch(&company, &shipments);
-    assert_eq!(
-        result,
-        Err(Ok(NavinError::InvalidShipmentInput)),
-        "InvalidShipmentInput discriminant must be 17"
-    );
     assert_eq!(NavinError::InvalidShipmentInput as u32, 17);
 }

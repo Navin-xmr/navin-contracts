@@ -201,6 +201,17 @@ fn test_burn_requires_caller_auth() {
     authorize_mint(&env, &client, &admin, &owner, 1);
     client.mint(&owner, &1);
 
+    env.mock_auths(&[MockAuth {
+        address: &owner,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "approve_burn",
+            args: (1_u64,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    client.approve_burn(&1);
+
     // Without the owner's signature the burn must fail.
     env.mock_auths(&[]);
     assert!(client.try_burn(&owner, &1).is_err());

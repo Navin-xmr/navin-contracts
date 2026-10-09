@@ -157,6 +157,7 @@ fn test_burn_emits_event() {
     let (env, _admin, client) = setup();
     let owner = Address::generate(&env);
     client.mint(&owner, &5);
+    client.approve_burn(&5);
     client.burn(&owner, &5);
 
     let event = last_event(&env, &client.address);

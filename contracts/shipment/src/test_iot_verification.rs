@@ -330,8 +330,7 @@ mod tests {
         // The newest visit is still the last InTransit recorded.
         let newest_in_transit = history
             .iter()
-            .filter(|r| r.status == ShipmentStatus::InTransit)
-            .last()
+            .rfind(|r| r.status == ShipmentStatus::InTransit)
             .unwrap();
         assert!(client.verify_data_hash(
             &shipment_id,

@@ -3,7 +3,10 @@ extern crate std;
 use crate::{NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::{storage::Persistent, Address as _, Ledger},
+    testutils::{
+        storage::{Instance, Persistent},
+        Address as _, Ledger,
+    },
     Address, BytesN, Env,
 };
 
@@ -44,7 +47,7 @@ fn create_test_shipment(
     // Use hash_bytes + 1 to avoid all-zero hash which is rejected by validation
     let data_hash = BytesN::from_array(env, &[hash_bytes.wrapping_add(1); 32]);
     let deadline = env.ledger().timestamp() + 86400;
-    crate::test_utils::allow_carrier(&client, company, carrier);
+    crate::test_utils::allow_carrier(client, company, carrier);
 
     client.create_shipment(
         company,
@@ -247,6 +250,7 @@ fn test_ttl_not_extended_for_archived_terminal_shipment() {
     let carrier = Address::generate(&env);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let receiver = Address::generate(&env);
     let create_hash = BytesN::from_array(&env, &[0x03u8; 32]);

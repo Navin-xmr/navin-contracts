@@ -13,7 +13,7 @@ fn create_shipment_for(
 ) -> u64 {
     let data_hash = BytesN::from_array(env, &[marker; 32]);
     let deadline = env.ledger().timestamp() + 3600;
-    crate::test_utils::allow_carrier(&client, sender, carrier);
+    crate::test_utils::allow_carrier(client, sender, carrier);
     client.create_shipment(
         sender,
         receiver,

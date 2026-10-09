@@ -90,7 +90,7 @@ fn create_shipment_with_seed(
     let receiver = Address::generate(env);
     let data_hash = hash_from_seed(env, seed);
     let deadline = env.ledger().timestamp() + 86_400;
-    crate::test_utils::allow_carrier(&client, company, carrier);
+    crate::test_utils::allow_carrier(client, company, carrier);
     client.create_shipment(
         company,
         &receiver,

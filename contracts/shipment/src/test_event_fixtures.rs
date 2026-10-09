@@ -1059,5 +1059,8 @@ fn test_escrow_deposited_data_hash_differs_by_amount() {
     let zero = BytesN::from_array(&env, &[0u8; 32]);
     assert_ne!(first, zero, "data_hash must not be the zero placeholder");
     assert_ne!(second, zero, "data_hash must not be the zero placeholder");
-    assert_ne!(first, second, "different amounts must yield different data_hash");
+    assert_ne!(
+        first, second,
+        "different amounts must yield different data_hash"
+    );
 }

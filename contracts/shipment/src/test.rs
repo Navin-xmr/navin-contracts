@@ -3249,30 +3249,6 @@ fn test_check_deadline_returns_shipment_not_found() {
 //     client.raise_dispute(&company, &shipment_id, &reason_hash);
 // }
 
-/// Comprehensive end-to-end integration test covering the full shipment lifecycle.
-///
-/// This test exercises the complete happy path from shipment creation through
-/// delivery and payment release, verifying all intermediate states, events,
-/// and balance changes.
-///
-/// # Test Flow
-/// 1. Initialize contract and assign all roles (Admin, Company, Carrier, Customer)
-/// 2. Create shipment with payment milestones
-/// 3. Deposit escrow funds
-/// 4. Update status to InTransit
-/// 5. Record first milestone (warehouse) - triggers 30% payment
-/// 6. Update status to AtCheckpoint
-/// 7. Update status back to InTransit
-/// 8. Record second milestone (port) - triggers 30% payment
-/// 9. Confirm delivery by receiver - automatically sets status to Delivered and releases remaining 40%
-///
-/// # Verification Points
-/// - All status transitions are valid and recorded correctly
-/// - All events are emitted with correct data
-/// - Escrow balances are tracked accurately throughout lifecycle
-/// - Payment milestones trigger partial payments correctly
-/// - Final delivery releases remaining escrow balance
-/// - All role-based access controls are enforced
 // ============= Event Counter Tests =============
 
 // ============= Shipment Archival Tests =============
@@ -3284,10 +3260,6 @@ fn test_check_deadline_returns_shipment_not_found() {
 // These tests verify the error code, the validation helper's behaviour, and
 // that mutating operations on archived shipments are correctly rejected.
 
-/// preflight_check_shipment_available must return ShipmentUnavailable for an
-/// archived (Delivered) shipment — error code must be 42.
-/// preflight_check_shipment_available must return ShipmentUnavailable for an
-/// archived (Cancelled) shipment.
 /// preflight_check_shipment_available must return ShipmentNotFound (not
 /// ShipmentUnavailable) for a shipment ID that never existed.
 #[test]
@@ -3606,6 +3578,7 @@ fn setup_force_cancel_env() -> (
 
     client.initialize(&admin, &token_contract);
     client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,

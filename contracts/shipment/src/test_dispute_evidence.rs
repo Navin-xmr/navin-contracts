@@ -59,6 +59,7 @@ fn create_test_shipment(
 
     client.add_company(admin, &company);
     client.add_carrier(admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let id = client.create_shipment(
         &company,

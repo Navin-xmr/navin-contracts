@@ -589,20 +589,6 @@ pub fn is_shipment_archived(env: &Env, shipment_id: u64) -> bool {
         .has(&DataKey::ArchivedShipment(shipment_id))
 }
 
-/// Explicitly refresh TTL for an archived shipment entry.
-/// Useful for background keep-alive jobs.
-pub fn refresh_archived_shipment_ttl(env: &Env, shipment_id: u64) {
-    let key = DataKey::ArchivedShipment(shipment_id);
-    if env.storage().temporary().has(&key) {
-        let config = crate::config::get_config(env);
-        env.storage().temporary().extend_ttl(
-            &key,
-            config.shipment_ttl_threshold,
-            config.shipment_ttl_extension,
-        );
-    }
-}
-
 /// Extend TTL for archived shipment in temporary storage alongside persistent entries.
 /// Called by `extend_shipment_ttl` to ensure archived entries don't silently expire.
 pub fn extend_archived_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_to: u32) {
@@ -632,6 +618,11 @@ pub fn get_escrow(env: &Env, shipment_id: u64) -> i128 {
         .persistent()
         .get(&escrow_key(shipment_id))
         .unwrap_or(0)
+}
+
+/// Check if the shipment's struct escrow_amount differs from dedicated storage.
+pub fn has_escrow_mismatch(env: &Env, shipment_id: u64, struct_escrow_amount: i128) -> bool {
+    get_escrow(env, shipment_id) != struct_escrow_amount
 }
 
 /// Set escrow amount for a shipment in persistent storage.
@@ -897,6 +888,8 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
             .extend_ttl(&hash_key, threshold, extend_to);
     }
 
+    extend_archived_shipment_ttl(env, shipment_id, threshold, extend_to);
+
     let freeze_reason_key = escrow_freeze_reason_key(shipment_id);
     if env.storage().persistent().has(&freeze_reason_key) {
         env.storage()
@@ -918,12 +911,34 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
             .extend_ttl(&dependents_key, threshold, extend_to);
     }
 
-    // Also extend TTL for archived shipment in temporary storage to prevent silent eviction
-    let archived_key = DataKey::ArchivedShipment(shipment_id);
-    if env.storage().temporary().has(&archived_key) {
-        env.storage()
-            .temporary()
-            .extend_ttl(&archived_key, threshold, extend_to);
+    let persistent = env.storage().persistent();
+    let counter_keys = [
+        DataKey::MilestoneEventCount(shipment_id),
+        DataKey::BreachEventCount(shipment_id),
+        DataKey::DeadlineWarningEmitted(shipment_id),
+        DataKey::ActiveSettlement(shipment_id),
+    ];
+    for key in counter_keys.iter() {
+        if persistent.has(key) {
+            persistent.extend_ttl(key, threshold, extend_to);
+        }
+    }
+
+    let latest_key = SettlementKey::Latest(shipment_id);
+    if persistent.has(&latest_key) {
+        persistent.extend_ttl(&latest_key, threshold, extend_to);
+    }
+    for id in [
+        get_latest_settlement(env, shipment_id),
+        get_active_settlement(env, shipment_id),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let key = DataKey::Settlement(id);
+        if persistent.has(&key) {
+            persistent.extend_ttl(&key, threshold, extend_to);
+        }
     }
 
     // Keep the per-visit status-hash log alive as long as the shipment is
@@ -1195,6 +1210,10 @@ pub fn extend_proposal_ttl(env: &Env, proposal_id: u64, expires_at: u64) {
         .unwrap_or(u32::MAX)
         .saturating_add(PROPOSAL_TTL_MARGIN_LEDGERS)
         .min(env.storage().max_ttl());
+
+    // The instance holds the admin set and config a proposal needs to execute,
+    // so it has to outlive the proposal as well.
+    env.storage().instance().extend_ttl(extend_to, extend_to);
 
     let proposal_key = DataKey::Proposal(proposal_id);
     if env.storage().persistent().has(&proposal_key) {
@@ -1775,7 +1794,6 @@ pub fn set_settlement(env: &Env, settlement: &crate::types::SettlementRecord) {
 /// ```rust
 /// // let latest_id = storage::get_latest_settlement(&env, 1);
 /// ```
-#[allow(dead_code)]
 pub fn get_latest_settlement(env: &Env, shipment_id: u64) -> Option<u64> {
     env.storage()
         .persistent()
@@ -1795,7 +1813,6 @@ pub fn get_latest_settlement(env: &Env, shipment_id: u64) -> Option<u64> {
 /// ```rust
 /// // let active_id = storage::get_active_settlement(&env, 1);
 /// ```
-#[allow(dead_code)]
 pub fn get_active_settlement(env: &Env, shipment_id: u64) -> Option<u64> {
     env.storage()
         .persistent()
@@ -2269,3 +2286,60 @@ mod tests {
 }
 
 // ============= Settlement State Storage Functions =============
+
+// ============= Dispute Evidence Storage Functions =============
+
+/// Read the number of evidence entries recorded for a shipment's dispute.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+///
+/// # Returns
+/// * `u32` - The evidence count, or `0` if none has been recorded.
+pub fn get_evidence_count(env: &Env, shipment_id: u64) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DisputeKey::EvidenceCount(shipment_id))
+        .unwrap_or(0)
+}
+
+/// Append one evidence hash to a shipment's dispute and return its index.
+///
+/// Callers are responsible for enforcing the per-dispute cap before calling
+/// this; the counter saturates rather than wrapping so a full slot can never
+/// silently overwrite index 0.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+/// * `evidence_hash` - SHA-256 hash of the off-chain evidence document.
+///
+/// # Returns
+/// * `u32` - The zero-based index the evidence was stored at.
+pub fn append_evidence(env: &Env, shipment_id: u64, evidence_hash: &BytesN<32>) -> u32 {
+    let index = get_evidence_count(env, shipment_id);
+    env.storage()
+        .persistent()
+        .set(&DisputeKey::Evidence(shipment_id, index), evidence_hash);
+    env.storage().persistent().set(
+        &DisputeKey::EvidenceCount(shipment_id),
+        &index.saturating_add(1),
+    );
+    index
+}
+
+/// Read a single evidence hash by index.
+///
+/// # Arguments
+/// * `env` - The execution environment.
+/// * `shipment_id` - The ID of the shipment.
+/// * `index` - Zero-based index of the evidence entry.
+///
+/// # Returns
+/// * `Option<BytesN<32>>` - The hash, or `None` if the index was never written.
+pub fn get_evidence(env: &Env, shipment_id: u64, index: u32) -> Option<BytesN<32>> {
+    env.storage()
+        .persistent()
+        .get(&DisputeKey::Evidence(shipment_id, index))
+}

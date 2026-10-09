@@ -174,13 +174,20 @@ pub fn set_paused(env: &Env, paused: bool) {
 // Metadata Allowlist Storage Functions
 // ============================================================================
 
+// Fresh entries start with a few thousand ledgers of TTL, so the threshold has
+// to sit above that or the bump never fires and the entry expires early.
+const METADATA_TTL_THRESHOLD: u32 = 100_000;
+const METADATA_TTL_EXTEND_TO: u32 = 500_000;
+
 /// Check if a metadata key is in the allowed list
 pub fn is_metadata_key_allowed(env: &Env, key: &Symbol) -> bool {
     let metadata_key = DataKey::AllowedMetadataKey(key.clone());
     if env.storage().persistent().has(&metadata_key) {
-        env.storage()
-            .persistent()
-            .extend_ttl(&metadata_key, 1000, 500000);
+        env.storage().persistent().extend_ttl(
+            &metadata_key,
+            METADATA_TTL_THRESHOLD,
+            METADATA_TTL_EXTEND_TO,
+        );
         true
     } else {
         false
@@ -191,9 +198,11 @@ pub fn is_metadata_key_allowed(env: &Env, key: &Symbol) -> bool {
 pub fn add_allowed_metadata_key(env: &Env, key: &Symbol) {
     let metadata_key = DataKey::AllowedMetadataKey(key.clone());
     env.storage().persistent().set(&metadata_key, &true);
-    env.storage()
-        .persistent()
-        .extend_ttl(&metadata_key, 1000, 500000);
+    env.storage().persistent().extend_ttl(
+        &metadata_key,
+        METADATA_TTL_THRESHOLD,
+        METADATA_TTL_EXTEND_TO,
+    );
 
     let mut keys = get_allowed_metadata_keys(env);
     if !keys.contains(key) {
@@ -202,7 +211,9 @@ pub fn add_allowed_metadata_key(env: &Env, key: &Symbol) {
             .instance()
             .set(&DataKey::AllowedMetadataKeys, &keys);
     }
-    env.storage().instance().extend_ttl(1000, 500000);
+    env.storage()
+        .instance()
+        .extend_ttl(METADATA_TTL_THRESHOLD, METADATA_TTL_EXTEND_TO);
 }
 
 /// Remove a key from the allowed metadata keys list
@@ -237,9 +248,11 @@ pub fn get_allowed_metadata_keys(env: &Env) -> Vec<Symbol> {
 pub fn set_metadata(env: &Env, key: &Symbol, value: &String) {
     let metadata_key = DataKey::Metadata(key.clone());
     env.storage().persistent().set(&metadata_key, value);
-    env.storage()
-        .persistent()
-        .extend_ttl(&metadata_key, 1000, 500000);
+    env.storage().persistent().extend_ttl(
+        &metadata_key,
+        METADATA_TTL_THRESHOLD,
+        METADATA_TTL_EXTEND_TO,
+    );
 }
 
 /// Get a metadata value by key

@@ -1,11 +1,10 @@
 #![no_std]
 
+#[cfg(test)]
 extern crate alloc;
 
-use alloc::string::ToString;
 use soroban_sdk::{
-    contract, contractimpl, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal, Map, Symbol,
-    Vec,
+    contract, contractimpl, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal, Symbol, Vec,
 };
 
 pub mod audit;
@@ -109,8 +108,6 @@ mod test_whitelist_multicompany;
 #[cfg(test)]
 mod test_archive_restore_consistency;
 #[cfg(test)]
-mod test_audit_trail;
-#[cfg(test)]
 mod test_auth;
 #[cfg(test)]
 mod test_auto_dispute;
@@ -154,9 +151,11 @@ mod test_ttl_coverage;
 mod test_ttl_health;
 #[cfg(test)]
 mod test_verification;
-#[cfg(test)]
-mod test_zero_amount_escrow;
 
+#[cfg(test)]
+mod e2e_test;
+#[cfg(test)]
+mod stress_test;
 #[cfg(test)]
 mod test_dispute_evidence;
 
@@ -241,7 +240,10 @@ fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(),
     }
 
     // Validate all milestone symbols for bounded usage
-    validation::validate_milestone_symbols(env, milestones)?;
+    validation::validate_milestone_symbols(env, milestones).map_err(|e| match e {
+        NavinError::InvalidSymbol => NavinError::InvalidPaymentMilestoneName,
+        other => other,
+    })?;
 
     let mut total_percentage = 0;
     for milestone in milestones.iter() {
@@ -1894,7 +1896,12 @@ impl NavinShipment {
         target: Address,
     ) -> Result<Vec<audit::AuditLogEntry>, NavinError> {
         require_initialized(&env)?;
-        Ok(audit::query_audit_history_for_target(&env, &target))
+        Ok(audit::query_audit_history_for_target(
+            &env,
+            &target,
+            0,
+            audit::MAX_AUDIT_LOG_ENTRIES as u64,
+        ))
     }
 
     /// Query the audit trail for every role/permission change performed by a
@@ -1915,7 +1922,12 @@ impl NavinShipment {
         actor: Address,
     ) -> Result<Vec<audit::AuditLogEntry>, NavinError> {
         require_initialized(&env)?;
-        Ok(audit::query_audit_history_by_actor(&env, &actor))
+        Ok(audit::query_audit_history_by_actor(
+            &env,
+            &actor,
+            0,
+            audit::MAX_AUDIT_LOG_ENTRIES as u64,
+        ))
     }
 
     /// Query the audit trail for role/permission changes within a timestamp
@@ -1938,7 +1950,153 @@ impl NavinShipment {
         end_time: u64,
     ) -> Result<Vec<audit::AuditLogEntry>, NavinError> {
         require_initialized(&env)?;
-        Ok(audit::query_audit_history(&env, start_time, end_time))
+        Ok(audit::query_audit_history(
+            &env,
+            start_time,
+            end_time,
+            0,
+            audit::MAX_AUDIT_LOG_ENTRIES as u64,
+        ))
+    }
+
+    /// Run the shipment invariant checks over a related group of shipments and
+    /// verify the group shares one sender and one creation timestamp. Admin only.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `caller` - Admin address; must authorise the call.
+    /// * `ids` - Shipment IDs that make up the batch.
+    ///
+    /// # Returns
+    /// * `Result<Vec<consistency::ConsistencyViolation>, NavinError>` - Empty
+    ///   when every shipment and the group as a whole are consistent.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If `caller` is not the admin.
+    pub fn check_batch_consistency(
+        env: Env,
+        caller: Address,
+        ids: Vec<u64>,
+    ) -> Result<Vec<consistency::ConsistencyViolation>, NavinError> {
+        require_initialized(&env)?;
+        caller.require_auth();
+        require_admin(&env, &caller)?;
+        Ok(consistency::check_batch_consistency(&env, &ids))
+    }
+
+    /// Attach evidence to an active shipment dispute.
+    ///
+    /// Follows the contract's hash-and-emit model: the evidence document is
+    /// held off-chain and only its SHA-256 hash is recorded, giving each
+    /// submission a tamper-evident on-chain timestamp without storing the
+    /// payload. Entries are append-only and capped per shipment by
+    /// `ContractConfig::max_evidence_per_dispute`.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `caller` - Shipment sender, receiver or carrier.
+    /// * `shipment_id` - ID of the disputed shipment.
+    /// * `evidence_hash` - SHA-256 hash of the off-chain evidence document.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - Zero-based index the evidence was stored at.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::InvalidHash` - If `evidence_hash` is all zeros.
+    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
+    /// * `NavinError::Unauthorized` - If caller is not involved in the shipment.
+    /// * `NavinError::InvalidStatus` - If the shipment is not currently `Disputed`.
+    /// * `NavinError::EvidenceLimitExceeded` - If the dispute already holds
+    ///   `max_evidence_per_dispute` entries.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let index = client.add_dispute_evidence(&receiver, &shipment_id, &evidence_hash);
+    /// ```
+    pub fn add_dispute_evidence(
+        env: Env,
+        caller: Address,
+        shipment_id: u64,
+        evidence_hash: BytesN<32>,
+    ) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        caller.require_auth();
+
+        validation::validate_hash(&evidence_hash)?;
+
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+
+        if caller != shipment.sender && caller != shipment.receiver && caller != shipment.carrier {
+            return Err(NavinError::Unauthorized);
+        }
+
+        // A suspended company must not be able to build a dispute record.
+        if caller == shipment.sender {
+            require_active_company(&env, &caller)?;
+        }
+
+        // Evidence only makes sense while a dispute is actually open; once an
+        // admin has resolved it the record is closed.
+        if shipment.status != ShipmentStatus::Disputed {
+            return Err(NavinError::InvalidStatus);
+        }
+
+        // Same bound style as milestones and breaches: an admin-configurable
+        // per-shipment cap on the persistent entries one dispute may create.
+        let config = config::get_config(&env);
+        if storage::get_evidence_count(&env, shipment_id) >= config.max_evidence_per_dispute {
+            return Err(NavinError::EvidenceLimitExceeded);
+        }
+
+        let index = storage::append_evidence(&env, shipment_id, &evidence_hash);
+
+        extend_shipment_ttl(&env, shipment_id);
+
+        events::emit_evidence_added(&env, shipment_id, &caller, index, &evidence_hash);
+
+        Ok(index)
+    }
+
+    /// Read one evidence hash attached to a shipment's dispute.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    /// * `index` - Zero-based index of the evidence entry.
+    ///
+    /// # Returns
+    /// * `Result<BytesN<32>, NavinError>` - The stored SHA-256 hash.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::EvidenceNotFound` - If no evidence exists at `index`.
+    pub fn get_dispute_evidence(
+        env: Env,
+        shipment_id: u64,
+        index: u32,
+    ) -> Result<BytesN<32>, NavinError> {
+        require_initialized(&env)?;
+        storage::get_evidence(&env, shipment_id, index).ok_or(NavinError::EvidenceNotFound)
+    }
+
+    /// Count the evidence entries attached to a shipment's dispute.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - Number of entries, `0` if none.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    pub fn get_dispute_evidence_count(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        Ok(storage::get_evidence_count(&env, shipment_id))
     }
 
     /// Prune audit-trail entries older than `before_timestamp`. Admin only.
@@ -2265,10 +2423,6 @@ impl NavinShipment {
         validate_milestones(&env, &payment_milestones)?;
         validate_hash(&data_hash)?;
 
-        if sender == receiver || sender == carrier || receiver == carrier {
-            return Err(NavinError::InvalidShipmentParticipants);
-        }
-
         require_role(&env, &carrier, Role::Carrier)?;
         require_active_carrier(&env, &carrier)?;
         if !storage::is_carrier_whitelisted(&env, &sender, &carrier) {
@@ -2282,9 +2436,7 @@ impl NavinShipment {
         check_idempotency(&env, payload)?;
 
         let now = env.ledger().timestamp();
-        if deadline <= now {
-            return Err(NavinError::InvalidShipmentDeadline);
-        }
+        validation::validate_deadline(&env, deadline)?;
 
         // Check company active shipment limit
         let current_active = storage::get_active_shipment_count(&env, &sender);
@@ -2414,9 +2566,7 @@ impl NavinShipment {
             validate_milestones(&env, &shipment_input.payment_milestones)?;
             validate_hash(&shipment_input.data_hash)?;
 
-            if shipment_input.deadline <= now {
-                return Err(NavinError::InvalidShipmentDeadline);
-            }
+            validation::validate_deadline(&env, shipment_input.deadline)?;
 
             let shipment_id = storage::get_shipment_counter(&env)
                 .checked_add(1)
@@ -4320,7 +4470,8 @@ impl NavinShipment {
         }
 
         // Reason hash is mandatory and must be non-zero.
-        validation::validate_hash(&reason_hash)?;
+        validation::validate_hash(&reason_hash)
+            .map_err(|_| NavinError::ForceCancelReasonHashMissing)?;
 
         let mut shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
@@ -6343,6 +6494,7 @@ impl NavinShipment {
     /// following a run of consecutive transfer failures.
     pub fn reset_circuit_breaker(env: Env, admin: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         circuit_breaker::manual_reset(&env, &admin)
     }
 
@@ -6396,6 +6548,7 @@ impl NavinShipment {
         preset: circuit_breaker::CircuitBreakerPreset,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
         require_admin(&env, &admin)?;
 

@@ -543,7 +543,6 @@ fn message_for(error: NavinError) -> Symbol {
         NavinError::CarrierSuspended => symbol_short!("carrier"),
         NavinError::ForceCancelReasonHashMissing => symbol_short!("cancel_h"),
         NavinError::ArithmeticError => symbol_short!("arith_err"),
-        NavinError::ArithmeticError => symbol_short!("arith"),
         NavinError::DisputeReasonHashMissing => symbol_short!("dispute_h"),
         NavinError::CompanySuspended => symbol_short!("company"),
         NavinError::ShipmentFinalized => symbol_short!("finalized"),

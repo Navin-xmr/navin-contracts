@@ -1110,11 +1110,16 @@ fn test_batch_transfer_with_self_transfer_event_count() {
     let mut batch_tr_leg_count = None;
 
     for (_cid, topics, data) in events.iter() {
-        if let Some(first) = topics.get(0).and_then(|t| Symbol::try_from_val(&env, &t).ok()) {
+        if let Some(first) = topics
+            .get(0)
+            .and_then(|t| Symbol::try_from_val(&env, &t).ok())
+        {
             if first == Symbol::new(&env, "batch_leg") {
                 batch_leg_count += 1;
             } else if first == Symbol::new(&env, "batch_tr") {
-                if let Ok((_from, _recips, len)) = <(Address, soroban_sdk::Vec<(Address, i128)>, usize)>::try_from_val(&env, &data) {
+                if let Ok((_from, _recips, len)) =
+                    <(Address, soroban_sdk::Vec<(Address, i128)>, u32)>::try_from_val(&env, &data)
+                {
                     batch_tr_leg_count = Some(len);
                 }
             }
@@ -1136,7 +1141,10 @@ fn test_add_allowed_metadata_key_instance_storage_footprint() {
     assert!(client.is_metadata_key_allowed(&key));
 
     env.as_contract(&client.address, || {
-        assert!(!env.storage().instance().has(&crate::storage::DataKey::AllowedMetadataKey(key.clone())));
+        assert!(!env
+            .storage()
+            .instance()
+            .has(&crate::storage::DataKey::AllowedMetadataKey(key.clone())));
     });
 }
 
@@ -1163,8 +1171,7 @@ fn test_allowed_metadata_key_ttl_expiration_sync() {
     assert_eq!(allowed_keys.get(0), Some(key));
 }
 
-
-
+#[test]
 fn event_fixtures_schema_version_topics_all_events() {
     let (env, client, admin) = setup_token_env();
     let spender = Address::generate(&env);

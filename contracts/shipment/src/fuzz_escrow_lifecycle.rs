@@ -87,7 +87,7 @@ fn create_shipment(
 ) -> u64 {
     let data_hash = hash_from_seed(env, seed);
     let deadline = env.ledger().timestamp() + 86_400 * 30;
-    crate::test_utils::allow_carrier(&client, company, carrier);
+    crate::test_utils::allow_carrier(client, company, carrier);
     client.create_shipment(
         company,
         receiver,

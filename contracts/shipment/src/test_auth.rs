@@ -642,6 +642,19 @@ fn test_auth_tree_confirm_delivery() {
 // call `caller.require_auth()` before any other logic, so `try_*` will return
 // `Err` even when no shipment has been set up yet.
 
+/// `initialize` requires admin auth, so run it under a temporary blanket mock
+/// and then drop all mocks again before the call under test.
+fn init_without_auth_mock(
+    env: &Env,
+    client: &NavinShipmentClient,
+    admin: &Address,
+    token: &Address,
+) {
+    env.mock_all_auths();
+    client.initialize(admin, token);
+    env.mock_auths(&[]);
+}
+
 /// `add_company` must fail when no auth mock is provided for the admin address.
 #[test]
 fn test_auth_add_company_fails_without_auth() {
@@ -659,8 +672,7 @@ fn test_auth_add_company_fails_without_auth() {
     let cid = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &cid);
 
-    // initialize does not require_auth — safe without any mock
-    client.initialize(&admin, &token);
+    init_without_auth_mock(&env, &client, &admin, &token);
 
     // No auth mock active → admin.require_auth() will fail
     let result = client.try_add_company(&admin, &company);
@@ -691,7 +703,7 @@ fn test_auth_create_shipment_fails_without_auth() {
     let client = NavinShipmentClient::new(&env, &cid);
     let deadline = env.ledger().timestamp() + 3_600;
 
-    client.initialize(&admin, &token); // no auth needed
+    init_without_auth_mock(&env, &client, &admin, &token);
     crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // No mock → company.require_auth() fires and fails before role check
@@ -727,7 +739,7 @@ fn test_auth_update_status_fails_without_auth() {
     let cid = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &cid);
 
-    client.initialize(&admin, &token);
+    init_without_auth_mock(&env, &client, &admin, &token);
 
     // No mock → carrier.require_auth() fires and fails before shipment lookup
     let result =
@@ -756,7 +768,7 @@ fn test_auth_confirm_delivery_fails_without_auth() {
     let cid = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &cid);
 
-    client.initialize(&admin, &token);
+    init_without_auth_mock(&env, &client, &admin, &token);
 
     // No mock → receiver.require_auth() fires and fails before shipment lookup
     let result = client.try_confirm_delivery(&receiver, &1u64, &confirm_hash);
@@ -783,7 +795,7 @@ fn test_auth_force_cancel_fails_without_auth() {
     let cid = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &cid);
 
-    client.initialize(&admin, &token);
+    init_without_auth_mock(&env, &client, &admin, &token);
 
     // No mock → admin.require_auth() fires and fails before shipment lookup
     let result = client.try_force_cancel_shipment(&admin, &1u64, &reason_hash);
@@ -861,7 +873,7 @@ fn test_auth_add_guardian_fails_without_auth() {
     let cid = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &cid);
 
-    client.initialize(&admin, &token);
+    init_without_auth_mock(&env, &client, &admin, &token);
 
     let result = client.try_add_guardian(&admin, &guardian);
     assert!(
@@ -886,7 +898,7 @@ fn test_auth_add_operator_fails_without_auth() {
     let cid = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &cid);
 
-    client.initialize(&admin, &token);
+    init_without_auth_mock(&env, &client, &admin, &token);
 
     let result = client.try_add_operator(&admin, &operator);
     assert!(
@@ -913,7 +925,7 @@ fn test_auth_add_carrier_to_whitelist_fails_without_auth() {
     let cid = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &cid);
 
-    client.initialize(&admin, &token);
+    init_without_auth_mock(&env, &client, &admin, &token);
 
     let result = client.try_add_carrier_to_whitelist(&company, &carrier);
     assert!(
@@ -939,7 +951,7 @@ fn test_auth_remove_carrier_from_whitelist_fails_without_auth() {
     let cid = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &cid);
 
-    client.initialize(&admin, &token);
+    init_without_auth_mock(&env, &client, &admin, &token);
 
     let result = client.try_remove_carrier_from_whitelist(&company, &carrier);
     assert!(

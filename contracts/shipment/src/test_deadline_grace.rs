@@ -56,7 +56,7 @@ mod tests {
 
         client.add_company(admin, &company);
         client.add_carrier(admin, &carrier);
-        crate::test_utils::allow_carrier(&client, &company, &carrier);
+        crate::test_utils::allow_carrier(client, &company, &carrier);
 
         client.create_shipment(
             &company,
@@ -286,10 +286,12 @@ mod tests {
             assert_eq!(hash, data_hash);
         }
 
+        // `events().all()` reports the latest invocation, so a repeat call that
+        // emits nothing shows up as an empty list.
         client.check_deadline_warning(&id, &data_hash);
         assert_eq!(
             env.events().all().len(),
-            2,
+            0,
             "warning must only be emitted once"
         );
     }
