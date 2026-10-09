@@ -5,10 +5,56 @@
 //! emits structured events containing only the `shipment_id`, relevant
 //! identifiers, and a `data_hash` (SHA-256 of the full off-chain payload).
 //!
-//! ## Shipment Lifecycle Event Schema
+//! ## Event Schemas
 //!
-//! Every shipment lifecycle event carries a minimal tuple:
+//! There is **no single schema shared by every event**. Payload shapes fall
+//! into the families below; the rustdoc table on each `emit_*` function is
+//! the authoritative field list for that event.
+//!
+//! ### Shipment lifecycle — the 5-field tuple
+//!
 //! `(shipment_id, status, data_hash, timestamp, actor)`
+//!
+//! Exactly this shape: `emit_shipment_created`, `emit_status_updated`,
+//! `emit_shipment_cancelled` (hash is the reason hash),
+//! `emit_shipment_expired`, `emit_delivery_success` (timestamp is the
+//! delivery time), `emit_delivery_confirmed`.
+//!
+//! The 5-field prefix followed by extra trailing fields:
+//!
+//! | Emitter                                  | Trailing fields            |
+//! |------------------------------------------|----------------------------|
+//! | `emit_milestone_recorded`                | `checkpoint`               |
+//! | `emit_eta_updated`                       | `new_eta`                  |
+//! | `emit_escrow_deposited` / `_released` / `_refunded` | `amount`        |
+//! | `emit_platform_fee_collected`            | `amount`                   |
+//! | `emit_milestone_payment_released`        | `milestone`, `amount`      |
+//! | `emit_force_cancelled` / `_released` / `_refunded` | escrow amount    |
+//!
+//! `emit_geofence_event` keeps the 5-field layout but carries a `zone_type`
+//! in the `status` slot.
+//!
+//! ### Other families — their own shapes
+//!
+//! These do **not** follow the 5-field tuple; see each function's docs:
+//!
+//! - **Disputes:** `emit_dispute_raised`, `emit_dispute_resolved`,
+//!   `emit_escrow_frozen`.
+//! - **Conditions and handoffs:** `emit_condition_breach`,
+//!   `emit_carrier_handoff`, `emit_carrier_handoff_completed`.
+//! - **Carrier reputation:** `emit_carrier_breach`,
+//!   `emit_carrier_dispute_loss`, `emit_carrier_late_delivery`,
+//!   `emit_carrier_on_time_delivery`, `emit_carrier_milestone_rate`,
+//!   `emit_carrier_suspended`, `emit_carrier_reactivated`.
+//! - **Admin and governance:** `emit_contract_initialized`,
+//!   `emit_contract_upgraded`, `emit_migration_report`,
+//!   `emit_admin_proposed`, `emit_admin_transferred`,
+//!   `emit_contract_paused`, `emit_contract_unpaused`,
+//!   `emit_shipment_limit_updated`, `emit_company_limit_updated`,
+//!   `emit_config_updated`, `emit_proposal_digest`, `emit_quota_set`,
+//!   `emit_fee_config_updated`.
+//! - **RBAC:** `emit_role_revoked`, `emit_role_changed`.
+//! - **Notifications:** `emit_notification`.
 //!
 //! ## Listeners
 //!
@@ -27,10 +73,33 @@ use crate::types::{
     BreachType, EscrowFreezeReason, MigrationReport, Role, RoleChangeAction, Severity,
     ShipmentStatus,
 };
-use soroban_sdk::{Address, BytesN, Env, Symbol};
+use soroban_sdk::{xdr::ToXdr, Address, Bytes, BytesN, Env, Symbol};
 
-#[cfg(test)]
-use soroban_sdk::Bytes;
+/// Version of the tuple suffix used by schema-aware events.
+pub const EVENT_SCHEMA_VERSION: u32 = 2;
+
+/// `data_hash` for events whose payload lives entirely on-chain (escrow
+/// movements, expiry, fees): SHA-256 over
+/// `topic.to_xdr() || shipment_id (u64 BE) || actor.to_xdr() || amount (i128 BE)`,
+/// followed by `milestone.to_xdr()` when present. Distinct payloads therefore
+/// never share a hash, and consumers can recompute it from the event fields.
+fn payload_hash(
+    env: &Env,
+    topic: &str,
+    shipment_id: u64,
+    actor: &Address,
+    amount: i128,
+    milestone: Option<&Symbol>,
+) -> BytesN<32> {
+    let mut payload = Symbol::new(env, topic).to_xdr(env);
+    payload.append(&Bytes::from_array(env, &shipment_id.to_be_bytes()));
+    payload.append(&actor.clone().to_xdr(env));
+    payload.append(&Bytes::from_array(env, &amount.to_be_bytes()));
+    if let Some(milestone) = milestone {
+        payload.append(&milestone.clone().to_xdr(env));
+    }
+    env.crypto().sha256(&payload).into()
+}
 
 /// Compute the canonical idempotency key for an event.
 ///
@@ -42,7 +111,6 @@ use soroban_sdk::Bytes;
 /// 2. `shipment_id` as big-endian u64 (8 bytes)
 /// 3. `topic_len` (u32 big-endian), `topic_bytes`
 /// 4. `event_counter` as big-endian u32 (4 bytes)
-#[cfg(test)]
 pub fn generate_idempotency_key(
     env: &Env,
     domain: u8,
@@ -69,6 +137,134 @@ pub fn generate_idempotency_key(
 
     payload.append(&Bytes::from_array(env, &event_counter.to_be_bytes()));
     env.crypto().sha256(&payload).into()
+}
+
+fn next_global_event_metadata(env: &Env, topic: &str, domain: u8) -> (u32, BytesN<32>) {
+    let event_counter = crate::storage::increment_global_event_count(env);
+    let idempotency_key =
+        generate_idempotency_key(env, domain, event_counter as u64, topic, event_counter);
+    (event_counter, idempotency_key)
+}
+
+pub fn emit_whitelist_added(env: &Env, company: &Address, carrier: &Address) {
+    let (event_counter, idempotency_key) = next_global_event_metadata(
+        env,
+        crate::event_topics::WHITELIST_ADDED,
+        crate::event_topics::HASH_DOMAIN_RBAC,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::WHITELIST_ADDED),),
+        (
+            company.clone(),
+            carrier.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+}
+
+pub fn emit_whitelist_removed(env: &Env, company: &Address, carrier: &Address) {
+    let (event_counter, idempotency_key) = next_global_event_metadata(
+        env,
+        crate::event_topics::WHITELIST_REMOVED,
+        crate::event_topics::HASH_DOMAIN_RBAC,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::WHITELIST_REMOVED),),
+        (
+            company.clone(),
+            carrier.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+}
+
+pub fn emit_multisig_initialized(env: &Env, admin_count: u32, threshold: u32) {
+    let (event_counter, idempotency_key) = next_global_event_metadata(
+        env,
+        crate::event_topics::MULTISIG_INITIALIZED,
+        crate::event_topics::HASH_DOMAIN_ADMIN,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::MULTISIG_INITIALIZED),),
+        (
+            admin_count,
+            threshold,
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+}
+
+pub fn emit_proposal_approved(
+    env: &Env,
+    proposal_id: u64,
+    approver: &Address,
+    approval_count: u32,
+) {
+    let (event_counter, idempotency_key) = next_global_event_metadata(
+        env,
+        crate::event_topics::PROPOSAL_APPROVED,
+        crate::event_topics::HASH_DOMAIN_ADMIN,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::PROPOSAL_APPROVED),),
+        (
+            proposal_id,
+            approver.clone(),
+            approval_count,
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+}
+
+pub fn emit_proposal_executed(env: &Env, proposal_id: u64, action: &crate::types::AdminAction) {
+    let (event_counter, idempotency_key) = next_global_event_metadata(
+        env,
+        crate::event_topics::PROPOSAL_EXECUTED,
+        crate::event_topics::HASH_DOMAIN_ADMIN,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::PROPOSAL_EXECUTED),),
+        (
+            proposal_id,
+            action.clone(),
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
+}
+
+pub fn emit_circuit_breaker_config_updated(
+    env: &Env,
+    failure_threshold: u32,
+    recovery_timeout: u64,
+    half_open_max_requests: u32,
+) {
+    let (event_counter, idempotency_key) = next_global_event_metadata(
+        env,
+        crate::event_topics::CONFIG_UPDATED,
+        crate::event_topics::HASH_DOMAIN_ADMIN,
+    );
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::CONFIG_UPDATED),),
+        (
+            Symbol::new(env, "circuit_breaker"),
+            failure_threshold,
+            recovery_timeout,
+            half_open_max_requests,
+            EVENT_SCHEMA_VERSION,
+            event_counter,
+            idempotency_key,
+        ),
+    );
 }
 
 /// Emits a `shipment_created` event when a new shipment is registered.
@@ -172,19 +368,26 @@ pub fn emit_milestone_recorded(
 /// |-------------|---------------|----------------------------------------------|
 /// | shipment_id | `u64`         | Shipment the escrow is associated with        |
 /// | status      | `ShipmentStatus` | Current shipment status                   |
-/// | data_hash   | `BytesN<32>`  | Zero hash (not applicable)                    |
+/// | data_hash   | `BytesN<32>`  | SHA-256 of the payload (`payload_hash`)       |
 /// | timestamp   | `u64`         | Ledger timestamp of the deposit               |
 /// | actor       | `Address`     | Address that deposited the funds              |
 /// | amount      | `i128`        | Amount deposited (in stroops)                 |
 #[allow(dead_code)]
 pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount: i128) {
-    let zero_hash: BytesN<32> = BytesN::from_array(env, &[0u8; 32]);
+    let data_hash = payload_hash(
+        env,
+        crate::event_topics::ESCROW_DEPOSITED,
+        shipment_id,
+        from,
+        amount,
+        None,
+    );
     env.events().publish(
         (Symbol::new(env, crate::event_topics::ESCROW_DEPOSITED),),
         (
             shipment_id,
             ShipmentStatus::Created,
-            zero_hash,
+            data_hash,
             env.ledger().timestamp(),
             from.clone(),
             amount,
@@ -200,18 +403,25 @@ pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount
 /// |-------------|---------------|----------------------------------------------|
 /// | shipment_id | `u64`         | Shipment the escrow was held for              |
 /// | status      | `ShipmentStatus` | Current shipment status                   |
-/// | data_hash   | `BytesN<32>`  | Zero hash (not applicable)                    |
+/// | data_hash   | `BytesN<32>`  | SHA-256 of the payload (`payload_hash`)       |
 /// | timestamp   | `u64`         | Ledger timestamp of the release               |
 /// | actor       | `Address`     | Address receiving the released funds          |
 /// | amount      | `i128`        | Amount released (in stroops)                  |
 pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i128) {
-    let zero_hash: BytesN<32> = BytesN::from_array(env, &[0u8; 32]);
+    let data_hash = payload_hash(
+        env,
+        crate::event_topics::ESCROW_RELEASED,
+        shipment_id,
+        to,
+        amount,
+        None,
+    );
     env.events().publish(
         (Symbol::new(env, crate::event_topics::ESCROW_RELEASED),),
         (
             shipment_id,
             ShipmentStatus::Delivered,
-            zero_hash,
+            data_hash,
             env.ledger().timestamp(),
             to.clone(),
             amount,
@@ -227,18 +437,25 @@ pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i
 /// |-------------|---------------|----------------------------------------------|
 /// | shipment_id | `u64`         | Shipment the escrow was held for              |
 /// | status      | `ShipmentStatus` | Current shipment status                   |
-/// | data_hash   | `BytesN<32>`  | Zero hash (not applicable)                    |
+/// | data_hash   | `BytesN<32>`  | SHA-256 of the payload (`payload_hash`)       |
 /// | timestamp   | `u64`         | Ledger timestamp of the refund                |
 /// | actor       | `Address`     | Company address receiving the refund          |
 /// | amount      | `i128`        | Amount refunded (in stroops)                  |
 pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i128) {
-    let zero_hash: BytesN<32> = BytesN::from_array(env, &[0u8; 32]);
+    let data_hash = payload_hash(
+        env,
+        crate::event_topics::ESCROW_REFUNDED,
+        shipment_id,
+        to,
+        amount,
+        None,
+    );
     env.events().publish(
         (Symbol::new(env, crate::event_topics::ESCROW_REFUNDED),),
         (
             shipment_id,
             ShipmentStatus::Cancelled,
-            zero_hash,
+            data_hash,
             env.ledger().timestamp(),
             to.clone(),
             amount,
@@ -254,7 +471,7 @@ pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i
 /// |-------------|---------------|----------------------------------------------|
 /// | shipment_id | `u64`         | Shipment the milestone belongs to             |
 /// | status      | `ShipmentStatus` | Current shipment status                   |
-/// | data_hash   | `BytesN<32>`  | Zero hash (not applicable)                    |
+/// | data_hash   | `BytesN<32>`  | SHA-256 of the payload (`payload_hash`)       |
 /// | timestamp   | `u64`         | Ledger timestamp of the release               |
 /// | actor       | `Address`     | Carrier receiving the payment                 |
 /// | milestone   | `Symbol`      | Checkpoint that triggered the release         |
@@ -266,7 +483,14 @@ pub fn emit_milestone_payment_released(
     amount: i128,
     to: &Address,
 ) {
-    let zero_hash: BytesN<32> = BytesN::from_array(env, &[0u8; 32]);
+    let data_hash = payload_hash(
+        env,
+        crate::event_topics::MILESTONE_PAYMENT_RELEASED,
+        shipment_id,
+        to,
+        amount,
+        Some(milestone),
+    );
     env.events().publish(
         (Symbol::new(
             env,
@@ -275,7 +499,7 @@ pub fn emit_milestone_payment_released(
         (
             shipment_id,
             ShipmentStatus::InTransit,
-            zero_hash,
+            data_hash,
             env.ledger().timestamp(),
             to.clone(),
             milestone.clone(),
@@ -464,17 +688,24 @@ pub fn emit_admin_transferred(env: &Env, old_admin: &Address, new_admin: &Addres
 /// |-------------|---------------|-------------------------------------------------|
 /// | shipment_id | `u64`         | Cancelled shipment identifier                   |
 /// | status      | `ShipmentStatus` | Always `Cancelled`                           |
-/// | data_hash   | `BytesN<32>`  | Zero hash (not applicable)                      |
+/// | data_hash   | `BytesN<32>`  | SHA-256 of the payload (`payload_hash`)         |
 /// | timestamp   | `u64`         | Ledger timestamp of the expiry                  |
 /// | actor       | `Address`     | Admin/system address that triggered auto-cancel |
 pub fn emit_shipment_expired(env: &Env, shipment_id: u64, admin: &Address) {
-    let zero_hash: BytesN<32> = BytesN::from_array(env, &[0u8; 32]);
+    let data_hash = payload_hash(
+        env,
+        crate::event_topics::SHIPMENT_EXPIRED,
+        shipment_id,
+        admin,
+        0,
+        None,
+    );
     env.events().publish(
         (Symbol::new(env, crate::event_topics::SHIPMENT_EXPIRED),),
         (
             shipment_id,
             ShipmentStatus::Cancelled,
-            zero_hash,
+            data_hash,
             env.ledger().timestamp(),
             admin.clone(),
         ),
@@ -889,12 +1120,19 @@ pub fn emit_escrow_frozen(
 /// |-------------|---------------|----------------------------------------------|
 /// | shipment_id | `u64`         | Shipment the fee is associated with           |
 /// | status      | `ShipmentStatus` | Current shipment status                   |
-/// | data_hash   | `BytesN<32>`  | Zero hash (not applicable)                    |
+/// | data_hash   | `BytesN<32>`  | SHA-256 of the payload (`payload_hash`)       |
 /// | timestamp   | `u64`         | Ledger timestamp of the fee collection        |
 /// | actor       | `Address`     | Treasury address receiving the fee            |
 /// | amount      | `i128`        | Fee amount collected (in stroops)             |
 pub fn emit_platform_fee_collected(env: &Env, shipment_id: u64, treasury: &Address, amount: i128) {
-    let zero_hash: BytesN<32> = BytesN::from_array(env, &[0u8; 32]);
+    let data_hash = payload_hash(
+        env,
+        crate::event_topics::PLATFORM_FEE_COLLECTED,
+        shipment_id,
+        treasury,
+        amount,
+        None,
+    );
     env.events().publish(
         (Symbol::new(
             env,
@@ -903,7 +1141,7 @@ pub fn emit_platform_fee_collected(env: &Env, shipment_id: u64, treasury: &Addre
         (
             shipment_id,
             ShipmentStatus::Created,
-            zero_hash,
+            data_hash,
             env.ledger().timestamp(),
             treasury.clone(),
             amount,
@@ -1066,5 +1304,45 @@ pub fn emit_quota_set(env: &Env, company: &Address, count: u32, window_start: u6
     env.events().publish(
         (Symbol::new(env, crate::event_topics::QUOTA_SET),),
         (company.clone(), count, window_start),
+    );
+}
+
+/// Emits an `evidence_added` event when a dispute participant attaches evidence.
+///
+/// Follows the contract's hash-and-emit model: the evidence document itself
+/// (photos, inspection reports, correspondence) is stored off-chain and only
+/// its SHA-256 hash is published on the ledger, so the submission is
+/// timestamped and tamper-evident without putting the payload on-chain.
+///
+/// # Event Data
+///
+/// | Field         | Type         | Description                                   |
+/// |---------------|--------------|-----------------------------------------------|
+/// | shipment_id   | `u64`        | Shipment whose dispute the evidence belongs to |
+/// | submitted_by  | `Address`    | Address that submitted the evidence            |
+/// | index         | `u32`        | Zero-based index of the evidence entry         |
+/// | evidence_hash | `BytesN<32>` | SHA-256 hash of the off-chain evidence document |
+pub fn emit_evidence_added(
+    env: &Env,
+    shipment_id: u64,
+    submitted_by: &Address,
+    index: u32,
+    evidence_hash: &BytesN<32>,
+) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::EVIDENCE_ADDED),),
+        (
+            shipment_id,
+            submitted_by.clone(),
+            index,
+            evidence_hash.clone(),
+        ),
+    );
+}
+
+pub fn emit_shipment_archived(env: &Env, shipment_id: u64, timestamp: u64) {
+    env.events().publish(
+        (Symbol::new(env, "shipment_archived"),),
+        (shipment_id, timestamp),
     );
 }

@@ -1089,3 +1089,133 @@ fn event_fixtures_approve_and_metadata() {
     }
     assert!(found_meta, "expected a metadata event");
 }
+
+#[test]
+fn test_batch_transfer_with_self_transfer_event_count() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    recipients.push_back((recipient1.clone(), 100));
+    recipients.push_back((admin.clone(), 50)); // self-transfer
+    recipients.push_back((recipient2.clone(), 200));
+
+    client.batch_transfer(&admin, &recipients);
+
+    let events = env.events().all();
+    let mut batch_leg_count = 0;
+    let mut batch_tr_leg_count = None;
+
+    for (_cid, topics, data) in events.iter() {
+        if let Some(first) = topics
+            .get(0)
+            .and_then(|t| Symbol::try_from_val(&env, &t).ok())
+        {
+            if first == Symbol::new(&env, "batch_leg") {
+                batch_leg_count += 1;
+            } else if first == Symbol::new(&env, "batch_tr") {
+                if let Ok((_from, _recips, len)) =
+                    <(Address, soroban_sdk::Vec<(Address, i128)>, u32)>::try_from_val(&env, &data)
+                {
+                    batch_tr_leg_count = Some(len);
+                }
+            }
+        }
+    }
+
+    assert_eq!(batch_leg_count, 2);
+    assert_eq!(batch_tr_leg_count, Some(2));
+}
+
+#[test]
+fn test_add_allowed_metadata_key_instance_storage_footprint() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let key = Symbol::new(&env, "website");
+    client.add_allowed_metadata_key(&admin, &key);
+
+    assert!(client.is_metadata_key_allowed(&key));
+
+    env.as_contract(&client.address, || {
+        assert!(!env
+            .storage()
+            .instance()
+            .has(&crate::storage::DataKey::AllowedMetadataKey(key.clone())));
+    });
+}
+
+#[test]
+fn test_allowed_metadata_key_ttl_expiration_sync() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let key = Symbol::new(&env, "website");
+    client.add_allowed_metadata_key(&admin, &key);
+
+    assert!(client.is_metadata_key_allowed(&key));
+
+    // Advance ledger sequence number past default TTL window
+    env.ledger().with_mut(|l| {
+        l.sequence_number += 10_000;
+    });
+
+    let is_allowed = client.is_metadata_key_allowed(&key);
+    let allowed_keys = client.get_allowed_metadata_keys();
+
+    assert!(is_allowed);
+    assert_eq!(allowed_keys.len(), 1);
+    assert_eq!(allowed_keys.get(0), Some(key));
+}
+
+#[test]
+fn event_fixtures_schema_version_topics_all_events() {
+    let (env, client, admin) = setup_token_env();
+    let spender = Address::generate(&env);
+    let to = Address::generate(&env);
+    initialize_token(&client, &env, &admin, 1000);
+    env.mock_all_auths();
+
+    // 1. tr_from
+    client.approve(&admin, &spender, &100, &u32::MAX);
+    client.transfer_from(&spender, &admin, &to, &50);
+    let tr_from_event = env.events().all().pop_back().unwrap();
+    assert_eq!(tr_from_event.1.len(), 2);
+    assert_eq!(
+        Symbol::try_from_val(&env, &tr_from_event.1.get(0).unwrap()).unwrap(),
+        Symbol::new(&env, "tr_from")
+    );
+    assert_eq!(
+        Symbol::try_from_val(&env, &tr_from_event.1.get(1).unwrap()).unwrap(),
+        Symbol::new(&env, "v1")
+    );
+
+    // 2. admin_pro and admin_tr
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+    let admin_pro_event = env.events().all().pop_back().unwrap();
+    assert_eq!(admin_pro_event.1.len(), 2);
+    assert_eq!(
+        Symbol::try_from_val(&env, &admin_pro_event.1.get(0).unwrap()).unwrap(),
+        Symbol::new(&env, "admin_pro")
+    );
+    assert_eq!(
+        Symbol::try_from_val(&env, &admin_pro_event.1.get(1).unwrap()).unwrap(),
+        Symbol::new(&env, "v1")
+    );
+
+    client.accept_admin_transfer(&new_admin);
+    let admin_tr_event = env.events().all().pop_back().unwrap();
+    assert_eq!(admin_tr_event.1.len(), 2);
+    assert_eq!(
+        Symbol::try_from_val(&env, &admin_tr_event.1.get(0).unwrap()).unwrap(),
+        Symbol::new(&env, "admin_tr")
+    );
+    assert_eq!(
+        Symbol::try_from_val(&env, &admin_tr_event.1.get(1).unwrap()).unwrap(),
+        Symbol::new(&env, "v1")
+    );
+}
