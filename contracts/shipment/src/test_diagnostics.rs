@@ -299,7 +299,7 @@ fn test_get_non_terminal_count_alignment() {
     assert_eq!(client.get_non_terminal_count(), 4);
 }
 
-// ── get_shipment_creator — non-existent shipment tests (issue #520) ──────────
+// ── get_shipment_creator — non-existent shipment tests ───────────────────────
 
 /// Querying the creator of a shipment ID that was never created must return
 /// ShipmentNotFound without panicking or crashing the node.
@@ -375,7 +375,7 @@ fn test_get_shipment_creator_returns_sender_for_valid_shipment() {
     );
 }
 
-// ── get_shipment_carrier — non-existent shipment tests (issue #534) ──────────
+// ── get_shipment_carrier — non-existent shipment tests ───────────────────────
 
 /// Querying the carrier of a shipment ID that was never created must return
 /// ShipmentNotFound without panicking or crashing the node.
@@ -452,7 +452,7 @@ fn test_get_shipment_carrier_returns_carrier_for_valid_shipment() {
 }
 
 // =============================================================================
-// Issue #534 — get_non_terminal_count decrements on refund resolution
+// get_non_terminal_count decrements on refund resolution
 // =============================================================================
 
 /// Verify that `get_non_terminal_count` decrements by 1 when a shipment is
@@ -553,7 +553,7 @@ fn test_non_terminal_count_decrements_for_one_of_many_on_refund() {
     );
 }
 
-// ── get_shipment_receiver — non-existent shipment tests (issue #528) ─────────
+// ── get_shipment_receiver — non-existent shipment tests ──────────────────────
 
 /// Querying the receiver of a shipment ID that was never created must return
 /// ShipmentNotFound without panicking or crashing the node.
@@ -635,7 +635,7 @@ fn test_get_shipment_receiver_returns_receiver_for_valid_shipment() {
     );
 }
 
-// ── Issue #876 — orphaned-counter helpers match the live storage schema ───────
+// ── Orphaned-counter helpers match the live storage schema ────────────────────
 
 /// `has_orphaned_counters` must inspect only keys that exist in the current
 /// schema, via the `has_*_entry` helpers and live `DataKey` variants.
@@ -777,7 +777,7 @@ fn test_terminal_persistent_shipment_is_not_flagged_as_orphaned_archive() {
     });
 }
 
-/// Issue #877 — dispute evidence is keyed by `DisputeKey::EvidenceCount`, the
+/// Dispute evidence is keyed by `DisputeKey::EvidenceCount`, the
 /// same variant `storage.rs` uses. The old `DataKey::DisputeEvidenceCount` /
 /// `ShipmentNoteCount` / `RecoveryRecordCount` names do not exist.
 #[test]
