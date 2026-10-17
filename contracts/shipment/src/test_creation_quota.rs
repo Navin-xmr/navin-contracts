@@ -1,4 +1,4 @@
-//! Tests for issue #296 — shipment creation quota window.
+//! Shipment creation quota window tests.
 //!
 //! Verifies that the per-company creation quota is enforced within the active
 //! window and resets correctly when the window expires.
@@ -582,7 +582,7 @@ mod tests {
         assert!(create_one(&env, &client, &company, &carrier, 4).is_ok());
     }
 
-    // ── [ISSUE #452] creation quota limit reset tests ─────────────────────────
+    // ── creation quota limit reset tests ──────────────────────────────────────
 
     /// Test: Reach the quota limit in a controlled fixture, then verify enforcement.
     /// This ensures that quota limits are properly enforced.
@@ -1081,7 +1081,7 @@ mod tests {
         assert_eq!(remaining, 0);
     }
 
-    // ── active shipment count after cancellation (issue #525) ───────────────
+    // ── active shipment count after cancellation ───────────────────────────────
 
     /// Cancelling a shipment must decrement the company's active shipment count.
     #[test]
@@ -1175,7 +1175,7 @@ mod tests {
         );
     }
 
-    // ── issue #638: single and batch creation share one quota implementation ──
+    // ── single and batch creation share one quota implementation ──────────────
 
     fn batch_input(env: &Env, carrier: &Address, seed: u8) -> crate::types::ShipmentInput {
         crate::types::ShipmentInput {
