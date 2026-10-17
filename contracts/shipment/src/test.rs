@@ -68,7 +68,7 @@ mod failing_token {
 mod invalid_token {
     use super::*;
 
-    // Token with invalid decimals for testing #260
+    // Token with non-standard decimals to verify initialization rejects unsupported token precision
     #[contract]
     pub struct MockTokenInvalidDecimals;
 
@@ -253,9 +253,9 @@ fn test_create_shipment_unauthorized() {
     );
 }
 
-// ============= Issue #701: Participant Validation Tests =============
+// ============= Participant Validation Tests =============
 
-/// Issue #701 — create_shipment must reject when sender == receiver
+/// create_shipment must reject when sender == receiver
 #[test]
 #[should_panic(expected = "Error(Contract, #57)")]
 fn test_create_shipment_rejects_sender_equals_receiver() {
@@ -278,7 +278,7 @@ fn test_create_shipment_rejects_sender_equals_receiver() {
     );
 }
 
-/// Issue #701 — create_shipment must reject when sender == carrier
+/// create_shipment must reject when sender == carrier
 #[test]
 #[should_panic(expected = "Error(Contract, #57)")]
 fn test_create_shipment_rejects_sender_equals_carrier() {
@@ -301,7 +301,7 @@ fn test_create_shipment_rejects_sender_equals_carrier() {
     );
 }
 
-/// Issue #701 — create_shipment must reject when receiver == carrier
+/// create_shipment must reject when receiver == carrier
 #[test]
 #[should_panic(expected = "Error(Contract, #57)")]
 fn test_create_shipment_rejects_receiver_equals_carrier() {
@@ -324,7 +324,6 @@ fn test_create_shipment_rejects_receiver_equals_carrier() {
     );
 }
 
-/// Issue #701 — create_shipment should succeed with distinct participants
 // ============= End Participant Validation Tests =============
 
 // ============= Carrier Whitelist Tests =============
@@ -1621,7 +1620,7 @@ fn test_create_shipment_fails_before_initialization() {
     );
 }
 
-// ── Issue #1: report_condition_breach ────────────────────────────────────────
+// ── Condition breach reporting authorization ─────────────────────────────────
 
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
@@ -1694,7 +1693,7 @@ fn test_report_condition_breach_wrong_carrier() {
     );
 }
 
-// ── Issue #2: verify_delivery_proof ──────────────────────────────────────────
+// ── Delivery proof verification ──────────────────────────────────────────────
 
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
@@ -1705,8 +1704,6 @@ fn test_verify_delivery_proof_nonexistent_shipment() {
 
     client.verify_delivery_proof(&999u64, &BytesN::from_array(&_env, &[1u8; 32]));
 }
-
-// ── Issue #3: Rate limiting ───────────────────────────────────────────────────
 
 // ============= RBAC and Access Control Tests =============
 
@@ -2259,7 +2256,7 @@ fn test_get_status_summary_empty() {
     assert_eq!(summary.cancelled, 0);
 }
 
-// ── #368: Status summary regression — every lifecycle bucket changes correctly
+// ── Status summary regression: every lifecycle bucket changes correctly
 //
 // This test covers a full mixed-state lifecycle: Created → InTransit →
 // AtCheckpoint → Delivered and Created → Cancelled.  The summary is asserted
@@ -3253,7 +3250,7 @@ fn test_check_deadline_returns_shipment_not_found() {
 
 // ============= Shipment Archival Tests =============
 
-// ── [ISSUE #600] ShipmentUnavailable error variant tests ─────────────────────
+// ── ShipmentUnavailable error variant tests ──────────────────────────────────
 //
 // ShipmentUnavailable (#42) is returned by preflight_check_shipment_available
 // when a shipment exists only in temporary (archived) storage.
@@ -3776,15 +3773,6 @@ fn test_dispute_emits_escrow_frozen_event() {
     );
 }
 
-// ── Finalization lock-out tests (issue #446) ──────────────────────────────────
-
-// ── Metadata symbol boundary tests (issue #448) ──────────────────────────────
-
-// ── Rate-limit exhaustion and recovery tests (issue #18) ─────────────────────
-
-/// Test that rate limit exhaustion blocks the action as expected.
-/// Test that advancing the ledger clears the rate limit window and restores the action.
-/// Test that rate-limit behavior is deterministic across multiple cycles.
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
 fn test_get_shipment_created_at_fails_for_invalid_id() {
@@ -3803,7 +3791,7 @@ fn test_get_shipment_created_at_fails_before_initialization() {
     client.get_shipment_created_at(&1);
 }
 
-// ── [ISSUE #506] get_admin in multi-admin configurations ─────────────────────
+// ── get_admin in multi-admin configurations ──────────────────────────────────
 
 #[test]
 fn test_get_admin_returns_primary_admin_after_multisig_init() {
@@ -3867,7 +3855,7 @@ fn test_get_admin_unaffected_by_additional_multisig_admins() {
     );
 }
 
-// ── [ISSUE #599] StatusHashNotFound error variant tests ──────────────────────
+// ── StatusHashNotFound error variant tests ───────────────────────────────────
 //
 // StatusHashNotFound (#44) is returned when a shipment exists but no hash was
 // recorded for the requested status.
@@ -3883,7 +3871,7 @@ fn test_status_hash_not_found_error_code_is_44() {
     );
 }
 
-// ── Issue #581 – InvalidPaymentMilestones (code 59) ─────────────────────────
+// ── InvalidPaymentMilestones (code 59) ───────────────────────────────────────
 
 #[test]
 #[should_panic(expected = "Error(Contract, #59)")]
@@ -3943,9 +3931,9 @@ fn test_create_shipment_over_100_percentage_milestone_rejected() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Issue #596 — InvalidMigrationEdge (code 47)
-// Issue #758 — rollback and skip-version migrations are intentionally
-// unsupported. There is no runtime-configurable allowed-edges list.
+// InvalidMigrationEdge (code 47)
+// Rollback and skip-version migrations are intentionally unsupported.
+// There is no runtime-configurable allowed-edges list.
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -4079,10 +4067,6 @@ fn test_upgrade_non_admin_dry_run_rejected() {
     assert!(result.is_ok());
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Issue #595 — MilestoneLimitExceeded (code 48)
-// ═══════════════════════════════════════════════════════════════════════════
-
 /// ShipmentNotFound (#4) and StatusHashNotFound (#44) must be distinct error codes —
 /// callers must be able to tell the difference.
 #[test]
@@ -4096,7 +4080,7 @@ fn test_status_hash_not_found_is_distinct_from_shipment_not_found() {
     assert_eq!(NavinError::StatusHashNotFound as u32, 44);
 }
 
-// ── [ISSUE #598] DataHashMismatch error variant tests ────────────────────────
+// ── DataHashMismatch error variant tests ─────────────────────────────────────
 //
 // DataHashMismatch (#45) is returned by assert_delivery_hash
 // when the provided hash does not match the value stored on-chain.
@@ -4112,9 +4096,6 @@ fn test_data_hash_mismatch_error_code_is_45() {
 }
 
 // assert_delivery_hash returns DataHashMismatch (#45) for an incorrect hash.
-// ═══════════════════════════════════════════════════════════════════════════
-// Issue #594 — BreachLimitExceeded (code 51)
-// ═══════════════════════════════════════════════════════════════════════════
 
 /// assert_delivery_hash returns ShipmentNotFound for a non-existent shipment.
 #[test]
@@ -4131,10 +4112,6 @@ fn test_assert_delivery_hash_nonexistent_shipment_returns_not_found() {
     );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Issue #593 — CreationQuotaExceeded (code 53)
-// ═══════════════════════════════════════════════════════════════════════════
-
 /// DataHashMismatch (#45), StatusHashNotFound (#44), and ShipmentNotFound (#4)
 /// must all be distinct error codes.
 #[test]
@@ -4150,7 +4127,7 @@ fn test_data_hash_mismatch_is_distinct_from_other_hash_errors() {
     assert_eq!(NavinError::DataHashMismatch as u32, 45);
 }
 
-// ── [ISSUE #597] CircuitBreakerOpen error variant tests ──────────────────────
+// ── CircuitBreakerOpen error variant tests ───────────────────────────────────
 //
 // CircuitBreakerOpen (#46) is returned by invoke_token_transfer when the
 // circuit breaker is in Open state. The breaker is injected directly into
@@ -4171,7 +4148,7 @@ fn test_circuit_breaker_open_error_code_is_46() {
 /// return CircuitBreakerOpen (#46) — the token transfer is blocked.
 /// With the circuit breaker closed (default state), token transfers succeed
 /// — no CircuitBreakerOpen error is raised.
-// ── Issue #582 – DuplicatePaymentMilestone (code 60) ────────────────────────
+// ── DuplicatePaymentMilestone (code 60) ──────────────────────────────────────
 
 #[test]
 #[should_panic(expected = "Error(Contract, #60)")]
@@ -4201,7 +4178,7 @@ fn test_create_shipment_duplicate_milestone_names_rejected() {
     );
 }
 
-// ── Issue #583 – InvalidTokenAddress (code 61) ──────────────────────────────
+// ── InvalidTokenAddress (code 61) ────────────────────────────────────────────
 
 #[test]
 #[should_panic(expected = "Error(Contract, #61)")]
@@ -4228,7 +4205,7 @@ fn test_initialize_with_valid_token_address_succeeds() {
     assert_eq!(client.get_admin(), admin);
 }
 
-// ── Issue #584 – InvalidPaymentMilestoneName (code 62) ──────────────────────
+// ── InvalidPaymentMilestoneName (code 62) ────────────────────────────────────
 
 #[test]
 #[should_panic(expected = "Error(Contract, #62)")]
@@ -4286,7 +4263,7 @@ fn test_create_shipment_too_long_milestone_name_rejected() {
     );
 }
 
-// ── get_circuit_breaker_status tests (issue #640) ─────────────────────────────
+// ── get_circuit_breaker_status tests ─────────────────────────────────────────
 
 #[test]
 fn test_get_circuit_breaker_status_closed_by_default() {
@@ -4351,7 +4328,7 @@ fn test_get_circuit_breaker_status_half_open() {
     assert_eq!(recovery_remaining, 0);
 }
 
-// ── is_company_suspended tests (issue #642) ───────────────────────────────────
+// ── is_company_suspended tests ───────────────────────────────────────────────
 
 #[test]
 fn test_is_company_suspended_active_by_default() {
@@ -4391,7 +4368,7 @@ fn test_is_company_suspended_returns_false_after_reactivation() {
     assert!(!client.is_company_suspended(&company));
 }
 
-// ── get_platform_fee_config tests (issue #641) ────────────────────────────────
+// ── get_platform_fee_config tests ────────────────────────────────────────────
 
 #[test]
 fn test_get_platform_fee_config_none_before_set() {
@@ -4435,7 +4412,7 @@ fn test_get_platform_fee_config_reflects_updated_value() {
 }
 
 // =============================================================================
-// Issue #601 — DuplicateAction error variant across operations
+// DuplicateAction error variant across operations
 // =============================================================================
 
 /// Verify that duplicate `create_shipment` calls within the idempotency window
@@ -4453,7 +4430,7 @@ fn test_duplicate_action_error_code_is_41() {
 }
 
 // =============================================================================
-// Issue #603 — InvalidMultiSigConfig error variant
+// InvalidMultiSigConfig error variant
 // =============================================================================
 
 /// Verify that `init_multisig` rejects threshold higher than admin count
@@ -4538,7 +4515,7 @@ fn test_invalid_multisig_config_error_code_is_28() {
 }
 
 // =============================================================================
-// Issue #604 — InsufficientApprovals error variant
+// InsufficientApprovals error variant
 // =============================================================================
 
 /// Verify that executing a proposal with fewer approvals than threshold
@@ -4633,7 +4610,7 @@ fn test_invalid_symbol_error_variant() {
 }
 
 // =============================================================================
-// Issue #607 — ProposalExpired error variant
+// ProposalExpired error variant
 // =============================================================================
 // Tests that expired proposals cannot be approved or executed, that the error
 // code 24 is returned correctly, and that non-expired proposals work normally.
@@ -4807,7 +4784,7 @@ fn test_all_approvals_fail_after_expiry() {
 }
 
 // =============================================================================
-// Issue #608 — ProposalAlreadyExecuted error variant
+// ProposalAlreadyExecuted error variant
 // =============================================================================
 // Tests that duplicate proposal executions are rejected, that the error code
 // 23 is returned correctly, and that single execution succeeds.
@@ -4947,10 +4924,10 @@ fn test_single_execution_succeeds_and_applies_action() {
 // Ensures audit trail contains the admin-provided reason for the force refund.
 // ForceRefund rejects zero reason_hash, matching force_cancel_shipment behavior.
 // ===========================================================================
-// Security regressions: #748, #749, #750, #751
+// Security regressions: admin auth, role-removal checks, and symbol bounds
 // ===========================================================================
 
-/// #748 — `initialize` must require auth from the address it installs as admin.
+/// `initialize` must require auth from the address it installs as admin.
 ///
 /// Deploy and initialize are separate transactions, so an attacker can watch
 /// for an uninitialized contract and call `initialize` naming themselves.
@@ -4970,7 +4947,7 @@ fn test_initialize_requires_admin_auth() {
     );
 }
 
-/// #748 — with the admin's authorization present, initialization still works.
+/// With the admin's authorization present, initialization still works.
 #[test]
 fn test_initialize_succeeds_with_admin_auth() {
     let env = Env::default();
@@ -4983,7 +4960,7 @@ fn test_initialize_succeeds_with_admin_auth() {
     assert_eq!(client.get_admin(), admin);
 }
 
-/// #748 — the authorization recorded is the admin's own, so a third party
+/// The authorization recorded is the admin's own, so a third party
 /// cannot front-run initialization by signing for themselves while naming
 /// someone else.
 #[test]
@@ -5003,7 +4980,7 @@ fn test_initialize_auth_is_attributed_to_the_admin() {
     );
 }
 
-/// #749 — `remove_guardian` must not strip an unrelated role.
+/// `remove_guardian` must not strip an unrelated role.
 ///
 /// Before the fix this silently revoked the target's Company role, because
 /// `revoke_role` removes whatever role the address happens to hold.
@@ -5023,7 +5000,7 @@ fn test_remove_guardian_rejects_a_company_target() {
     );
 }
 
-/// #749 — the mirror case for operators.
+/// `remove_operator` must reject a target holding the Guardian role.
 #[test]
 fn test_remove_operator_rejects_a_guardian_target() {
     let (env, client, admin, _token) = setup_initialized_shipment_env();
@@ -5034,7 +5011,7 @@ fn test_remove_operator_rejects_a_guardian_target() {
     assert_eq!(result, Err(Ok(crate::NavinError::RoleMismatch)));
 }
 
-/// #749 — removing an address that holds no role at all is also a mismatch,
+/// Removing an address that holds no role at all is also a mismatch,
 /// rather than a silent success.
 #[test]
 fn test_remove_guardian_rejects_an_unassigned_target() {
@@ -5047,7 +5024,7 @@ fn test_remove_guardian_rejects_an_unassigned_target() {
     );
 }
 
-/// #749 — the happy path still works: a real guardian is still removable.
+/// The happy path still works: a real guardian is still removable.
 #[test]
 fn test_remove_guardian_still_removes_a_guardian() {
     let (env, client, admin, _token) = setup_initialized_shipment_env();
@@ -5063,7 +5040,7 @@ fn test_remove_guardian_still_removes_a_guardian() {
     );
 }
 
-/// #750 — a long `event_type` must not panic.
+/// A long `event_type` must not panic.
 ///
 /// A Soroban `Symbol` allows up to 32 characters; the XDR decode wrote into a
 /// 32-byte buffer and sliced `8 + char_count`, so 25-32 characters ran past
@@ -5082,7 +5059,7 @@ fn test_compute_idempotency_key_rejects_oversized_symbols() {
     );
 }
 
-/// #750 — the maximum-length symbol is handled the same way.
+/// The maximum-length symbol is handled the same way without panicking.
 #[test]
 fn test_compute_idempotency_key_handles_max_length_symbol() {
     let (env, client, _admin, _token) = setup_initialized_shipment_env();
@@ -5096,7 +5073,7 @@ fn test_compute_idempotency_key_handles_max_length_symbol() {
     );
 }
 
-/// #750 — ordinary symbols still produce a stable key.
+/// Ordinary symbols still produce a stable idempotency key.
 #[test]
 fn test_compute_idempotency_key_still_works_for_short_symbols() {
     let (env, client, _admin, _token) = setup_initialized_shipment_env();
@@ -5115,7 +5092,7 @@ fn test_compute_idempotency_key_still_works_for_short_symbols() {
 }
 
 // =============================================================================
-// Issue #778 – check_batch_consistency admin entrypoint
+// check_batch_consistency admin entrypoint
 // =============================================================================
 
 /// Admin can invoke check_batch_consistency and gets an empty violation list
