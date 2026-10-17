@@ -176,7 +176,7 @@ mod fuzz_ttl_management;
 #[cfg(test)]
 mod fuzz_wallet_auth_integration;
 #[cfg(test)]
-mod preservation_property_tests;
+mod test_preservation_properties;
 
 pub use circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState};
 pub use config::*;
