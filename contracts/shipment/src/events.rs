@@ -279,8 +279,6 @@ pub fn emit_circuit_breaker_config_updated(
 /// | timestamp   | `u64`         | Ledger timestamp at creation                     |
 /// | actor       | `Address`     | Company address that created the shipment        |
 pub fn emit_shipment_created(env: &Env, shipment_id: u64, actor: &Address, data_hash: &BytesN<32>) {
-    let zero_hash: BytesN<32> = BytesN::from_array(env, &[0u8; 32]);
-    let _ = &zero_hash; // unused if data_hash is provided
     env.events().publish(
         (Symbol::new(env, crate::event_topics::SHIPMENT_CREATED),),
         (
