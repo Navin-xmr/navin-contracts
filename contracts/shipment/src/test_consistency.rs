@@ -533,7 +533,7 @@ fn test_config_checksum_stable_across_queries() {
     assert_eq!(c1, c4);
 }
 
-// ── Batch query vs. single-read consistency (issue #445) ────────────────────
+// ── Batch query vs. single-read consistency ─────────────────────────────────
 
 /// Each position in a batch result must agree with the corresponding
 /// single-record read for every field the consistency checker cares about.
@@ -684,7 +684,7 @@ fn test_config_checksum_never_zero_for_defaults() {
     );
 }
 
-// ── [ISSUE #453] Carrier reverse-lookup consistency tests ───────────────────
+// ── Carrier reverse-lookup consistency tests ────────────────────────────────
 
 /// Test: Add forward whitelist entries and verify they can be read back.
 /// This ensures that forward whitelist records are stored and retrieved correctly.
@@ -1070,10 +1070,9 @@ fn test_carrier_whitelist_parameter_order_matters() {
     );
 }
 
-/// Test: Repeated add operations are now rejected (issue #539).
+/// Test: Repeated add operations are rejected while preserving whitelist state.
 ///
-/// Originally this contract treated duplicate whitelist adds as silently
-/// idempotent. Issue #539 hardened that path: the first add succeeds, and
+/// Duplicate whitelist adds are rejected: the first add succeeds, and
 /// subsequent adds for the same (company, carrier) pair return
 /// `CarrierAlreadyWhitelisted`. The underlying state remains consistent
 /// after the rejection — exactly one entry persists, and a single remove
@@ -1095,7 +1094,7 @@ fn test_carrier_whitelist_add_idempotent() {
     assert_eq!(
         dup,
         Err(Ok(crate::NavinError::CarrierAlreadyWhitelisted)),
-        "duplicate whitelist add must surface CarrierAlreadyWhitelisted (issue #539)"
+        "duplicate whitelist add must surface CarrierAlreadyWhitelisted"
     );
     let dup2 = client.try_add_carrier_to_whitelist(&company, &carrier);
     assert_eq!(
@@ -1203,7 +1202,7 @@ fn test_upgrade_preserves_analytics_counters() {
     });
 }
 
-// ── [ISSUE #530] get_version read-only method update tests ──────────────────
+// ── get_version read-only method update tests ───────────────────────────────
 
 #[test]
 fn test_get_version_returns_initial_version_one() {
@@ -1274,7 +1273,7 @@ fn test_get_version_is_stable_across_repeated_reads() {
     let _ = v1;
 }
 
-// ── Large-fixture / budget-safety tests (issue #648) ────────────────────────
+// ── Large-fixture / budget-safety tests ─────────────────────────────────────
 
 /// Create N shipments (well above DEFAULT_CONSISTENCY_SAMPLE_LIMIT) and verify
 /// that `check_all_consistency` (the capped variant) inspects exactly
