@@ -39,9 +39,7 @@ use soroban_sdk::{
     Vec as SorobanVec,
 };
 
-// ---------------------------------------------------------------------------
 // Minimal mock token — never actually moves funds in tests
-// ---------------------------------------------------------------------------
 
 #[contract]
 struct MockToken;
@@ -55,9 +53,7 @@ impl MockToken {
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
 }
 
-// ---------------------------------------------------------------------------
 // Shared helpers
-// ---------------------------------------------------------------------------
 
 /// Boots a fresh environment with budget tracking enabled.
 ///
@@ -225,9 +221,7 @@ fn assert_budget_within_threshold(label: &str, cpu: u64, mem: u64) {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Benchmark: initialize
-// ---------------------------------------------------------------------------
 
 #[test]
 fn bench_initialize() {
@@ -245,9 +239,7 @@ fn bench_initialize() {
     assert!(mem < 41_943_040, "initialize exceeded memory limit: {mem}");
 }
 
-// ---------------------------------------------------------------------------
 // Benchmark: create_shipment (single)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn bench_create_shipment() {
@@ -288,9 +280,7 @@ fn bench_create_shipment() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Benchmark: create_shipments_batch (max batch = 10)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn bench_create_shipments_batch() {
@@ -333,9 +323,7 @@ fn bench_create_shipments_batch() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Benchmark: update_status (Created → InTransit)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn bench_update_status() {
@@ -379,9 +367,7 @@ fn bench_update_status() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Benchmark: deposit_escrow
-// ---------------------------------------------------------------------------
 
 #[test]
 fn bench_deposit_escrow() {
@@ -422,9 +408,7 @@ fn bench_deposit_escrow() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Benchmark: release_escrow (after full lifecycle to Delivered)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn bench_release_escrow() {
@@ -472,9 +456,7 @@ fn bench_release_escrow() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Benchmark: refund_escrow (after cancellation)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn bench_refund_escrow() {
@@ -514,9 +496,7 @@ fn bench_refund_escrow() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Benchmark: raise_dispute
-// ---------------------------------------------------------------------------
 
 #[test]
 fn bench_raise_dispute() {
@@ -561,9 +541,7 @@ fn bench_raise_dispute() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Benchmark: resolve_dispute (RefundToCompany)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn bench_resolve_dispute() {
@@ -618,9 +596,7 @@ fn bench_resolve_dispute() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Benchmark: record_milestone (single)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn bench_record_milestone() {
@@ -673,9 +649,7 @@ fn bench_record_milestone() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Benchmark: confirm_delivery
-// ---------------------------------------------------------------------------
 
 #[test]
 fn bench_confirm_delivery() {
@@ -727,9 +701,7 @@ fn bench_confirm_delivery() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Benchmark: cancel_shipment
-// ---------------------------------------------------------------------------
 
 #[test]
 fn bench_cancel_shipment() {
@@ -774,9 +746,7 @@ fn bench_cancel_shipment() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Benchmark: handoff_shipment (carrier transfer)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn bench_handoff_shipment() {
@@ -832,9 +802,7 @@ fn bench_handoff_shipment() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Comprehensive budget summary — prints all numbers in one run
-// ---------------------------------------------------------------------------
 
 /// Runs every high-traffic operation sequentially and prints a consolidated
 /// budget table.  Useful for a quick side-by-side comparison between releases.
