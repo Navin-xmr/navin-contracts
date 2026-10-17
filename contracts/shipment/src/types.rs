@@ -175,7 +175,7 @@ pub enum SettlementKey {
     Latest(u64),
 }
 
-/// Storage key for a shipment's per-visit status data-hash log (issue #698).
+/// Storage key for a shipment's per-visit status data-hash log.
 ///
 /// `DataKey` is already at the `#[contracttype]` case limit, so this log lives
 /// in its own key type — the same pattern as [`DisputeKey`] and
@@ -197,21 +197,20 @@ pub enum StatusHashKey {
     Log(u64),
 }
 
-/// Maximum number of status data-hash entries retained per shipment (issue #698).
+/// Maximum number of status data-hash entries retained per shipment.
 ///
 /// The log is append-only but bounded: once this many visits have been recorded,
 /// appending visit N evicts visit `N - MAX_STATUS_HASHES_PER_SHIPMENT`, i.e. the
-/// oldest retained one. Bounding it is deliberate — an unbounded per-status map
-/// is exactly the state growth removed upstream in #824, and every visit's hash
-/// is already emitted permanently as a `status_updated` event for off-chain
-/// indexing.
+/// oldest retained one. Bounding it avoids unbounded per-status map state growth,
+/// and every visit's hash is already emitted permanently as a `status_updated`
+/// event for off-chain indexing.
 ///
 /// Sized to comfortably cover a full shipment lifecycle (typically well under
 /// ten status updates) while keeping the per-shipment footprint small and
 /// predictable.
 pub const MAX_STATUS_HASHES_PER_SHIPMENT: u32 = 20;
 
-/// A shipment's bounded status data-hash log (issue #698).
+/// A shipment's bounded status data-hash log.
 ///
 /// Stored as a single value under [`StatusHashKey::Log`] so that recording one
 /// visit costs one read and one write.
@@ -402,7 +401,7 @@ impl ShipmentStatus {
             (Self::InTransit, Self::Delivered) => true,
             (Self::InTransit, Self::Disputed) => true,
             (Self::InTransit, Self::Cancelled) => true,
-            // Issue #542 — a shipment must return to `InTransit` before
+            // A shipment must return to `InTransit` before
             // entering another checkpoint, so direct `AtCheckpoint ->
             // AtCheckpoint` hops are explicitly rejected here rather than
             // falling through to the catch-all `_ => false` arm. This
@@ -836,7 +835,7 @@ pub struct ShipmentStatusSummary {
     pub partially_refunded: u64,
 }
 
-/// Paginated result for company-carrier relationship queries (issue #295).
+/// Paginated result for company-carrier relationship queries.
 ///
 /// Returns a page of carrier addresses whitelisted by a company, with a
 /// cursor for deterministic pagination.
@@ -851,7 +850,7 @@ pub struct CarrierRelationshipPage {
     pub total_scanned: u32,
 }
 
-/// Per-company creation quota tracker for the sliding-window rate limit (issue #296).
+/// Per-company creation quota tracker for the sliding-window rate limit.
 ///
 /// Stored under `DataKey::CompanyCreationQuota(company)` in instance storage.
 #[contracttype]
@@ -863,7 +862,7 @@ pub struct CreationQuotaTracker {
     pub window_start: u64,
 }
 
-/// Deterministic action digest stored on proposal creation (issue #297).
+/// Deterministic action digest stored on proposal creation.
 ///
 /// Stored under `DataKey::ProposalDigest(proposal_id)` in persistent storage.
 /// Enables off-chain signers to verify the exact payload before approving.
