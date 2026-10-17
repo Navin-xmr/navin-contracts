@@ -19,29 +19,14 @@
 
 extern crate std;
 
-use crate::{NavinShipment, NavinShipmentClient};
+use crate::NavinShipmentClient;
 use soroban_sdk::{
-    contract, contractimpl,
     testutils::{Address as _, Ledger as _},
     Address, BytesN, Env, Vec,
 };
 
-#[contract]
-struct RoleAssignFuzzToken;
-
-#[contractimpl]
-impl RoleAssignFuzzToken {
-    pub fn decimals(_env: Env) -> u32 {
-        7
-    }
-    pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
-}
-
 fn setup() -> (Env, NavinShipmentClient<'static>, Address) {
-    let (env, admin) = crate::test_utils::setup_env();
-    let token = env.register(RoleAssignFuzzToken {}, ());
-    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
-    client.initialize(&admin, &token);
+    let (env, client, admin) = crate::test_utils::setup();
     client.set_shipment_limit(&admin, &10_000u32);
     (env, client, admin)
 }

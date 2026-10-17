@@ -7,27 +7,7 @@
 mod invalid_config_tests {
     extern crate std;
 
-    use crate::{NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{contract, contractimpl, Address, Env};
-
-    #[contract]
-    struct MockToken;
-
-    #[contractimpl]
-    impl MockToken {
-        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
-        pub fn decimals(_env: Env) -> u32 {
-            crate::types::EXPECTED_TOKEN_DECIMALS
-        }
-    }
-
-    fn setup() -> (Env, NavinShipmentClient<'static>, Address) {
-        let (env, admin) = crate::test_utils::setup_env();
-        let token_contract = env.register(MockToken, ());
-        let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
-        client.initialize(&admin, &token_contract);
-        (env, client, admin)
-    }
+    use crate::test_utils::setup;
 
     /// batch_operation_limit = 0 is below the minimum (1).
     #[test]

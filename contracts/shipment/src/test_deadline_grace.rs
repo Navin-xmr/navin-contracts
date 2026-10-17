@@ -14,32 +14,14 @@
 #[cfg(test)]
 mod tests {
     use crate::types::NotificationType;
-    use crate::{test_utils, NavinShipment, NavinShipmentClient, ShipmentStatus};
+    use crate::{
+        test_utils::{self, setup},
+        NavinShipmentClient, ShipmentStatus,
+    };
     use soroban_sdk::{
-        contract, contractimpl,
         testutils::{Address as _, Events as _},
         Address, BytesN, Env, Symbol, TryFromVal, Vec,
     };
-
-    #[contract]
-    struct MockToken;
-
-    #[contractimpl]
-    impl MockToken {
-        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
-        pub fn decimals(_env: Env) -> u32 {
-            7
-        }
-    }
-
-    fn setup() -> (Env, NavinShipmentClient<'static>, Address) {
-        let (env, admin) = test_utils::setup_env();
-        let contract_id = env.register(NavinShipment, ());
-        let client = NavinShipmentClient::new(&env, &contract_id);
-        let token_id = env.register(MockToken, ());
-        client.initialize(&admin, &token_id);
-        (env, client, admin)
-    }
 
     /// Helper: create a shipment with a specific deadline. Returns shipment_id.
     fn create_with_deadline(

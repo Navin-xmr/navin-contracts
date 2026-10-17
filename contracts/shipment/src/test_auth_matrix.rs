@@ -6,27 +6,11 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
-
-    #[contract]
-    struct MockToken;
-
-    #[contractimpl]
-    impl MockToken {
-        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
-        pub fn decimals(_env: Env) -> u32 {
-            7
-        }
-    }
-
-    fn setup() -> (Env, NavinShipmentClient<'static>, Address) {
-        let (env, admin) = test_utils::setup_env();
-        let token = env.register(MockToken, ());
-        let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
-        client.initialize(&admin, &token);
-        (env, client, admin)
-    }
+    use crate::{
+        test_utils::{self, setup},
+        NavinError, NavinShipmentClient,
+    };
+    use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec};
 
     fn create_shipment(
         env: &Env,

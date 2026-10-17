@@ -7,28 +7,8 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{test_utils, NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env, Vec};
-
-    #[contract]
-    struct MockToken;
-
-    #[contractimpl]
-    impl MockToken {
-        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
-        pub fn decimals(_env: Env) -> u32 {
-            7
-        }
-    }
-
-    fn setup() -> (Env, NavinShipmentClient<'static>, Address) {
-        let (env, admin) = test_utils::setup_env();
-        let contract_id = env.register(NavinShipment, ());
-        let client = NavinShipmentClient::new(&env, &contract_id);
-        let token_id = env.register(MockToken, ());
-        client.initialize(&admin, &token_id);
-        (env, client, admin)
-    }
+    use crate::test_utils::setup;
+    use soroban_sdk::{testutils::Address as _, Address, Vec};
 
     // ── Add a carrier shared across two companies ─────────────────────────────
 

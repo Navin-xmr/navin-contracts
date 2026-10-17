@@ -212,28 +212,8 @@ fn test_checked_mul_div_truncates_remainder() {
 
 mod total_escrow_volume_overflow {
     use crate::errors::NavinError;
-    use crate::{storage, NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{contract, contractimpl, Address, Env};
-
-    #[contract]
-    struct MockToken;
-
-    #[contractimpl]
-    impl MockToken {
-        pub fn decimals(_env: Env) -> u32 {
-            7
-        }
-        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
-    }
-
-    fn setup() -> (Env, NavinShipmentClient<'static>, Address) {
-        let (env, admin) = crate::test_utils::setup_env();
-        let token = env.register(MockToken, ());
-        let cid = env.register(NavinShipment, ());
-        let client = NavinShipmentClient::new(&env, &cid);
-        client.initialize(&admin, &token);
-        (env, client, admin)
-    }
+    use crate::storage;
+    use crate::test_utils::setup;
 
     /// Seeding TotalEscrowVolume to i128::MAX then adding 1 must return
     /// ArithmeticError — overflow is caught by checked_add.
@@ -427,28 +407,8 @@ mod invalid_amount_validation {
     extern crate std;
 
     use crate::errors::NavinError;
-    use crate::{NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
-
-    #[soroban_sdk::contract]
-    struct MockPlatformToken;
-
-    #[soroban_sdk::contractimpl]
-    impl MockPlatformToken {
-        pub fn decimals(_env: Env) -> u32 {
-            7
-        }
-        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
-    }
-
-    fn setup() -> (Env, NavinShipmentClient<'static>, Address) {
-        let (env, admin) = crate::test_utils::setup_env();
-        let token = env.register(MockPlatformToken, ());
-        let cid = env.register(NavinShipment, ());
-        let client = NavinShipmentClient::new(&env, &cid);
-        client.initialize(&admin, &token);
-        (env, client, admin)
-    }
+    use crate::test_utils::setup;
+    use soroban_sdk::{testutils::Address as _, Address, BytesN};
 
     fn check_invalid_amount(
         result: Result<

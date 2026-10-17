@@ -912,28 +912,11 @@ mod tests {
 
 #[cfg(test)]
 mod reset_integration_tests {
-    use crate::{CircuitBreakerState, NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env};
-
-    /// Token whose `transfer` always succeeds, so post-reset transfers go through.
-    #[contract]
-    struct WorkingToken;
-
-    #[contractimpl]
-    impl WorkingToken {
-        pub fn decimals(_env: Env) -> u32 {
-            7
-        }
-        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
-    }
+    use crate::{CircuitBreakerState, NavinShipmentClient};
+    use soroban_sdk::{Address, Env};
 
     fn setup() -> (Env, NavinShipmentClient<'static>, Address) {
-        let env = Env::default();
-        env.mock_all_auths();
-        let admin = Address::generate(&env);
-        let token = env.register(WorkingToken {}, ());
-        let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
-        client.initialize(&admin, &token);
+        let (env, client, admin) = crate::test_utils::setup();
 
         // `reset_circuit_breaker` authorizes via `is_admin`, which consults the
         // admin list (populated through `init_multisig` in production). Seed it

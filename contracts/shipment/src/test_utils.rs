@@ -89,6 +89,39 @@ pub fn setup_env() -> (Env, Address) {
     (env, admin)
 }
 
+#[soroban_sdk::contract]
+pub struct SharedMockToken;
+
+#[soroban_sdk::contractimpl]
+impl SharedMockToken {
+    pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+
+    pub fn transfer_from(
+        _env: Env,
+        _spender: Address,
+        _from: Address,
+        _to: Address,
+        _amount: i128,
+    ) {
+    }
+
+    pub fn decimals(_env: Env) -> u32 {
+        crate::types::EXPECTED_TOKEN_DECIMALS
+    }
+}
+
+/// Sets up a deterministic test environment, registers [`SharedMockToken`] and
+/// [`crate::NavinShipment`], and initializes the shipment contract with a
+/// generated admin and token address.
+pub fn setup() -> (Env, crate::NavinShipmentClient<'static>, Address) {
+    let (env, admin) = setup_env();
+    let token_contract = env.register(SharedMockToken, ());
+    let contract_id = env.register(crate::NavinShipment, ());
+    let client = crate::NavinShipmentClient::new(&env, &contract_id);
+    client.initialize(&admin, &token_contract);
+    (env, client, admin)
+}
+
 // ── Timestamp helpers ─────────────────────────────────────────────────────────
 
 /// Advance the ledger timestamp by `seconds`.

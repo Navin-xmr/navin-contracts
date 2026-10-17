@@ -7,32 +7,12 @@
 
 #![cfg(test)]
 
-use crate::{NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
+use crate::test_utils::setup;
+use crate::{NavinError, NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::testutils::Address as _;
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, BytesN, Env, Symbol, Vec};
-
-// ── Mock token ────────────────────────────────────────────────────────────────
-
-#[contract]
-struct MilestoneOrderToken;
-
-#[contractimpl]
-impl MilestoneOrderToken {
-    pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
-    pub fn decimals(_env: Env) -> u32 {
-        7
-    }
-}
+use soroban_sdk::{symbol_short, Address, BytesN, Env, Symbol, Vec};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-fn setup() -> (Env, NavinShipmentClient<'static>, Address) {
-    let (env, admin) = crate::test_utils::setup_env();
-    let token = env.register(MilestoneOrderToken, ());
-    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
-    client.initialize(&admin, &token);
-    (env, client, admin)
-}
 
 fn data_hash(env: &Env, seed: u8) -> BytesN<32> {
     BytesN::from_array(env, &[seed; 32])

@@ -2,27 +2,8 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::test_utils::*;
-    use crate::{NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env};
-
-    #[contract]
-    struct MockToken;
-
-    #[contractimpl]
-    impl MockToken {
-        pub fn decimals(_env: Env) -> u32 {
-            7
-        }
-    }
-
-    fn setup() -> (Env, NavinShipmentClient<'static>, Address) {
-        let (env, admin) = setup_env();
-        let token = env.register(MockToken {}, ());
-        let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
-        client.initialize(&admin, &token);
-        (env, client, admin)
-    }
+    use crate::test_utils::setup;
+    use soroban_sdk::{testutils::Address as _, Address};
 
     #[test]
     fn sole_admin_without_multisig_can_reset_circuit_breaker() {
