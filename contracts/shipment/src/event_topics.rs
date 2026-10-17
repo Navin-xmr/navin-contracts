@@ -230,31 +230,33 @@ pub const HASH_DOMAIN_ESCROW: u8 = 0x02;
 pub const HASH_DOMAIN_DISPUTE: u8 = 0x03;
 
 /// Domain tag for condition-breach / sensor-data events
-/// (`condition_breach`, `carrier_breach`).
-#[allow(dead_code)]
+/// (`condition_breach`, `carrier_breach`, `geofence_event`).
+/// Referenced by [`NON_DEFAULT_HASH_DOMAINS`] via [`hash_domain_for_symbol`].
 pub const HASH_DOMAIN_CONDITION: u8 = 0x04;
 
 /// Domain tag for carrier-reputation events
 /// (`carrier_late_delivery`, `carrier_on_time_delivery`,
 ///  `carrier_handoff`, `carrier_handoff_completed`,
-///  `carrier_milestone_rate`, `carrier_dispute_loss`).
-#[allow(dead_code)]
+///  `carrier_milestone_rate`, `carrier_dispute_loss`,
+///  `carrier_suspended`, `carrier_reactivated`).
+/// Referenced by [`NON_DEFAULT_HASH_DOMAINS`] via [`hash_domain_for_symbol`].
 pub const HASH_DOMAIN_CARRIER: u8 = 0x05;
 
 /// Domain tag for admin / governance events
 /// (`admin_proposed`, `admin_transferred`, `contract_upgraded`,
 ///  `migration_reported`, `contract_paused`, `contract_unpaused`,
-///  `force_cancelled`).
-#[allow(dead_code)]
+///  `force_cancelled`, `init`, `set_limit`, `set_cmp_limit`,
+///  `proposal_digest`, `config_updated`, `quota_set`).
+/// Referenced by [`NON_DEFAULT_HASH_DOMAINS`] via [`hash_domain_for_symbol`].
 pub const HASH_DOMAIN_ADMIN: u8 = 0x06;
 
 /// Domain tag for RBAC events
 /// (`role_revoked`, `role_changed`).
-#[allow(dead_code)]
+/// Referenced by [`NON_DEFAULT_HASH_DOMAINS`] via [`hash_domain_for_symbol`].
 pub const HASH_DOMAIN_RBAC: u8 = 0x07;
 
 /// Domain tag for notification events (`notification`).
-#[allow(dead_code)]
+/// Referenced by [`NON_DEFAULT_HASH_DOMAINS`] via [`hash_domain_for_symbol`].
 pub const HASH_DOMAIN_NOTIFICATION: u8 = 0x08;
 
 // 0x09 was `HASH_DOMAIN_NOTE` (for the removed `note_appended` topic). It is
@@ -615,5 +617,30 @@ mod tests {
         assert_eq!(HASH_DOMAIN_ADMIN, 0x06);
         assert_eq!(HASH_DOMAIN_RBAC, 0x07);
         assert_eq!(HASH_DOMAIN_NOTIFICATION, 0x08);
+    }
+
+    #[test]
+    fn hash_domain_for_symbol_resolves_admin_rbac_and_notification_domains() {
+        let env = soroban_sdk::Env::default();
+        assert_eq!(
+            hash_domain_for_symbol(&env, &soroban_sdk::Symbol::new(&env, ADMIN_PROPOSED)),
+            HASH_DOMAIN_ADMIN
+        );
+        assert_eq!(
+            hash_domain_for_symbol(&env, &soroban_sdk::Symbol::new(&env, ROLE_CHANGED)),
+            HASH_DOMAIN_RBAC
+        );
+        assert_eq!(
+            hash_domain_for_symbol(&env, &soroban_sdk::Symbol::new(&env, NOTIFICATION)),
+            HASH_DOMAIN_NOTIFICATION
+        );
+        assert_eq!(
+            hash_domain_for_symbol(&env, &soroban_sdk::Symbol::new(&env, CONDITION_BREACH)),
+            HASH_DOMAIN_CONDITION
+        );
+        assert_eq!(
+            hash_domain_for_symbol(&env, &soroban_sdk::Symbol::new(&env, CARRIER_HANDOFF)),
+            HASH_DOMAIN_CARRIER
+        );
     }
 }
