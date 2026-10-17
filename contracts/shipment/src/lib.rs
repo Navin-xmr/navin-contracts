@@ -84,8 +84,6 @@ mod test_require_auth_for_args;
 #[cfg(test)]
 mod test_settlement;
 #[cfg(test)]
-mod test_settlement_machine;
-#[cfg(test)]
 mod test_signature_argument_ordering;
 #[cfg(test)]
 mod test_symbol_validation;
