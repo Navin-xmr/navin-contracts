@@ -1,4 +1,4 @@
-//! Tests for issue #297 — multi-sig proposal action hash and digest query.
+//! Multi-sig proposal action hash and digest query tests.
 //!
 //! Verifies that:
 //! - A digest is stored when `propose_action` is called.
@@ -188,7 +188,7 @@ mod tests {
         assert_ne!(digest_release, digest_refund);
     }
 
-    // ── [ISSUE #454] Proposal expiry workflow tests ─────────────────────────
+    // ── Proposal expiry workflow tests ──────────────────────────────────────
 
     /// Test: Create a proposal fixture with expiry, then verify it exists and is usable.
     /// This establishes the baseline before testing expiry behavior.
@@ -681,7 +681,7 @@ mod tests {
         );
     }
 
-    // ── [ISSUE #507] Zero-duration proposal expiry rejection tests ─────────────
+    // ── Zero-duration proposal expiry rejection tests ──────────────────────────
 
     /// Test: propose_action is rejected when proposal_expiry_seconds is zero.
     /// Bypasses update_config validation to directly set a zero-duration expiry
@@ -722,7 +722,7 @@ mod tests {
         assert!(result.is_ok(), "positive-duration expiry must be accepted");
     }
 
-    // ── [ISSUE #527] ProposalDigest execution validation checks ──────────────
+    // ── ProposalDigest execution validation checks ───────────────────────────
 
     /// Altering the target address in a TransferAdmin action after proposal creation
     /// produces a digest that does not match the stored digest.
@@ -1051,7 +1051,7 @@ mod tests {
         );
     }
 
-    // ── [ISSUE #XXX] Multi-sig threshold enforcement tests ─────────────────────
+    // ── Multi-sig threshold enforcement tests ──────────────────────────────────
 
     /// Test: Proposal execution rejected with insufficient approvals (threshold 3, 1 approval).
     /// Verifies that attempts to execute with only 1 approval when 3 are required fail
