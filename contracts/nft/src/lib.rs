@@ -10,6 +10,7 @@ use soroban_sdk::{
 // ── Storage Keys ────────────────────────────────────────────────────────────
 
 #[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum NftKey {
     Owner(u64),
     OwnerTokens(Address),
@@ -25,7 +26,7 @@ enum NftKey {
 // ── Errors ──────────────────────────────────────────────────────────────────
 
 #[contracterror]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NftError {
     AlreadyInitialized = 1,
     NotInitialized = 2,
@@ -674,5 +675,25 @@ mod tests {
 
         let res2 = client.try_initialize(&admin, &symbol_short!("NavinNFT"), &symbol_short!(""));
         assert_eq!(res2, Err(Ok(NftError::InvalidNameOrSymbol)));
+    }
+
+    #[test]
+    fn test_nft_error_equality() {
+        let env = Env::default();
+        let owner = Address::generate(&env);
+
+        let err = NftError::NotOwner;
+        let err_copy = err;
+        assert_eq!(err, err_copy);
+        assert_ne!(NftError::NotOwner, NftError::NotAdmin);
+        assert_ne!(NftError::TokenDoesNotExist, NftError::TokenAlreadyMinted);
+
+        assert_eq!(NftKey::Owner(1), NftKey::Owner(1));
+        assert_ne!(NftKey::Owner(1), NftKey::Owner(2));
+        assert_eq!(
+            NftKey::OwnerTokens(owner.clone()),
+            NftKey::OwnerTokens(owner)
+        );
+        assert_ne!(NftKey::Admin, NftKey::Paused);
     }
 }
