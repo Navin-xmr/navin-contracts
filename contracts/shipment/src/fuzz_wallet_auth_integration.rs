@@ -31,9 +31,7 @@ use soroban_sdk::{
     Address, BytesN, Env, Vec,
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Mock token
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[contract]
 struct WalletAuthToken;
@@ -46,9 +44,7 @@ impl WalletAuthToken {
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Setup
-// ─────────────────────────────────────────────────────────────────────────────
 
 struct TestContext {
     env: Env,
@@ -86,9 +82,7 @@ fn non_zero_hash(env: &Env, seed: u8) -> BytesN<32> {
     BytesN::from_array(env, &[seed.max(1); 32])
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Flow 1: Happy path — create → deposit → transit → deliver → release
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn wallet_auth_happy_path_full_lifecycle() {
@@ -160,9 +154,7 @@ fn wallet_auth_happy_path_full_lifecycle() {
     assert!(s.finalized, "Shipment must be finalized after release");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Flow 2: Cancel and refund path
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn wallet_auth_cancel_refund_path() {
@@ -205,9 +197,7 @@ fn wallet_auth_cancel_refund_path() {
     assert!(s.finalized, "Shipment must be finalized after cancel");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Flow 3: Dispute raised by receiver → admin resolves to carrier
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn wallet_auth_dispute_resolution_to_carrier() {
@@ -268,9 +258,7 @@ fn wallet_auth_dispute_resolution_to_carrier() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Flow 4: Dispute resolved with refund to company
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn wallet_auth_dispute_resolution_refund_to_company() {
@@ -325,9 +313,7 @@ fn wallet_auth_dispute_resolution_refund_to_company() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Flow 5: Admin pause blocks all operations; unpause restores them
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn wallet_auth_pause_blocks_operations() {
@@ -382,9 +368,7 @@ fn wallet_auth_pause_blocks_operations() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Flow 6: Deadline expiry auto-cancel
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn wallet_auth_deadline_expiry_auto_cancel() {
@@ -429,9 +413,7 @@ fn wallet_auth_deadline_expiry_auto_cancel() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Flow 7: Unauthorized wallet cannot perform privileged operations
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn wallet_auth_unauthorized_wallet_rejected() {
