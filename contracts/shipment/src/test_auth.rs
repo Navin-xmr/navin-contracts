@@ -27,7 +27,7 @@ use soroban_sdk::{
     Address, BytesN, Env, IntoVal, Symbol, Vec,
 };
 
-// ── Minimal token stub (no-op transfer) ──────────────────────────────────────
+// Minimal token stub (no-op transfer)
 
 #[contract]
 struct MockToken;
@@ -49,7 +49,7 @@ impl MockToken {
     }
 }
 
-// ── Shared setup helpers ──────────────────────────────────────────────────────
+// Shared setup helpers
 
 /// Full environment with `mock_all_auths()` active (for positive tests).
 fn setup_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
@@ -61,14 +61,12 @@ fn setup_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
     (env, client, admin, token)
 }
 
-// ── Helper: contract id from client ──────────────────────────────────────────
+// Helper: contract id from client
 fn contract_id(client: &NavinShipmentClient<'static>) -> Address {
     client.address.clone()
 }
 
-// =============================================================================
 // Admin path — positive auth-tree assertions
-// =============================================================================
 
 /// `add_company` must record an auth invocation for the admin address with the
 /// correct function name and argument list.
@@ -366,9 +364,7 @@ fn test_auth_tree_force_cancel_shipment() {
     );
 }
 
-// =============================================================================
 // Company path — positive auth-tree assertions
-// =============================================================================
 
 /// `create_shipment` must record the company (sender) auth with all shipment
 /// parameters, confirming no other address can silently create a shipment.
@@ -460,9 +456,7 @@ fn test_auth_tree_cancel_shipment() {
     );
 }
 
-// =============================================================================
 // Carrier path — positive auth-tree assertions
-// =============================================================================
 
 /// `update_status` must record the carrier auth with shipment ID, new status,
 /// and data hash.
@@ -576,9 +570,7 @@ fn test_auth_tree_handoff_shipment() {
     );
 }
 
-// =============================================================================
 // Receiver path — positive auth-tree assertions
-// =============================================================================
 
 /// `confirm_delivery` must record the receiver auth with the shipment ID and
 /// confirmation hash — the receiver is the only party who can accept delivery.
@@ -629,9 +621,7 @@ fn test_auth_tree_confirm_delivery() {
     );
 }
 
-// =============================================================================
 // Negative tests — auth mismatch fails predictably
-// =============================================================================
 //
 // IMPORTANT: `mock_all_auths()` persists for the entire `Env` lifetime; once
 // called it cannot be revoked.  Negative tests therefore use completely fresh
@@ -960,9 +950,7 @@ fn test_auth_remove_carrier_from_whitelist_fails_without_auth() {
     );
 }
 
-// =============================================================================
 // #456 — Auth mismatch: wrong role produces the correct domain error
-// =============================================================================
 //
 // These tests verify that when a caller has valid authentication (mock_all_auths
 // is active so require_auth passes) but lacks the required role, the contract
@@ -1026,9 +1014,7 @@ fn test_wrong_role_suspend_company_returns_error() {
     );
 }
 
-// =============================================================================
 // Multi-sig path — positive auth-tree assertions (issue #464)
-// =============================================================================
 
 /// `init_multisig` must record an auth invocation for the admin with the
 /// correct admin list and threshold.
@@ -1162,9 +1148,7 @@ fn test_role_revocation_query() {
     // Query again
     assert_eq!(client.get_role(&target), crate::Role::Unassigned);
 }
-// =============================================================================
 // #521 — Whitespace-only symbol rejection in role-registration context
-// =============================================================================
 //
 // `validate_symbol_not_whitespace_only` is the canonical guard for detecting
 // empty or whitespace-equivalent Symbol inputs. Because the Soroban SDK restricts
@@ -1303,9 +1287,7 @@ fn test_set_shipment_metadata_rejects_empty_value_symbol() {
     );
 }
 
-// =============================================================================
 // Issue #531 — suspend_role on already-suspended users
-// =============================================================================
 
 /// Verify that calling `suspend_role` twice on the same address is handled
 /// gracefully. The contract treats suspension as idempotent — repeated calls
@@ -1361,9 +1343,7 @@ fn test_suspend_role_idempotent_state_after_duplicate() {
     );
 }
 
-// =============================================================================
 // Issue #532 — reactivate_role on non-suspended users
-// =============================================================================
 
 /// Verify that calling `reactivate_role` on an address that is NOT suspended
 /// does not corrupt its role state. The contract is idempotent for reactivation.
