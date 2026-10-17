@@ -941,8 +941,8 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
         }
     }
 
-    // Keep the per-visit status-hash log alive as long as the shipment is
-    // (issue #698); verified hashes must not expire under a live shipment.
+    // Keep the per-visit status-hash log alive as long as the shipment is;
+    // verified hashes must not expire under a live shipment.
     extend_status_hash_ttl(env, shipment_id, threshold, extend_to);
 }
 
@@ -1192,7 +1192,7 @@ const SECONDS_PER_LEDGER: u64 = 5;
 const PROPOSAL_TTL_MARGIN_LEDGERS: u32 = 17_280; // ~1 day
 
 /// Extend the TTL of a proposal and its action digest so both outlive the
-/// proposal's own `expires_at` (issue #855).
+/// proposal's own `expires_at`.
 ///
 /// # Arguments
 /// * `env` - The execution environment.
@@ -1860,7 +1860,7 @@ pub fn clear_active_settlement(env: &Env, shipment_id: u64) {
         .remove(&DataKey::ActiveSettlement(shipment_id));
 }
 
-// ============= Creation Quota Storage Functions (issue #296) =============
+// ============= Creation Quota Storage Functions =============
 
 /// Get the creation quota tracker for a company.
 pub fn get_creation_quota(
@@ -1883,7 +1883,7 @@ pub fn set_creation_quota(
         .set(&DataKey::CompanyCreationQuota(company.clone()), tracker);
 }
 
-// ============= Proposal Digest Storage Functions (issue #297) =============
+// ============= Proposal Digest Storage Functions =============
 
 /// Store the action digest for a proposal.
 pub fn set_proposal_digest(
@@ -1948,8 +1948,8 @@ pub fn set_shipment_dependency(env: &Env, dependent_id: u64, prereq_id: u64) {
 /// Remove the prerequisite list for a dependent shipment from persistent storage.
 ///
 /// Called by `archive_shipment`'s purge list to prevent unbounded growth of
-/// `ShipmentDependents` entries (issue #786). Without this, dependents would
-/// remain in instance storage indefinitely and inflate rent.
+/// `ShipmentDependents` entries. Without this, dependents would remain in
+/// storage indefinitely and inflate rent.
 pub fn remove_shipment_dependents(env: &Env, dependent_id: u64) {
     env.storage()
         .persistent()
@@ -2000,7 +2000,7 @@ fn set_status_hash_log(env: &Env, shipment_id: u64, log: &StatusHashLog) {
 ///
 /// This never overwrites a *retained* entry: a shipment revisiting a status
 /// records a brand-new entry, and every earlier visit stays readable until the
-/// log wraps (issue #698).
+/// log wraps.
 pub fn append_status_hash(
     env: &Env,
     shipment_id: u64,
@@ -2122,13 +2122,13 @@ pub fn purge_status_hash_log(env: &Env, shipment_id: u64) {
 
 /// Purge per-shipment hash/state entries when a shipment reaches a terminal state.
 ///
-/// Cleanup list includes Delivered, Cancelled, and PartiallyRefunded (issue #783).
+/// Cleanup list includes Delivered, Cancelled, and PartiallyRefunded.
 /// Called by `archive_shipment` in `lib.rs` after moving the shipment to temporary storage;
 /// also exposed for direct invocation in tests. Each key is removed from persistent storage
 /// if present, preventing unbounded growth of `ConfirmationHash`, `LastStatusUpdate`,
 /// `DeadlineWarningEmitted`, `BreachEventCount`, `MilestoneEventCount`, `EventCount`,
 /// `ShipmentDependents`, `EscrowFreezeReasonByShipment`, and `ActiveSettlement` entries.
-/// The per-visit status-hash log (issue #698) is purged alongside them.
+/// The per-visit status-hash log is purged alongside them.
 pub fn purge_status_hashes(env: &Env, shipment_id: u64) {
     // Resolve status from persistent or archived storage. `archive_shipment`
     // moves the shipment to temporary storage *before* calling this, so the
@@ -2181,7 +2181,7 @@ pub fn purge_status_hashes(env: &Env, shipment_id: u64) {
         .remove(&DataKey::ActiveSettlement(shipment_id));
     // Also ensure dependents helper is cleared (covers instance->persistent migration per diff in storage.rs)
     remove_shipment_dependents(env, shipment_id);
-    // Drop the per-visit IoT status-hash log (issue #698) so archived shipments
+    // Drop the per-visit IoT status-hash log so archived shipments
     // stop paying rent for verification hashes they can no longer transition.
     purge_status_hash_log(env, shipment_id);
 }
