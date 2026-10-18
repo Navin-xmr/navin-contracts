@@ -35,7 +35,6 @@ Stellar Soroban provides three storage tiers with distinct cost and durability p
 | `ShipmentLimit` | `u32` | Instance | ✅ Instance | Global config value |
 | `CarrierWhitelist(company, carrier)` | `bool` | Instance | ⚠️ **Persistent** | See note 1 |
 | `UserRole(address, role)` | `bool` | Instance | ⚠️ **Persistent** | See note 2 |
-| `Role(address)` | `Role` | Instance | ⚠️ **Persistent** | See note 2 |
 | `TotalEscrowVolume` | `i128` | Instance | ✅ Instance | Global analytics counter |
 | `TotalDisputes` | `u64` | Instance | ✅ Instance | Global analytics counter |
 | `StatusCount(status)` | `u64` | Instance | ✅ Instance | Global analytics counter |
@@ -90,12 +89,12 @@ This query does not mutate storage and is safe to run in pre-restore triage work
 
 ---
 
-### ⚠️ Note 2 — `UserRole` and `Role` should move to Persistent
+### ⚠️ Note 2 — `UserRole` should move to Persistent
 
 **Current:** `instance()`  
 **Recommended:** `persistent()`  
 **Reason:** Same issue as `CarrierWhitelist`. Role assignments are per-address data. As the number of companies and carriers grows, the instance storage blob grows with them, making every contract call more expensive. Role data is accessed only when the specific address is calling — it should live in persistent storage keyed by address.  
-**Gas impact:** High. Each registered company and carrier adds two entries to the instance blob.
+**Gas impact:** High. Each registered company and carrier adds an entry to the instance blob. (The legacy single-role `Role(address)` slot that used to be dual-written alongside `UserRole` has been removed; the primary role is now derived from `UserRole` keys.)
 
 ---
 
@@ -145,8 +144,7 @@ The key is set twice identically. The second call is a wasted operation. Remove 
 | Key | Change | Estimated Saving |
 |-----|--------|-----------------|
 | `CarrierWhitelist(company, carrier)` | Instance → Persistent | High — removes N entries from instance blob |
-| `UserRole(address, role)` | Instance → Persistent | High — removes 2×N entries from instance blob |
-| `Role(address)` | Instance → Persistent | High — removes N entries from instance blob |
+| `UserRole(address, role)` | Instance → Persistent | High — removes N entries from instance blob |
 | `ActiveShipmentCount(company)` | Instance → Persistent | Medium — removes N entries from instance blob |
 | `LastStatusUpdate(id)` | Persistent → Temporary | Medium — eliminates rent per shipment |
 | `EventCount(id)` | Persistent → Temporary | Low-medium — eliminates rent per shipment |
@@ -194,7 +192,7 @@ After moving `LastStatusUpdate` and `EventCount` to temporary, no changes to `ex
 
 ## Implementation Notes
 
-When migrating `CarrierWhitelist`, `UserRole`, `Role`, and `ActiveShipmentCount` from instance to persistent storage, ensure:
+When migrating `CarrierWhitelist`, `UserRole`, and `ActiveShipmentCount` from instance to persistent storage, ensure:
 
 1. TTL extension is called for these keys when a shipment is created or updated for that company/carrier, otherwise they may expire during a long-inactive period.
 2. Existing data in instance storage will not be automatically migrated — a one-time migration function or re-registration of all roles will be needed on upgrade.

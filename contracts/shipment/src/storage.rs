@@ -248,8 +248,7 @@ pub fn is_carrier_whitelisted(env: &Env, company: &Address, carrier: &Address) -
 
 /// Assign a role to an address in instance storage.
 ///
-/// Supports multiple roles per address via `UserRole(address, role)` keys
-/// and also sets the legacy `Role(address)` key for backward compatibility.
+/// Supports multiple roles per address via `UserRole(address, role)` keys.
 ///
 /// # Arguments
 /// * `env` - The execution environment.
@@ -263,10 +262,6 @@ pub fn is_carrier_whitelisted(env: &Env, company: &Address, carrier: &Address) -
 pub fn set_role(env: &Env, address: &Address, role: &Role) {
     let key = DataKey::UserRole(address.clone(), role.clone());
     env.storage().instance().set(&key, &true);
-    // also set legacy single-role slot for compatibility for the primary role
-    env.storage()
-        .instance()
-        .set(&DataKey::Role(address.clone()), role);
 }
 
 /// Check if an address has a specific role in instance storage.
@@ -290,7 +285,9 @@ pub fn has_role(env: &Env, address: &Address, role: &Role) -> bool {
 
 /// Retrieve the primary role assigned to an address from instance storage.
 ///
-/// Uses the legacy `Role(address)` key for backward compatibility.
+/// Derived from the `UserRole(address, role)` keys. If an address holds more
+/// than one role, the first match in the order `Company`, `Carrier`,
+/// `Guardian`, `Operator` is returned.
 ///
 /// # Arguments
 /// * `env` - The execution environment.
@@ -304,9 +301,9 @@ pub fn has_role(env: &Env, address: &Address, role: &Role) -> bool {
 /// // let role = storage::get_role(&env, &user_addr);
 /// ```
 pub fn get_role(env: &Env, address: &Address) -> Option<Role> {
-    env.storage()
-        .instance()
-        .get(&DataKey::Role(address.clone()))
+    [Role::Company, Role::Carrier, Role::Guardian, Role::Operator]
+        .into_iter()
+        .find(|role| has_role(env, address, role))
 }
 
 /// Grant the `Company` role to an address.
@@ -339,8 +336,7 @@ pub fn set_carrier_role(env: &Env, carrier: &Address) {
 
 /// Revoke a role from an address in instance storage.
 ///
-/// Removes the `UserRole(address, role)` key and resets the legacy
-/// `Role(address)` key to `Unassigned`.
+/// Removes the `UserRole(address, role)` key.
 ///
 /// # Arguments
 /// * `env` - The execution environment.
@@ -354,10 +350,6 @@ pub fn set_carrier_role(env: &Env, carrier: &Address) {
 pub fn revoke_role(env: &Env, address: &Address, role: &Role) {
     let key = DataKey::UserRole(address.clone(), role.clone());
     env.storage().instance().remove(&key);
-    // Reset legacy single-role slot to Unassigned
-    env.storage()
-        .instance()
-        .set(&DataKey::Role(address.clone()), &Role::Unassigned);
 }
 
 /// Suspend a role temporarily. The role is retained but marked as suspended.
@@ -424,26 +416,22 @@ pub fn has_carrier_role(env: &Env, address: &Address) -> bool {
     has_role(env, address, &Role::Carrier)
 }
 
-/// Mark a carrier as suspended in instance storage.
+/// Mark a carrier as suspended.
+///
+/// Backed by the generic `RoleSuspended(carrier, Carrier)` flag so carriers
+/// have a single suspension mechanism shared with `suspend_role`.
 pub fn suspend_carrier(env: &Env, carrier: &Address) {
-    env.storage()
-        .instance()
-        .set(&DataKey::CarrierSuspended(carrier.clone()), &true);
+    suspend_role(env, carrier, &Role::Carrier);
 }
 
-/// Remove a carrier suspension flag from instance storage.
+/// Remove a carrier suspension (clears `RoleSuspended(carrier, Carrier)`).
 pub fn reactivate_carrier(env: &Env, carrier: &Address) {
-    env.storage()
-        .instance()
-        .remove(&DataKey::CarrierSuspended(carrier.clone()));
+    reactivate_role(env, carrier, &Role::Carrier);
 }
 
-/// Returns true when the carrier has an active suspension flag.
+/// Returns true when the carrier's `Carrier` role is suspended.
 pub fn is_carrier_suspended(env: &Env, carrier: &Address) -> bool {
-    env.storage()
-        .instance()
-        .get(&DataKey::CarrierSuspended(carrier.clone()))
-        .unwrap_or(false)
+    is_role_suspended(env, carrier, &Role::Carrier)
 }
 
 /// Mark a company as suspended in instance storage.

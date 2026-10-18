@@ -797,11 +797,8 @@ fn require_role(env: &Env, address: &Address, role: Role) -> Result<(), NavinErr
         }
         Role::Carrier => {
             if storage::has_carrier_role(env, address) {
-                // Check if role is suspended
-                if storage::is_role_suspended(env, address, &Role::Carrier) {
-                    return Err(NavinError::Unauthorized);
-                }
-                // Also check legacy carrier-specific suspension
+                // Carrier suspension (via `suspend_carrier` or `suspend_role`)
+                // always surfaces as `CarrierSuspended`.
                 if storage::is_carrier_suspended(env, address) {
                     return Err(NavinError::CarrierSuspended);
                 }
@@ -848,10 +845,6 @@ fn require_active_company(env: &Env, company: &Address) -> Result<(), NavinError
 fn require_active_carrier(env: &Env, carrier: &Address) -> Result<(), NavinError> {
     if storage::is_carrier_suspended(env, carrier) {
         return Err(NavinError::CarrierSuspended);
-    }
-    // Also check generic role suspension
-    if storage::is_role_suspended(env, carrier, &Role::Carrier) {
-        return Err(NavinError::Unauthorized);
     }
     Ok(())
 }
@@ -1817,6 +1810,10 @@ impl NavinShipment {
     /// Suspend a carrier from carrier-only operations.
     ///
     /// Only the admin can call this function.
+    ///
+    /// This is equivalent to `suspend_role` on the carrier's `Carrier` role:
+    /// both share one suspension flag, and carrier-gated calls by a suspended
+    /// carrier fail with `NavinError::CarrierSuspended`.
     pub fn suspend_carrier(env: Env, admin: Address, carrier: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
