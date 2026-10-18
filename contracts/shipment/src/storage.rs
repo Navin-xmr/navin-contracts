@@ -823,7 +823,6 @@ pub fn set_confirmation_hash(env: &Env, shipment_id: u64, hash: &BytesN<32>) {
 /// ```rust
 /// // let hash_opt = storage::get_confirmation_hash(&env, 1);
 /// ```
-#[allow(dead_code)]
 pub fn get_confirmation_hash(env: &Env, shipment_id: u64) -> Option<BytesN<32>> {
     let key = DataKey::ConfirmationHash(shipment_id);
     env.storage().persistent().get(&key)
@@ -1670,7 +1669,6 @@ pub fn set_reentrancy_lock(env: &Env, locked: bool) {
 /// ```rust
 /// // let counter = storage::get_settlement_counter(&env);
 /// ```
-#[allow(dead_code)]
 pub fn get_settlement_counter(env: &Env) -> u64 {
     env.storage()
         .instance()
@@ -1691,7 +1689,6 @@ pub fn get_settlement_counter(env: &Env) -> u64 {
 /// ```rust
 /// // storage::set_settlement_counter(&env, 10);
 /// ```
-#[allow(dead_code)]
 pub fn set_settlement_counter(env: &Env, counter: u64) {
     env.storage()
         .instance()
@@ -1710,7 +1707,6 @@ pub fn set_settlement_counter(env: &Env, counter: u64) {
 /// ```rust
 /// // let next_id = storage::increment_settlement_counter(&env);
 /// ```
-#[allow(dead_code)]
 pub fn increment_settlement_counter(env: &Env) -> u64 {
     let cur = get_settlement_counter(env);
     let next = cur.checked_add(1).unwrap_or(cur);
@@ -1731,7 +1727,6 @@ pub fn increment_settlement_counter(env: &Env) -> u64 {
 /// ```rust
 /// // let settlement = storage::get_settlement(&env, 1);
 /// ```
-#[allow(dead_code)]
 pub fn get_settlement(env: &Env, settlement_id: u64) -> Option<crate::types::SettlementRecord> {
     env.storage()
         .persistent()
@@ -1751,7 +1746,6 @@ pub fn get_settlement(env: &Env, settlement_id: u64) -> Option<crate::types::Set
 /// ```rust
 /// // storage::set_settlement(&env, &settlement);
 /// ```
-#[allow(dead_code)]
 pub fn set_settlement(env: &Env, settlement: &crate::types::SettlementRecord) {
     env.storage()
         .persistent()
@@ -1811,7 +1805,6 @@ pub fn get_active_settlement(env: &Env, shipment_id: u64) -> Option<u64> {
 /// ```rust
 /// // storage::set_active_settlement(&env, 1, 100);
 /// ```
-#[allow(dead_code)]
 pub fn set_active_settlement(env: &Env, shipment_id: u64, settlement_id: u64) {
     env.storage()
         .persistent()
@@ -1831,7 +1824,6 @@ pub fn set_active_settlement(env: &Env, shipment_id: u64, settlement_id: u64) {
 /// ```rust
 /// // storage::clear_active_settlement(&env, 1);
 /// ```
-#[allow(dead_code)]
 pub fn clear_active_settlement(env: &Env, shipment_id: u64) {
     env.storage()
         .persistent()
