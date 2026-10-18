@@ -80,9 +80,15 @@ fn read_budget(env: &Env) -> (u64, u64) {
     (cpu, mem)
 }
 
+/// Standardized output helper to funnel all benchmark logging through a single entrypoint.
+fn log_budget_message(prefix: &str, message: &str) {
+    std::println!("[{prefix}] {message}");
+}
+
 /// Prints a labelled budget reading to stdout (visible with `--nocapture`).
 fn print_budget(label: &str, cpu: u64, mem: u64) {
-    std::println!("[budget] {:<45}  cpu={:<12}  mem={}", label, cpu, mem);
+    let reading = std::format!("{:<45}  cpu={:<12}  mem={}", label, cpu, mem);
+    log_budget_message("budget", &reading);
 }
 
 const REGRESSION_REVIEW_PERCENT: f64 = 10.0;
@@ -217,11 +223,10 @@ fn assert_budget_within_threshold(label: &str, cpu: u64, mem: u64) {
     }
 
     if cpu_regression > REGRESSION_REVIEW_PERCENT || mem_regression > REGRESSION_REVIEW_PERCENT {
-        std::println!(
-            "[budget:review] {label} drifted past 10%: cpu={:.1}% / mem={:.1}%",
-            cpu_regression,
-            mem_regression,
+        let warning = std::format!(
+            "{label} drifted past 10%: cpu={cpu_regression:.1}% / mem={mem_regression:.1}%"
         );
+        log_budget_message("budget:review", &warning);
     }
 }
 
@@ -925,8 +930,6 @@ fn bench_full_lifecycle_summary() {
     let (cpu, mem) = read_budget(&env);
     print_budget("summary::release_escrow", cpu, mem);
 
-    std::println!(
-        "\nBaseline captured on soroban-sdk {}",
-        env!("CARGO_PKG_VERSION")
-    );
+    let footer = std::format!("Baseline captured on soroban-sdk {}", env!("CARGO_PKG_VERSION"));
+    log_budget_message("budget:info", &footer);
 }

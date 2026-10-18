@@ -11,11 +11,11 @@
 //! that the intent is self-documenting and reruns remain deterministic.
 //!
 //! ```text
-//! // ✅ Preferred — intent is clear
+//! // Preferred — intent is clear
 //! test_utils::advance_past_rate_limit(&env);
 //! client.update_status(&carrier, &id, &ShipmentStatus::AtCheckpoint, &h2);
 //!
-//! // ❌ Avoid — magic constant, intent is opaque
+//! // Avoid — magic constant, intent is opaque
 //! env.ledger().with_mut(|l| l.timestamp += 61);
 //! client.update_status(&carrier, &id, &ShipmentStatus::AtCheckpoint, &h2);
 //! ```
