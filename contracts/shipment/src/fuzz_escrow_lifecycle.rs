@@ -27,9 +27,7 @@ use soroban_sdk::{
     Address, BytesN, Env, Vec,
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Mock token — tracks transfer calls for balance verification
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[contract]
 struct EscrowLifecycleToken;
@@ -42,9 +40,7 @@ impl EscrowLifecycleToken {
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 fn setup() -> (Env, NavinShipmentClient<'static>, Address) {
     let (env, admin) = crate::test_utils::setup_env();
@@ -98,9 +94,7 @@ fn create_shipment(
     )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Property 1: Escrow balance equals deposited amount
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Returns the number of fuzz iterations to run.
 /// Set `FUZZ_ITERATIONS=5000` (or any value) to run the full suite.
@@ -173,9 +167,7 @@ fn fuzz_escrow_deposit_balance_equals_amount() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Property 2: Cannot deposit zero or negative amounts
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn fuzz_escrow_deposit_rejects_invalid_amounts() {
@@ -236,9 +228,7 @@ fn fuzz_escrow_deposit_rejects_invalid_amounts() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Property 3: Cannot deposit twice on the same shipment
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn fuzz_escrow_no_double_deposit() {
@@ -284,9 +274,7 @@ fn fuzz_escrow_no_double_deposit() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Property 4: Release never exceeds available escrow
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn fuzz_escrow_release_never_exceeds_balance() {
@@ -349,9 +337,7 @@ fn fuzz_escrow_release_never_exceeds_balance() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Property 5: Double-release always fails
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn fuzz_escrow_double_release_fails() {
@@ -404,9 +390,7 @@ fn fuzz_escrow_double_release_fails() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Property 6: Refund returns funds on cancellation
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn fuzz_escrow_refund_on_cancellation() {
@@ -448,9 +432,7 @@ fn fuzz_escrow_refund_on_cancellation() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Property 7: escrow_amount <= total_escrow invariant always holds
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn fuzz_escrow_invariant_amount_lte_total() {
