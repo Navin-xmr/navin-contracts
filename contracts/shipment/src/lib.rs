@@ -10,7 +10,7 @@ use soroban_sdk::{
 pub mod audit;
 mod circuit_breaker;
 mod config;
-/// Cross-shipment consistency verification (Issue #878).
+/// Cross-shipment consistency verification.
 ///
 /// This was declared behind `#[cfg(test)]`, so `check_shipment_invariants`,
 /// `check_batch_consistency` and `check_all_consistency` compiled only in test
@@ -25,7 +25,7 @@ mod config;
 /// module from the other orphaned files in this crate, whose dependencies were
 /// removed outright rather than merely left unwired.
 pub mod consistency;
-/// Storage-health diagnostics (issue #876).
+/// Storage-health diagnostics.
 ///
 /// This file was previously an orphan: `has_orphaned_counters` called
 /// storage helpers that did not exist, so the module was left unwired and
@@ -203,7 +203,7 @@ fn extend_shipment_ttl_cached(env: &Env, shipment_id: u64, threshold: u32, exten
     storage::extend_shipment_ttl(env, shipment_id, threshold, extension);
 }
 
-/// Shared existence check for the status-hash read paths (issue #698).
+/// Shared existence check for the status-hash read paths.
 ///
 /// Accepts archived shipments too: their hash log is purged on archival, so the
 /// lookup falls through to `StatusHashNotFound`, but an archived shipment is
@@ -218,7 +218,7 @@ fn require_shipment_exists(env: &Env, shipment_id: u64) -> Result<(), NavinError
     Ok(())
 }
 
-/// Resolve one recorded status visit (issue #698).
+/// Resolve one recorded status visit.
 ///
 /// Backs `get_status_hash`, `verify_data_hash` and `assert_data_hash` so all
 /// three agree on what counts as a missing shipment versus a missing visit.
@@ -3072,10 +3072,10 @@ impl NavinShipment {
         storage::set_last_status_update(&env, shipment_id, env.ledger().timestamp());
         extend_shipment_ttl(&env, shipment_id);
 
-        // Record this visit's IoT data hash in the per-visit status-hash log
-        // (issue #698). Keyed by a monotonic sequence rather than by status, so
-        // a shipment cycling InTransit -> AtCheckpoint -> InTransit keeps the
-        // first InTransit hash instead of overwriting it.
+        // Record this visit's IoT data hash in the per-visit status-hash log.
+        // Keyed by a monotonic sequence rather than by status, so a shipment
+        // cycling InTransit -> AtCheckpoint -> InTransit keeps the first
+        // InTransit hash instead of overwriting it.
         storage::append_status_hash(&env, shipment_id, &new_status, &data_hash, &caller);
 
         events::emit_status_updated(&env, shipment_id, &new_status, &data_hash, &caller);
@@ -3104,7 +3104,7 @@ impl NavinShipment {
         Ok(())
     }
 
-    /// Read back the IoT data hash recorded for one visit to a status (issue #698).
+    /// Read back the IoT data hash recorded for one visit to a status.
     ///
     /// Status is *not* unique per shipment: a shipment may enter
     /// `InTransit`, reach `AtCheckpoint`, then re-enter `InTransit`. Each of
@@ -3177,7 +3177,7 @@ impl NavinShipment {
         Ok(storage::status_hash_history(&env, shipment_id))
     }
 
-    /// Check whether a visit's recorded data hash equals `expected_hash` (issue #698).
+    /// Check whether a visit's recorded data hash equals `expected_hash`.
     ///
     /// Unlike `assert_data_hash` this reports a mismatch as `Ok(false)`. A visit
     /// that was never recorded is still an error, because "no hash to compare"
@@ -3208,7 +3208,7 @@ impl NavinShipment {
         Ok(record.data_hash == expected_hash)
     }
 
-    /// Assert a visit's recorded data hash equals `expected_hash` (issue #698).
+    /// Assert a visit's recorded data hash equals `expected_hash`.
     ///
     /// The panicking-on-nothing form of [`verify_data_hash`]: usable as a guard
     /// by callers that must reject a shipment whose telemetry hash does not match
@@ -6576,7 +6576,7 @@ impl NavinShipment {
     }
 
     // =========================================================================
-    // Issue #295 — Company/Carrier Relationship Query APIs
+    // Company/Carrier Relationship Query APIs
     // =========================================================================
 
     /// Check whether a carrier is allowed (whitelisted and not suspended) for a company.
@@ -6675,7 +6675,7 @@ impl NavinShipment {
     }
 
     // =========================================================================
-    // Issue #296 — Shipment Creation Quota Window
+    // Shipment Creation Quota Window
     // =========================================================================
 
     /// Configure the per-company shipment creation quota.
@@ -6761,7 +6761,7 @@ impl NavinShipment {
     }
 
     // =========================================================================
-    // Issue #297 — Multi-sig Proposal Action Hash and Digest Query
+    // Multi-sig Proposal Action Hash and Digest Query
     // =========================================================================
 
     /// Retrieve the stored action digest for a proposal.
@@ -6870,7 +6870,7 @@ fn is_allowed_migration(current: u32, target: u32) -> bool {
     target == current + 1
 }
 
-/// Compute the deterministic SHA-256 digest for a proposal action (issue #297).
+/// Compute the deterministic SHA-256 digest for a proposal action.
 ///
 /// Canonical serialization: `sha256(proposal_id_be_u64 || action_xdr)`
 fn compute_action_digest(
@@ -6887,7 +6887,7 @@ fn compute_action_digest(
     env.crypto().sha256(&payload).into()
 }
 
-/// Enforce the per-company creation quota window (issue #296).
+/// Enforce the per-company creation quota window.
 ///
 /// Returns `CreationQuotaExceeded` if the company has exhausted their quota
 /// for the current window. Rolls the window forward automatically when expired.
