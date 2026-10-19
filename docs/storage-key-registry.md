@@ -41,12 +41,10 @@ These ranges are policy ranges for planning and review safety; they are not runt
 
 - `Company(Address)`
 - `Carrier(Address)`
-- `CarrierSuspended(Address)`
 - `CompanySuspended(Address)`
 - `CarrierWhitelist(Address, Address)`
 - `UserRole(Address, Role)`
 - `RoleSuspended(Address, Role)`
-- `Role(Address)`
 
 ### Shipment and Escrow State
 

@@ -89,7 +89,6 @@ fn dummy_hash(env: &Env, seed: u8) -> BytesN<32> {
 struct Ctx {
     env: Env,
     client: NavinShipmentClient<'static>,
-    #[allow(dead_code)]
     admin: Address,
     company: Address,
     carrier: Address,

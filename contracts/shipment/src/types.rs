@@ -30,8 +30,6 @@ pub enum DataKey {
     Company(Address),
     /// Addresses with Carrier role.
     Carrier(Address),
-    /// Carrier suspension flag (carrier -> bool).
-    CarrierSuspended(Address),
     /// Company suspension flag (company -> bool).
     CompanySuspended(Address),
     /// Individual shipment data keyed by ID.
@@ -44,8 +42,6 @@ pub enum DataKey {
     RoleSuspended(Address, Role),
     /// Escrow balance for a shipment.
     Escrow(u64),
-    /// Legacy single-role storage key for compatibility.
-    Role(Address),
     /// Hash of proof-of-delivery data for a shipment.
     ConfirmationHash(u64),
     /// Token contract address for payments.
