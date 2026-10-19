@@ -13,9 +13,7 @@ use soroban_sdk::{
     Address, Env, IntoVal, Symbol,
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Mock Token Contract
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[contract]
 struct MockToken;
@@ -30,9 +28,7 @@ impl MockToken {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Test Setup Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 fn setup_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
     let (env, admin) = crate::test_utils::setup_env();
@@ -47,13 +43,9 @@ fn contract_id(client: &NavinShipmentClient<'static>) -> Address {
     client.address.clone()
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Issue #245: require_auth_for_args Tests for High-Risk Admin Actions
-// ─────────────────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 1. add_company() - Argument-Bound Authorization
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Verify that add_company records auth with exact arguments.
 /// If the signature is bound to (admin, company), it cannot be replayed with
@@ -127,9 +119,7 @@ fn test_add_company_mismatched_args_fails() {
     assert!(result.is_ok() || result.is_err(), "Call should complete");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 2. add_carrier() - Argument-Bound Authorization
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Verify that add_carrier records auth with exact arguments.
 #[test]
@@ -165,9 +155,7 @@ fn test_add_carrier_auth_bound_to_arguments() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 3. suspend_carrier() - Argument-Bound Authorization
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Verify that suspend_carrier records auth with exact arguments.
 #[test]
@@ -218,9 +206,7 @@ fn test_suspend_carrier_auth_bound_to_arguments() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 4. revoke_role() - Argument-Bound Authorization
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Verify that revoke_role records auth with exact arguments.
 #[test]
@@ -270,9 +256,7 @@ fn test_revoke_role_auth_bound_to_arguments() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 6. resolve_dispute() - Argument-Bound Authorization
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Verify that resolve_dispute records auth with exact arguments.
 /// Note: This test is simplified to avoid escrow requirements.
@@ -290,9 +274,7 @@ fn test_resolve_dispute_auth_bound_to_arguments() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 7. pause() - Argument-Bound Authorization
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Verify that pause records auth with exact arguments.
 #[test]
@@ -337,9 +319,7 @@ fn test_pause_auth_bound_to_arguments() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 8. unpause() - Argument-Bound Authorization
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Verify that unpause records auth with exact arguments.
 #[test]
@@ -388,16 +368,12 @@ fn test_unpause_auth_bound_to_arguments() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Summary: All high-risk admin actions have argument-bound authorization
-// ─────────────────────────────────────────────────────────────────────────────
 // Each test verifies that the auth tree contains the exact arguments,
 // preventing signature replay attacks where a signature for one operation
 // could be maliciously reused for a different operation with different args.
 
-// ─────────────────────────────────────────────────────────────────────────────
 // #456: Auth mismatch — wrong role with valid auth produces domain error
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// A caller that has valid authentication but the wrong role must be rejected
 /// by the role check and produce the expected domain error.
