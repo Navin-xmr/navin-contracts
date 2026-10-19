@@ -37,6 +37,9 @@
    - [admin_proposed](#admin_proposed)
    - [admin_transferred](#admin_transferred)
    - [contract_upgraded](#contract_upgraded)
+   - [init](#init)
+   - [set_limit](#set_limit)
+   - [set_cmp_limit](#set_cmp_limit)
 9. [Notification Events](#notification-events)
    - [notification](#notification)
 10. [Lifecycle Sequence Diagram](#lifecycle-sequence-diagram)
@@ -175,6 +178,9 @@ This enables safe parser upgrades and indexer deduplication during contract evol
 | `admin_proposed`       | Admin     | `propose_admin`                                                               |
 | `admin_transferred`    | Admin     | `accept_admin`, `multi_sig_execute`                                           |
 | `contract_upgraded`    | Admin     | `upgrade_contract`, `multi_sig_execute`                                       |
+| `init`                 | Admin     | `initialize`                                                                  |
+| `set_limit`            | Admin     | `set_shipment_limit`                                                          |
+| `set_cmp_limit`        | Admin     | `set_company_shipment_limit`                                                  |
 | `notification`         | System    | Multiple — see [notification](#notification)                                  |
 
 ---
@@ -542,6 +548,58 @@ Emitted when the contract WASM is upgraded.
 | 3   | `version`       | `u32`        | Contract version after upgrade   |
 
 **Backend action:** Record the new version and WASM hash in the deployment registry.
+
+---
+
+### `init`
+
+Emitted once when the shipment contract is initialized. `init` is the only topic string for this event.
+
+**Topic:** `"init"`
+**Emitted by:** `initialize`
+**Caller role:** Admin
+
+| #   | Field            | Soroban Type | Description                       |
+| --- | ---------------- | ------------ | --------------------------------- |
+| 1   | `admin`          | `Address`    | Initial admin address             |
+| 2   | `token_contract` | `Address`    | Token contract used for escrow    |
+
+**Backend action:** Record the deployment's admin and token contract.
+
+---
+
+### `set_limit`
+
+Emitted when the admin updates the global active-shipment limit. `set_limit` is the only topic string for this event.
+
+**Topic:** `"set_limit"`
+**Emitted by:** `set_shipment_limit`
+**Caller role:** Admin
+
+| #   | Field   | Soroban Type | Description                       |
+| --- | ------- | ------------ | --------------------------------- |
+| 1   | `admin` | `Address`    | Admin that changed the limit      |
+| 2   | `limit` | `u32`        | New global active-shipment limit  |
+
+**Backend action:** Update the stored global shipment limit.
+
+---
+
+### `set_cmp_limit`
+
+Emitted when the admin sets a company-specific active-shipment limit. `set_cmp_limit` is the only topic string for this event.
+
+**Topic:** `"set_cmp_limit"`
+**Emitted by:** `set_company_shipment_limit`
+**Caller role:** Admin
+
+| #   | Field     | Soroban Type | Description                            |
+| --- | --------- | ------------ | -------------------------------------- |
+| 1   | `admin`   | `Address`    | Admin that changed the limit           |
+| 2   | `company` | `Address`    | Company the override applies to        |
+| 3   | `limit`   | `u32`        | New active-shipment limit for company  |
+
+**Backend action:** Update the stored limit override for the company.
 
 ---
 
