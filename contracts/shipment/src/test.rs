@@ -253,7 +253,7 @@ fn test_create_shipment_unauthorized() {
     );
 }
 
-// ============= Issue #701: Participant Validation Tests =============
+// Issue #701: Participant Validation Tests
 
 /// Issue #701 — create_shipment must reject when sender == receiver
 #[test]
@@ -325,9 +325,8 @@ fn test_create_shipment_rejects_receiver_equals_carrier() {
 }
 
 /// Issue #701 — create_shipment should succeed with distinct participants
-// ============= End Participant Validation Tests =============
 
-// ============= Carrier Whitelist Tests =============
+// Carrier Whitelist Tests
 
 #[test]
 fn test_add_carrier_to_whitelist() {
@@ -439,9 +438,9 @@ fn test_add_whitelist_fails_before_initialization() {
     client.add_carrier_to_whitelist(&company, &carrier);
 }
 
-// ============= Deposit Escrow Tests =============
+// Deposit Escrow Tests
 
-// ============= Status Update Tests =============
+// Status Update Tests
 
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
@@ -502,7 +501,7 @@ fn test_suspend_carrier_requires_admin() {
     assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
 }
 
-// ============= Get Escrow Balance Tests =============
+// Get Escrow Balance Tests
 
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
@@ -551,7 +550,7 @@ fn test_get_escrow_balance_fails_before_initialization() {
     _client.get_escrow_balance(&1);
 }
 
-// ============= Get Shipment Count Tests =============
+// Get Shipment Count Tests
 
 #[test]
 fn test_get_shipment_count_returns_zero_on_fresh_contract() {
@@ -569,7 +568,7 @@ fn test_get_shipment_count_returns_zero_after_initialization() {
     assert_eq!(client.get_shipment_count(), 0);
 }
 
-// ============= Role Tests =============
+// Role Tests
 
 #[test]
 fn test_get_role_unassigned() {
@@ -596,7 +595,7 @@ fn test_get_role_assigned() {
     assert_eq!(client.get_role(&carrier), crate::Role::Carrier);
 }
 
-// ============= Get Shipment Tests =============
+// Get Shipment Tests
 
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
@@ -666,7 +665,7 @@ fn test_get_shipment_status_fails_for_invalid_id() {
     client.get_shipment_status(&999);
 }
 
-// ============= Geofence Event Tests =============
+// Geofence Event Tests
 
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
@@ -728,7 +727,7 @@ fn test_report_geofence_event_non_existent_shipment() {
     client.report_geofence_event(&carrier, &999, &GeofenceEvent::ZoneEntry, &event_hash);
 }
 
-// ============= ETA Update Tests =============
+// ETA Update Tests
 
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
@@ -760,7 +759,7 @@ fn test_update_eta_unauthorized() {
     client.update_eta(&outsider, &shipment_id, &eta_timestamp, &eta_hash);
 }
 
-// ============= Confirm Delivery Tests =============
+// Confirm Delivery Tests
 
 fn setup_shipment_with_status(
     env: &Env,
@@ -881,7 +880,7 @@ fn test_confirm_delivery_wrong_status() {
     client.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
 }
 
-// ============= Release Escrow Tests =============
+// Release Escrow Tests
 
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
@@ -918,7 +917,7 @@ fn test_release_escrow_unauthorized() {
     client.release_escrow(&unauthorized, &shipment_id);
 }
 
-// ============= Refund Escrow Tests =============
+// Refund Escrow Tests
 
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
@@ -949,7 +948,7 @@ fn test_refund_escrow_unauthorized() {
     client.refund_escrow(&unauthorized, &shipment_id);
 }
 
-// ============= Dispute Tests =============
+// Dispute Tests
 
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
@@ -1014,7 +1013,7 @@ fn test_resolve_dispute_unauthorized() {
     );
 }
 
-// ============= Milestone Event Tests =============
+// Milestone Event Tests
 
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
@@ -1053,7 +1052,7 @@ fn test_record_milestone_unauthorized() {
     client.record_milestone(&outsider, &shipment_id, &checkpoint, &data_hash);
 }
 
-// ============= Batch Milestone Recording Tests =============
+// Batch Milestone Recording Tests
 
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
@@ -1096,9 +1095,9 @@ fn test_record_milestones_batch_unauthorized() {
     client.record_milestones_batch(&outsider, &shipment_id, &milestones);
 }
 
-// ============= TTL Extension Tests =============
+// TTL Extension Tests
 
-// ============= Cancel Shipment Tests =============
+// Cancel Shipment Tests
 
 #[test]
 fn test_cancel_shipment_without_escrow() {
@@ -1215,7 +1214,7 @@ fn test_cancel_shipment_disputed_should_fail() {
     client.cancel_shipment(&company, &shipment_id, &reason_hash);
 }
 
-// ============= Escrow Lifecycle Integration Tests =============
+// Escrow Lifecycle Integration Tests
 
 #[test]
 fn test_escrow_cancel_path_create_deposit_cancel_refund() {
@@ -1285,7 +1284,7 @@ fn test_milestone_payment_invalid_sum_fails() {
     );
 }
 
-// ============= Contract Upgrade Tests =============
+// Contract Upgrade Tests
 
 #[test]
 fn test_upgrade_success() {
@@ -1334,7 +1333,7 @@ fn test_upgrade_unauthorized() {
     client.upgrade(&non_admin, &new_wasm_hash, &2);
 }
 
-// ============= Contract Metadata Tests =============
+// Contract Metadata Tests
 
 #[test]
 fn test_get_contract_metadata_after_init() {
@@ -1451,7 +1450,7 @@ fn test_dry_run_invalid_edge_fails() {
     client.dry_run_migration(&0);
 }
 
-// ============= Carrier Handoff Tests =============
+// Carrier Handoff Tests
 
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
@@ -1621,7 +1620,7 @@ fn test_create_shipment_fails_before_initialization() {
     );
 }
 
-// ── Issue #1: report_condition_breach ────────────────────────────────────────
+// Issue #1: report_condition_breach
 
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
@@ -1694,7 +1693,7 @@ fn test_report_condition_breach_wrong_carrier() {
     );
 }
 
-// ── Issue #2: verify_delivery_proof ──────────────────────────────────────────
+// Issue #2: verify_delivery_proof
 
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
@@ -1706,9 +1705,9 @@ fn test_verify_delivery_proof_nonexistent_shipment() {
     client.verify_delivery_proof(&999u64, &BytesN::from_array(&_env, &[1u8; 32]));
 }
 
-// ── Issue #3: Rate limiting ───────────────────────────────────────────────────
+// Issue #3: Rate limiting
 
-// ============= RBAC and Access Control Tests =============
+// RBAC and Access Control Tests
 
 #[test]
 fn test_only_admin_can_assign_roles() {
@@ -1764,7 +1763,7 @@ fn test_unassigned_addresses_are_rejected() {
     assert_eq!(result, Err(Ok(crate::NavinError::Unauthorized)));
 }
 
-// ============= Admin Transfer Tests =============
+// Admin Transfer Tests
 
 #[test]
 fn test_successful_admin_transfer() {
@@ -1820,7 +1819,7 @@ fn test_unauthorized_admin_acceptance() {
     client.accept_admin_transfer(&imposter);
 }
 
-// ============= Multi-Signature Tests =============
+// Multi-Signature Tests
 
 #[test]
 fn test_init_multisig_success() {
@@ -2238,11 +2237,11 @@ fn test_execute_proposal_insufficient_approvals() {
     client.execute_proposal(&proposal_id);
 }
 
-// ============= Deadline Tests =============
+// Deadline Tests
 
-// ============= Notification Event Tests =============
+// Notification Event Tests
 
-// ============= Analytics Tests =============
+// Analytics Tests
 
 #[test]
 fn test_get_status_summary_empty() {
@@ -2259,14 +2258,14 @@ fn test_get_status_summary_empty() {
     assert_eq!(summary.cancelled, 0);
 }
 
-// ── #368: Status summary regression — every lifecycle bucket changes correctly
+// #368: Status summary regression — every lifecycle bucket changes correctly
 //
 // This test covers a full mixed-state lifecycle: Created → InTransit →
 // AtCheckpoint → Delivered and Created → Cancelled.  The summary is asserted
 // after every individual transition so that any accounting drift in
 // `get_status_summary` (added or missing counter update) is caught immediately.
 
-// ============= Shipment Limit Tests =============
+// Shipment Limit Tests
 
 #[test]
 fn test_set_and_get_shipment_limit() {
@@ -2292,10 +2291,10 @@ fn test_set_shipment_limit_unauthorized() {
     client.set_shipment_limit(&outsider, &10);
 }
 
-// ============= Dispute Evidence Tests =============
+// Dispute Evidence Tests
 
-// ============= Circular Dependency Tests =============
-// ============= Dependencies Not Met Tests =============
+// Circular Dependency Tests
+// Dependencies Not Met Tests
 
 #[test]
 #[should_panic(expected = "Error(Contract, #30)")]
@@ -2325,7 +2324,7 @@ fn test_batch_limit_reached() {
     client.create_shipments_batch(&company, &shipments);
 }
 
-// ============= Proposal Salt Reuse Tests =============
+// Proposal Salt Reuse Tests
 
 #[test]
 fn test_proposal_salt_reused_rejected() {
@@ -2460,14 +2459,11 @@ fn test_proposal_salt_different_actions_same_salt() {
     );
 }
 
-// ============================================================================
 // COMPREHENSIVE NEGATIVE TEST SUITE - Testing All NavinError Variants
-// ============================================================================
 // This section systematically tests every NavinError variant to ensure
 // proper error handling across all contract functions.
-// ============================================================================
 
-// ============= Error #6: InvalidHash Tests =============
+// Error #6: InvalidHash Tests
 
 #[test]
 #[should_panic(expected = "Error(Contract, #6)")]
@@ -2550,9 +2546,9 @@ fn test_resolve_dispute_returns_invalid_hash() {
     );
 }
 
-// ============= Error #11: CounterOverflow Tests =============
+// Error #11: CounterOverflow Tests
 
-// ============= Error #12: CarrierNotWhitelisted Tests =============
+// Error #12: CarrierNotWhitelisted Tests
 
 // NOTE: This test is commented out because the feature may not be fully implemented yet
 // #[test]
@@ -2582,7 +2578,7 @@ fn test_resolve_dispute_returns_invalid_hash() {
 //     );
 // }
 
-// ============= Error #13: CarrierNotAuthorized Tests =============
+// Error #13: CarrierNotAuthorized Tests
 
 // NOTE: This test is commented out because the feature may not be fully implemented yet
 // #[test]
@@ -2614,17 +2610,17 @@ fn test_resolve_dispute_returns_invalid_hash() {
 //     client.handoff_shipment(&carrier, &new_carrier, &shipment_id, &handoff_hash);
 // }
 
-// ============= Error #14: InvalidAmount Tests =============
+// Error #14: InvalidAmount Tests
 
-// ============= Error #15: EscrowAlreadyDeposited Tests =============
+// Error #15: EscrowAlreadyDeposited Tests
 
-// ============= Error #19: MilestoneAlreadyPaid Tests =============
+// Error #19: MilestoneAlreadyPaid Tests
 
-// ============= Error #20: MetadataLimitExceeded Tests =============
+// Error #20: MetadataLimitExceeded Tests
 
-// ============= Error #21: RateLimitExceeded Tests =============
+// Error #21: RateLimitExceeded Tests
 
-// ============= Error #22: ProposalNotFound Tests =============
+// Error #22: ProposalNotFound Tests
 
 #[test]
 #[should_panic(expected = "Error(Contract, #22)")]
@@ -2700,23 +2696,23 @@ fn test_execute_proposal_returns_proposal_not_found_variant() {
     assert_eq!(result, Err(Ok(NavinError::ProposalNotFound)));
 }
 
-// ============= Error #23: ProposalAlreadyExecuted Tests =============
+// Error #23: ProposalAlreadyExecuted Tests
 
-// ============= Error #24: ProposalExpired Tests =============
+// Error #24: ProposalExpired Tests
 
-// ============= Error #25: AlreadyApproved Tests =============
+// Error #25: AlreadyApproved Tests
 
 // Approve the same proposal twice with the same admin — must return AlreadyApproved error.
 // Two different admins can approve the same proposal — confirms multi-sig flow works.
-// ============= Error #26: InsufficientApprovals Tests =============
+// Error #26: InsufficientApprovals Tests
 
-// ============= Error #27: NotAnAdmin Tests =============
+// Error #27: NotAnAdmin Tests
 
 // Non-admin (not in admin list) attempts propose_action — must return NotAnAdmin.
 // Non-admin (not in admin list) attempts approve_action — must return NotAnAdmin.
 // Admin (in admin list) can propose_action — verifies admin operations succeed.
 // Different admin (in admin list) can approve_action — verifies admin operations succeed.
-// ============= Error #28: InvalidMultiSigConfig Tests =============
+// Error #28: InvalidMultiSigConfig Tests
 
 #[test]
 #[should_panic(expected = "Error(Contract, #31)")]
@@ -2813,9 +2809,9 @@ fn test_init_multisig_invalid_multisig_config_threshold_zero() {
     assert_eq!(result, Err(Ok(NavinError::InvalidMultiSigConfig)));
 }
 
-// ============= Error #29: NotExpired Tests =============
+// Error #29: NotExpired Tests
 
-// ============= Error #30: ShipmentLimitReached Tests =============
+// Error #30: ShipmentLimitReached Tests
 
 #[test]
 #[should_panic(expected = "Error(Contract, #30)")]
@@ -2843,7 +2839,7 @@ fn test_create_shipments_batch_returns_shipment_limit_reached() {
     client.create_shipments_batch(&company, &shipments);
 }
 
-// ============= Additional Coverage for NotInitialized Error =============
+// Additional Coverage for NotInitialized Error
 
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
@@ -2924,7 +2920,7 @@ fn test_get_analytics_returns_not_initialized() {
     client.get_analytics();
 }
 
-// ============= Additional Coverage for Unauthorized Error =============
+// Additional Coverage for Unauthorized Error
 
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
@@ -3050,7 +3046,7 @@ fn test_report_condition_breach_returns_unauthorized() {
     );
 }
 
-// ============= Additional Coverage for ShipmentNotFound Error =============
+// Additional Coverage for ShipmentNotFound Error
 
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")]
@@ -3213,7 +3209,7 @@ fn test_check_deadline_returns_shipment_not_found() {
     client.check_deadline(&999);
 }
 
-// ============= Additional Coverage for InvalidStatus Error =============
+// Additional Coverage for InvalidStatus Error
 
 // NOTE: This test is commented out because the feature may not be fully implemented yet
 // #[test]
@@ -3249,11 +3245,11 @@ fn test_check_deadline_returns_shipment_not_found() {
 //     client.raise_dispute(&company, &shipment_id, &reason_hash);
 // }
 
-// ============= Event Counter Tests =============
+// Event Counter Tests
 
-// ============= Shipment Archival Tests =============
+// Shipment Archival Tests
 
-// ── [ISSUE #600] ShipmentUnavailable error variant tests ─────────────────────
+// [ISSUE #600] ShipmentUnavailable error variant tests
 //
 // ShipmentUnavailable (#42) is returned by preflight_check_shipment_available
 // when a shipment exists only in temporary (archived) storage.
@@ -3291,8 +3287,8 @@ fn test_shipment_unavailable_error_code_is_42() {
     );
 }
 
-// ============= Analytics Event Tests =============
-// ============= Role Revocation Tests =============
+// Analytics Event Tests
+// Role Revocation Tests
 
 #[test]
 fn test_revoke_role_company() {
@@ -3536,7 +3532,7 @@ fn test_suspended_role_cannot_perform_actions() {
     );
 }
 
-// ============= Deadline Grace Period Tests =============
+// Deadline Grace Period Tests
 
 /// Within the grace window: deadline has passed but grace has not — must return NotExpired.
 /// Exactly at the grace boundary: timestamp == deadline + grace — must succeed.
@@ -3555,9 +3551,7 @@ fn test_update_config_rejects_grace_period_exceeding_max() {
     client.update_config(&admin, &config);
 }
 
-// =============================================================================
 // force_cancel_shipment tests
-// =============================================================================
 
 /// Helper: initialise contract, register a company, create one shipment, and
 /// return (env, client, admin, token_contract, company, shipment_id).
@@ -3622,12 +3616,10 @@ fn test_force_cancel_shipment_zero_reason_hash_rejected() {
 /// Verifies escrow_amount stays 0 and force_cancelled event is emitted.
 /// Both force_cancelled and shipment_cancelled events are emitted on force-cancel.
 /// Payload shape regression test for both events emitted on force-cancel.
-// ============= Shipment Note Tests =============
+// Shipment Note Tests
 
-// ============= Idempotency Window Tests =============
-// ============================================================================
+// Idempotency Window Tests
 // Integration Tests for Symbol and BytesN<32> Validators
-// ============================================================================
 
 #[test]
 #[should_panic(expected = "Error(Contract, #60)")]
@@ -3776,11 +3768,11 @@ fn test_dispute_emits_escrow_frozen_event() {
     );
 }
 
-// ── Finalization lock-out tests (issue #446) ──────────────────────────────────
+// Finalization lock-out tests (issue #446)
 
-// ── Metadata symbol boundary tests (issue #448) ──────────────────────────────
+// Metadata symbol boundary tests (issue #448)
 
-// ── Rate-limit exhaustion and recovery tests (issue #18) ─────────────────────
+// Rate-limit exhaustion and recovery tests (issue #18)
 
 /// Test that rate limit exhaustion blocks the action as expected.
 /// Test that advancing the ledger clears the rate limit window and restores the action.
@@ -3803,7 +3795,7 @@ fn test_get_shipment_created_at_fails_before_initialization() {
     client.get_shipment_created_at(&1);
 }
 
-// ── [ISSUE #506] get_admin in multi-admin configurations ─────────────────────
+// [ISSUE #506] get_admin in multi-admin configurations
 
 #[test]
 fn test_get_admin_returns_primary_admin_after_multisig_init() {
@@ -3867,7 +3859,7 @@ fn test_get_admin_unaffected_by_additional_multisig_admins() {
     );
 }
 
-// ── [ISSUE #599] StatusHashNotFound error variant tests ──────────────────────
+// [ISSUE #599] StatusHashNotFound error variant tests
 //
 // StatusHashNotFound (#44) is returned when a shipment exists but no hash was
 // recorded for the requested status.
@@ -3883,7 +3875,7 @@ fn test_status_hash_not_found_error_code_is_44() {
     );
 }
 
-// ── Issue #581 – InvalidPaymentMilestones (code 59) ─────────────────────────
+// Issue #581 – InvalidPaymentMilestones (code 59)
 
 #[test]
 #[should_panic(expected = "Error(Contract, #59)")]
@@ -4096,7 +4088,7 @@ fn test_status_hash_not_found_is_distinct_from_shipment_not_found() {
     assert_eq!(NavinError::StatusHashNotFound as u32, 44);
 }
 
-// ── [ISSUE #598] DataHashMismatch error variant tests ────────────────────────
+// [ISSUE #598] DataHashMismatch error variant tests
 //
 // DataHashMismatch (#45) is returned by assert_delivery_hash
 // when the provided hash does not match the value stored on-chain.
@@ -4150,7 +4142,7 @@ fn test_data_hash_mismatch_is_distinct_from_other_hash_errors() {
     assert_eq!(NavinError::DataHashMismatch as u32, 45);
 }
 
-// ── [ISSUE #597] CircuitBreakerOpen error variant tests ──────────────────────
+// [ISSUE #597] CircuitBreakerOpen error variant tests
 //
 // CircuitBreakerOpen (#46) is returned by invoke_token_transfer when the
 // circuit breaker is in Open state. The breaker is injected directly into
@@ -4171,7 +4163,7 @@ fn test_circuit_breaker_open_error_code_is_46() {
 /// return CircuitBreakerOpen (#46) — the token transfer is blocked.
 /// With the circuit breaker closed (default state), token transfers succeed
 /// — no CircuitBreakerOpen error is raised.
-// ── Issue #582 – DuplicatePaymentMilestone (code 60) ────────────────────────
+// Issue #582 – DuplicatePaymentMilestone (code 60)
 
 #[test]
 #[should_panic(expected = "Error(Contract, #60)")]
@@ -4201,7 +4193,7 @@ fn test_create_shipment_duplicate_milestone_names_rejected() {
     );
 }
 
-// ── Issue #583 – InvalidTokenAddress (code 61) ──────────────────────────────
+// Issue #583 – InvalidTokenAddress (code 61)
 
 #[test]
 #[should_panic(expected = "Error(Contract, #61)")]
@@ -4228,7 +4220,7 @@ fn test_initialize_with_valid_token_address_succeeds() {
     assert_eq!(client.get_admin(), admin);
 }
 
-// ── Issue #584 – InvalidPaymentMilestoneName (code 62) ──────────────────────
+// Issue #584 – InvalidPaymentMilestoneName (code 62)
 
 #[test]
 #[should_panic(expected = "Error(Contract, #62)")]
@@ -4286,7 +4278,7 @@ fn test_create_shipment_too_long_milestone_name_rejected() {
     );
 }
 
-// ── get_circuit_breaker_status tests (issue #640) ─────────────────────────────
+// get_circuit_breaker_status tests (issue #640)
 
 #[test]
 fn test_get_circuit_breaker_status_closed_by_default() {
@@ -4351,7 +4343,7 @@ fn test_get_circuit_breaker_status_half_open() {
     assert_eq!(recovery_remaining, 0);
 }
 
-// ── is_company_suspended tests (issue #642) ───────────────────────────────────
+// is_company_suspended tests (issue #642)
 
 #[test]
 fn test_is_company_suspended_active_by_default() {
@@ -4391,7 +4383,7 @@ fn test_is_company_suspended_returns_false_after_reactivation() {
     assert!(!client.is_company_suspended(&company));
 }
 
-// ── get_platform_fee_config tests (issue #641) ────────────────────────────────
+// get_platform_fee_config tests (issue #641)
 
 #[test]
 fn test_get_platform_fee_config_none_before_set() {
@@ -4434,9 +4426,7 @@ fn test_get_platform_fee_config_reflects_updated_value() {
     assert_eq!(config.treasury, treasury2);
 }
 
-// =============================================================================
 // Issue #601 — DuplicateAction error variant across operations
-// =============================================================================
 
 /// Verify that duplicate `create_shipment` calls within the idempotency window
 /// are rejected with `DuplicateAction` (error code 41).
@@ -4452,9 +4442,7 @@ fn test_duplicate_action_error_code_is_41() {
     assert_eq!(crate::NavinError::DuplicateAction as u32, 41);
 }
 
-// =============================================================================
 // Issue #603 — InvalidMultiSigConfig error variant
-// =============================================================================
 
 /// Verify that `init_multisig` rejects threshold higher than admin count
 /// with `InvalidConfig` (error code 31).
@@ -4537,9 +4525,7 @@ fn test_invalid_multisig_config_error_code_is_28() {
     assert_eq!(crate::NavinError::InvalidMultiSigConfig as u32, 28);
 }
 
-// =============================================================================
 // Issue #604 — InsufficientApprovals error variant
-// =============================================================================
 
 /// Verify that executing a proposal with fewer approvals than threshold
 /// fails with `InsufficientApprovals` (error code 26).
@@ -4615,7 +4601,7 @@ fn test_insufficient_approvals_error_code_is_26() {
     assert_eq!(crate::NavinError::InsufficientApprovals as u32, 26);
 }
 
-// ── New Tests for Error Variants ──────────────────────────────────────────────
+// New Tests for Error Variants
 
 #[test]
 fn test_invalid_symbol_error_variant() {
@@ -4632,12 +4618,9 @@ fn test_invalid_symbol_error_variant() {
     assert_eq!(result2, Err(crate::NavinError::InvalidSymbol));
 }
 
-// =============================================================================
 // Issue #607 — ProposalExpired error variant
-// =============================================================================
 // Tests that expired proposals cannot be approved or executed, that the error
 // code 24 is returned correctly, and that non-expired proposals work normally.
-// =============================================================================
 
 /// Helper to set up a multisig environment with a pending (not-yet-executed)
 /// proposal that has NOT yet expired.  Returns
@@ -4806,12 +4789,9 @@ fn test_all_approvals_fail_after_expiry() {
     );
 }
 
-// =============================================================================
 // Issue #608 — ProposalAlreadyExecuted error variant
-// =============================================================================
 // Tests that duplicate proposal executions are rejected, that the error code
 // 23 is returned correctly, and that single execution succeeds.
-// =============================================================================
 
 /// `ProposalAlreadyExecuted` must carry error code 23.
 #[test]
@@ -4936,9 +4916,7 @@ fn test_single_execution_succeeds_and_applies_action() {
 
 // ForceRelease proposal: single execution releases escrow correctly.
 // Verifies that the `ProposalAlreadyExecuted` guard works for non-Upgrade actions.
-// =============================================================================
 // ForceRelease reason_hash validation and audit trail tests
-// =============================================================================
 
 // ForceRelease with reason_hash: verifies reason hash is persisted in event stream and queryable.
 // Ensures audit trail contains the admin-provided reason for the force release.
@@ -4946,9 +4924,7 @@ fn test_single_execution_succeeds_and_applies_action() {
 // ForceRefund with reason_hash: verifies reason hash is persisted in event stream and queryable.
 // Ensures audit trail contains the admin-provided reason for the force refund.
 // ForceRefund rejects zero reason_hash, matching force_cancel_shipment behavior.
-// ===========================================================================
 // Security regressions: #748, #749, #750, #751
-// ===========================================================================
 
 /// #748 — `initialize` must require auth from the address it installs as admin.
 ///
@@ -5114,9 +5090,7 @@ fn test_compute_idempotency_key_still_works_for_short_symbols() {
     );
 }
 
-// =============================================================================
 // Issue #778 – check_batch_consistency admin entrypoint
-// =============================================================================
 
 /// Admin can invoke check_batch_consistency and gets an empty violation list
 /// for a healthy batch.

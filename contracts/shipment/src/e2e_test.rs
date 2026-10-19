@@ -130,19 +130,18 @@ fn test_debug_event_structure() {
         &deadline,
     );
 
-    // What does our target symbol look like as a string?
     let target = Symbol::new(&env, "shipment_created");
-    let target_str: std::string::String = target.to_string();
-    std::println!("TARGET string: {target_str:?}");
-
-    // What do the event topic symbols look like as strings?
+    let mut found = false;
     for (_contract, topics, _data) in env.events().all().iter() {
-        for (i, v) in topics.iter().enumerate() {
+        for v in topics.iter() {
             let s = soroban_sdk::Symbol::from_val(&env, &v);
-            let s_str: std::string::String = s.to_string();
-            std::println!("  topic[{i}] string: {s_str:?}");
+            if s == target {
+                found = true;
+                break;
+            }
         }
     }
+    assert!(found, "expected shipment_created event in topics");
 }
 
 // =============================================================================
@@ -384,8 +383,6 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
         !shipment.verify_delivery_proof(&shipment_id, &hash(&env, 0xFF)),
         "wrong hash must not verify"
     );
-
-    std::println!("✅ Happy path — all balances and events verified");
 }
 
 // =============================================================================
@@ -474,8 +471,6 @@ fn test_e2e_cancel_refund_path_with_token_balances() {
     let s = shipment.get_shipment(&shipment_id);
     assert_eq!(s.status, ShipmentStatus::Cancelled);
     assert_eq!(s.escrow_amount, 0);
-
-    std::println!("✅ Cancel/refund path — balances and events verified");
 }
 
 // =============================================================================
@@ -686,8 +681,6 @@ fn test_e2e_partial_milestones_then_cancel_via_deadline() {
     let s = shipment.get_shipment(&shipment_id);
     assert_eq!(s.status, ShipmentStatus::Cancelled);
     assert_eq!(s.escrow_amount, 0);
-
-    std::println!("✅ Partial milestones + deadline expiry — conservation verified");
 }
 
 // =============================================================================
@@ -785,8 +778,6 @@ fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
     let s = shipment.get_shipment(&shipment_id);
     assert_eq!(s.status, ShipmentStatus::Cancelled);
     assert_eq!(s.escrow_amount, 0);
-
-    std::println!("✅ Deadline expiry — balances and events verified");
 }
 
 #[test]
