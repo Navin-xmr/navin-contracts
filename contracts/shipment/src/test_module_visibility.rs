@@ -10,7 +10,7 @@ use crate::audit::AuditLogEntry;
 use crate::consistency::ConsistencyViolation;
 use crate::diagnostics::{run_system_health_check, SystemHealthStatus};
 use crate::error_map::{get_error_info, ContractErrorInfo};
-use crate::test::setup_initialized_shipment_env;
+use crate::test_helpers::setup_initialized_shipment_env;
 use crate::NavinError;
 use soroban_sdk::{Address, Vec};
 

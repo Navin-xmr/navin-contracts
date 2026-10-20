@@ -46,7 +46,31 @@ mod event_topics;
 mod events;
 mod storage;
 #[cfg(test)]
-mod test;
+pub mod test_helpers;
+#[cfg(test)]
+mod test_initialization;
+#[cfg(test)]
+mod test_creation_whitelist;
+#[cfg(test)]
+mod test_status_escrow_queries;
+#[cfg(test)]
+mod test_delivery_escrow;
+#[cfg(test)]
+mod test_upgrade_migration;
+#[cfg(test)]
+mod test_handoff_breach;
+#[cfg(test)]
+mod test_multisig;
+#[cfg(test)]
+mod test_error_codes;
+#[cfg(test)]
+mod test_roles_events;
+#[cfg(test)]
+mod test_validation_edge;
+#[cfg(test)]
+mod test_config_multisig;
+#[cfg(test)]
+mod test_auth_guardians;
 #[cfg(test)]
 mod test_module_visibility;
 #[cfg(test)]

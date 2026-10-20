@@ -7,7 +7,7 @@
 ///   - get_shipments_batch within the cap → success
 extern crate std;
 
-use crate::{test::setup_shipment_env, NavinError, ShipmentInput};
+use crate::{test_helpers::setup_shipment_env, NavinError, ShipmentInput};
 use soroban_sdk::{testutils::Address as _, Address, BytesN};
 
 // ── helpers ──────────────────────────────────────────────────────────────────

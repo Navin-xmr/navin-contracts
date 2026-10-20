@@ -10,7 +10,7 @@ use soroban_sdk::{
 #[test]
 fn test_assert_delivery_hash_wrong_hash_returns_data_hash_mismatch() {
     use crate::NavinError;
-    let (env, client, admin, _token_contract) = crate::test::setup_shipment_env();
+    let (env, client, admin, _token_contract) = crate::test_helpers::setup_shipment_env();
     client.initialize(&admin, &_token_contract);
 
     let sender = Address::generate(&env);
@@ -57,7 +57,7 @@ fn test_assert_delivery_hash_wrong_hash_returns_data_hash_mismatch() {
 /// assert_delivery_hash returns Ok(()) when the correct confirmation hash is supplied.
 #[test]
 fn test_assert_delivery_hash_correct_hash_returns_ok() {
-    let (env, client, admin, _token_contract) = crate::test::setup_shipment_env();
+    let (env, client, admin, _token_contract) = crate::test_helpers::setup_shipment_env();
     client.initialize(&admin, &_token_contract);
 
     let sender = Address::generate(&env);
@@ -104,7 +104,7 @@ fn test_assert_delivery_hash_correct_hash_returns_ok() {
 #[test]
 fn test_assert_delivery_hash_nonexistent_shipment_returns_not_found() {
     use crate::NavinError;
-    let (env, client, admin, _token_contract) = crate::test::setup_shipment_env();
+    let (env, client, admin, _token_contract) = crate::test_helpers::setup_shipment_env();
     client.initialize(&admin, &_token_contract);
 
     let hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -121,7 +121,7 @@ fn test_assert_delivery_hash_nonexistent_shipment_returns_not_found() {
 #[test]
 fn test_assert_delivery_hash_no_confirmation_returns_status_hash_not_found() {
     use crate::NavinError;
-    let (env, client, admin, _token_contract) = crate::test::setup_shipment_env();
+    let (env, client, admin, _token_contract) = crate::test_helpers::setup_shipment_env();
     client.initialize(&admin, &_token_contract);
 
     let sender = Address::generate(&env);
@@ -170,7 +170,7 @@ fn test_assert_delivery_hash_error_codes_distinct() {
 #[test]
 fn test_assert_delivery_hash_single_byte_difference_returns_mismatch() {
     use crate::NavinError;
-    let (env, client, admin, _token_contract) = crate::test::setup_shipment_env();
+    let (env, client, admin, _token_contract) = crate::test_helpers::setup_shipment_env();
     client.initialize(&admin, &_token_contract);
 
     let sender = Address::generate(&env);
@@ -222,7 +222,7 @@ fn test_assert_delivery_hash_single_byte_difference_returns_mismatch() {
 
 #[test]
 fn test_frontend_verification_flow() {
-    let (env, client, admin, _token_contract) = crate::test::setup_shipment_env();
+    let (env, client, admin, _token_contract) = crate::test_helpers::setup_shipment_env();
     client.initialize(&admin, &_token_contract);
 
     let sender = Address::generate(&env);

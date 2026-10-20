@@ -6,7 +6,7 @@
 //! - #854: `Settlement` / `ActiveSettlement` records.
 //! - #855: `Proposal` / `ProposalDigest` multi-sig entries.
 
-use crate::test::*;
+use crate::test_helpers::*;
 use crate::types::{DataKey, SettlementKey};
 use crate::{storage, NavinError};
 use soroban_sdk::{

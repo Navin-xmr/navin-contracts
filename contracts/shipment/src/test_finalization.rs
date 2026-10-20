@@ -1,3 +1,4 @@
+use crate::test_helpers::setup_shipment_env;
 use crate::{NavinShipment, NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Symbol, Vec};
 
@@ -12,14 +13,6 @@ impl MockToken {
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
 }
 
-fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
-    let (env, admin) = crate::test_utils::setup_env();
-
-    let token_contract = env.register(MockToken {}, ());
-    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
-
-    (env, client, admin, token_contract)
-}
 
 #[test]
 fn test_finalization_on_cancel_with_zero_escrow() {
