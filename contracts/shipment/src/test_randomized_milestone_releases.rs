@@ -12,7 +12,7 @@
 //!
 //! ## Running
 //! ```bash
-//! cargo test --package shipment --features testutils fuzz_milestone_releases -- --nocapture
+//! cargo test --package shipment --features testutils test_randomized_milestone_releases -- --nocapture
 //! ```
 
 extern crate std;

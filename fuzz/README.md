@@ -2,12 +2,15 @@
 
 This directory holds `cargo-fuzz` (libFuzzer) targets that explore
 coverage-guided random inputs against the `shipment` contract, as opposed to
-the deterministic `fuzz_*.rs` property-test modules under
+the deterministic `test_randomized_*.rs` property-test modules under
 `contracts/shipment/src/`.
+
+In short: `test_randomized_*.rs` are ordinary `cargo test` modules with seeded
+random inputs; only `fuzz/fuzz_targets/` holds real cargo-fuzz targets.
 
 ## Property tests vs. corpus fuzzing
 
-- **`contracts/shipment/src/fuzz_*.rs`** — `#![cfg(test)]` modules that run
+- **`contracts/shipment/src/test_randomized_*.rs`** — `#![cfg(test)]` modules that run
   under `cargo test`. They assert specific, hand-picked properties (e.g.
   "escrow never underflows", "non-admins are always rejected") against a
   fixed or seeded set of inputs. These run on every CI push/PR and are fast

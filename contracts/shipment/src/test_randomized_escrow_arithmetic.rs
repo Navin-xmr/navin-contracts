@@ -13,7 +13,7 @@
 //!
 //! ## Running
 //! ```bash
-//! cargo test --package shipment --features testutils fuzz_escrow_arithmetic -- --nocapture
+//! cargo test --package shipment --features testutils test_randomized_escrow_arithmetic -- --nocapture
 //! ```
 
 extern crate std;

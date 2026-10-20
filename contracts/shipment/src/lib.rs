@@ -160,23 +160,23 @@ mod stress_test;
 mod test_dispute_evidence;
 
 #[cfg(test)]
-mod fuzz_escrow_arithmetic;
-#[cfg(test)]
-mod fuzz_escrow_lifecycle;
-#[cfg(test)]
-mod fuzz_milestone_releases;
-#[cfg(test)]
-mod fuzz_rbac_authorization;
-#[cfg(test)]
-mod fuzz_role_assignment;
-#[cfg(test)]
-mod fuzz_storage_operations;
-#[cfg(test)]
-mod fuzz_ttl_management;
-#[cfg(test)]
-mod fuzz_wallet_auth_integration;
-#[cfg(test)]
 mod preservation_property_tests;
+#[cfg(test)]
+mod test_randomized_escrow_arithmetic;
+#[cfg(test)]
+mod test_randomized_escrow_lifecycle;
+#[cfg(test)]
+mod test_randomized_milestone_releases;
+#[cfg(test)]
+mod test_randomized_rbac_authorization;
+#[cfg(test)]
+mod test_randomized_role_assignment;
+#[cfg(test)]
+mod test_randomized_storage_operations;
+#[cfg(test)]
+mod test_randomized_ttl_management;
+#[cfg(test)]
+mod test_randomized_wallet_auth_integration;
 
 pub use circuit_breaker::{CircuitBreakerConfig, CircuitBreakerState};
 pub use config::*;
