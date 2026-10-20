@@ -48,6 +48,8 @@ mod storage;
 #[cfg(test)]
 mod test;
 #[cfg(test)]
+mod test_module_visibility;
+#[cfg(test)]
 mod test_audit_trail;
 #[cfg(test)]
 mod test_cross_contract_integration;

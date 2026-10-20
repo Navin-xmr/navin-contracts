@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use crate::test::*;
 
 // ── Issue #434: Settlement counter overflow protection tests ──────────────────

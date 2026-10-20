@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use crate::test::*;
 use crate::test_utils::dummy_hash;
 use crate::types::*;
