@@ -14,9 +14,7 @@ use soroban_sdk::{
     Address, BytesN, Env, Symbol, Vec,
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Mock Token Contract
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[contract]
 struct MockToken;
@@ -31,9 +29,7 @@ impl MockToken {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Test Setup Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 fn setup_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
     let (env, admin) = crate::test_utils::setup_env();
@@ -44,13 +40,9 @@ fn setup_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
     (env, client, admin, token_contract)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Issue #242: Panic-Free Invariant Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 1. initialize() - Boundary and Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_initialize_already_initialized_returns_error() {
@@ -63,9 +55,7 @@ fn test_initialize_already_initialized_returns_error() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 2. add_company() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_add_company_unauthorized_caller() {
@@ -103,9 +93,7 @@ fn test_add_company_not_initialized() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 3. add_carrier() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_add_carrier_unauthorized_caller() {
@@ -120,9 +108,7 @@ fn test_add_carrier_unauthorized_caller() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 4. create_shipment() - Boundary and Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_create_shipment_invalid_hash_all_zeros() {
@@ -218,9 +204,7 @@ fn test_create_shipment_invalid_milestone_sum() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 5. deposit_escrow() - Boundary and Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_deposit_escrow_nonexistent_shipment() {
@@ -236,9 +220,7 @@ fn test_deposit_escrow_nonexistent_shipment() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 6. update_status() - Invalid State Transition Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_update_status_nonexistent_shipment() {
@@ -256,9 +238,7 @@ fn test_update_status_nonexistent_shipment() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 7. cancel_shipment() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_cancel_shipment_nonexistent_shipment() {
@@ -306,9 +286,7 @@ fn test_cancel_shipment_unauthorized_caller() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 8. release_escrow() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_release_escrow_nonexistent_shipment() {
@@ -322,9 +300,7 @@ fn test_release_escrow_nonexistent_shipment() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 9. refund_escrow() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_refund_escrow_nonexistent_shipment() {
@@ -338,9 +314,7 @@ fn test_refund_escrow_nonexistent_shipment() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 10. raise_dispute() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_raise_dispute_nonexistent_shipment() {
@@ -355,9 +329,7 @@ fn test_raise_dispute_nonexistent_shipment() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 11. resolve_dispute() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_resolve_dispute_nonexistent_shipment() {
@@ -376,9 +348,7 @@ fn test_resolve_dispute_nonexistent_shipment() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 12. set_shipment_limit() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_set_shipment_limit_unauthorized_caller() {
@@ -392,9 +362,7 @@ fn test_set_shipment_limit_unauthorized_caller() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 13. pause() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_pause_unauthorized_caller() {
@@ -405,9 +373,7 @@ fn test_pause_unauthorized_caller() {
     assert!(result.is_err(), "pause must fail for unauthorized caller");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 14. unpause() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_unpause_unauthorized_caller() {
@@ -418,9 +384,7 @@ fn test_unpause_unauthorized_caller() {
     assert!(result.is_err(), "unpause must fail for unauthorized caller");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 15. force_cancel_shipment() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_force_cancel_shipment_nonexistent_shipment() {
