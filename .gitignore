@@ -1,17 +1,11 @@
+# Build artifacts
 target
-test_snapshots/**/test_snapshots/
 fuzz/target
+
+# Test outputs
+test_snapshots/
 fuzz/corpus
 fuzz/artifacts
-
-.agent/
-.agents/
-issue.md
-skills-lock.json
-PR_DESCRIPTION.md
-*DESCRIPTION*.md
-
-# Logs and test outputs
 *.log
 test_output.txt
 
@@ -19,5 +13,5 @@ test_output.txt
 .DS_Store
 Thumbs.db
 
-# Testnet deployment configuration
+# Environment
 .env.testnet
