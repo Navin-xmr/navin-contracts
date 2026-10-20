@@ -66,7 +66,7 @@ mod failing_token {
 mod invalid_token {
     use super::*;
 
-    // Token with invalid decimals for testing #260
+    // Token reporting non-standard decimals; exercises the decimals guard.
     #[contract]
     pub struct MockTokenInvalidDecimals;
 
@@ -251,9 +251,9 @@ fn test_create_shipment_unauthorized() {
     );
 }
 
-// Issue #701: Participant Validation Tests
+// Participant Validation Tests
 
-/// Issue #701 — create_shipment must reject when sender == receiver
+/// create_shipment must reject when sender == receiver
 #[test]
 #[should_panic(expected = "Error(Contract, #57)")]
 fn test_create_shipment_rejects_sender_equals_receiver() {
@@ -276,7 +276,7 @@ fn test_create_shipment_rejects_sender_equals_receiver() {
     );
 }
 
-/// Issue #701 — create_shipment must reject when sender == carrier
+/// create_shipment must reject when sender == carrier
 #[test]
 #[should_panic(expected = "Error(Contract, #57)")]
 fn test_create_shipment_rejects_sender_equals_carrier() {
@@ -299,7 +299,7 @@ fn test_create_shipment_rejects_sender_equals_carrier() {
     );
 }
 
-/// Issue #701 — create_shipment must reject when receiver == carrier
+/// create_shipment must reject when receiver == carrier
 #[test]
 #[should_panic(expected = "Error(Contract, #57)")]
 fn test_create_shipment_rejects_receiver_equals_carrier() {
@@ -321,8 +321,6 @@ fn test_create_shipment_rejects_receiver_equals_carrier() {
         &deadline,
     );
 }
-
-/// Issue #701 — create_shipment should succeed with distinct participants
 
 // Carrier Whitelist Tests
 
@@ -4787,9 +4785,8 @@ fn test_all_approvals_fail_after_expiry() {
     );
 }
 
-// Issue #608 — ProposalAlreadyExecuted error variant
-// Tests that duplicate proposal executions are rejected, that the error code
-// 23 is returned correctly, and that single execution succeeds.
+// ProposalAlreadyExecuted error variant: duplicate proposal executions must be
+// rejected with error code 23, while a single execution still succeeds.
 
 /// `ProposalAlreadyExecuted` must carry error code 23.
 #[test]
@@ -4922,9 +4919,9 @@ fn test_single_execution_succeeds_and_applies_action() {
 // ForceRefund with reason_hash: verifies reason hash is persisted in event stream and queryable.
 // Ensures audit trail contains the admin-provided reason for the force refund.
 // ForceRefund rejects zero reason_hash, matching force_cancel_shipment behavior.
-// Security regressions: #748, #749, #750, #751
+// Security regressions
 
-/// #748 — `initialize` must require auth from the address it installs as admin.
+/// `initialize` must require auth from the address it installs as admin.
 ///
 /// Deploy and initialize are separate transactions, so an attacker can watch
 /// for an uninitialized contract and call `initialize` naming themselves.
@@ -4944,7 +4941,7 @@ fn test_initialize_requires_admin_auth() {
     );
 }
 
-/// #748 — with the admin's authorization present, initialization still works.
+/// With the admin's authorization present, initialization still works.
 #[test]
 fn test_initialize_succeeds_with_admin_auth() {
     let env = Env::default();
@@ -4957,9 +4954,9 @@ fn test_initialize_succeeds_with_admin_auth() {
     assert_eq!(client.get_admin(), admin);
 }
 
-/// #748 — the authorization recorded is the admin's own, so a third party
-/// cannot front-run initialization by signing for themselves while naming
-/// someone else.
+/// The authorization recorded is the admin's own, so a third party cannot
+/// front-run initialization by signing for themselves while naming someone
+/// else.
 #[test]
 fn test_initialize_auth_is_attributed_to_the_admin() {
     let env = Env::default();
@@ -4977,10 +4974,10 @@ fn test_initialize_auth_is_attributed_to_the_admin() {
     );
 }
 
-/// #749 — `remove_guardian` must not strip an unrelated role.
+/// `remove_guardian` must not strip an unrelated role.
 ///
-/// Before the fix this silently revoked the target's Company role, because
-/// `revoke_role` removes whatever role the address happens to hold.
+/// Without the role check this silently revokes the target's Company role,
+/// because `revoke_role` removes whatever role the address happens to hold.
 #[test]
 fn test_remove_guardian_rejects_a_company_target() {
     let (env, client, admin, _token) = setup_initialized_shipment_env();
@@ -4997,7 +4994,7 @@ fn test_remove_guardian_rejects_a_company_target() {
     );
 }
 
-/// #749 — the mirror case for operators.
+/// The mirror case for operators.
 #[test]
 fn test_remove_operator_rejects_a_guardian_target() {
     let (env, client, admin, _token) = setup_initialized_shipment_env();
@@ -5008,8 +5005,8 @@ fn test_remove_operator_rejects_a_guardian_target() {
     assert_eq!(result, Err(Ok(crate::NavinError::RoleMismatch)));
 }
 
-/// #749 — removing an address that holds no role at all is also a mismatch,
-/// rather than a silent success.
+/// Removing an address that holds no role at all is also a mismatch, rather
+/// than a silent success.
 #[test]
 fn test_remove_guardian_rejects_an_unassigned_target() {
     let (env, client, admin, _token) = setup_initialized_shipment_env();
@@ -5021,7 +5018,7 @@ fn test_remove_guardian_rejects_an_unassigned_target() {
     );
 }
 
-/// #749 — the happy path still works: a real guardian is still removable.
+/// The happy path still works: a real guardian is still removable.
 #[test]
 fn test_remove_guardian_still_removes_a_guardian() {
     let (env, client, admin, _token) = setup_initialized_shipment_env();
@@ -5037,12 +5034,12 @@ fn test_remove_guardian_still_removes_a_guardian() {
     );
 }
 
-/// #750 — a long `event_type` must not panic.
+/// A long `event_type` must not panic.
 ///
-/// A Soroban `Symbol` allows up to 32 characters; the XDR decode wrote into a
-/// 32-byte buffer and sliced `8 + char_count`, so 25-32 characters ran past
+/// A Soroban `Symbol` allows up to 32 characters; the XDR decode writes into a
+/// 32-byte buffer and slices `8 + char_count`, so 25-32 characters run past
 /// the end. A panic aborts the whole invocation, so a merely-long event type
-/// took down the call that emitted it.
+/// would take down the call that emitted it.
 #[test]
 fn test_compute_idempotency_key_rejects_oversized_symbols() {
     let (env, client, _admin, _token) = setup_initialized_shipment_env();
@@ -5056,7 +5053,7 @@ fn test_compute_idempotency_key_rejects_oversized_symbols() {
     );
 }
 
-/// #750 — the maximum-length symbol is handled the same way.
+/// The maximum-length symbol is handled the same way.
 #[test]
 fn test_compute_idempotency_key_handles_max_length_symbol() {
     let (env, client, _admin, _token) = setup_initialized_shipment_env();
@@ -5070,7 +5067,7 @@ fn test_compute_idempotency_key_handles_max_length_symbol() {
     );
 }
 
-/// #750 — ordinary symbols still produce a stable key.
+/// Ordinary symbols still produce a stable key.
 #[test]
 fn test_compute_idempotency_key_still_works_for_short_symbols() {
     let (env, client, _admin, _token) = setup_initialized_shipment_env();
@@ -5088,7 +5085,7 @@ fn test_compute_idempotency_key_still_works_for_short_symbols() {
     );
 }
 
-// Issue #778 – check_batch_consistency admin entrypoint
+// check_batch_consistency admin entrypoint
 
 /// Admin can invoke check_batch_consistency and gets an empty violation list
 /// for a healthy batch.

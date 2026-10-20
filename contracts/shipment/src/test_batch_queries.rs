@@ -63,7 +63,7 @@ fn test_get_shipments_batch_rejects_requests_over_hard_limit() {
     assert!(matches!(result, Err(Ok(NavinError::BatchTooLarge))));
 }
 
-// ── Batch vs. single-read consistency (issue #445) ───────────────────────────
+// ── Batch vs. single-read consistency ────────────────────────────────────────
 
 #[test]
 fn test_batch_results_match_individual_reads() {
@@ -226,17 +226,9 @@ fn test_batch_all_present_matches_individual_reads_field_by_field() {
     }
 }
 
-// ── Receiver-side shipment lookup (issue #644) ────────────────────────────────
+// ── Batch participant validation ─────────────────────────────────────────────
 
-// ── Cursor-based shipment pagination (issue #645) ─────────────────────────────
-
-// ── Carrier-page shipment lookup (issue #702) ──────────────────────────────────
-
-// ── Status-search cursor pagination (issue #705) ──────────────────────────────
-
-// ── Issue #701: Batch participant validation ───────────────────────────────
-
-/// Issue #701 — create_shipments_batch must reject when sender == receiver
+/// create_shipments_batch must reject when sender == receiver
 #[test]
 fn issue_701_batch_rejects_sender_equals_receiver() {
     use crate::ShipmentInput;
@@ -275,7 +267,7 @@ fn issue_701_batch_rejects_sender_equals_receiver() {
     );
 }
 
-/// Issue #701 — create_shipments_batch must reject when sender == carrier
+/// create_shipments_batch must reject when sender == carrier
 #[test]
 fn issue_701_batch_rejects_sender_equals_carrier() {
     use crate::ShipmentInput;
@@ -314,7 +306,7 @@ fn issue_701_batch_rejects_sender_equals_carrier() {
     );
 }
 
-/// Issue #701 — create_shipments_batch must reject when receiver == carrier
+/// create_shipments_batch must reject when receiver == carrier
 #[test]
 fn issue_701_batch_rejects_receiver_equals_carrier() {
     use crate::ShipmentInput;
@@ -353,7 +345,7 @@ fn issue_701_batch_rejects_receiver_equals_carrier() {
     );
 }
 
-/// Issue #701 — create_shipments_batch should succeed with distinct participants
+/// create_shipments_batch should succeed with distinct participants
 #[test]
 fn issue_701_batch_succeeds_with_distinct_participants() {
     use crate::ShipmentInput;
@@ -390,7 +382,7 @@ fn issue_701_batch_succeeds_with_distinct_participants() {
     assert_eq!(ids.len(), 1, "batch must return one shipment ID");
 }
 
-/// Issue #701 — atomicity: batch with one invalid participant rejects entire batch
+/// atomicity: batch with one invalid participant rejects entire batch
 #[test]
 fn issue_701_batch_atomicity_one_invalid_rejects_all() {
     use crate::ShipmentInput;
