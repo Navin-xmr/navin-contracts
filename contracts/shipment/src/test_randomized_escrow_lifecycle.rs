@@ -15,7 +15,7 @@
 //!
 //! ## Running
 //! ```bash
-//! cargo test --package shipment --features testutils fuzz_escrow_lifecycle -- --nocapture
+//! cargo test --package shipment --features testutils test_randomized_escrow_lifecycle -- --nocapture
 //! ```
 
 extern crate std;
