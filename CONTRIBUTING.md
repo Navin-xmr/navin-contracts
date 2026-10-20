@@ -106,7 +106,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 
 # 4. Build contracts (WASM target)
-cargo build --target wasm32-unknown-unknown --release
+make build
 ```
 
 **Important**: If any of these commands fail, fix the issues before pushing!
@@ -166,7 +166,7 @@ Before submitting your PR, ensure you've completed ALL of these steps:
 - [ ] Code is formatted with `cargo fmt`
 - [ ] No clippy warnings: `cargo clippy --all-targets --all-features -- -D warnings`
 - [ ] All tests pass: `cargo test`
-- [ ] WASM builds successfully: `cargo build --target wasm32-unknown-unknown --release`
+- [ ] WASM builds successfully: `make build`
 - [ ] New tests added for new functionality
 - [ ] Old tests previously passing before you added changes still pass
 - [ ] Documentation updated (if applicable)
@@ -208,7 +208,7 @@ cargo test
 
 ```bash
 # Command run by CI:
-cargo build --target wasm32-unknown-unknown --release
+make build
 
 # Ensure contracts compile to WASM without errors
 ```
@@ -421,7 +421,7 @@ Please do not just combine both conflicts when trying to resolve merge conflicts
 cargo fmt
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
-cargo build --target wasm32-unknown-unknown --release
+make build
 
 # Create and switch to a new branch
 git checkout -b issue#<number>

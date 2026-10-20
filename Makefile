@@ -12,7 +12,7 @@ help:
 	@echo ""
 	@echo "  make generate-schema-shipment - Generate shipment contract ABI schema"
 	@echo "  make generate-schema-token    - Generate token contract ABI schema"
-	@echo "  make build        - Build all contracts"
+	@echo "  make build        - Build all contracts (canonical build entry point)"
 	@echo "  make test         - Run all tests"
 	@echo "  make coverage     - Measure test coverage with cargo-llvm-cov"
 	@echo "  make fmt          - Format all code"

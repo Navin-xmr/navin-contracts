@@ -81,4 +81,4 @@ jobs:
           target: wasm32-unknown-unknown
 
       - name: Build WASM targets
-        run: cargo build --target wasm32-unknown-unknown --release
+        run: make build

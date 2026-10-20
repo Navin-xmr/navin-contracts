@@ -20,12 +20,14 @@ Before deploying, ensure you have:
 
 3. **Build tools**: Make sure you can build the contracts locally:
    ```bash
-   cargo build
+   make build
    ```
 
 ## Environment Variables
 
-The deployment scripts use the following environment variables:
+Both scripts source `scripts/testnet-config.sh` for these defaults. The deploy
+script writes the selected values to `.env.testnet`, and the initialization
+script loads them from that file along with the contract IDs.
 
 | Variable                     | Default                                   | Description                                        |
 | ---------------------------- | ----------------------------------------- | -------------------------------------------------- |
@@ -33,7 +35,7 @@ The deployment scripts use the following environment variables:
 | `STELLAR_RPC_URL`            | `https://soroban-testnet.stellar.org:443` | Stellar testnet RPC endpoint                       |
 | `STELLAR_NETWORK_PASSPHRASE` | `Test SDF Network ; September 2015`       | Network passphrase for testnet                     |
 
-You can override these by exporting them before running the scripts:
+You can override these by exporting them before deployment:
 
 ```bash
 export STELLAR_IDENTITY="my-custom-identity"
@@ -128,31 +130,18 @@ After initialization, the admin can perform the following operations:
 
 ### 1. Build Contracts
 
-Build all three workspace contracts to optimized WASM:
+Build all workspace contracts for the WASM target:
 
 ```bash
-./scripts/build.sh
+make build
 ```
 
-This will:
-
-- Compile `navin-token`, `navin-nft`, and `shipment` contracts
-- Verify WASM files are generated
-- Display file sizes
-
-Expected output:
-
-```
-Building Soroban contracts...
-Build successful!
-Token WASM: target/wasm32-unknown-unknown/release/navin_token.wasm (XXX KB)
-NFT WASM: target/wasm32-unknown-unknown/release/navin_nft.wasm (XXX KB)
-Shipment WASM: target/wasm32-unknown-unknown/release/shipment.wasm (XXX KB)
-```
+This builds `navin-token`, `navin-nft`, and `shipment`. The deploy and
+initialization scripts below operate on `navin-token` and `shipment` only.
 
 ### 2. Deploy Contracts
 
-Deploy all three contracts to testnet:
+Deploy the token and shipment contracts to testnet:
 
 ```bash
 ./scripts/deploy-testnet.sh
@@ -162,7 +151,6 @@ This will:
 
 - Check if the Stellar identity exists (create and fund from friendbot if not)
 - Deploy the token contract
-- Deploy the NFT contract
 - Deploy the shipment contract
 - Save contract addresses to `.env.testnet`
 
@@ -174,8 +162,6 @@ Identity: navin-testnet
 RPC URL: https://soroban-testnet.stellar.org:443
 Deploying token contract...
 Token contract deployed: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-Deploying NFT contract...
-NFT contract deployed: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 Deploying shipment contract...
 Shipment contract deployed: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
@@ -185,7 +171,7 @@ Contract addresses saved to .env.testnet
 
 ### 3. Initialize Contracts
 
-Initialize all three contracts with default parameters:
+Initialize the token and shipment contracts with default parameters:
 
 ```bash
 ./scripts/init-testnet.sh
@@ -197,9 +183,6 @@ This will:
   - Name: "Navin Token"
   - Symbol: "NAV"
   - Total supply: 1,000,000,000.0000000 (10^16 stroops, 7 decimals)
-- Initialize the NFT contract with:
-  - Name: "Navin Shipment NFT"
-  - Symbol: "NAVNFT"
 - Initialize the shipment contract with the token contract address
 
 Expected output:
@@ -207,21 +190,17 @@ Expected output:
 ```
 Initializing contracts on Stellar testnet...
 Token contract: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-NFT contract: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 Shipment contract: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 Admin address: GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 Initializing token contract...
 Token contract initialized successfully
 
-Initializing NFT contract...
-NFT contract initialized successfully
-
 Initializing shipment contract...
 Shipment contract initialized successfully
 
 Initialization complete!
-All three contracts are ready to use on testnet
+Both contracts are ready to use on testnet
 ```
 
 ## Verification
@@ -276,10 +255,10 @@ cargo install --locked stellar-cli
 
 ### "WASM not found"
 
-Run the build script first:
+Run the canonical build command first:
 
 ```bash
-./scripts/build.sh
+make build
 ```
 
 ### "Account not funded" or transaction failures
