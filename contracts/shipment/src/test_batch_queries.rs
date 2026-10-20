@@ -1,6 +1,6 @@
 extern crate std;
 
-use crate::{test::setup_shipment_env, NavinError};
+use crate::{test_helpers::setup_shipment_env, NavinError};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Vec};
 
 fn create_shipment_for(

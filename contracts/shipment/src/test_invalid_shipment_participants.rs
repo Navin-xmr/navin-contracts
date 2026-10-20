@@ -5,7 +5,7 @@
 /// accepting distinct participants.
 extern crate std;
 
-use crate::{test::setup_shipment_env, NavinError, NavinShipmentClient};
+use crate::{test_helpers::setup_shipment_env, NavinError, NavinShipmentClient};
 use soroban_sdk::{testutils::Address as _, Address, BytesN};
 
 // ── helpers ──────────────────────────────────────────────────────────────────

@@ -3,7 +3,7 @@
 //! The refund path previously called `extend_shipment_ttl` twice in a row.
 //! Settlement now owns the single remaining extension.
 
-use crate::test::*;
+use crate::test_helpers::*;
 use soroban_sdk::{
     testutils::{storage::Persistent, Address as _, Ledger},
     Address, BytesN,

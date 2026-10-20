@@ -1,4 +1,4 @@
-use crate::test::*;
+use crate::test_helpers::*;
 
 // ── Issue #434: Settlement counter overflow protection tests ──────────────────
 

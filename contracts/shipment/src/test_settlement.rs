@@ -1,4 +1,4 @@
-use crate::test::*;
+use crate::test_helpers::*;
 use crate::test_utils::dummy_hash;
 use crate::types::*;
 use soroban_sdk::testutils::Address as _;

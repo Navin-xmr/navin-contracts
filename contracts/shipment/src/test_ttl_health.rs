@@ -1,5 +1,7 @@
 extern crate std;
 
+use crate::test_helpers::setup_shipment_env;
+
 use crate::{NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
     contract, contractimpl,
@@ -21,20 +23,6 @@ impl TtlMockToken {
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
 }
 
-fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
-    let (env, admin) = crate::test_utils::setup_env();
-    let token = env.register(TtlMockToken {}, ());
-    let cid = env.register(NavinShipment, ());
-    let client = NavinShipmentClient::new(&env, &cid);
-
-    // Extend contract instance TTL immediately after registration to a huge value
-    env.as_contract(&cid, || {
-        env.storage().instance().extend_ttl(500000, 500000);
-    });
-
-    client.initialize(&admin, &token);
-    (env, client, admin, token)
-}
 
 fn create_test_shipment(
     client: &NavinShipmentClient,
