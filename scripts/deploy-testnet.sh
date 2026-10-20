@@ -1,20 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Environment variables with defaults
-STELLAR_IDENTITY="${STELLAR_IDENTITY:-navin-testnet}"
-STELLAR_RPC_URL="${STELLAR_RPC_URL:-https://soroban-testnet.stellar.org:443}"
-STELLAR_NETWORK_PASSPHRASE="${STELLAR_NETWORK_PASSPHRASE:-Test SDF Network ; September 2015}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/testnet-config.sh"
+require_stellar_cli
 
 echo "Deploying contracts to Stellar testnet..."
 echo "Identity: $STELLAR_IDENTITY"
 echo "RPC URL: $STELLAR_RPC_URL"
-
-# Check if stellar CLI is installed
-if ! command -v stellar &> /dev/null; then
-  echo "Error: stellar CLI not found. Please install it first."
-  exit 1
-fi
 
 # Check if identity exists, if not generate and fund it
 if ! stellar keys show "$STELLAR_IDENTITY" &> /dev/null; then
@@ -33,12 +26,12 @@ TOKEN_WASM="$WASM_DIR/navin_token.wasm"
 SHIPMENT_WASM="$WASM_DIR/shipment.wasm"
 
 if [[ ! -f "$TOKEN_WASM" ]]; then
-  echo "Error: Token WASM not found. Run scripts/build.sh first."
+  echo "Error: Token WASM not found. Run make build first."
   exit 1
 fi
 
 if [[ ! -f "$SHIPMENT_WASM" ]]; then
-  echo "Error: Shipment WASM not found. Run scripts/build.sh first."
+  echo "Error: Shipment WASM not found. Run make build first."
   exit 1
 fi
 

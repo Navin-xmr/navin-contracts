@@ -86,20 +86,7 @@ rustup target add wasm32-unknown-unknown
 ### Build
 
 ```bash
-# Using Make
 make build
-```
-
-OR
-
-```
-# Using cargo
-cargo build --target wasm32-unknown-unknown --release
-```
-
-```
-# Or directly with Stellar CLI
-stellar contract build
 ```
 
 ### Test
@@ -173,7 +160,7 @@ Quick deployment:
 
 ```bash
 # Build contracts
-./scripts/build.sh
+make build
 
 # Deploy to testnet
 ./scripts/deploy-testnet.sh
