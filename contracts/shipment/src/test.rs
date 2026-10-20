@@ -1286,7 +1286,7 @@ fn test_milestone_payment_invalid_sum_fails() {
 fn test_upgrade_success() {
     let (env, client, admin, token_contract) = setup_shipment_env();
 
-    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let wasm: &[u8] = crate::test_utils::UPGRADE_WASM;
     let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
 
     client.initialize(&admin, &token_contract);
@@ -1364,7 +1364,7 @@ fn test_get_contract_metadata_fails_before_initialization() {
 fn test_get_version_after_upgrade() {
     let (env, client, admin, token_contract) = setup_shipment_env();
 
-    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let wasm: &[u8] = crate::test_utils::UPGRADE_WASM;
     let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
 
     client.initialize(&admin, &token_contract);
@@ -1385,7 +1385,7 @@ fn test_get_version_after_upgrade() {
 fn test_get_contract_metadata_after_upgrade() {
     let (env, client, admin, token_contract) = setup_shipment_env();
 
-    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let wasm: &[u8] = crate::test_utils::UPGRADE_WASM;
     let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
 
     client.initialize(&admin, &token_contract);
@@ -2031,7 +2031,7 @@ fn test_approve_action_not_admin() {
 fn test_execute_proposal_auto_on_threshold() {
     let (env, client, admin, token_contract) = setup_shipment_env();
 
-    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let wasm: &[u8] = crate::test_utils::UPGRADE_WASM;
     let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
 
     client.initialize(&admin, &token_contract);
@@ -2156,7 +2156,7 @@ fn test_transfer_admin_action() {
 fn test_three_of_five_multisig() {
     let (env, client, admin, token_contract) = setup_shipment_env();
 
-    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let wasm: &[u8] = crate::test_utils::UPGRADE_WASM;
     let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
 
     client.initialize(&admin, &token_contract);
@@ -2547,64 +2547,10 @@ fn test_resolve_dispute_returns_invalid_hash() {
 // Error #12: CarrierNotWhitelisted Tests
 
 // NOTE: This test is commented out because the feature may not be fully implemented yet
-// #[test]
-// #[should_panic(expected = "Error(Contract, #12)")]
-// fn test_create_shipment_returns_carrier_not_whitelisted() {
-//     let (env, client, admin, token_contract) = setup_shipment_env();
-//     let company = Address::generate(&env);
-//     let receiver = Address::generate(&env);
-//     let carrier = Address::generate(&env);
-//     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-//     let deadline = env.ledger().timestamp() + 3600;
-//
-//     client.initialize(&admin, &token_contract);
-//     client.add_company(&admin, &company);
-//
-//     // Add a carrier to whitelist, but use a different carrier
-//     let whitelisted_carrier = Address::generate(&env);
-//     client.add_carrier_to_whitelist(&company, &whitelisted_carrier);
-//
-//     client.create_shipment(
-//         &company,
-//         &receiver,
-//         &carrier,
-//         &data_hash,
-//         &soroban_sdk::Vec::new(&env),
-//         &deadline,
-//     );
-// }
 
 // Error #13: CarrierNotAuthorized Tests
 
 // NOTE: This test is commented out because the feature may not be fully implemented yet
-// #[test]
-// #[should_panic(expected = "Error(Contract, #13)")]
-// fn test_handoff_shipment_returns_carrier_not_authorized() {
-//     let (env, client, admin, token_contract) = setup_shipment_env();
-//     let company = Address::generate(&env);
-//     let receiver = Address::generate(&env);
-//     let carrier = Address::generate(&env);
-//     let new_carrier = Address::generate(&env);
-//     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-//     let deadline = env.ledger().timestamp() + 3600;
-//
-//     client.initialize(&admin, &token_contract);
-//     client.add_company(&admin, &company);
-//     client.add_carrier(&admin, &carrier);
-//
-//     let shipment_id = client.create_shipment(
-//         &company,
-//         &receiver,
-//         &carrier,
-//         &data_hash,
-//         &soroban_sdk::Vec::new(&env),
-//         &deadline,
-//     );
-//
-//     // Try to handoff to a carrier that is not registered
-//     let handoff_hash = BytesN::from_array(&env, &[2u8; 32]);
-//     client.handoff_shipment(&carrier, &new_carrier, &shipment_id, &handoff_hash);
-// }
 
 // Error #14: InvalidAmount Tests
 
@@ -3208,38 +3154,6 @@ fn test_check_deadline_returns_shipment_not_found() {
 // Additional Coverage for InvalidStatus Error
 
 // NOTE: This test is commented out because the feature may not be fully implemented yet
-// #[test]
-// #[should_panic(expected = "Error(Contract, #5)")]
-// fn test_raise_dispute_returns_invalid_status() {
-//     let (env, client, admin, token_contract) = setup_shipment_env();
-//     let company = Address::generate(&env);
-//     let receiver = Address::generate(&env);
-//     let carrier = Address::generate(&env);
-//     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-//     let reason_hash = BytesN::from_array(&env, &[2u8; 32]);
-//     let deadline = env.ledger().timestamp() + 3600;
-//
-//     client.initialize(&admin, &token_contract);
-//     client.add_company(&admin, &company);
-//
-//     let shipment_id = client.create_shipment(
-//         &company,
-//         &receiver,
-//         &carrier,
-//         &data_hash,
-//         &soroban_sdk::Vec::new(&env),
-//         &deadline,
-//     );
-//
-//     // Change status to Delivered
-//     env.as_contract(&client.address, || {
-//         let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
-//         shipment.status = crate::ShipmentStatus::Delivered;
-//         crate::storage::set_shipment(&env, &shipment);
-//     });
-//
-//     client.raise_dispute(&company, &shipment_id, &reason_hash);
-// }
 
 // Event Counter Tests
 
@@ -3939,7 +3853,7 @@ fn test_create_shipment_over_100_percentage_milestone_rejected() {
 #[test]
 fn test_upgrade_valid_forward_migration_succeeds() {
     let (env, client, admin, token_contract) = setup_shipment_env();
-    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let wasm: &[u8] = crate::test_utils::UPGRADE_WASM;
     let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
     client.initialize(&admin, &token_contract);
 
@@ -4099,10 +4013,6 @@ fn test_data_hash_mismatch_error_code_is_45() {
     );
 }
 
-// assert_delivery_hash returns DataHashMismatch (#45) for an incorrect hash.
-// ═══════════════════════════════════════════════════════════════════════════
-// Issue #594 — BreachLimitExceeded (code 51)
-// ═══════════════════════════════════════════════════════════════════════════
 
 /// assert_delivery_hash returns ShipmentNotFound for a non-existent shipment.
 #[test]

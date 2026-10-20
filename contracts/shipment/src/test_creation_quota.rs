@@ -46,9 +46,8 @@ mod tests {
         (env, client, admin, company, carrier, token_id)
     }
 
-    fn make_hash(env: &Env, seed: u8) -> BytesN<32> {
-        BytesN::from_array(env, &[seed; 32])
-    }
+    // Consolidated to test_utils::make_hash (#1100)
+    use crate::test_utils::make_hash;
 
     fn future_deadline(env: &Env) -> u64 {
         env.ledger().timestamp() + 7200
