@@ -7,6 +7,13 @@ use soroban_sdk::{
     contract, contractimpl, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal, Symbol, Vec,
 };
 
+// `audit`, `consistency`, `diagnostics` and `error_map` stay `pub` (issue
+// #1064). The `#[contracttype]` values of `audit`, `consistency` and
+// `error_map` (`AuditLogEntry`, `ConsistencyViolation`, `ContractErrorInfo`)
+// are returned by `NavinShipment` entry points and so by the public generated
+// `NavinShipmentClient`; private modules would trip `private_interfaces`.
+// `diagnostics` has no production caller yet, so a private module would trip
+// `dead_code` in non-test builds.
 pub mod audit;
 mod circuit_breaker;
 mod config;
@@ -38,7 +45,8 @@ mod errors;
 mod event_topics;
 mod events;
 mod storage;
-pub mod test;
+#[cfg(test)]
+mod test;
 #[cfg(test)]
 mod test_audit_trail;
 #[cfg(test)]
