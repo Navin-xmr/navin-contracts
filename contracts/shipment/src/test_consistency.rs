@@ -1185,7 +1185,7 @@ fn test_upgrade_preserves_analytics_counters() {
     client.deposit_escrow(&company, &id2, &500);
 
     let target_version = client.get_version() + 1;
-    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let wasm: &[u8] = crate::test_utils::UPGRADE_WASM;
     let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
 
     let contract_id = client.address.clone();
@@ -1240,7 +1240,7 @@ fn test_get_version_increments_match_target_after_upgrade() {
     let initial = client.get_version();
     let target = initial + 1;
 
-    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let wasm: &[u8] = crate::test_utils::UPGRADE_WASM;
     let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
     let contract_id = client.address.clone();
     client.upgrade(&admin, &new_wasm_hash, &target);
