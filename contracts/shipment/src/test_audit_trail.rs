@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use crate::audit::*;
 use crate::errors::NavinError;
 use soroban_sdk::{testutils::Address as _, Address, Env};
