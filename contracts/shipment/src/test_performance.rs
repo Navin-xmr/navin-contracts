@@ -21,6 +21,9 @@ struct PerfMockToken;
 impl PerfMockToken {
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
     pub fn mint(_env: Env, _admin: Address, _to: Address, _amount: i128) {}
+    pub fn decimals(_env: Env) -> u32 {
+        7
+    }
 }
 
 // ── Setup helpers ─────────────────────────────────────────────────────────────
@@ -68,6 +71,7 @@ fn test_single_shipment_creation_within_budget() {
     let deadline = test_utils::future_deadline(&ctx.env, 7200);
 
     ctx.env.cost_estimate().budget().reset_unlimited();
+    crate::test_utils::allow_carrier(&ctx.client, &ctx.company, &ctx.carrier);
     ctx.client.create_shipment(
         &ctx.company,
         &Address::generate(&ctx.env),
@@ -100,6 +104,9 @@ fn test_batch_creation_10_within_budget() {
         });
     }
 
+    for s in inputs.iter() {
+        crate::test_utils::allow_carrier(&ctx.client, &ctx.company, &s.carrier);
+    }
     ctx.env.cost_estimate().budget().reset_unlimited();
     ctx.client.create_shipments_batch(&ctx.company, &inputs);
     let cpu = ctx.env.cost_estimate().budget().cpu_instruction_cost();
@@ -118,6 +125,11 @@ fn test_batch_cheaper_per_item_than_individual_calls() {
     let deadline_s = test_utils::future_deadline(&ctx_single.env, 7200);
     ctx_single.env.cost_estimate().budget().reset_unlimited();
     for seed in 1u8..=5 {
+        crate::test_utils::allow_carrier(
+            &ctx_single.client,
+            &ctx_single.company,
+            &ctx_single.carrier,
+        );
         ctx_single.client.create_shipment(
             &ctx_single.company,
             &Address::generate(&ctx_single.env),
@@ -176,6 +188,7 @@ const MAX_CPU_MILESTONE_BATCH_5: u64 = 800_000_000;
 fn test_batch_milestone_recording_within_budget() {
     let ctx = setup_perf();
     let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    crate::test_utils::allow_carrier(&ctx.client, &ctx.company, &ctx.carrier);
     let id = ctx.client.create_shipment(
         &ctx.company,
         &Address::generate(&ctx.env),
@@ -221,6 +234,7 @@ const MAX_CPU_STATUS_UPDATE: u64 = 150_000_000;
 fn test_status_update_within_budget() {
     let ctx = setup_perf();
     let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    crate::test_utils::allow_carrier(&ctx.client, &ctx.company, &ctx.carrier);
     let id = ctx.client.create_shipment(
         &ctx.company,
         &Address::generate(&ctx.env),
@@ -256,6 +270,7 @@ const MAX_CPU_GET_SHIPMENT: u64 = 20_000_000;
 fn test_get_shipment_within_budget() {
     let ctx = setup_perf();
     let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    crate::test_utils::allow_carrier(&ctx.client, &ctx.company, &ctx.carrier);
     let id = ctx.client.create_shipment(
         &ctx.company,
         &Address::generate(&ctx.env),

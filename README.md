@@ -32,6 +32,10 @@ This repository contains Soroban smart contracts for the Navin platform:
 ```text
 .
 ├── contracts
+│   ├── nft                 # Shipment-asset NFT contract scaffold
+│   │   ├── src
+│   │   │   └── lib.rs      # NFT minting, transfer, and ownership logic
+│   │   └── Cargo.toml
 │   ├── shipment            # Core logistics and escrow contract
 │   │   ├── src
 │   │   │   ├── lib.rs      # Main shipment logic
@@ -59,6 +63,15 @@ This repository contains Soroban smart contracts for the Navin platform:
 └── README.md
 ```
 
+## Smart Contracts
+
+The repository contains three smart contracts located under `contracts/`:
+
+- **`contracts/shipment`**: Core logistics and escrow contract managing shipment lifecycle, delivery tracking, and state persistence. See tests in [`contracts/shipment/src/test.rs`](contracts/shipment/src/test.rs) and state docs in [`contracts/shipment/docs/`](contracts/shipment/docs/).
+- **`contracts/token`**: Fungible payment token contract providing balance tracking, transfer allowances, and batch transfer events. See tests in [`contracts/token/src/test.rs`](contracts/token/src/test.rs) and event docs in [`docs/events.md`](docs/events.md).
+- **`contracts/nft`**: Shipment-asset NFT scaffold contract implementing unique digital asset minting, ownership, transfer, and burning logic. See contract implementation and tests in [`contracts/nft/src/lib.rs`](contracts/nft/src/lib.rs).
+
+
 ## Quick Start
 
 ### Prerequisites
@@ -82,20 +95,7 @@ rustup target add wasm32-unknown-unknown
 ### Build
 
 ```bash
-# Using Make
 make build
-```
-
-OR
-
-```
-# Using cargo
-cargo build --target wasm32-unknown-unknown --release
-```
-
-```
-# Or directly with Stellar CLI
-stellar contract build
 ```
 
 ### Test
@@ -169,7 +169,7 @@ Quick deployment:
 
 ```bash
 # Build contracts
-./scripts/build.sh
+make build
 
 # Deploy to testnet
 ./scripts/deploy-testnet.sh
@@ -184,6 +184,10 @@ Quick deployment:
 
 - **[Freighter Integration Checklist](docs/freighter-integration-checklist.md)** - End-to-end checklist for frontend teams: preflight checks, signing, error handling, on-chain verification, and common failure modes
 - **[Client Examples](docs/client-examples.md)** - Copy-paste Rust contract call shapes for common shipment operations
+
+### Contributor Guides
+
+- **[Contract Package Versioning](docs/versioning.md)** - Why every contract crate stays at `version = "0.0.0"`, and which mechanisms to version instead
 
 ### Operational Guides
 

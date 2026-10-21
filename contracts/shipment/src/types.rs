@@ -30,8 +30,6 @@ pub enum DataKey {
     Company(Address),
     /// Addresses with Carrier role.
     Carrier(Address),
-    /// Carrier suspension flag (carrier -> bool).
-    CarrierSuspended(Address),
     /// Company suspension flag (company -> bool).
     CompanySuspended(Address),
     /// Individual shipment data keyed by ID.
@@ -44,14 +42,16 @@ pub enum DataKey {
     RoleSuspended(Address, Role),
     /// Escrow balance for a shipment.
     Escrow(u64),
-    /// Legacy single-role storage key for compatibility.
-    Role(Address),
     /// Hash of proof-of-delivery data for a shipment.
     ConfirmationHash(u64),
     /// Token contract address for payments.
     TokenContract,
+    /// NFT contract address for shipment tokenization (optional).
+    NftContract,
     /// Timestamp of the last status update for a shipment (used for rate limiting).
     LastStatusUpdate(u64),
+    /// Whether the pre-deadline warning has already been emitted for a shipment.
+    DeadlineWarningEmitted(u64),
     /// Proposed new administrator address.
     ProposedAdmin,
     /// List of admin addresses for multi-sig.
@@ -78,29 +78,22 @@ pub enum DataKey {
     ContractConfig,
     /// Event counter for a shipment (tracks number of events emitted).
     EventCount(u64),
-    /// Archived shipment data in temporary storage (for terminal state shipments).
-    ArchivedShipment(u64),
-    /// Append-only note hashes for shipment commentary (shipment_id, index) -> hash.
-    ShipmentNote(u64, u32),
-    /// Total number of notes appended to a shipment.
-    ShipmentNoteCount(u64),
-    /// Append-only evidence hashes for shipment disputes (shipment_id, index) -> hash.
-    DisputeEvidence(u64, u32),
-    /// Total number of evidence hashes appended to a shipment dispute.
-    DisputeEvidenceCount(u64),
+    /// Contract-wide counter for governance and configuration events.
+    GlobalEventCount,
     /// SHA-256 checksum of critical config fields for drift detection.
     ConfigChecksum,
     /// Counter for milestone events emitted for a shipment.
     MilestoneEventCount(u64),
     /// Temporary idempotency window key — present while the action hash is within its window.
     IdempotencyWindow(BytesN<32>),
-    /// IoT sensor data hash stored per shipment status transition.
-    StatusHash(u64, ShipmentStatus),
     /// Contract pause state flag.
     IsPaused,
     /// Platform fee configuration.
     FeeConfig,
-    /// Designated address for platform fee collection.
+    /// Reserved. The platform treasury address lives in `FeeConfig::treasury`
+    /// (the slot fee-payout code actually reads); this standalone key is kept
+    /// only so the storage-key layout stays stable for already-deployed
+    /// contracts and must not be written or read.
     Treasury,
     /// Rate limit quota tracker per actor (company/carrier).
     ActorQuota(Address),
@@ -132,13 +125,131 @@ pub enum DataKey {
     /// Deterministic action digest stored on proposal creation.
     ProposalDigest(u64),
     /// Per-shipment recovery action record (shipment_id, index) -> RecoveryRecord.
+    /// Discriminant reserved for storage compatibility.
     RecoveryRecord(u64, u32),
     /// Total count of recovery action records for a shipment.
+    /// Discriminant reserved for storage compatibility.
     RecoveryRecordCount(u64),
     /// Proposal salt used to prevent replay attacks — salt -> bool.
     ProposalSalt(BytesN<32>),
     /// Prerequisite shipment IDs for a dependent — dependent_id -> Vec<u64>.
     ShipmentDependents(u64),
+    /// Archived shipment data in temporary storage (for terminal state shipments).
+    ArchivedShipment(u64),
+}
+
+/// Storage keys for dispute evidence.
+///
+/// Kept separate from [`DataKey`] deliberately: `DataKey` already carries the
+/// maximum number of cases a single `#[contracttype]` enum may declare, so any
+/// further per-shipment collection has to live in its own key type. Splitting
+/// the dispute-evidence keys out also keeps the evidence subsystem
+/// self-contained — it can be removed again without renumbering `DataKey`.
+///
+/// # Examples
+/// ```rust
+/// use crate::types::DisputeKey;
+/// let key = DisputeKey::EvidenceCount(1);
+/// ```
+#[contracttype(export = false)]
+pub enum DisputeKey {
+    /// Number of evidence entries recorded for a shipment's dispute.
+    EvidenceCount(u64),
+    /// A single evidence hash — (shipment_id, zero-based index).
+    Evidence(u64, u32),
+}
+
+/// Storage keys for settlement bookkeeping that do not fit in [`DataKey`].
+///
+/// `DataKey` is already at the `#[contracttype]` case limit, so additional
+/// settlement keys live here.
+#[contracttype(export = false)]
+pub enum SettlementKey {
+    /// Most recent settlement ID recorded for a shipment. Unlike
+    /// `DataKey::ActiveSettlement`, it is not cleared when the settlement
+    /// completes or fails.
+    Latest(u64),
+}
+
+/// Storage key for a shipment's per-visit status data-hash log (issue #698).
+///
+/// `DataKey` is already at the `#[contracttype]` case limit, so this log lives
+/// in its own key type — the same pattern as [`DisputeKey`] and
+/// [`SettlementKey`].
+///
+/// One key per shipment holds the whole log ([`StatusHashLog`]) rather than one
+/// key per visit: `update_status` runs on the hot path under a rate limit, and a
+/// per-visit key scheme needs ~29 extra reads/writes/TTL bumps per call (ring
+/// slot + sequence + per-status visit counter, then re-extending all of them).
+/// A single bounded map keeps the cost at one read and one write.
+///
+/// # Examples
+/// ```text
+/// let key = StatusHashKey::Log(shipment_id);
+/// ```
+#[contracttype(export = false)]
+pub enum StatusHashKey {
+    /// Bounded status-hash log for one shipment.
+    Log(u64),
+}
+
+/// Maximum number of status data-hash entries retained per shipment (issue #698).
+///
+/// The log is append-only but bounded: once this many visits have been recorded,
+/// appending visit N evicts visit `N - MAX_STATUS_HASHES_PER_SHIPMENT`, i.e. the
+/// oldest retained one. Bounding it is deliberate — an unbounded per-status map
+/// is exactly the state growth removed upstream in #824, and every visit's hash
+/// is already emitted permanently as a `status_updated` event for off-chain
+/// indexing.
+///
+/// Sized to comfortably cover a full shipment lifecycle (typically well under
+/// ten status updates) while keeping the per-shipment footprint small and
+/// predictable.
+pub const MAX_STATUS_HASHES_PER_SHIPMENT: u32 = 20;
+
+/// A shipment's bounded status data-hash log (issue #698).
+///
+/// Stored as a single value under [`StatusHashKey::Log`] so that recording one
+/// visit costs one read and one write.
+///
+/// `entries` is keyed by absolute visit sequence, which is monotonic across the
+/// whole shipment, and holds at most [`MAX_STATUS_HASHES_PER_SHIPMENT`] items.
+/// `visits` counts visits per status and yields each visit's `visit_index`, so
+/// repeated visits to one status never overwrite one another.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct StatusHashLog {
+    /// Sequence the next visit will receive. Monotonic, never reset.
+    pub next_seq: u32,
+    /// Retained visits by absolute sequence number, oldest first.
+    pub entries: Map<u32, StatusHashRecord>,
+    /// Visit count per status, used to assign `visit_index`.
+    pub visits: Map<ShipmentStatus, u32>,
+}
+
+/// One recorded status-visit hash from a shipment's bounded status-hash log.
+///
+/// Returned by `get_status_hash` / `get_status_hash_history` so a caller can
+/// tell *which* visit a hash belongs to, not just read the latest value.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct StatusHashRecord {
+    /// Status the shipment held when this hash was recorded.
+    pub status: ShipmentStatus,
+    /// SHA-256 hash of the off-chain IoT payload supplied for this visit.
+    pub data_hash: BytesN<32>,
+    /// Zero-based index of this visit *among visits to `status`*. Distinct
+    /// visits to the same status get distinct indices, so neither overwrites
+    /// the other. Monotonic per status and never reused.
+    pub visit_index: u32,
+    /// Position of this entry in the shipment's log. Always
+    /// strictly increasing; `seq % MAX_STATUS_HASHES_PER_SHIPMENT` is the ring
+    /// slot the entry occupies.
+    pub seq: u32,
+    /// Ledger timestamp of the visit.
+    pub timestamp: u64,
+    /// Address that performed the status update.
+    pub actor: Address,
 }
 
 /// Structured reason codes for escrow freeze events.
@@ -352,8 +463,6 @@ pub struct Shipment {
     pub escrow_amount: i128,
     /// Total amount deposited in escrow.
     pub total_escrow: i128,
-    /// Optional metadata for storing small key-value pairs (e.g., weight category, priority).
-    pub metadata: Option<Map<Symbol, Symbol>>,
     /// Milestone-based payment schedule: (checkpoint name, percentage).
     pub payment_milestones: Vec<(Symbol, u32)>,
     /// List of symbols for milestones that have already been paid.
@@ -376,7 +485,7 @@ pub struct Shipment {
 /// // Struct represents a milestone reached by a shipment.
 /// ```
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Milestone {
     /// ID of the shipment this milestone belongs to.
     pub shipment_id: u64,
@@ -540,81 +649,6 @@ pub struct ShipmentInput {
     pub deadline: u64,
 }
 
-/// Cursor page result for searching shipment IDs by status.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct ShipmentStatusCursorPage {
-    pub shipment_ids: Vec<u64>,
-    pub next_cursor: Option<u64>,
-}
-
-/// Cursor page result for searching shipment IDs by sender, carrier, or receiver.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct ShipmentCursorPage {
-    pub shipment_ids: Vec<u64>,
-    pub next_cursor: Option<u64>,
-}
-
-/// Maximum number of recovery action history records stored per shipment.
-pub const MAX_RECOVERY_RECORDS_PER_SHIPMENT: u32 = 20;
-
-/// Recovery action type for history log audit trail.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum RecoveryActionType {
-    /// Reset shipment state to a valid target status.
-    RecoverShipment,
-    /// Manually unlock stuck escrow.
-    UnlockEscrow,
-    /// Clear finalization flag to allow reprocessing.
-    ClearFinalization,
-    /// Rollback shipment status on external failure.
-    RollbackOnExternalFailure,
-}
-
-/// Queryable recovery action record stored per shipment.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct RecoveryRecord {
-    /// Type of recovery action performed.
-    pub action_type: RecoveryActionType,
-    /// Admin address executing the recovery.
-    pub admin: Address,
-    /// Hash of the justification/reason for recovery.
-    pub reason_hash: BytesN<32>,
-    /// Ledger timestamp when recovery was executed.
-    pub timestamp: u64,
-}
-
-/// Storage presence classification used for restore triage.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum StoragePresenceState {
-    /// Canonical active path: shipment exists in persistent storage.
-    ActivePersistent,
-    /// Archived path: shipment is no longer persistent and exists in temporary storage.
-    ArchivedExpected,
-    /// Neither active nor archived entries were found for this shipment ID.
-    Missing,
-    /// Both active and archived entries exist; operators should investigate.
-    InconsistentDualPresence,
-}
-
-/// Read-only diagnostics to determine whether restore flow is needed.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct PersistentRestoreDiagnostics {
-    pub shipment_id: u64,
-    pub state: StoragePresenceState,
-    pub persistent_shipment_present: bool,
-    pub archived_shipment_present: bool,
-    pub escrow_present: bool,
-    pub confirmation_hash_present: bool,
-    pub last_status_update_present: bool,
-    pub event_count_present: bool,
-}
-
 /// On-chain introspection snapshot of the contract state.
 ///
 /// # Examples
@@ -622,7 +656,7 @@ pub struct PersistentRestoreDiagnostics {
 /// // Struct holds metadata about the contract state itself.
 /// ```
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ContractMetadata {
     /// Current contract version (starts at 1, incremented on each upgrade).
     pub version: u32,
@@ -662,6 +696,10 @@ pub enum DisputeResolution {
     ReleaseToCarrier,
     /// Refund escrowed funds to the company.
     RefundToCompany,
+    /// Split escrowed funds between carrier and company (partial refund).
+    /// Results in `PartiallyRefunded` status. Arbiter provides the split
+    /// via this flag — escrow is divided evenly between carrier and company.
+    PartialRefund,
 }
 
 /// Admin action types for multi-signature proposals.
@@ -693,7 +731,7 @@ pub enum AdminAction {
 /// // Struct represents a pending multi-sig proposal.
 /// ```
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Proposal {
     /// Unique proposal identifier.
     pub id: u64,
@@ -760,12 +798,16 @@ pub struct Analytics {
     pub in_transit_count: u64,
     /// Number of shipments currently in 'AtCheckpoint' state.
     pub at_checkpoint_count: u64,
+    /// Number of shipments currently in 'PartiallyDelivered' state.
+    pub partially_delivered_count: u64,
     /// Number of shipments currently in 'Delivered' state.
     pub delivered_count: u64,
     /// Number of shipments currently in 'Disputed' state.
     pub disputed_count: u64,
     /// Number of shipments currently in 'Cancelled' state.
     pub cancelled_count: u64,
+    /// Number of shipments currently in 'PartiallyRefunded' state.
+    pub partially_refunded_count: u64,
 }
 
 /// Compact summary of shipment counts aggregated by status.
@@ -786,6 +828,8 @@ pub struct ShipmentStatusSummary {
     pub disputed: u64,
     /// Count of shipments in 'Cancelled' state.
     pub cancelled: u64,
+    /// Count of shipments in 'PartiallyRefunded' state.
+    pub partially_refunded: u64,
 }
 
 /// Paginated result for company-carrier relationship queries (issue #295).

@@ -20,12 +20,14 @@ Before deploying, ensure you have:
 
 3. **Build tools**: Make sure you can build the contracts locally:
    ```bash
-   cargo build
+   make build
    ```
 
 ## Environment Variables
 
-The deployment scripts use the following environment variables:
+Both scripts source `scripts/testnet-config.sh` for these defaults. The deploy
+script writes the selected values to `.env.testnet`, and the initialization
+script loads them from that file along with the contract IDs.
 
 | Variable                     | Default                                   | Description                                        |
 | ---------------------------- | ----------------------------------------- | -------------------------------------------------- |
@@ -33,7 +35,7 @@ The deployment scripts use the following environment variables:
 | `STELLAR_RPC_URL`            | `https://soroban-testnet.stellar.org:443` | Stellar testnet RPC endpoint                       |
 | `STELLAR_NETWORK_PASSPHRASE` | `Test SDF Network ; September 2015`       | Network passphrase for testnet                     |
 
-You can override these by exporting them before running the scripts:
+You can override these by exporting them before deployment:
 
 ```bash
 export STELLAR_IDENTITY="my-custom-identity"
@@ -87,34 +89,59 @@ The token contract begins with the admin holding the entire `total_supply` balan
 
 ---
 
+## NFT Contract Initialization
+
+### NFT Contract Setup
+
+The NFT contract (`navin-nft` / `contracts/nft`) manages shipment digital assets. It can be deployed and initialized independently with no ordering dependency relative to shipment or token deployment.
+
+**Initialize Parameters:**
+
+- `admin` — Account that owns the NFT contract and manages minting/pausing operations
+- `name` — NFT collection name (e.g., "Navin Shipment NFT")
+- `symbol` — NFT collection ticker symbol (e.g., "NAVNFT")
+
+**Example initialization command:**
+
+```bash
+stellar contract invoke \
+  --id "$NFT_CONTRACT_ID" \
+  --source-account "$STELLAR_IDENTITY" \
+  --rpc-url "$STELLAR_RPC_URL" \
+  --network-passphrase "$STELLAR_NETWORK_PASSPHRASE" \
+  -- \
+  initialize \
+  --admin "$(stellar keys address $STELLAR_IDENTITY)" \
+  --name "Navin Shipment NFT" \
+  --symbol "NAVNFT"
+```
+
+### NFT Admin Operations
+
+After initialization, the admin can perform the following operations:
+
+1. **Mint Shipment NFTs** — Mint a new shipment NFT via `mint(admin, to, token_id)`
+2. **Transfer Admin Rights** — Pass control to another address via `transfer_admin(current_admin, new_admin)`
+3. **Pause/Unpause Operations** — Block or unblock NFT minting and transfers via `pause(admin)` and `unpause(admin)`
+
+---
+
 ## Deployment Steps
 
 ### 1. Build Contracts
 
-Build both contracts to optimized WASM:
+Build all workspace contracts for the WASM target:
 
 ```bash
-./scripts/build.sh
+make build
 ```
 
-This will:
-
-- Compile both `navin-token` and `shipment` contracts
-- Verify WASM files are generated
-- Display file sizes
-
-Expected output:
-
-```
-Building Soroban contracts...
-Build successful!
-Token WASM: target/wasm32-unknown-unknown/release/navin_token.wasm (XXX KB)
-Shipment WASM: target/wasm32-unknown-unknown/release/shipment.wasm (XXX KB)
-```
+This builds `navin-token`, `navin-nft`, and `shipment`. The deploy and
+initialization scripts below operate on `navin-token` and `shipment` only.
 
 ### 2. Deploy Contracts
 
-Deploy both contracts to testnet:
+Deploy the token and shipment contracts to testnet:
 
 ```bash
 ./scripts/deploy-testnet.sh
@@ -144,7 +171,7 @@ Contract addresses saved to .env.testnet
 
 ### 3. Initialize Contracts
 
-Initialize both contracts with default parameters:
+Initialize the token and shipment contracts with default parameters:
 
 ```bash
 ./scripts/init-testnet.sh
@@ -205,6 +232,17 @@ After deployment, verify the contracts are working:
      get_admin
    ```
 
+3. **Check NFT contract admin**:
+   ```bash
+   stellar contract invoke \
+     --id "$NFT_CONTRACT_ID" \
+     --source-account "$STELLAR_IDENTITY" \
+     --rpc-url "$STELLAR_RPC_URL" \
+     --network-passphrase "$STELLAR_NETWORK_PASSPHRASE" \
+     -- \
+     get_admin
+   ```
+
 ## Troubleshooting
 
 ### "stellar CLI not found"
@@ -217,10 +255,10 @@ cargo install --locked stellar-cli
 
 ### "WASM not found"
 
-Run the build script first:
+Run the canonical build command first:
 
 ```bash
-./scripts/build.sh
+make build
 ```
 
 ### "Account not funded" or transaction failures

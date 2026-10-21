@@ -106,7 +106,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 
 # 4. Build contracts (WASM target)
-cargo build --target wasm32-unknown-unknown --release
+make build
 ```
 
 **Important**: If any of these commands fail, fix the issues before pushing!
@@ -166,7 +166,7 @@ Before submitting your PR, ensure you've completed ALL of these steps:
 - [ ] Code is formatted with `cargo fmt`
 - [ ] No clippy warnings: `cargo clippy --all-targets --all-features -- -D warnings`
 - [ ] All tests pass: `cargo test`
-- [ ] WASM builds successfully: `cargo build --target wasm32-unknown-unknown --release`
+- [ ] WASM builds successfully: `make build`
 - [ ] New tests added for new functionality
 - [ ] Old tests previously passing before you added changes still pass
 - [ ] Documentation updated (if applicable)
@@ -208,7 +208,7 @@ cargo test
 
 ```bash
 # Command run by CI:
-cargo build --target wasm32-unknown-unknown --release
+make build
 
 # Ensure contracts compile to WASM without errors
 ```
@@ -243,6 +243,23 @@ To ensure our contracts remain deployable on-chain, we enforce strict size limit
 - Follow the official [Rust Style Guide](https://doc.rust-lang.org/nightly/style-guide/)
 - Use `cargo fmt` to automatically format code
 - Use descriptive variable names relevant to the feature
+
+### Contract Package Versioning
+
+Every contract crate stays at `version = "0.0.0"`. **Do not bump it.**
+
+The `version` field is a crates.io publication mechanism, and nothing here publishes to a
+registry: all three crates are `publish = false`, workspace members depend on each other by
+path, no script or CI job reads the number, and deployments are identified by WASM hash
+rather than version. It has already drifted once with no recorded decision, which is the
+problem a fixed value removes.
+
+Version the things that are actually verifiable instead: git commit SHA for a source
+revision, WASM hash for a deployed binary, `schema_version` /
+`EVENT_SCHEMA_VERSION_STR` for event payload compatibility, and [`docs/storage.md`](docs/storage.md)
+for on-chain layout.
+
+Full rationale and contributor rules: **[`docs/versioning.md`](docs/versioning.md)**.
 
 ### Contract-Specific Guidelines
 
@@ -404,7 +421,7 @@ Please do not just combine both conflicts when trying to resolve merge conflicts
 cargo fmt
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
-cargo build --target wasm32-unknown-unknown --release
+make build
 
 # Create and switch to a new branch
 git checkout -b issue#<number>

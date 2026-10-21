@@ -37,6 +37,9 @@
    - [admin_proposed](#admin_proposed)
    - [admin_transferred](#admin_transferred)
    - [contract_upgraded](#contract_upgraded)
+   - [init](#init)
+   - [set_limit](#set_limit)
+   - [set_cmp_limit](#set_cmp_limit)
 9. [Notification Events](#notification-events)
    - [notification](#notification)
 10. [Lifecycle Sequence Diagram](#lifecycle-sequence-diagram)
@@ -57,6 +60,7 @@
     - [adm_burn](#token-admin-burn)
     - [burn_from](#token-burn-from)
 14. [Token Admin Events](#token-admin-events)
+    - [admin_pro](#token-admin-proposed)
     - [admin_tr](#token-admin-transfer)
     - [paused](#token-paused)
     - [unpaused](#token-unpaused)
@@ -66,6 +70,8 @@
     - [meta_set](#token-metadata-set)
     - [meta_del](#token-metadata-delete)
 16. [Token Batch Events](#token-batch-events)
+    - [batch_leg](#batch_leg)
+    - [batch_tr](#batch_tr)
     - [batch_tr](#token-batch-transfer)
 
 ---
@@ -74,8 +80,10 @@
 
 All events are published via the Soroban SDK's `env.events().publish()` method:
 
+- **Shipment Contract:** `topic: (Symbol,)` — single descriptive symbol for stream filtering.
+- **Token Contract:** `topic: (Symbol::new(name), Symbol::new(EVENT_SCHEMA_VERSION_STR))` — 2-element topic tuple carrying the event name symbol and schema version string (e.g., `"v1"`), as defined in [`contracts/token/src/event_topics.rs`](../contracts/token/src/event_topics.rs).
+
 ```
-topic:  (Symbol,)                — single descriptive symbol for stream filtering
 data:   (field1, field2, ...)    — tuple of typed payload fields
 ```
 
@@ -170,6 +178,9 @@ This enables safe parser upgrades and indexer deduplication during contract evol
 | `admin_proposed`       | Admin     | `propose_admin`                                                               |
 | `admin_transferred`    | Admin     | `accept_admin`, `multi_sig_execute`                                           |
 | `contract_upgraded`    | Admin     | `upgrade_contract`, `multi_sig_execute`                                       |
+| `init`                 | Admin     | `initialize`                                                                  |
+| `set_limit`            | Admin     | `set_shipment_limit`                                                          |
+| `set_cmp_limit`        | Admin     | `set_company_shipment_limit`                                                  |
 | `notification`         | System    | Multiple — see [notification](#notification)                                  |
 
 ---
@@ -537,6 +548,58 @@ Emitted when the contract WASM is upgraded.
 | 3   | `version`       | `u32`        | Contract version after upgrade   |
 
 **Backend action:** Record the new version and WASM hash in the deployment registry.
+
+---
+
+### `init`
+
+Emitted once when the shipment contract is initialized. `init` is the only topic string for this event.
+
+**Topic:** `"init"`
+**Emitted by:** `initialize`
+**Caller role:** Admin
+
+| #   | Field            | Soroban Type | Description                       |
+| --- | ---------------- | ------------ | --------------------------------- |
+| 1   | `admin`          | `Address`    | Initial admin address             |
+| 2   | `token_contract` | `Address`    | Token contract used for escrow    |
+
+**Backend action:** Record the deployment's admin and token contract.
+
+---
+
+### `set_limit`
+
+Emitted when the admin updates the global active-shipment limit. `set_limit` is the only topic string for this event.
+
+**Topic:** `"set_limit"`
+**Emitted by:** `set_shipment_limit`
+**Caller role:** Admin
+
+| #   | Field   | Soroban Type | Description                       |
+| --- | ------- | ------------ | --------------------------------- |
+| 1   | `admin` | `Address`    | Admin that changed the limit      |
+| 2   | `limit` | `u32`        | New global active-shipment limit  |
+
+**Backend action:** Update the stored global shipment limit.
+
+---
+
+### `set_cmp_limit`
+
+Emitted when the admin sets a company-specific active-shipment limit. `set_cmp_limit` is the only topic string for this event.
+
+**Topic:** `"set_cmp_limit"`
+**Emitted by:** `set_company_shipment_limit`
+**Caller role:** Admin
+
+| #   | Field     | Soroban Type | Description                            |
+| --- | --------- | ------------ | -------------------------------------- |
+| 1   | `admin`   | `Address`    | Admin that changed the limit           |
+| 2   | `company` | `Address`    | Company the override applies to        |
+| 3   | `limit`   | `u32`        | New active-shipment limit for company  |
+
+**Backend action:** Update the stored limit override for the company.
 
 ---
 
@@ -1139,18 +1202,35 @@ Emitted when tokens are burned using an allowance via `burn_from()`.
 
 ## Token Admin Events
 
-### `admin_tr`
+### `admin_pro`
 
-Emitted when admin rights are transferred to a new address via `transfer_admin()`.
+Emitted when an admin transfer is proposed to a new address via `transfer_admin()`.
 
-**Topic:** `"admin_tr"`
+**Topic:** `"admin_pro"`
 **Emitted by:** `transfer_admin`
 **Caller role:** Current admin
 
 | #   | Field           | Soroban Type | Description     |
 | --- | --------------- | ------------ | --------------- |
-| 1   | `current_admin` | `Address`    | Departing admin |
-| 2   | `new_admin`     | `Address`    | Incoming admin  |
+| 1   | `current_admin` | `Address`    | Current admin   |
+| 2   | `new_admin`     | `Address`    | Nominated admin |
+
+**Backend action:** Record pending admin proposal.
+
+---
+
+### `admin_tr`
+
+Emitted when a proposed admin transfer is accepted via `accept_admin_transfer()`.
+
+**Topic:** `"admin_tr"`
+**Emitted by:** `accept_admin_transfer`
+**Caller role:** Nominated admin
+
+| #   | Field       | Soroban Type | Description     |
+| --- | ----------- | ------------ | --------------- |
+| 1   | `old_admin` | `Address`    | Departing admin |
+| 2   | `new_admin` | `Address`    | Incoming admin  |
 
 **Backend action:** Update admin record in control registry.
 
@@ -1261,6 +1341,24 @@ Emitted when the admin removes a metadata entry via `remove_metadata()`.
 
 ## Token Batch Events
 
+### `batch_leg`
+
+Emitted for each recipient leg during a batch transfer executed via `batch_transfer()`.
+
+**Topic:** `"batch_leg"`
+**Emitted by:** `batch_transfer`
+**Caller role:** Token holder
+
+| #   | Field    | Soroban Type | Description                    |
+| --- | -------- | ------------ | ------------------------------ |
+| 1   | `from`   | `Address`    | Source account                 |
+| 2   | `to`     | `Address`    | Recipient account              |
+| 3   | `amount` | `i128`       | Leg transfer amount in stroops |
+
+**Backend action:** Track individual recipient leg within batch execution.
+
+---
+
 ### `batch_tr`
 
 Emitted when multiple transfers are executed atomically in a single call via `batch_transfer()`.
@@ -1269,10 +1367,11 @@ Emitted when multiple transfers are executed atomically in a single call via `ba
 **Emitted by:** `batch_transfer`
 **Caller role:** Token holder
 
-| #   | Field             | Soroban Type | Description                   |
-| --- | ----------------- | ------------ | ----------------------------- |
-| 1   | `from`            | `Address`    | Source account                |
-| 2   | `recipient_count` | `u64`        | Number of recipients in batch |
+| #   | Field        | Soroban Type           | Description                        |
+| --- | ------------ | ---------------------- | ---------------------------------- |
+| 1   | `from`       | `Address`              | Source account                     |
+| 2   | `recipients` | `Vec<(Address, i128)>` | List of recipient and amount pairs |
+| 3   | `leg_count`  | `u32`                  | Total number of recipients in batch|
 
 **Backend action:** Record atomic batch settlement; all transfers succeed or all revert.
 

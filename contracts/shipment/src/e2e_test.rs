@@ -1,4 +1,3 @@
-// =============================================================================
 // End-to-End Integration Test: NavinShipment + NavinToken (Real Token Contract)
 //
 // Covers four lifecycle paths, all with real token balance verification:
@@ -8,7 +7,6 @@
 //   4. DEADLINE EXPIRY     — check_deadline auto-cancels and refunds
 //
 // Run: cargo test --lib e2e_test
-// =============================================================================
 
 #![cfg(test)]
 
@@ -22,17 +20,13 @@ use soroban_sdk::{
 };
 use std::string::ToString;
 
-// ---------------------------------------------------------------------------
 // Helper: advance ledger time to bypass min_status_update_interval
-// ---------------------------------------------------------------------------
 fn advance_time(env: &Env, seconds: u64) {
     let current = env.ledger().timestamp();
     env.ledger().set_timestamp(current + seconds);
 }
 
-// ---------------------------------------------------------------------------
 // Helper: deploy + initialise NavinToken, giving admin the initial supply
-// ---------------------------------------------------------------------------
 fn deploy_token<'a>(env: &'a Env, admin: &Address) -> (Address, NavinTokenClient<'a>) {
     let token_id = env.register(NavinToken, ());
     let token = NavinTokenClient::new(env, &token_id);
@@ -45,9 +39,7 @@ fn deploy_token<'a>(env: &'a Env, admin: &Address) -> (Address, NavinTokenClient
     (token_id, token)
 }
 
-// ---------------------------------------------------------------------------
 // Helper: deploy + initialise NavinShipment
-// ---------------------------------------------------------------------------
 fn deploy_shipment<'a>(
     env: &'a Env,
     admin: &Address,
@@ -59,14 +51,11 @@ fn deploy_shipment<'a>(
     client
 }
 
-// ---------------------------------------------------------------------------
 // Helper: 32-byte hash seeded from one byte
-// ---------------------------------------------------------------------------
 fn hash(env: &Env, seed: u8) -> BytesN<32> {
     BytesN::from_array(env, &[seed; 32])
 }
 
-// ---------------------------------------------------------------------------
 // Helper: check whether any emitted event has `name` as its first topic.
 //
 // env.events().all() returns Vec<(Address, Vec<Val>, Val)>:
@@ -77,7 +66,6 @@ fn hash(env: &Env, seed: u8) -> BytesN<32> {
 // The contract always publishes with a single-element tuple topic:
 //   env.events().publish((Symbol::new(env, "foo"),), data)
 // so topics[0] is the Symbol we want to match.
-// ---------------------------------------------------------------------------
 fn has_event(env: &Env, name: &str) -> bool {
     env.events().all().iter().any(|(_contract, topics, _data)| {
         topics.iter().any(|v| {
@@ -120,6 +108,7 @@ fn test_debug_event_structure() {
     shipment.add_carrier(&admin, &carrier);
 
     let deadline = env.ledger().timestamp() + 86_400;
+    crate::test_utils::allow_carrier(&shipment, &company, &carrier);
     shipment.create_shipment(
         &company,
         &receiver,
@@ -129,22 +118,20 @@ fn test_debug_event_structure() {
         &deadline,
     );
 
-    // What does our target symbol look like as a string?
     let target = Symbol::new(&env, "shipment_created");
-    let target_str: std::string::String = target.to_string();
-    std::println!("TARGET string: {target_str:?}");
-
-    // What do the event topic symbols look like as strings?
+    let mut found = false;
     for (_contract, topics, _data) in env.events().all().iter() {
-        for (i, v) in topics.iter().enumerate() {
+        for v in topics.iter() {
             let s = soroban_sdk::Symbol::from_val(&env, &v);
-            let s_str: std::string::String = s.to_string();
-            std::println!("  topic[{i}] string: {s_str:?}");
+            if s == target {
+                found = true;
+                break;
+            }
         }
     }
+    assert!(found, "expected shipment_created event in topics");
 }
 
-// =============================================================================
 // TEST 1 — HAPPY PATH WITH MILESTONE-BASED ESCROW RELEASE
 //
 // Milestone schedule (must sum to exactly 100 when non-empty):
@@ -157,25 +144,24 @@ fn test_debug_event_structure() {
 //   warehouse reached : contract  -300  | carrier   +300
 //   port reached      : contract  -300  | carrier   +600
 //   confirm_delivery  : contract  -400  | carrier  +1000
-// =============================================================================
 #[test]
 fn test_e2e_happy_path_with_milestones_and_token_balances() {
     let (env, admin) = setup_env();
 
-    // ── Actors ────────────────────────────────────────────────────────────────
+    // Actors
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
 
-    // ── Deploy both contracts ──────────────────────────────────────────────────
+    // Deploy both contracts
     let (token_id, token) = deploy_token(&env, &admin);
     let shipment = deploy_shipment(&env, &admin, &token_id);
 
-    // ── Roles ──────────────────────────────────────────────────────────────────
+    // Roles
     shipment.add_company(&admin, &company);
     shipment.add_carrier(&admin, &carrier);
 
-    // ── Fund company ──────────────────────────────────────────────────────────
+    // Fund company
     token.mint(&admin, &company, &10_000_i128);
     assert!(has_event(&env, "mint"), "token mint event");
     assert_eq!(
@@ -185,14 +171,15 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
     );
     assert_eq!(token.balance(&carrier), 0, "carrier starts with 0");
 
-    // ── Milestone schedule: must sum to 100 % ─────────────────────────────────
+    // Milestone schedule: must sum to 100 %
     let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
     milestones.push_back((Symbol::new(&env, "warehouse"), 30_u32));
     milestones.push_back((Symbol::new(&env, "port"), 30_u32));
     milestones.push_back((Symbol::new(&env, "final"), 40_u32));
 
-    // ── Create shipment ───────────────────────────────────────────────────────
+    // Create shipment
     let deadline = env.ledger().timestamp() + 86_400;
+    crate::test_utils::allow_carrier(&shipment, &company, &carrier);
     let shipment_id = shipment.create_shipment(
         &company,
         &receiver,
@@ -211,9 +198,7 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
     assert_eq!(s.status, ShipmentStatus::Created);
     assert_eq!(s.escrow_amount, 0);
 
-    // =========================================================================
     // STEP 1 — Company deposits 1 000 tokens
-    // =========================================================================
     shipment.deposit_escrow(&company, &shipment_id, &1_000_i128);
     assert!(
         has_event(&env, "escrow_deposited"),
@@ -239,9 +224,7 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
     assert_eq!(s.escrow_amount, 1_000);
     assert_eq!(s.total_escrow, 1_000);
 
-    // =========================================================================
     // STEP 2 — Carrier moves to InTransit
-    // =========================================================================
     shipment.update_status(
         &carrier,
         &shipment_id,
@@ -254,9 +237,7 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
         ShipmentStatus::InTransit
     );
 
-    // =========================================================================
     // STEP 3 — "warehouse" milestone → 30 % = 300 tokens released
-    // =========================================================================
     advance_time(&env, 120);
     let _ = env.events().all();
     shipment.record_milestone(
@@ -288,9 +269,7 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
     assert_eq!(shipment.get_shipment(&shipment_id).escrow_amount, 700);
     assert_eq!(shipment.get_shipment(&shipment_id).paid_milestones.len(), 1);
 
-    // =========================================================================
     // STEP 4 — "port" milestone → 30 % = 300 more tokens released
-    // =========================================================================
     advance_time(&env, 120);
     let _ = env.events().all();
     shipment.record_milestone(
@@ -322,9 +301,7 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
     assert_eq!(shipment.get_shipment(&shipment_id).escrow_amount, 400);
     assert_eq!(shipment.get_shipment(&shipment_id).paid_milestones.len(), 2);
 
-    // =========================================================================
     // STEP 5 — Receiver confirms delivery → remaining 400 tokens released
-    // =========================================================================
     let confirmation_hash = hash(&env, 0xEE);
     let _ = env.events().all();
     shipment.confirm_delivery(&receiver, &shipment_id, &confirmation_hash);
@@ -371,9 +348,7 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
     assert_eq!(s.status, ShipmentStatus::Delivered);
     assert_eq!(s.escrow_amount, 0);
 
-    // =========================================================================
     // STEP 6 — Verify delivery proof
-    // =========================================================================
     assert!(
         shipment.verify_delivery_proof(&shipment_id, &confirmation_hash),
         "correct hash must verify"
@@ -382,13 +357,9 @@ fn test_e2e_happy_path_with_milestones_and_token_balances() {
         !shipment.verify_delivery_proof(&shipment_id, &hash(&env, 0xFF)),
         "wrong hash must not verify"
     );
-
-    std::println!("✅ Happy path — all balances and events verified");
 }
 
-// =============================================================================
 // TEST 2 — CANCEL / REFUND PATH
-// =============================================================================
 #[test]
 fn test_e2e_cancel_refund_path_with_token_balances() {
     let (env, admin) = setup_env();
@@ -408,6 +379,7 @@ fn test_e2e_cancel_refund_path_with_token_balances() {
     assert_eq!(token.balance(&company), 5_000);
 
     let deadline = env.ledger().timestamp() + 86_400;
+    crate::test_utils::allow_carrier(&shipment, &company, &carrier);
     let shipment_id = shipment.create_shipment(
         &company,
         &receiver,
@@ -422,9 +394,7 @@ fn test_e2e_cancel_refund_path_with_token_balances() {
         "shipment_created event"
     );
 
-    // =========================================================================
     // STEP 1 — Deposit 2 000 tokens
-    // =========================================================================
     shipment.deposit_escrow(&company, &shipment_id, &2_000_i128);
     assert!(
         has_event(&env, "escrow_deposited"),
@@ -446,9 +416,7 @@ fn test_e2e_cancel_refund_path_with_token_balances() {
     );
     assert_eq!(shipment.get_shipment(&shipment_id).escrow_amount, 2_000);
 
-    // =========================================================================
     // STEP 2 — refund_escrow
-    // =========================================================================
     shipment.refund_escrow(&company, &shipment_id);
     assert!(has_event(&env, "escrow_refunded"), "escrow_refunded event");
     assert!(
@@ -471,13 +439,69 @@ fn test_e2e_cancel_refund_path_with_token_balances() {
     let s = shipment.get_shipment(&shipment_id);
     assert_eq!(s.status, ShipmentStatus::Cancelled);
     assert_eq!(s.escrow_amount, 0);
-
-    std::println!("✅ Cancel/refund path — balances and events verified");
 }
 
-// =============================================================================
 // TEST 3 — PARTIAL MILESTONES THEN CANCEL VIA DEADLINE
-// =============================================================================
+#[test]
+fn test_e2e_cancel_shipment_returns_escrow_to_company() {
+    let (env, admin) = setup_env();
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    let (token_id, token) = deploy_token(&env, &admin);
+    let shipment = deploy_shipment(&env, &admin, &token_id);
+
+    shipment.add_company(&admin, &company);
+    shipment.add_carrier(&admin, &carrier);
+
+    token.mint(&admin, &company, &5_000_i128);
+    let deadline = env.ledger().timestamp() + 86_400;
+    crate::test_utils::allow_carrier(&shipment, &company, &carrier);
+    let shipment_id = shipment.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &hash(&env, 0xB2),
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    shipment.deposit_escrow(&company, &shipment_id, &2_000_i128);
+    assert_eq!(
+        token.balance(&company),
+        3_000,
+        "company has 3k after deposit"
+    );
+    assert_eq!(
+        token.balance(&shipment.address),
+        2_000,
+        "contract holds 2k before cancel"
+    );
+
+    shipment.cancel_shipment(&company, &shipment_id, &hash(&env, 0xB3));
+
+    assert!(
+        has_event(&env, "escrow_refunded"),
+        "cancel_shipment must emit escrow_refunded"
+    );
+    assert_eq!(
+        token.balance(&company),
+        5_000,
+        "company fully refunded after cancel"
+    );
+    assert_eq!(
+        token.balance(&shipment.address),
+        0,
+        "contract returns escrow to company"
+    );
+
+    let state = shipment.get_shipment(&shipment_id);
+    assert_eq!(state.status, ShipmentStatus::Cancelled);
+    assert_eq!(state.escrow_amount, 0);
+}
+
 #[test]
 fn test_e2e_partial_milestones_then_cancel_via_deadline() {
     let (env, admin) = setup_env();
@@ -502,6 +526,7 @@ fn test_e2e_partial_milestones_then_cancel_via_deadline() {
     milestones.push_back((Symbol::new(&env, "rest"), 50_u32));
 
     let deadline = env.ledger().timestamp() + 3_600;
+    crate::test_utils::allow_carrier(&shipment, &company, &carrier);
     let shipment_id = shipment.create_shipment(
         &company,
         &receiver,
@@ -515,7 +540,7 @@ fn test_e2e_partial_milestones_then_cancel_via_deadline() {
         "shipment_created event"
     );
 
-    // ── Deposit 2 000 tokens ──────────────────────────────────────────────────
+    // Deposit 2 000 tokens
     shipment.deposit_escrow(&company, &shipment_id, &2_000_i128);
     assert!(
         has_event(&env, "escrow_deposited"),
@@ -524,7 +549,7 @@ fn test_e2e_partial_milestones_then_cancel_via_deadline() {
     assert_eq!(token.balance(&company), 2_000);
     assert_eq!(token.balance(&shipment.address), 2_000);
 
-    // ── InTransit ─────────────────────────────────────────────────────────────
+    // InTransit
     shipment.update_status(
         &carrier,
         &shipment_id,
@@ -533,7 +558,7 @@ fn test_e2e_partial_milestones_then_cancel_via_deadline() {
     );
     assert!(has_event(&env, "status_updated"), "status_updated event");
 
-    // ── "pickup" milestone → 20 % = 400 tokens ───────────────────────────────
+    // "pickup" milestone → 20 % = 400 tokens
     advance_time(&env, 120);
     shipment.record_milestone(
         &carrier,
@@ -556,7 +581,7 @@ fn test_e2e_partial_milestones_then_cancel_via_deadline() {
         "contract holds 1600"
     );
 
-    // ── "transit" milestone → 30 % = 600 tokens ──────────────────────────────
+    // "transit" milestone → 30 % = 600 tokens
     advance_time(&env, 120);
     shipment.record_milestone(
         &carrier,
@@ -583,7 +608,7 @@ fn test_e2e_partial_milestones_then_cancel_via_deadline() {
         "contract holds 1000 remaining"
     );
 
-    // ── Advance past deadline and trigger permissionless expiry refund ────────
+    // Advance past deadline and trigger permissionless expiry refund
     advance_time(&env, 7_200);
     let _ = env.events().all();
     shipment.check_deadline(&shipment_id);
@@ -592,9 +617,12 @@ fn test_e2e_partial_milestones_then_cancel_via_deadline() {
         deadline_topics,
         std::vec![
             "escrow_refunded".to_string(),
-            "shipment_expired".to_string()
+            "shipment_cancelled".to_string(),
+            "shipment_expired".to_string(),
+            "notification".to_string(),
+            "notification".to_string(),
         ],
-        "deadline expiry must emit refund before expired marker"
+        "deadline expiry must emit refund, cancellation, expired marker, and notifications"
     );
     assert!(
         has_event(&env, "shipment_expired"),
@@ -619,13 +647,9 @@ fn test_e2e_partial_milestones_then_cancel_via_deadline() {
     let s = shipment.get_shipment(&shipment_id);
     assert_eq!(s.status, ShipmentStatus::Cancelled);
     assert_eq!(s.escrow_amount, 0);
-
-    std::println!("✅ Partial milestones + deadline expiry — conservation verified");
 }
 
-// =============================================================================
 // TEST 4 — DEADLINE EXPIRY AUTO-CANCEL AND REFUND
-// =============================================================================
 #[test]
 fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
     let (env, admin) = setup_env();
@@ -645,6 +669,7 @@ fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
     assert_eq!(token.balance(&company), 3_000);
 
     let deadline = env.ledger().timestamp() + 3_600;
+    crate::test_utils::allow_carrier(&shipment, &company, &carrier);
     let shipment_id = shipment.create_shipment(
         &company,
         &receiver,
@@ -658,7 +683,7 @@ fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
         "shipment_created event"
     );
 
-    // ── Deposit 3 000 tokens ──────────────────────────────────────────────────
+    // Deposit 3 000 tokens
     shipment.deposit_escrow(&company, &shipment_id, &3_000_i128);
     assert!(
         has_event(&env, "escrow_deposited"),
@@ -679,10 +704,10 @@ fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
         "contract holds 3000"
     );
 
-    // ── Advance 2 hours past the 1-hour deadline ──────────────────────────────
+    // Advance 2 hours past the 1-hour deadline
     advance_time(&env, 7_200);
 
-    // ── Any caller triggers expiry ────────────────────────────────────────────
+    // Any caller triggers expiry
     let _ = env.events().all();
     shipment.check_deadline(&shipment_id);
     let deadline_topics = contract_event_topics_since(&env, &shipment.address);
@@ -690,7 +715,10 @@ fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
         deadline_topics,
         std::vec![
             "escrow_refunded".to_string(),
-            "shipment_expired".to_string()
+            "shipment_cancelled".to_string(),
+            "shipment_expired".to_string(),
+            "notification".to_string(),
+            "notification".to_string(),
         ],
         "deadline refund and expiry ordering must be deterministic"
     );
@@ -714,8 +742,6 @@ fn test_e2e_deadline_expiry_auto_cancel_and_refund() {
     let s = shipment.get_shipment(&shipment_id);
     assert_eq!(s.status, ShipmentStatus::Cancelled);
     assert_eq!(s.escrow_amount, 0);
-
-    std::println!("✅ Deadline expiry — balances and events verified");
 }
 
 #[test]
@@ -735,6 +761,7 @@ fn test_regression_milestone_release_event_ordering() {
 
     let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
     milestones.push_back((Symbol::new(&env, "pickup"), 100_u32));
+    crate::test_utils::allow_carrier(&shipment, &company, &carrier);
 
     let shipment_id = shipment.create_shipment(
         &company,
@@ -788,6 +815,7 @@ fn test_regression_deadline_refund_event_ordering() {
     shipment.add_company(&admin, &company);
     shipment.add_carrier(&admin, &carrier);
     token.mint(&admin, &company, &2_000_i128);
+    crate::test_utils::allow_carrier(&shipment, &company, &carrier);
 
     let shipment_id = shipment.create_shipment(
         &company,
@@ -808,8 +836,11 @@ fn test_regression_deadline_refund_event_ordering() {
         topics,
         std::vec![
             "escrow_refunded".to_string(),
-            "shipment_expired".to_string()
+            "shipment_cancelled".to_string(),
+            "shipment_expired".to_string(),
+            "notification".to_string(),
+            "notification".to_string(),
         ],
-        "regression guard: refund must be emitted before shipment_expired"
+        "regression guard: refund must be emitted before shipment_cancelled and shipment_expired"
     );
 }

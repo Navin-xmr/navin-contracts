@@ -11,11 +11,11 @@
 //! that the intent is self-documenting and reruns remain deterministic.
 //!
 //! ```text
-//! // ✅ Preferred — intent is clear
+//! // Preferred — intent is clear
 //! test_utils::advance_past_rate_limit(&env);
 //! client.update_status(&carrier, &id, &ShipmentStatus::AtCheckpoint, &h2);
 //!
-//! // ❌ Avoid — magic constant, intent is opaque
+//! // Avoid — magic constant, intent is opaque
 //! env.ledger().with_mut(|l| l.timestamp += 61);
 //! client.update_status(&carrier, &id, &ShipmentStatus::AtCheckpoint, &h2);
 //! ```
@@ -183,6 +183,23 @@ pub fn future_deadline(env: &Env, secs_from_now: u64) -> u64 {
     env.ledger().timestamp() + secs_from_now
 }
 
+/// Grants `carrier` the Carrier role and whitelists it for `company`, as
+/// `create_shipment` requires. Writes storage directly, so it is idempotent,
+/// emits no events and works while paused. No-op when `company == carrier`
+/// so participant-validation tests keep their original roles.
+pub fn allow_carrier(client: &crate::NavinShipmentClient, company: &Address, carrier: &Address) {
+    if company == carrier {
+        return;
+    }
+    let env = &client.env;
+    env.as_contract(&client.address, || {
+        if !crate::storage::has_role(env, carrier, &crate::types::Role::Carrier) {
+            crate::storage::set_carrier_role(env, carrier);
+        }
+        crate::storage::add_carrier_to_whitelist(env, company, carrier);
+    });
+}
+
 /// Normalizes non-deterministic fields in a JSON snapshot.
 #[cfg(any(test, feature = "testutils"))]
 pub fn sanitize_json_snapshot(json: &str) -> std::string::String {
@@ -339,4 +356,69 @@ mod tests {
         assert!(sanitized.contains(r#""address": 0"#));
         assert!(sanitized.contains(r#""nonce": 0"#));
     }
+}
+
+// ── Shared hash and shipment helpers (#1099, #1100) ──────────────────────────
+
+/// Returns a deterministic 32-byte hash seeded from a byte value.
+///
+/// Consolidates the duplicate `make_hash` helpers that were previously
+/// defined in multiple test modules (issue #1100).
+///
+/// # Example
+/// ```text
+/// let h1 = make_hash(&env, 1);
+/// let h2 = make_hash(&env, 2);
+/// assert_ne!(h1, h2);
+/// ```
+pub fn make_hash(env: &Env, seed: u8) -> BytesN<32> {
+    BytesN::from_array(env, &[seed; 32])
+}
+
+/// The upgrade test WASM blob, loaded once and shared (issue #1101).
+///
+/// Previously `include_bytes!("../test_wasms/upgrade_test.wasm")` appeared
+/// 8 times across test files. This constant is the single source.
+///
+/// The WASM is a minimal Soroban contract built with
+/// `stellar contract build --manifest-path test_wasms/upgrade_test/Cargo.toml`.
+pub const UPGRADE_WASM: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+
+/// Creates a test shipment with standard setup (issue #1099).
+///
+/// Consolidates the duplicate `create_test_shipment` / `create_shipment`
+/// helpers that were previously defined in multiple test modules.
+///
+/// Initializes the contract, creates company/carrier/receiver addresses,
+/// and creates a shipment with the given data hash.
+///
+/// # Returns
+/// A tuple of `(shipment_id, company, receiver, carrier)`.
+pub fn create_test_shipment(
+    env: &Env,
+    client: &crate::NavinShipmentClient,
+    admin: &Address,
+    token: &Address,
+) -> (u64, Address, Address, Address) {
+    client.initialize(admin, token);
+
+    let company = Address::generate(env);
+    let receiver = Address::generate(env);
+    let carrier = Address::generate(env);
+    let data_hash = BytesN::from_array(env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.add_company(admin, &company);
+    client.add_carrier(admin, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(env),
+        &deadline,
+    );
+
+    (shipment_id, company, receiver, carrier)
 }

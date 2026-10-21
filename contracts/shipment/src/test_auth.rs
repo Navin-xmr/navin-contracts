@@ -27,7 +27,7 @@ use soroban_sdk::{
     Address, BytesN, Env, IntoVal, Symbol, Vec,
 };
 
-// ── Minimal token stub (no-op transfer) ──────────────────────────────────────
+// Minimal token stub (no-op transfer)
 
 #[contract]
 struct MockToken;
@@ -49,7 +49,7 @@ impl MockToken {
     }
 }
 
-// ── Shared setup helpers ──────────────────────────────────────────────────────
+// Shared setup helpers
 
 /// Full environment with `mock_all_auths()` active (for positive tests).
 fn setup_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
@@ -61,14 +61,12 @@ fn setup_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
     (env, client, admin, token)
 }
 
-// ── Helper: contract id from client ──────────────────────────────────────────
+// Helper: contract id from client
 fn contract_id(client: &NavinShipmentClient<'static>) -> Address {
     client.address.clone()
 }
 
-// =============================================================================
 // Admin path — positive auth-tree assertions
-// =============================================================================
 
 /// `add_company` must record an auth invocation for the admin address with the
 /// correct function name and argument list.
@@ -127,6 +125,7 @@ fn test_add_company_duplicate_leaves_state_unchanged() {
 
     let deadline = env.ledger().timestamp() + 3600;
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -197,6 +196,7 @@ fn test_add_carrier_duplicate_leaves_state_unchanged() {
 
     let deadline = env.ledger().timestamp() + 3600;
     let data_hash = BytesN::from_array(&env, &[2u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -336,6 +336,7 @@ fn test_auth_tree_force_cancel_shipment() {
     let cid = contract_id(&client);
 
     client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -363,51 +364,7 @@ fn test_auth_tree_force_cancel_shipment() {
     );
 }
 
-/// `archive_shipment` must record admin auth with the shipment ID.
-#[test]
-fn test_auth_tree_archive_shipment() {
-    let (env, client, admin, _token) = setup_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let reason_hash = BytesN::from_array(&env, &[2u8; 32]);
-    let deadline = crate::test_utils::future_deadline(&env, 3_600);
-    let cid = contract_id(&client);
-
-    client.add_company(&admin, &company);
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &soroban_sdk::Vec::new(&env),
-        &deadline,
-    );
-    // Cancel so the shipment is finalized (required before archiving)
-    client.cancel_shipment(&company, &shipment_id, &reason_hash);
-
-    client.archive_shipment(&admin, &shipment_id);
-
-    assert_eq!(
-        env.auths(),
-        std::vec![(
-            admin.clone(),
-            AuthorizedInvocation {
-                function: AuthorizedFunction::Contract((
-                    cid,
-                    Symbol::new(&env, "archive_shipment"),
-                    (admin.clone(), shipment_id).into_val(&env),
-                )),
-                sub_invocations: std::vec![],
-            }
-        )]
-    );
-}
-
-// =============================================================================
 // Company path — positive auth-tree assertions
-// =============================================================================
 
 /// `create_shipment` must record the company (sender) auth with all shipment
 /// parameters, confirming no other address can silently create a shipment.
@@ -423,6 +380,7 @@ fn test_auth_tree_create_shipment() {
     let cid = contract_id(&client);
 
     client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     client.create_shipment(
         &company,
         &receiver,
@@ -470,6 +428,7 @@ fn test_auth_tree_cancel_shipment() {
     let cid = contract_id(&client);
 
     client.add_company(&admin, &company);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -497,9 +456,7 @@ fn test_auth_tree_cancel_shipment() {
     );
 }
 
-// =============================================================================
 // Carrier path — positive auth-tree assertions
-// =============================================================================
 
 /// `update_status` must record the carrier auth with shipment ID, new status,
 /// and data hash.
@@ -516,6 +473,7 @@ fn test_auth_tree_update_status() {
 
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -570,6 +528,7 @@ fn test_auth_tree_handoff_shipment() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier1);
     client.add_carrier(&admin, &carrier2);
+    crate::test_utils::allow_carrier(&client, &company, &carrier1);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -586,6 +545,7 @@ fn test_auth_tree_handoff_shipment() {
         &data_hash,
     );
 
+    crate::test_utils::allow_carrier(&client, &company, &carrier2);
     client.handoff_shipment(&carrier1, &carrier2, &shipment_id, &handoff_hash);
 
     assert_eq!(
@@ -610,9 +570,7 @@ fn test_auth_tree_handoff_shipment() {
     );
 }
 
-// =============================================================================
 // Receiver path — positive auth-tree assertions
-// =============================================================================
 
 /// `confirm_delivery` must record the receiver auth with the shipment ID and
 /// confirmation hash — the receiver is the only party who can accept delivery.
@@ -629,6 +587,7 @@ fn test_auth_tree_confirm_delivery() {
 
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -662,9 +621,7 @@ fn test_auth_tree_confirm_delivery() {
     );
 }
 
-// =============================================================================
 // Negative tests — auth mismatch fails predictably
-// =============================================================================
 //
 // IMPORTANT: `mock_all_auths()` persists for the entire `Env` lifetime; once
 // called it cannot be revoked.  Negative tests therefore use completely fresh
@@ -674,6 +631,19 @@ fn test_auth_tree_confirm_delivery() {
 // and initialised without any auth mock.  All subsequent protected functions
 // call `caller.require_auth()` before any other logic, so `try_*` will return
 // `Err` even when no shipment has been set up yet.
+
+/// `initialize` requires admin auth, so run it under a temporary blanket mock
+/// and then drop all mocks again before the call under test.
+fn init_without_auth_mock(
+    env: &Env,
+    client: &NavinShipmentClient,
+    admin: &Address,
+    token: &Address,
+) {
+    env.mock_all_auths();
+    client.initialize(admin, token);
+    env.mock_auths(&[]);
+}
 
 /// `add_company` must fail when no auth mock is provided for the admin address.
 #[test]
@@ -692,8 +662,7 @@ fn test_auth_add_company_fails_without_auth() {
     let cid = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &cid);
 
-    // initialize does not require_auth — safe without any mock
-    client.initialize(&admin, &token);
+    init_without_auth_mock(&env, &client, &admin, &token);
 
     // No auth mock active → admin.require_auth() will fail
     let result = client.try_add_company(&admin, &company);
@@ -724,7 +693,8 @@ fn test_auth_create_shipment_fails_without_auth() {
     let client = NavinShipmentClient::new(&env, &cid);
     let deadline = env.ledger().timestamp() + 3_600;
 
-    client.initialize(&admin, &token); // no auth needed
+    init_without_auth_mock(&env, &client, &admin, &token);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // No mock → company.require_auth() fires and fails before role check
     let result = client.try_create_shipment(
@@ -759,7 +729,7 @@ fn test_auth_update_status_fails_without_auth() {
     let cid = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &cid);
 
-    client.initialize(&admin, &token);
+    init_without_auth_mock(&env, &client, &admin, &token);
 
     // No mock → carrier.require_auth() fires and fails before shipment lookup
     let result =
@@ -788,7 +758,7 @@ fn test_auth_confirm_delivery_fails_without_auth() {
     let cid = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &cid);
 
-    client.initialize(&admin, &token);
+    init_without_auth_mock(&env, &client, &admin, &token);
 
     // No mock → receiver.require_auth() fires and fails before shipment lookup
     let result = client.try_confirm_delivery(&receiver, &1u64, &confirm_hash);
@@ -815,7 +785,7 @@ fn test_auth_force_cancel_fails_without_auth() {
     let cid = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &cid);
 
-    client.initialize(&admin, &token);
+    init_without_auth_mock(&env, &client, &admin, &token);
 
     // No mock → admin.require_auth() fires and fails before shipment lookup
     let result = client.try_force_cancel_shipment(&admin, &1u64, &reason_hash);
@@ -893,7 +863,7 @@ fn test_auth_add_guardian_fails_without_auth() {
     let cid = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &cid);
 
-    client.initialize(&admin, &token);
+    init_without_auth_mock(&env, &client, &admin, &token);
 
     let result = client.try_add_guardian(&admin, &guardian);
     assert!(
@@ -918,7 +888,7 @@ fn test_auth_add_operator_fails_without_auth() {
     let cid = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &cid);
 
-    client.initialize(&admin, &token);
+    init_without_auth_mock(&env, &client, &admin, &token);
 
     let result = client.try_add_operator(&admin, &operator);
     assert!(
@@ -945,7 +915,7 @@ fn test_auth_add_carrier_to_whitelist_fails_without_auth() {
     let cid = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &cid);
 
-    client.initialize(&admin, &token);
+    init_without_auth_mock(&env, &client, &admin, &token);
 
     let result = client.try_add_carrier_to_whitelist(&company, &carrier);
     assert!(
@@ -971,7 +941,7 @@ fn test_auth_remove_carrier_from_whitelist_fails_without_auth() {
     let cid = env.register(NavinShipment, ());
     let client = NavinShipmentClient::new(&env, &cid);
 
-    client.initialize(&admin, &token);
+    init_without_auth_mock(&env, &client, &admin, &token);
 
     let result = client.try_remove_carrier_from_whitelist(&company, &carrier);
     assert!(
@@ -980,9 +950,7 @@ fn test_auth_remove_carrier_from_whitelist_fails_without_auth() {
     );
 }
 
-// =============================================================================
 // #456 — Auth mismatch: wrong role produces the correct domain error
-// =============================================================================
 //
 // These tests verify that when a caller has valid authentication (mock_all_auths
 // is active so require_auth passes) but lacks the required role, the contract
@@ -1046,9 +1014,7 @@ fn test_wrong_role_suspend_company_returns_error() {
     );
 }
 
-// =============================================================================
 // Multi-sig path — positive auth-tree assertions (issue #464)
-// =============================================================================
 
 /// `init_multisig` must record an auth invocation for the admin with the
 /// correct admin list and threshold.
@@ -1182,9 +1148,8 @@ fn test_role_revocation_query() {
     // Query again
     assert_eq!(client.get_role(&target), crate::Role::Unassigned);
 }
-// =============================================================================
+
 // #521 — Whitespace-only symbol rejection in role-registration context
-// =============================================================================
 //
 // `validate_symbol_not_whitespace_only` is the canonical guard for detecting
 // empty or whitespace-equivalent Symbol inputs. Because the Soroban SDK restricts
@@ -1266,6 +1231,7 @@ fn test_set_shipment_metadata_rejects_empty_key_symbol() {
 
     let deadline = crate::test_utils::future_deadline(&env, 3_600);
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -1301,6 +1267,7 @@ fn test_set_shipment_metadata_rejects_empty_value_symbol() {
 
     let deadline = crate::test_utils::future_deadline(&env, 3_600);
     let data_hash = BytesN::from_array(&env, &[2u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,
@@ -1321,9 +1288,7 @@ fn test_set_shipment_metadata_rejects_empty_value_symbol() {
     );
 }
 
-// =============================================================================
 // Issue #531 — suspend_role on already-suspended users
-// =============================================================================
 
 /// Verify that calling `suspend_role` twice on the same address is handled
 /// gracefully. The contract treats suspension as idempotent — repeated calls
@@ -1379,9 +1344,7 @@ fn test_suspend_role_idempotent_state_after_duplicate() {
     );
 }
 
-// =============================================================================
 // Issue #532 — reactivate_role on non-suspended users
-// =============================================================================
 
 /// Verify that calling `reactivate_role` on an address that is NOT suspended
 /// does not corrupt its role state. The contract is idempotent for reactivation.

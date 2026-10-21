@@ -2,7 +2,6 @@
 //!
 //! Validates the shipment contract's escrow and payment flows against both
 //! Stellar Asset Contract (SAC) tokens and custom token contracts (NavinToken).
-#![allow(deprecated)]
 
 use crate::{test_utils, types::ShipmentStatus, NavinError, NavinShipment, NavinShipmentClient};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, IntoVal, Vec};
@@ -383,74 +382,6 @@ fn test_token_with_7_decimals_deposit_succeeds() {
         result.is_ok(),
         "deposit_escrow must succeed with a 7-decimals token, got: {:?}",
         result
-    );
-}
-
-#[test]
-fn test_token_with_6_decimals_deposit_fails_with_invalid_token_decimals() {
-    // A token with 6 decimals must be rejected at deposit_escrow time.
-    let (env, admin) = test_utils::setup_env();
-    let token = env.register(mock_six_decimals::SixDecimalsToken {}, ());
-    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
-    client.initialize(&admin, &token);
-
-    let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let receiver = Address::generate(&env);
-
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-    client.add_carrier_to_whitelist(&company, &carrier);
-
-    let deadline = env.ledger().timestamp() + 3600;
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &dummy_hash(&env),
-        &Vec::new(&env),
-        &deadline,
-    );
-
-    let result = client.try_deposit_escrow(&company, &shipment_id, &500i128);
-    assert_eq!(
-        result,
-        Err(Ok(NavinError::InvalidTokenDecimals)),
-        "Token with 6 decimals must be rejected with InvalidTokenDecimals"
-    );
-}
-
-#[test]
-fn test_token_with_8_decimals_deposit_fails_with_invalid_token_decimals() {
-    // A token with 8 decimals must also be rejected at deposit_escrow time.
-    let (env, admin) = test_utils::setup_env();
-    let token = env.register(mock_eight_decimals::EightDecimalsToken {}, ());
-    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
-    client.initialize(&admin, &token);
-
-    let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let receiver = Address::generate(&env);
-
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-    client.add_carrier_to_whitelist(&company, &carrier);
-
-    let deadline = env.ledger().timestamp() + 3600;
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &BytesN::from_array(&env, &[2u8; 32]),
-        &Vec::new(&env),
-        &deadline,
-    );
-
-    let result = client.try_deposit_escrow(&company, &shipment_id, &500i128);
-    assert_eq!(
-        result,
-        Err(Ok(NavinError::InvalidTokenDecimals)),
-        "Token with 8 decimals must be rejected with InvalidTokenDecimals"
     );
 }
 

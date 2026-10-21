@@ -78,16 +78,18 @@ pub fn check_shipment_invariants(env: &Env, shipment_id: u64) -> Vec<Consistency
     };
 
     // Escrow: struct field must match dedicated storage entry.
-    let stored_escrow = storage::get_escrow(env, shipment_id);
-    if shipment.escrow_amount != stored_escrow {
+    if storage::has_escrow_mismatch(env, shipment_id, shipment.escrow_amount) {
         violations.push_back(ConsistencyViolation::EscrowMismatch(shipment_id));
     }
 
     // Finalization: finalized shipments must be terminal with zero escrow.
+    // Terminal set includes PartiallyRefunded (issue #783) — all three share escrow==0 finalization semantics.
     if shipment.finalized {
         let is_terminal = matches!(
             shipment.status,
-            ShipmentStatus::Delivered | ShipmentStatus::Cancelled
+            ShipmentStatus::Delivered
+                | ShipmentStatus::Cancelled
+                | ShipmentStatus::PartiallyRefunded
         );
         if !is_terminal || shipment.escrow_amount != 0 {
             violations.push_back(ConsistencyViolation::InvalidFinalization(shipment_id));
@@ -184,13 +186,13 @@ pub fn check_batch_consistency(env: &Env, ids: &Vec<u64>) -> Vec<ConsistencyViol
 /// * `env` - Execution environment.
 /// * `start_id` - First shipment ID to include (1-indexed, inclusive).
 /// * `end_id` - Last shipment ID to include (inclusive); clamped to the total count.
-fn check_status_count_consistency_range(
+pub fn check_status_count_consistency_range(
     env: &Env,
     start_id: u64,
     end_id: u64,
 ) -> Vec<ConsistencyViolation> {
     let mut violations: Vec<ConsistencyViolation> = Vec::new(env);
-    let total = storage::get_shipment_count(env);
+    let total = storage::get_shipment_counter(env);
 
     if start_id == 0 || start_id > total {
         return violations;
@@ -239,14 +241,25 @@ fn check_status_count_consistency_range(
 /// shipments in each status. Returns `StatusCountMismatch` if any counter
 /// has drifted.
 ///
-/// This performs a full O(n) scan and is intended only for admin/operator use.
-/// For budget-safe checks prefer `check_all_consistency` (capped) or
-/// `check_all_consistency_range` (paginated).
+/// This is now a budget-bounded wrapper: if the shipment count exceeds
+/// `DEFAULT_CONSISTENCY_SAMPLE_LIMIT`, the scan is capped to that limit and
+/// delegated to `check_status_count_consistency_range`. For a guaranteed
+/// full-set audit, use the paginated `check_all_consistency_range` or
+/// `check_status_count_consistency_range` with explicit paging until the full
+/// range has been covered. This ensures the previously unbounded public entry
+/// point remains reachable without risking Soroban budget exhaustion.
 ///
 /// # Arguments
 /// * `env` - Execution environment.
 pub fn check_status_count_consistency(env: &Env) -> Vec<ConsistencyViolation> {
     let total = storage::get_shipment_count(env);
+    if total > DEFAULT_CONSISTENCY_SAMPLE_LIMIT {
+        // Bounded scan for budget safety; StatusCountMismatch is only reported
+        // when the scanned window is the full set, so a capped partial scan
+        // will not produce false positives. Callers needing a definitive
+        // full-set verification should paginate via `check_all_consistency_range`.
+        return check_status_count_consistency_range(env, 1, DEFAULT_CONSISTENCY_SAMPLE_LIMIT);
+    }
     check_status_count_consistency_range(env, 1, total)
 }
 

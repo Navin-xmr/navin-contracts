@@ -50,6 +50,7 @@ mod tests {
 
         client.add_company(admin, &company);
         client.add_carrier(admin, &carrier);
+        crate::test_utils::allow_carrier(client, &company, &carrier);
 
         let shipment_id = client.create_shipment(
             &company,
@@ -183,6 +184,7 @@ mod tests {
         let new_hash = BytesN::from_array(&env, &[0x44u8; 32]);
         let new_deadline = test_utils::future_deadline(&env, 3600);
         let new_receiver = Address::generate(&env);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let result = client.try_create_shipment(
             &company,
             &new_receiver,
@@ -277,6 +279,7 @@ mod tests {
         client.reactivate_company(&admin, &company);
         let new_hash2 = BytesN::from_array(&env, &[0x88u8; 32]);
         let deadline2 = test_utils::future_deadline(&env, 3600);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let result = client.try_create_shipment(
             &company,
             &receiver,
@@ -545,6 +548,56 @@ mod tests {
         assert!(
             result_exit.is_err(),
             "suspended carrier must not report ZoneExit"
+        );
+    }
+
+    // ── Issue #1039 — single carrier suspension mechanism ──────────────────────
+
+    /// `suspend_role` on a carrier shares the same flag as `suspend_carrier`,
+    /// so `is_carrier_suspended` reflects it and carrier-gated calls fail with
+    /// `CarrierSuspended` rather than a generic `Unauthorized`.
+    #[test]
+    fn issue_1039_suspend_role_on_carrier_surfaces_carrier_suspended() {
+        let (env, client, admin) = setup();
+        let (_, _, carrier, shipment_id, _) = create_in_transit_shipment(&env, &client, &admin);
+
+        client.suspend_role(&admin, &carrier);
+        assert!(client.is_carrier_suspended(&carrier));
+
+        test_utils::advance_past_rate_limit(&env);
+        let update_hash = BytesN::from_array(&env, &[0xB1u8; 32]);
+        let result = client.try_update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::AtCheckpoint,
+            &update_hash,
+        );
+        assert_eq!(result, Err(Ok(crate::NavinError::CarrierSuspended)));
+    }
+
+    /// Reactivating via either entry point clears the single shared flag.
+    #[test]
+    fn issue_1039_reactivate_role_clears_suspend_carrier() {
+        let (env, client, admin) = setup();
+        let (_, _, carrier, shipment_id, _) = create_in_transit_shipment(&env, &client, &admin);
+
+        client.suspend_carrier(&admin, &carrier);
+        assert!(client.is_carrier_suspended(&carrier));
+
+        client.reactivate_role(&admin, &carrier);
+        assert!(!client.is_carrier_suspended(&carrier));
+
+        test_utils::advance_past_rate_limit(&env);
+        let update_hash = BytesN::from_array(&env, &[0xB2u8; 32]);
+        let result = client.try_update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::AtCheckpoint,
+            &update_hash,
+        );
+        assert!(
+            result.is_ok(),
+            "carrier reactivated via reactivate_role must be able to update status"
         );
     }
 }

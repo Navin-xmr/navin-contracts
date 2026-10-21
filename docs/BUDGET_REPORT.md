@@ -18,6 +18,9 @@ cargo test --package shipment budget_bench -- --nocapture 2>&1 \
 The test suite writes one `[budget]` line per operation to stdout.
 Redirect output and paste the table below.
 
+CI enforces the same thresholds automatically via `cargo test --package shipment budget_bench -- --nocapture`.
+Any operation that regresses by more than 20% for either CPU or memory fails the job; a 10% drift prints a review warning and should be triaged before merge.
+
 ---
 
 ## Baseline figures
@@ -95,11 +98,11 @@ Re-run and commit an updated table:
 
 ## Schema compatibility
 
-Schema compatibility tests live in
-[`contracts/shipment/src/schema_compat.rs`](../contracts/shipment/src/schema_compat.rs).
+Schema compatibility expectations are covered by the checked-in preservation
+tests in [`contracts/shipment/src/preservation_property_tests.rs`](../contracts/shipment/src/preservation_property_tests.rs).
 
 They guard:
-- `NavinError` discriminant values (31 variants, codes 1–31)
+- `NavinError` discriminant values (71 variants, codes 1–71)
 - `ShipmentStatus` FSM transition table
 - All enum variant sets (`Role`, `BreachType`, `GeofenceEvent`, `DisputeResolution`, `NotificationType`, `AdminAction`)
 - Struct field names and types (`Shipment`, `ShipmentInput`, `ContractMetadata`, `Analytics`)

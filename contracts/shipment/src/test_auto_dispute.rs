@@ -44,34 +44,8 @@ fn enable_auto_dispute(client: &NavinShipmentClient, admin: &Address) {
 }
 
 /// Create a shipment and return its ID. Carrier is registered as a carrier role.
-fn create_test_shipment(
-    env: &Env,
-    client: &NavinShipmentClient,
-    admin: &Address,
-    token: &Address,
-) -> (u64, Address, Address, Address) {
-    client.initialize(admin, token);
-
-    let company = Address::generate(env);
-    let receiver = Address::generate(env);
-    let carrier = Address::generate(env);
-    let data_hash = BytesN::from_array(env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.add_company(admin, &company);
-    client.add_carrier(admin, &carrier);
-
-    let id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &soroban_sdk::Vec::new(env),
-        &deadline,
-    );
-
-    (id, company, receiver, carrier)
-}
+// Consolidated to test_utils::create_test_shipment (#1099)
+    use crate::test_utils::create_test_shipment;
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

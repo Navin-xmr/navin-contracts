@@ -1,6 +1,4 @@
-#![cfg(test)]
-
-use crate::test::*;
+use crate::test_helpers::*;
 use crate::test_utils::dummy_hash;
 use crate::types::*;
 use soroban_sdk::testutils::Address as _;
@@ -16,6 +14,7 @@ fn test_settlement_state_transitions_validation() {
 
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -49,6 +48,7 @@ fn test_settlement_timestamps() {
 
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -84,6 +84,7 @@ fn test_settlement_addresses() {
 
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -122,6 +123,7 @@ fn test_settlement_counter_increments() {
 
     // Initial count should be 0
     assert_eq!(client.get_settlement_count(), 0);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -151,6 +153,7 @@ fn test_settlement_ids_unique_and_sequential() {
 
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -200,6 +203,7 @@ fn test_cannot_cancel_completed_settlement() {
 
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -239,6 +243,7 @@ fn test_release_settlement_record() {
 
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -439,6 +444,7 @@ fn test_failed_operation_rollback() {
 
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,

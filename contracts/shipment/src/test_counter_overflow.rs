@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 extern crate std;
 
 use crate::{types::DataKey, NavinError, NavinShipment, NavinShipmentClient};
@@ -58,6 +56,7 @@ fn test_shipment_counter_increments() {
     // Initial counter should be 0
     let initial = client.get_shipment_counter();
     assert_eq!(initial, 0);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // Create first shipment
     let id_1 = client.create_shipment(
@@ -75,6 +74,7 @@ fn test_shipment_counter_increments() {
         counter_after_1, 1,
         "Counter should be 1 after first shipment"
     );
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // Create second shipment
     let id_2 = client.create_shipment(
@@ -102,6 +102,7 @@ fn test_shipment_counter_near_max_boundary() {
     let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
     let data_hash = BytesN::from_array(&env, &[1u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // We simulate near-overflow by examining what happens at the boundary
     // In production, counters should reject operations that would overflow
@@ -137,6 +138,7 @@ fn test_shipment_counter_overflow_rejected_at_max() {
     });
 
     env.mock_all_auths();
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let result = client.try_create_shipment(
         &company,
         &receiver,
@@ -179,6 +181,7 @@ fn test_shipment_counter_integrity_multiple_creates() {
 
     // Create 5 shipments and verify counter consistency
     for i in 1..=5 {
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let shipment_id = client.create_shipment(
             &company,
             &receiver,
@@ -204,6 +207,7 @@ fn test_shipment_ids_are_unique_and_sequential() {
     let mut ids = Vec::<u64>::new(&env);
 
     for i in 0..10 {
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let id = client.create_shipment(
             &company,
             &receiver,
@@ -236,6 +240,7 @@ fn test_shipment_ids_are_unique_and_sequential() {
 fn test_shipment_counter_persists_across_calls() {
     let (env, client, _admin, company, receiver, carrier) = setup_counter_env();
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // Create first shipment
     let id_1 = client.create_shipment(
@@ -256,6 +261,7 @@ fn test_shipment_counter_persists_across_calls() {
         "Counter should be consistent"
     );
     assert_eq!(counter_check_1, id_1, "Counter should match last ID");
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // Create another shipment and verify increment
     let id_2 = client.create_shipment(
@@ -286,6 +292,7 @@ fn test_counter_overflow_uses_checked_arithmetic() {
     // and confirming the counter stays in bounds.
 
     for i in 1..=20 {
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let _shipment_id = client.create_shipment(
             &company,
             &receiver,
@@ -322,6 +329,7 @@ fn test_settlement_counter_increments_on_sequential_refunds() {
     let deadline = env.ledger().timestamp() + 3600;
 
     for i in 1u8..=5 {
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let shipment_id = client.create_shipment(
             &company,
             &receiver,
@@ -357,6 +365,7 @@ fn test_settlement_counter_near_max_boundary_safe() {
             .instance()
             .set(&crate::types::DataKey::ShipmentCount, &(u64::MAX - 1));
     });
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     // Attempting one creation at MAX-1 might succeed with counter = MAX,
     // or may return CounterOverflow if the guard fires early.
@@ -400,6 +409,7 @@ fn test_settlement_counter_at_max_always_fails() {
             .instance()
             .set(&crate::types::DataKey::ShipmentCount, &u64::MAX);
     });
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let result = client.try_create_shipment(
         &company,

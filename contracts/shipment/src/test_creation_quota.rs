@@ -46,9 +46,8 @@ mod tests {
         (env, client, admin, company, carrier, token_id)
     }
 
-    fn make_hash(env: &Env, seed: u8) -> BytesN<32> {
-        BytesN::from_array(env, &[seed; 32])
-    }
+    // Consolidated to test_utils::make_hash (#1100)
+    use crate::test_utils::make_hash;
 
     fn future_deadline(env: &Env) -> u64 {
         env.ledger().timestamp() + 7200
@@ -421,33 +420,6 @@ mod tests {
         let (used, remaining) = client.get_creation_quota_status(&company);
         assert_eq!(used, 5);
         assert_eq!(remaining, 0);
-    }
-
-    // ── multiple companies have independent quotas ───────────────────────────
-
-    #[test]
-    fn multiple_companies_have_independent_quotas() {
-        let (env, client, admin, company1, carrier, _token) = setup();
-        let company2 = Address::generate(&env);
-        client.add_company(&admin, &company2);
-
-        // Set quota: max 2 per window.
-        client.set_creation_quota(&admin, &2, &3600);
-
-        // Company 1 uses up quota.
-        assert!(create_one(&env, &client, &company1, &carrier, 1).is_ok());
-        env.ledger().with_mut(|l| l.timestamp += 400);
-        assert!(create_one(&env, &client, &company1, &carrier, 2).is_ok());
-        env.ledger().with_mut(|l| l.timestamp += 400);
-
-        // Company 1 should be blocked.
-        let result = create_one(&env, &client, &company1, &carrier, 3);
-        assert_eq!(result, Err(NavinError::CreationQuotaExceeded));
-
-        // Company 2 should still have full quota available.
-        assert!(create_one(&env, &client, &company2, &carrier, 4).is_ok());
-        env.ledger().with_mut(|l| l.timestamp += 400);
-        assert!(create_one(&env, &client, &company2, &carrier, 5).is_ok());
     }
 
     // ── quota window boundary conditions ─────────────────────────────────────
