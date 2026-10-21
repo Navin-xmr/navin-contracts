@@ -10,11 +10,11 @@
 extern crate std;
 
 use crate::event_topics::{self, EVENT_SCHEMA_VERSION};
-use crate::{NavinShipmentNft, NavinShipmentNftClient};
+use crate::{test_receivers::AcceptingReceiver, NavinShipmentNft, NavinShipmentNftClient};
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Events as _, Ledger as _},
-    vec, Address, Env, IntoVal, Symbol, Val, Vec,
+    vec, Address, Env, IntoVal, String, Symbol, Val, Vec,
 };
 
 const TIMESTAMP: u64 = 1_700_000_000;
@@ -26,7 +26,11 @@ fn setup() -> (Env, Address, NavinShipmentNftClient<'static>) {
     let contract_id = env.register(NavinShipmentNft, ());
     let client = NavinShipmentNftClient::new(&env, &contract_id);
     env.mock_all_auths();
-    client.initialize(&admin, &symbol_short!("NavinNFT"), &symbol_short!("NNFT"));
+    client.initialize(
+        &admin,
+        &String::from_str(&env, "NavinNFT"),
+        &String::from_str(&env, "NNFT"),
+    );
     (env, admin, client)
 }
 
@@ -80,8 +84,8 @@ fn test_initialize_emits_versioned_event() {
                 topics(&env, event_topics::INIT),
                 (
                     admin,
-                    symbol_short!("NavinNFT"),
-                    symbol_short!("NNFT"),
+                    String::from_str(&env, "NavinNFT"),
+                    String::from_str(&env, "NNFT"),
                     TIMESTAMP
                 )
                     .into_val(&env),
@@ -130,7 +134,7 @@ fn test_mint_emits_event() {
 fn test_transfer_emits_event() {
     let (env, _admin, client) = setup();
     let alice = Address::generate(&env);
-    let bob = Address::generate(&env);
+    let bob = env.register(AcceptingReceiver, ());
     client.mint(&alice, &1);
     client.transfer(&alice, &bob, &1, &Vec::new(&env));
 
@@ -217,7 +221,8 @@ fn test_self_transfer_emits_noop_event() {
 fn test_transfer_admin_emits_event() {
     let (env, admin, client) = setup();
     let new_admin = Address::generate(&env);
-    client.transfer_admin(&admin, &new_admin);
+    client.propose_admin_transfer(&new_admin);
+    client.accept_admin_transfer();
 
     let event = last_event(&env, &client.address);
     assert_eq!(
@@ -227,6 +232,26 @@ fn test_transfer_admin_emits_event() {
             (
                 client.address.clone(),
                 topics(&env, event_topics::ADMIN_TRANSFER),
+                (admin, new_admin, TIMESTAMP).into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_admin_proposal_emits_event() {
+    let (env, admin, client) = setup();
+    let new_admin = Address::generate(&env);
+    client.propose_admin_transfer(&new_admin);
+
+    let event = last_event(&env, &client.address);
+    assert_eq!(
+        vec![&env, event],
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                topics(&env, event_topics::ADMIN_PROPOSED),
                 (admin, new_admin, TIMESTAMP).into_val(&env),
             ),
         ]

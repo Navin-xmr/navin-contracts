@@ -22,7 +22,7 @@ use shipment::{NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Ledger as _},
-    Address, BytesN, Env, Vec,
+    Address, BytesN, Env, String, Vec,
 };
 
 // ── Mock token ───────────────────────────────────────────────────────────────
@@ -153,8 +153,8 @@ fn setup() -> Ctx {
     let nft = NavinShipmentNftClient::new(&env, &env.register(NavinShipmentNft, ()));
     nft.initialize(
         &nft_admin,
-        &symbol_short!("NavinPOD"),
-        &symbol_short!("NPOD"),
+        &String::from_str(&env, "NavinPOD"),
+        &String::from_str(&env, "NPOD"),
     );
 
     Ctx {
