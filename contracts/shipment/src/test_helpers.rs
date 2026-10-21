@@ -138,7 +138,6 @@ pub fn setup_initialized_shipment_env_with_failing_token(
     (env, client, admin, token_contract)
 }
 
-
 /// Create a shipment and patch its status directly in contract storage to
 /// simulate a mid-lifecycle state. Returns (receiver, carrier, shipment_id).
 pub fn setup_shipment_with_status(

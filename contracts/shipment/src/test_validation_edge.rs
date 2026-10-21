@@ -4,7 +4,6 @@ extern crate std;
 
 use super::test_helpers::*;
 
-
 #[test]
 #[should_panic(expected = "Error(Contract, #59)")]
 fn test_create_shipment_zero_percentage_milestone_rejected() {
@@ -230,7 +229,6 @@ fn test_data_hash_mismatch_error_code_is_45() {
         "DataHashMismatch discriminant must be 45"
     );
 }
-
 
 /// assert_delivery_hash returns ShipmentNotFound for a non-existent shipment.
 #[test]

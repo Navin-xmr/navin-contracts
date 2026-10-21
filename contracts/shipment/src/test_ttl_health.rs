@@ -23,7 +23,6 @@ impl TtlMockToken {
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
 }
 
-
 fn create_test_shipment(
     client: &NavinShipmentClient,
     env: &Env,

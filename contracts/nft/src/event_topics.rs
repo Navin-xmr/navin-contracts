@@ -52,10 +52,22 @@ pub const MINT: Symbol = symbol_short!("mint");
 /// Token burned. Payload: `(token_id, caller, timestamp)`.
 pub const BURN: Symbol = symbol_short!("burn");
 
+/// Batch of tokens minted. Payload: `(token_ids, recipients, timestamp)`.
+pub const MINT_BATCH: Symbol = symbol_short!("mintbatch");
+
+/// Batch of tokens burned. Payload: `(token_ids, caller, timestamp)`.
+pub const BURN_BATCH: Symbol = symbol_short!("burnbatch");
+
 // ── Transfers ────────────────────────────────────────────────────────────────
 
 /// Token transferred. Payload: `(token_id, from, to, timestamp)`.
 pub const TRANSFER: Symbol = symbol_short!("xfer");
+
+/// Token operator approved. Payload: `(owner, operator, token_id, expiration_ledger, timestamp)`.
+pub const APPROVAL: Symbol = symbol_short!("approve");
+
+/// Token operator approval revoked. Payload: `(owner, operator, token_id, timestamp)`.
+pub const APPROVAL_REVOKED: Symbol = symbol_short!("revoked");
 
 // ── Admin ────────────────────────────────────────────────────────────────────
 
