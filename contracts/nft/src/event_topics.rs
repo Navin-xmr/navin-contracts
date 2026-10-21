@@ -59,5 +59,8 @@ pub const TRANSFER: Symbol = symbol_short!("xfer");
 
 // ── Admin ────────────────────────────────────────────────────────────────────
 
+/// Admin transfer proposed. Payload: `(admin, proposed_admin, timestamp)`.
+pub const ADMIN_PROPOSED: Symbol = symbol_short!("admp");
+
 /// Admin role transferred. Payload: `(old_admin, new_admin, timestamp)`.
 pub const ADMIN_TRANSFER: Symbol = symbol_short!("admin");
