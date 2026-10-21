@@ -57,6 +57,40 @@ fn authorize_mint(
     }]);
 }
 
+fn authorize_approve_burn(
+    env: &Env,
+    client: &NavinShipmentNftClient<'static>,
+    owner: &Address,
+    token_id: u64,
+) {
+    env.mock_auths(&[MockAuth {
+        address: owner,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "approve_burn",
+            args: (token_id,).into_val(env),
+            sub_invokes: &[],
+        },
+    }]);
+}
+
+fn authorize_burn(
+    env: &Env,
+    client: &NavinShipmentNftClient<'static>,
+    caller: &Address,
+    token_id: u64,
+) {
+    env.mock_auths(&[MockAuth {
+        address: caller,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "burn",
+            args: (caller.clone(), token_id).into_val(env),
+            sub_invokes: &[],
+        },
+    }]);
+}
+
 #[test]
 fn test_mint_by_non_admin_fails() {
     let (env, _admin, client) = setup_strict();
@@ -202,11 +236,19 @@ fn test_transfer_requires_owner_auth() {
         invoke: &MockAuthInvoke {
             contract: &client.address,
             fn_name: "transfer",
-            args: (alice.clone(), bob.clone(), 1_u64).into_val(&env),
+            args: (
+                alice.clone(),
+                bob.clone(),
+                1_u64,
+                Vec::<soroban_sdk::Val>::new(&env),
+            )
+                .into_val(&env),
             sub_invokes: &[],
         },
     }]);
-    assert!(client.try_transfer(&alice, &bob, &1).is_err());
+    assert!(client
+        .try_transfer(&alice, &bob, &1, &Vec::new(&env))
+        .is_err());
     assert_eq!(client.owner_of(&1), alice);
 
     // Alice signing succeeds.
@@ -215,11 +257,17 @@ fn test_transfer_requires_owner_auth() {
         invoke: &MockAuthInvoke {
             contract: &client.address,
             fn_name: "transfer",
-            args: (alice.clone(), bob.clone(), 1_u64).into_val(&env),
+            args: (
+                alice.clone(),
+                bob.clone(),
+                1_u64,
+                Vec::<soroban_sdk::Val>::new(&env),
+            )
+                .into_val(&env),
             sub_invokes: &[],
         },
     }]);
-    client.transfer(&alice, &bob, &1);
+    client.transfer(&alice, &bob, &1, &Vec::new(&env));
     assert_eq!(client.owner_of(&1), bob);
 }
 
@@ -227,37 +275,49 @@ fn test_transfer_requires_owner_auth() {
 fn test_burn_requires_caller_auth() {
     let (env, admin, client) = setup_strict();
     let owner = Address::generate(&env);
+    let stranger = Address::generate(&env);
 
     authorize_mint(&env, &client, &admin, &owner, 1);
     client.mint(&owner, &1);
 
-    env.mock_auths(&[MockAuth {
-        address: &owner,
-        invoke: &MockAuthInvoke {
-            contract: &client.address,
-            fn_name: "approve_burn",
-            args: (1_u64,).into_val(&env),
-            sub_invokes: &[],
-        },
-    }]);
+    authorize_approve_burn(&env, &client, &owner, 1);
     client.approve_burn(&1);
 
-    // Without the owner's signature the burn must fail.
+    // An unrelated caller cannot burn by supplying its address without signing.
     env.mock_auths(&[]);
-    assert!(client.try_burn(&owner, &1).is_err());
+    assert!(client.try_burn(&stranger, &1).is_err());
+    assert_eq!(client.owner_of(&1), owner);
     assert_eq!(client.total_supply(), 1);
+}
 
-    env.mock_auths(&[MockAuth {
-        address: &owner,
-        invoke: &MockAuthInvoke {
-            contract: &client.address,
-            fn_name: "burn",
-            args: (owner.clone(), 1_u64).into_val(&env),
-            sub_invokes: &[],
-        },
-    }]);
+#[test]
+fn test_burn_by_owner_succeeds() {
+    let (env, admin, client) = setup_strict();
+    let owner = Address::generate(&env);
+
+    authorize_mint(&env, &client, &admin, &owner, 1);
+    client.mint(&owner, &1);
+    authorize_approve_burn(&env, &client, &owner, 1);
+    client.approve_burn(&1);
+
+    authorize_burn(&env, &client, &owner, 1);
     client.burn(&owner, &1);
     assert_eq!(client.total_supply(), 0);
+    assert_eq!(client.balance_of(&owner), 0);
+}
+
+#[test]
+fn test_burn_by_admin_succeeds() {
+    let (env, admin, client) = setup_strict();
+    let owner = Address::generate(&env);
+
+    authorize_mint(&env, &client, &admin, &owner, 1);
+    client.mint(&owner, &1);
+
+    authorize_burn(&env, &client, &admin, 1);
+    client.burn(&admin, &1);
+    assert_eq!(client.total_supply(), 0);
+    assert_eq!(client.balance_of(&owner), 0);
 }
 
 #[test]
