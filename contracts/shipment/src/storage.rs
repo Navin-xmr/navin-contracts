@@ -409,7 +409,6 @@ pub fn has_company_role(env: &Env, address: &Address) -> bool {
 /// ```rust
 /// // let is_carrier = storage::has_carrier_role(&env, &addr);
 /// ```
-#[allow(dead_code)]
 pub fn has_carrier_role(env: &Env, address: &Address) -> bool {
     has_role(env, address, &Role::Carrier)
 }
