@@ -3,8 +3,8 @@
 pub mod event_topics;
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, vec, Address, Env, Symbol,
-    Vec,
+    contract, contracterror, contractimpl, contracttype, symbol_short, vec, Address, Env, IntoVal,
+    Symbol, Val, Vec,
 };
 
 // ── Storage Keys ────────────────────────────────────────────────────────────
@@ -37,6 +37,7 @@ pub enum NftError {
     ContractPaused = 8,
     InvalidNameOrSymbol = 9,
     BurnNotApproved = 10,
+    TransferRejected = 11,
 }
 
 // ── TTL ─────────────────────────────────────────────────────────────────────
@@ -140,7 +141,18 @@ impl NavinShipmentNft {
         Ok(token_id)
     }
 
-    pub fn transfer(env: Env, from: Address, to: Address, token_id: u64) -> Result<(), NftError> {
+    /// Transfers a token and invokes the receiver interface for contract recipients.
+    ///
+    /// Contract recipients must return `true` from `supports_nft_receiver()` and
+    /// successfully handle `on_nft_received(from, token_id, data)`, or the transfer
+    /// fails with `NftError::TransferRejected`. Account recipients are not called.
+    pub fn transfer(
+        env: Env,
+        from: Address,
+        to: Address,
+        token_id: u64,
+        data: Vec<Val>,
+    ) -> Result<(), NftError> {
         Self::require_not_paused(&env)?;
         from.require_auth();
 
@@ -161,6 +173,27 @@ impl NavinShipmentNft {
         Self::remove_token_from_owner(&env, &from, token_id);
         Self::add_token_to_owner(&env, &to, token_id);
 
+        if Self::is_contract_address(&to) {
+            let supports_receiver = env.try_invoke_contract::<bool, soroban_sdk::Error>(
+                &to,
+                &Symbol::new(&env, "supports_nft_receiver"),
+                Vec::new(&env),
+            );
+            if !matches!(supports_receiver, Ok(Ok(true))) {
+                return Err(NftError::TransferRejected);
+            }
+
+            let callback_args: Vec<Val> = (from.clone(), token_id, data).into_val(&env);
+            let callback_result = env.try_invoke_contract::<(), soroban_sdk::Error>(
+                &to,
+                &Symbol::new(&env, "on_nft_received"),
+                callback_args,
+            );
+            if !matches!(callback_result, Ok(Ok(()))) {
+                return Err(NftError::TransferRejected);
+            }
+        }
+
         env.events().publish(
             (event_topics::TRANSFER, event_topics::EVENT_SCHEMA_VERSION),
             (token_id, from.clone(), to.clone(), env.ledger().timestamp()),
@@ -170,6 +203,13 @@ impl NavinShipmentNft {
         Self::extend_persistent_ttl(&env, &from);
         Self::extend_persistent_ttl(&env, &to);
         Ok(())
+    }
+
+    fn is_contract_address(address: &Address) -> bool {
+        // Soroban StrKeys use `C` for contracts and `G` for accounts.
+        let mut strkey = [0_u8; 56];
+        address.to_string().copy_into_slice(&mut strkey);
+        strkey[0] == b'C'
     }
 
     pub fn burn(env: Env, caller: Address, token_id: u64) -> Result<(), NftError> {
@@ -404,7 +444,54 @@ mod test_utils;
 mod tests {
     extern crate std;
     use super::*;
-    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::{contract, contractimpl, contracttype, testutils::Address as _};
+
+    #[contract]
+    struct NftReceiver;
+
+    #[contracttype]
+    enum ReceiverKey {
+        LastReceivedToken,
+        LastReceivedData,
+    }
+
+    #[contractimpl]
+    impl NftReceiver {
+        pub fn supports_nft_receiver(_env: Env) -> bool {
+            true
+        }
+
+        pub fn on_nft_received(env: Env, _from: Address, token_id: u64, data: Vec<Val>) {
+            env.storage()
+                .instance()
+                .set(&ReceiverKey::LastReceivedToken, &token_id);
+            env.storage()
+                .instance()
+                .set(&ReceiverKey::LastReceivedData, &data);
+        }
+
+        pub fn last_received_token(env: Env) -> u64 {
+            env.storage()
+                .instance()
+                .get(&ReceiverKey::LastReceivedToken)
+                .unwrap_or(0)
+        }
+
+        pub fn last_received_data(env: Env) -> Vec<Val> {
+            env.storage()
+                .instance()
+                .get(&ReceiverKey::LastReceivedData)
+                .unwrap_or_else(|| Vec::new(&env))
+        }
+    }
+
+    #[contract]
+    struct NonReceiver;
+
+    #[contractimpl]
+    impl NonReceiver {
+        pub fn noop(_env: Env) {}
+    }
 
     fn setup() -> (Env, Address, NavinShipmentNftClient<'static>) {
         let (env, admin) = test_utils::setup_env();
@@ -468,7 +555,7 @@ mod tests {
         let alice = Address::generate(&env);
         let bob = Address::generate(&env);
         client.mint(&alice, &1);
-        client.transfer(&alice, &bob, &1);
+        client.transfer(&alice, &bob, &1, &Vec::new(&env));
         assert_eq!(client.owner_of(&1), bob);
         assert_eq!(client.balance_of(&alice), 0);
         assert_eq!(client.balance_of(&bob), 1);
@@ -480,8 +567,36 @@ mod tests {
         let alice = Address::generate(&env);
         let bob = Address::generate(&env);
         client.mint(&alice, &1);
-        let result = client.try_transfer(&bob, &alice, &1);
+        let result = client.try_transfer(&bob, &alice, &1, &Vec::new(&env));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_transfer_to_contract_with_callback() {
+        let (env, _admin, client) = setup();
+        let owner = Address::generate(&env);
+        let receiver_id = env.register(NftReceiver, ());
+        let receiver = NftReceiverClient::new(&env, &receiver_id);
+        client.mint(&owner, &1);
+
+        let data = vec![&env, 7_u32.into_val(&env)];
+        client.transfer(&owner, &receiver_id, &1, &data);
+
+        assert_eq!(client.owner_of(&1), receiver_id);
+        assert_eq!(receiver.last_received_token(), 1);
+        assert_eq!(receiver.last_received_data(), data);
+    }
+
+    #[test]
+    fn test_transfer_to_contract_without_callback() {
+        let (env, _admin, client) = setup();
+        let owner = Address::generate(&env);
+        let receiver_id = env.register(NonReceiver, ());
+        client.mint(&owner, &1);
+
+        let result = client.try_transfer(&owner, &receiver_id, &1, &Vec::new(&env));
+        assert_eq!(result, Err(Ok(NftError::TransferRejected)));
+        assert_eq!(client.owner_of(&1), owner);
     }
 
     #[test]
@@ -625,7 +740,7 @@ mod tests {
         let bob = Address::generate(&env);
         client.mint(&alice, &1);
         client.mint(&alice, &2);
-        client.transfer(&alice, &bob, &1);
+        client.transfer(&alice, &bob, &1, &Vec::new(&env));
         assert_eq!(client.tokens_of_owner(&alice), vec![&env, 2_u64]);
         assert_eq!(client.tokens_of_owner(&bob), vec![&env, 1_u64]);
     }
@@ -657,12 +772,12 @@ mod tests {
         let (env, _admin, client) = setup();
         let alice = Address::generate(&env);
         client.mint(&alice, &1);
-        client.transfer(&alice, &alice, &1);
+        client.transfer(&alice, &alice, &1, &Vec::new(&env));
         assert_eq!(client.owner_of(&1), alice);
     }
 
     #[test]
-    fn test_initialize_empty_name_or_symbol_fails() {
+    fn test_initialize_with_empty_name_fails() {
         let env = Env::default();
         let admin = Address::generate(&env);
         let contract_id = env.register(NavinShipmentNft, ());
@@ -671,8 +786,17 @@ mod tests {
 
         let res1 = client.try_initialize(&admin, &symbol_short!(""), &symbol_short!("NNFT"));
         assert_eq!(res1, Err(Ok(NftError::InvalidNameOrSymbol)));
+    }
 
-        let res2 = client.try_initialize(&admin, &symbol_short!("NavinNFT"), &symbol_short!(""));
-        assert_eq!(res2, Err(Ok(NftError::InvalidNameOrSymbol)));
+    #[test]
+    fn test_initialize_with_empty_symbol_fails() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let contract_id = env.register(NavinShipmentNft, ());
+        let client = NavinShipmentNftClient::new(&env, &contract_id);
+        env.mock_all_auths();
+
+        let result = client.try_initialize(&admin, &symbol_short!("NavinNFT"), &symbol_short!(""));
+        assert_eq!(result, Err(Ok(NftError::InvalidNameOrSymbol)));
     }
 }

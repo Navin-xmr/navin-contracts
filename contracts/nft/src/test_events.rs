@@ -132,7 +132,7 @@ fn test_transfer_emits_event() {
     let alice = Address::generate(&env);
     let bob = Address::generate(&env);
     client.mint(&alice, &1);
-    client.transfer(&alice, &bob, &1);
+    client.transfer(&alice, &bob, &1, &Vec::new(&env));
 
     let event = last_event(&env, &client.address);
     assert_eq!(
@@ -201,7 +201,7 @@ fn test_self_transfer_emits_noop_event() {
     let (env, _admin, client) = setup();
     let alice = Address::generate(&env);
     client.mint(&alice, &1);
-    client.transfer(&alice, &alice, &1);
+    client.transfer(&alice, &alice, &1, &Vec::new(&env));
 
     // Self-transfer is a no-op and, matching token contract semantics,
     // must NOT publish a transfer event.
