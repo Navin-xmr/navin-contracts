@@ -26,6 +26,9 @@ In today's supply chain ecosystem, transparency and accountability are critical.
 
 This repository contains Soroban smart contracts for the Navin platform:
 
+- `contracts/nft`: Proof-of-delivery NFT contract with admin-configurable base
+  metadata URIs and per-token URI overrides.
+
 ```text
 .
 ├── contracts
@@ -37,12 +40,18 @@ This repository contains Soroban smart contracts for the Navin platform:
 │   │   │   ├── types.rs    # Domain models and storage keys
 │   │   │   └── test.rs     # Contract tests
 │   │   └── Cargo.toml
-│   └── token               # Payment token contract
+│   ├── token               # Payment token contract
+│   │   ├── src
+│   │   │   ├── lib.rs      # Token entrypoints
+│   │   │   ├── storage.rs  # Balance and allowance storage
+│   │   │   ├── types.rs    # Token types
+│   │   │   └── test.rs     # Token tests
+│   │   └── Cargo.toml
+│   └── nft                 # Proof-of-delivery NFT contract
 │       ├── src
-│       │   ├── lib.rs      # Token entrypoints
-│       │   ├── storage.rs  # Balance and allowance storage
-│       │   ├── types.rs    # Token types
-│       │   └── test.rs     # Token tests
+│       │   ├── lib.rs      # NFT minting and metadata URI entrypoints
+│       │   ├── storage.rs  # Ownership and metadata URI storage
+│       │   └── test.rs     # NFT tests
 │       └── Cargo.toml
 ├── Cargo.toml              # Workspace configuration
 ├── Makefile                # Build and test commands
