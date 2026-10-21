@@ -20,7 +20,7 @@ use shipment::{NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Ledger as _},
-    Address, BytesN, Env, Vec,
+    Address, BytesN, Env, String, Vec,
 };
 
 // ── Mock token ───────────────────────────────────────────────────────────────
