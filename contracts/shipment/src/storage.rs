@@ -184,7 +184,6 @@ pub fn set_shipment_counter(env: &Env, counter: u64) {
 /// ```rust
 /// // let count = storage::get_shipment_count(&env);
 /// ```
-#[allow(dead_code)]
 pub fn get_shipment_count(env: &Env) -> u64 {
     get_shipment_counter(env)
 }
@@ -393,7 +392,6 @@ pub fn is_role_suspended(env: &Env, address: &Address, role: &Role) -> bool {
 }
 
 /// Check whether an address has Company role (legacy compatibility)
-#[allow(dead_code)]
 pub fn has_company_role(env: &Env, address: &Address) -> bool {
     has_role(env, address, &Role::Company)
 }

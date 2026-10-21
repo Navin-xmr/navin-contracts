@@ -1,13 +1,14 @@
 #![no_std]
 
-pub mod event_topics;
+extern crate alloc;
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, vec, Address, Env, IntoVal,
     Symbol, Val, Vec,
 };
 
-// ── Storage Keys ────────────────────────────────────────────────────────────
+mod errors;
+mod storage;
 
 #[contracttype]
 enum NftKey {
@@ -42,103 +43,21 @@ pub enum NftError {
 
 // ── TTL ─────────────────────────────────────────────────────────────────────
 
-/// Ledgers remaining before a TTL bump kicks in (~1 day).
-const TTL_THRESHOLD: u32 = 17_280;
-
-/// Ledgers to extend by once the threshold is hit (~30 days).
-const TTL_EXTENSION: u32 = 518_400;
-
-// ── Contract ────────────────────────────────────────────────────────────────
+#[cfg(any(test, feature = "testutils"))]
+pub mod test_utils;
 
 #[contract]
-pub struct NavinShipmentNft;
+pub struct NavinNft;
 
 #[contractimpl]
-impl NavinShipmentNft {
-    /// Extend instance storage TTL to prevent premature contract expiration
-    fn extend_instance_ttl(env: &Env) {
-        env.storage()
-            .instance()
-            .extend_ttl(TTL_THRESHOLD, TTL_EXTENSION);
-    }
-
-    /// Extend persistent storage TTL for a specific owner's token list
-    fn extend_persistent_ttl(env: &Env, owner: &Address) {
-        let key = NftKey::OwnerTokens(owner.clone());
-        if env.storage().persistent().has(&key) {
-            env.storage()
-                .persistent()
-                .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTENSION);
-        }
-    }
-
-    pub fn initialize(
-        env: Env,
-        admin: Address,
-        name: Symbol,
-        symbol: Symbol,
-    ) -> Result<(), NftError> {
-        admin.require_auth();
-
-        if env.storage().instance().has(&NftKey::Initialized) {
+impl NavinNft {
+    pub fn initialize(env: Env, admin: Address) -> Result<(), NftError> {
+        if storage::is_initialized(&env) {
             return Err(NftError::AlreadyInitialized);
         }
-        if name == symbol_short!("") || symbol == symbol_short!("") {
-            return Err(NftError::InvalidNameOrSymbol);
-        }
-        env.storage().instance().set(&NftKey::Admin, &admin);
-        env.storage().instance().set(&NftKey::Name, &name);
-        env.storage().instance().set(&NftKey::Symbol, &symbol);
-        env.storage().instance().set(&NftKey::TokenCount, &0_u64);
-        env.storage().instance().set(&NftKey::Initialized, &true);
-        env.events().publish(
-            (event_topics::INIT, event_topics::EVENT_SCHEMA_VERSION),
-            (admin, name, symbol, env.ledger().timestamp()),
-        );
-        Self::extend_instance_ttl(&env);
+
+        storage::set_admin(&env, &admin);
         Ok(())
-    }
-
-    /// Mint `token_id` to `to`.
-    ///
-    /// Re-minting after burn: `burn` removes the `Owner(token_id)` entry, so a
-    /// burned `token_id` counts as unminted and may be minted again (by the
-    /// admin). This is intentional — only a *currently owned* id is rejected
-    /// with `TokenAlreadyMinted`.
-    pub fn mint(env: Env, to: Address, token_id: u64) -> Result<u64, NftError> {
-        Self::require_not_paused(&env)?;
-        Self::require_admin(&env)?;
-
-        if to == env.current_contract_address() {
-            return Err(NftError::MintToContract);
-        }
-
-        if env.storage().persistent().has(&NftKey::Owner(token_id)) {
-            return Err(NftError::TokenAlreadyMinted);
-        }
-
-        env.storage()
-            .persistent()
-            .set(&NftKey::Owner(token_id), &to);
-
-        Self::add_token_to_owner(&env, &to, token_id);
-
-        let count: u64 = env
-            .storage()
-            .instance()
-            .get(&NftKey::TokenCount)
-            .unwrap_or(0);
-        env.storage()
-            .instance()
-            .set(&NftKey::TokenCount, &(count + 1));
-
-        env.events().publish(
-            (event_topics::MINT, event_topics::EVENT_SCHEMA_VERSION),
-            (token_id, to.clone(), env.ledger().timestamp()),
-        );
-        Self::extend_instance_ttl(&env);
-        Self::extend_persistent_ttl(&env, &to);
-        Ok(token_id)
     }
 
     /// Transfers a token and invokes the receiver interface for contract recipients.
@@ -160,10 +79,8 @@ impl NavinShipmentNft {
         if owner != from {
             return Err(NftError::NotOwner);
         }
-
-        if to == from {
-            Self::extend_instance_ttl(&env);
-            return Ok(());
+        if admin != storage::get_admin(&env) {
+            return Err(NftError::Unauthorized);
         }
 
         env.storage()
@@ -222,215 +139,61 @@ impl NavinShipmentNft {
         if caller != owner && caller != admin {
             return Err(NftError::NotOwner);
         }
-
-        // Check if burn is approved (unless caller is admin)
-        if caller != admin {
-            let burn_approved = env
-                .storage()
-                .persistent()
-                .get(&NftKey::BurnApproved(token_id))
-                .unwrap_or(false);
-            if !burn_approved {
-                return Err(NftError::BurnNotApproved);
-            }
+        if admin != storage::get_admin(&env) {
+            return Err(NftError::Unauthorized);
+        }
+        if storage::get_owner(&env, token_id).is_some() {
+            return Err(NftError::AlreadyMinted);
+        }
+        if metadata_uri.is_none() && storage::get_base_uri(&env).is_none() {
+            return Err(NftError::BaseUriNotSet);
         }
 
-        env.storage().persistent().remove(&NftKey::Owner(token_id));
-        env.storage()
-            .persistent()
-            .remove(&NftKey::BurnApproved(token_id));
-        Self::remove_token_from_owner(&env, &owner, token_id);
-
-        let count: u64 = env
-            .storage()
-            .instance()
-            .get(&NftKey::TokenCount)
-            .unwrap_or(0);
-        if count > 0 {
-            env.storage()
-                .instance()
-                .set(&NftKey::TokenCount, &(count - 1));
-        }
-
-        env.events().publish(
-            (event_topics::BURN, event_topics::EVENT_SCHEMA_VERSION),
-            (token_id, caller, env.ledger().timestamp()),
-        );
-        Self::extend_instance_ttl(&env);
-        Ok(())
-    }
-
-    pub fn transfer_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), NftError> {
         admin.require_auth();
-        if Self::get_admin_inner(&env)? != admin {
-            return Err(NftError::NotAdmin);
+        storage::set_owner(&env, token_id, &to);
+        if let Some(uri) = metadata_uri {
+            storage::set_metadata_uri(&env, token_id, &uri);
         }
-
-        env.storage().instance().set(&NftKey::Admin, &new_admin);
-        env.events().publish(
-            (
-                event_topics::ADMIN_TRANSFER,
-                event_topics::EVENT_SCHEMA_VERSION,
-            ),
-            (admin, new_admin, env.ledger().timestamp()),
-        );
-        Self::extend_instance_ttl(&env);
         Ok(())
-    }
-
-    pub fn pause(env: Env, admin: Address) -> Result<(), NftError> {
-        admin.require_auth();
-        if Self::get_admin_inner(&env)? != admin {
-            return Err(NftError::NotAdmin);
-        }
-        env.storage().instance().set(&NftKey::Paused, &true);
-        Self::extend_instance_ttl(&env);
-        Ok(())
-    }
-
-    pub fn unpause(env: Env, admin: Address) -> Result<(), NftError> {
-        admin.require_auth();
-        if Self::get_admin_inner(&env)? != admin {
-            return Err(NftError::NotAdmin);
-        }
-        env.storage().instance().set(&NftKey::Paused, &false);
-        Self::extend_instance_ttl(&env);
-        Ok(())
-    }
-
-    pub fn approve_burn(env: Env, token_id: u64) -> Result<(), NftError> {
-        let owner = Self::get_owner_inner(&env, token_id)?;
-        owner.require_auth();
-
-        env.storage()
-            .persistent()
-            .set(&NftKey::BurnApproved(token_id), &true);
-        Self::extend_instance_ttl(&env);
-        Self::extend_persistent_ttl(&env, &owner);
-        Ok(())
-    }
-
-    pub fn is_burn_approved(env: Env, token_id: u64) -> bool {
-        Self::extend_instance_ttl(&env);
-        env.storage()
-            .persistent()
-            .get(&NftKey::BurnApproved(token_id))
-            .unwrap_or(false)
     }
 
     pub fn owner_of(env: Env, token_id: u64) -> Result<Address, NftError> {
-        Self::extend_instance_ttl(&env);
-        Self::get_owner_inner(&env, token_id)
+        storage::get_owner(&env, token_id).ok_or(NftError::TokenNotFound)
     }
 
-    pub fn balance_of(env: Env, owner: Address) -> u64 {
-        Self::tokens_of_owner(env, owner).len() as u64
-    }
-
-    pub fn tokens_of_owner(env: Env, owner: Address) -> Vec<u64> {
-        Self::extend_instance_ttl(&env);
-        Self::extend_persistent_ttl(&env, &owner);
-        env.storage()
-            .persistent()
-            .get(&NftKey::OwnerTokens(owner))
-            .unwrap_or_else(|| vec![&env])
-    }
-
-    pub fn total_supply(env: Env) -> u64 {
-        Self::extend_instance_ttl(&env);
-        env.storage()
-            .instance()
-            .get(&NftKey::TokenCount)
-            .unwrap_or(0)
-    }
-
-    pub fn name(env: Env) -> Result<Symbol, NftError> {
-        Self::extend_instance_ttl(&env);
-        env.storage()
-            .instance()
-            .get(&NftKey::Name)
-            .ok_or(NftError::NotInitialized)
-    }
-
-    pub fn nft_symbol(env: Env) -> Result<Symbol, NftError> {
-        Self::extend_instance_ttl(&env);
-        env.storage()
-            .instance()
-            .get(&NftKey::Symbol)
-            .ok_or(NftError::NotInitialized)
-    }
-
-    pub fn get_admin(env: Env) -> Result<Address, NftError> {
-        Self::extend_instance_ttl(&env);
-        Self::get_admin_inner(&env)
-    }
-
-    fn get_owner_inner(env: &Env, token_id: u64) -> Result<Address, NftError> {
-        env.storage()
-            .persistent()
-            .get(&NftKey::Owner(token_id))
-            .ok_or(NftError::TokenDoesNotExist)
-    }
-
-    fn get_admin_inner(env: &Env) -> Result<Address, NftError> {
-        env.storage()
-            .instance()
-            .get(&NftKey::Admin)
-            .ok_or(NftError::NotInitialized)
-    }
-
-    fn require_admin(env: &Env) -> Result<Address, NftError> {
-        let admin = Self::get_admin_inner(env)?;
-        admin.require_auth();
-        Ok(admin)
-    }
-
-    fn require_not_paused(env: &Env) -> Result<(), NftError> {
-        if env
-            .storage()
-            .instance()
-            .get(&NftKey::Paused)
-            .unwrap_or(false)
-        {
-            return Err(NftError::ContractPaused);
+    pub fn get_token_uri(env: Env, token_id: u64) -> Result<String, NftError> {
+        if storage::get_owner(&env, token_id).is_none() {
+            return Err(NftError::TokenNotFound);
         }
-        Ok(())
-    }
 
-    fn add_token_to_owner(env: &Env, owner: &Address, token_id: u64) {
-        let mut tokens: Vec<u64> = env
-            .storage()
-            .persistent()
-            .get(&NftKey::OwnerTokens(owner.clone()))
-            .unwrap_or_else(|| vec![env]);
-        tokens.push_back(token_id);
-        env.storage()
-            .persistent()
-            .set(&NftKey::OwnerTokens(owner.clone()), &tokens);
-    }
-
-    fn remove_token_from_owner(env: &Env, owner: &Address, token_id: u64) {
-        let tokens: Vec<u64> = env
-            .storage()
-            .persistent()
-            .get(&NftKey::OwnerTokens(owner.clone()))
-            .unwrap_or_else(|| vec![env]);
-        let mut new_tokens: Vec<u64> = vec![env];
-        for id in tokens.iter() {
-            if id != token_id {
-                new_tokens.push_back(id);
-            }
+        if let Some(uri) = storage::get_metadata_uri(&env, token_id) {
+            return Ok(uri);
         }
-        if new_tokens.is_empty() {
-            env.storage()
-                .persistent()
-                .remove(&NftKey::OwnerTokens(owner.clone()));
-        } else {
-            env.storage()
-                .persistent()
-                .set(&NftKey::OwnerTokens(owner.clone()), &new_tokens);
+
+        let base_uri = storage::get_base_uri(&env).ok_or(NftError::BaseUriNotSet)?;
+        Ok(append_token_id(&env, &base_uri, token_id))
+    }
+}
+
+fn append_token_id(env: &Env, base_uri: &String, token_id: u64) -> String {
+    let mut digits = [0u8; 20];
+    let mut value = token_id;
+    let mut start = digits.len();
+
+    loop {
+        start -= 1;
+        digits[start] = b'0' + (value % 10) as u8;
+        value /= 10;
+        if value == 0 {
+            break;
         }
     }
+
+    let mut uri = Vec::with_capacity(base_uri.len() as usize + digits.len() - start);
+    uri.resize(base_uri.len() as usize, 0);
+    base_uri.copy_into_slice(&mut uri);
+    uri.extend_from_slice(&digits[start..]);
+    String::from_bytes(env, &uri)
 }
 
 #[cfg(test)]
