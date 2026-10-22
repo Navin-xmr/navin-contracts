@@ -13,6 +13,9 @@ Complete guide for integrating the Navin shipment tracking smart contract with y
 7. [Event Listening](#event-listening)
 8. [Transaction Verification](#transaction-verification)
 9. [Complete Examples](#complete-examples)
+10. [Best Practices](#best-practices)
+11. [Error Code Mapping](#error-code-mapping)
+12. [Testing](#testing)
 
 ## Contract Schema (ABI)
 
