@@ -4,6 +4,15 @@
 
 This document describes the preflight helper system that gates state-changing (mutating) endpoints when target shipment data is unavailable due to archival or state expiration.
 
+> **Scope note:** this is an on-chain Rust guard (`preflight_check_shipment_available`)
+> that runs inside the contract on every real invocation. For client-side
+> transaction simulation — using `stellar contract invoke` or RPC
+> `simulateTransaction` to preview a call's outcome before submitting it,
+> without spending fees or touching ledger state — see
+> [`docs/simulation.md`](simulation.md) instead. The two are complementary,
+> not duplicates: simulation can surface the `ShipmentUnavailable` error
+> this helper raises, but only this on-chain check actually enforces it.
+
 ## Problem Statement
 
 The Navin shipment contract uses a two-tier storage model:
