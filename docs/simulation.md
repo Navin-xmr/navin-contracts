@@ -4,6 +4,16 @@ Simulate Navin Shipment contract calls to estimate success/failure and resource
 usage **before** submitting real transactions. No ledger state is modified and
 no fees are charged during simulation.
 
+> **Scope note:** this is client-side simulation — `stellar contract invoke`
+> (or an RPC `simulateTransaction` call) running the contract off-chain
+> against current ledger state to preview the outcome. It is unrelated to
+> the on-chain `preflight_check_shipment_available` guard described in
+> [`docs/preflight-helpers.md`](preflight-helpers.md), which runs inside the
+> contract itself on every real invocation to reject mutations on archived
+> shipment data. Simulation can surface the same `ShipmentUnavailable`
+> error the preflight helper would raise on submission, but it does not
+> replace or duplicate that on-chain check.
+
 ---
 
 ## Why simulate?
