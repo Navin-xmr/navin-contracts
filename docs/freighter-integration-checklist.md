@@ -111,7 +111,7 @@ After a transaction lands, verify on-chain state before updating UI:
 - [ ] **Match event topic** against the expected action (e.g. `shipment_created`, `status_updated`)
 - [ ] **Verify data hash**: recompute `SHA-256` of your off-chain payload and compare against the `data_hash` field in the event
 
-See [`contracts/shipment/docs/FRONTEND_VERIFICATION.md`](../contracts/shipment/docs/FRONTEND_VERIFICATION.md) for the full event verification procedure and sample RPC traces.
+See [`docs/FRONTEND_VERIFICATION.md`](FRONTEND_VERIFICATION.md) for the full event verification procedure and sample RPC traces.
 
 ---
 

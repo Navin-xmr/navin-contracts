@@ -161,16 +161,11 @@ git push origin issue#<number>
 
 ## Pre-PR Checklist
 
-Before submitting your PR, ensure you've completed ALL of these steps:
-
-- [ ] Code is formatted with `cargo fmt`
-- [ ] No clippy warnings: `cargo clippy --all-targets --all-features -- -D warnings`
-- [ ] All tests pass: `cargo test`
-- [ ] WASM builds successfully: `make build`
-- [ ] New tests added for new functionality
-- [ ] Old tests previously passing before you added changes still pass
-- [ ] Documentation updated (if applicable)
-- [ ] Branch is up to date with `main` or `dev`
+Before submitting your PR, complete the full checklist in
+[`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) — it is pre-filled into
+every new PR description and is the single source of truth for what must pass before merge
+(formatting, clippy, tests, WASM build, and the rest of the "Before Submitting" and "CI
+Requirements" items).
 
 ## CI/CD Requirements
 

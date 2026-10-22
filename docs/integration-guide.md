@@ -96,7 +96,7 @@ This ensures the schema file stays in sync with the contract code on every PR. I
 
 Use `docs/event_schemas.md` as the central JSON-schema-like reference for emitted event payloads and field ordering.
 
-For quick contract client call examples, see [Client Examples](docs/client-examples.md).
+For quick contract client call examples, see [Client Examples](client-examples.md).
 
 Indexer conformance fixtures are validated by tests in:
 
