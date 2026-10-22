@@ -26,37 +26,30 @@ In today's supply chain ecosystem, transparency and accountability are critical.
 
 This repository contains Soroban smart contracts for the Navin platform:
 
-- `contracts/nft`: Proof-of-delivery NFT contract with admin-configurable base
-  metadata URIs and per-token URI overrides.
-
 ```text
 .
 ├── contracts
-│   ├── nft                 # Shipment-asset NFT contract scaffold
+│   ├── nft                 # Shipment-asset NFT contract
 │   │   ├── src
-│   │   │   └── lib.rs      # NFT minting, transfer, and ownership logic
+│   │   │   ├── lib.rs      # Minting, transfer, burn, and metadata entrypoints
+│   │   │   ├── storage.rs  # Ownership and metadata URI storage
+│   │   │   ├── errors.rs   # Contract error enum
+│   │   │   └── event_topics.rs # Event topic constants
 │   │   └── Cargo.toml
 │   ├── shipment            # Core logistics and escrow contract
-│   │   ├── src
-│   │   │   ├── lib.rs      # Main shipment logic
-│   │   │   ├── storage.rs  # Data persistence helpers
-│   │   │   ├── events.rs   # Hash-and-Emit event publishing
-│   │   │   ├── types.rs    # Domain models and storage keys
-│   │   │   └── test.rs     # Contract tests
+│   │   ├── src             # Entry points plus the test_*.rs regression suites
+│   │   ├── tests           # Cross-contract integration tests
+│   │   ├── docs            # Contract-specific reference documents
 │   │   └── Cargo.toml
-│   ├── token               # Payment token contract
-│   │   ├── src
-│   │   │   ├── lib.rs      # Token entrypoints
-│   │   │   ├── storage.rs  # Balance and allowance storage
-│   │   │   ├── types.rs    # Token types
-│   │   │   └── test.rs     # Token tests
-│   │   └── Cargo.toml
-│   └── nft                 # Proof-of-delivery NFT contract
+│   └── token               # Payment token contract
 │       ├── src
-│       │   ├── lib.rs      # NFT minting and metadata URI entrypoints
-│       │   ├── storage.rs  # Ownership and metadata URI storage
-│       │   └── test.rs     # NFT tests
+│       │   ├── lib.rs      # Token entrypoints
+│       │   ├── storage.rs  # Balance and allowance storage
+│       │   ├── types.rs    # Token types
+│       │   └── test.rs     # Token tests
 │       └── Cargo.toml
+├── docs                    # Architecture, ABI, event, and operations guides
+├── scripts                 # Build, deploy, simulate, and release scripts
 ├── Cargo.toml              # Workspace configuration
 ├── Makefile                # Build and test commands
 ├── CONTRIBUTING.md         # Contribution guidelines
@@ -67,23 +60,22 @@ This repository contains Soroban smart contracts for the Navin platform:
 
 The repository contains three smart contracts located under `contracts/`:
 
-- **`contracts/shipment`**: Core logistics and escrow contract managing shipment lifecycle, delivery tracking, and state persistence. See tests in [`contracts/shipment/src/test.rs`](contracts/shipment/src/test.rs) and state docs in [`contracts/shipment/docs/`](contracts/shipment/docs/).
+- **`contracts/shipment`**: Core logistics and escrow contract managing the shipment lifecycle, delivery tracking, escrow, and role-based access control. See the contract entry points in [`contracts/shipment/src/lib.rs`](contracts/shipment/src/lib.rs), the regression suites in [`contracts/shipment/src/`](contracts/shipment/src/), the cross-contract integration test in [`contracts/shipment/tests/test_nft_proof_of_delivery_integration.rs`](contracts/shipment/tests/test_nft_proof_of_delivery_integration.rs), and the contract reference documents in [`contracts/shipment/docs/`](contracts/shipment/docs/).
 - **`contracts/token`**: Fungible payment token contract providing balance tracking, transfer allowances, and batch transfer events. See tests in [`contracts/token/src/test.rs`](contracts/token/src/test.rs) and event docs in [`docs/events.md`](docs/events.md).
-- **`contracts/nft`**: Shipment-asset NFT scaffold contract implementing unique digital asset minting, ownership, transfer, and burning logic. See contract implementation and tests in [`contracts/nft/src/lib.rs`](contracts/nft/src/lib.rs).
-
+- **`contracts/nft`**: Shipment-asset NFT contract implementing unique digital asset minting, ownership, transfer, approval, and burning logic. See the contract implementation in [`contracts/nft/src/lib.rs`](contracts/nft/src/lib.rs) and its test suites in [`contracts/nft/src/`](contracts/nft/src/).
 
 ## Quick Start
 
 ### Prerequisites
 
 - [Rust](https://www.rust-lang.org/tools/install) (latest stable)
-- [Stellar CLI](https://developers.stellar.org/docs/build/smart-contracts/getting-started/setup)
+- [Stellar CLI](https://developers.stellar.org/docs/build/smart-contracts/getting-started/setup) (only needed for schema generation and local networks)
 - Make (optional, for convenience commands)
 
 ### Installation
 
 ```bash
-# Fork  the repository
+# Fork the repository
 # Then clone your fork into your local environment
 git clone https://github.com/yourusername/navin-contracts.git
 cd navin-contracts
@@ -95,6 +87,7 @@ rustup target add wasm32-unknown-unknown
 ### Build
 
 ```bash
+# Build every contract for wasm32-unknown-unknown in release mode
 make build
 ```
 
@@ -114,27 +107,14 @@ cargo test
 # Format code
 make fmt
 
-```
-
-```
-# OR
-cargo fmt
-```
-
-```
-# Check formatting
+# Check formatting (CI)
 make fmt-check
 
-```
-
-```
-# OR
-cargo check --all
-```
-
-```
 # Run clippy lints
 make lint
+
+# Format check + clippy in one go (CI)
+make check
 ```
 
 ## Development
@@ -155,11 +135,28 @@ For detailed contribution guidelines, please see [CONTRIBUTING.md](CONTRIBUTING.
    make test
    ```
 
-3. Deploy to local network:
+3. Run the full check suite (format check, clippy, tests, and build):
 
    ```bash
-   make deploy-local
+   make all
    ```
+
+### Additional Make Targets
+
+| Target | Purpose | Requirements |
+|---|---|---|
+| `make help` | List every available target | — |
+| `make build` | Build all contracts for wasm32 | `wasm32-unknown-unknown` target |
+| `make test` | Run the workspace test suite | — |
+| `make coverage` | Line-coverage report in `target/llvm-cov/` | `cargo install cargo-llvm-cov` |
+| `make fmt` / `make fmt-check` | Format code / verify formatting | — |
+| `make lint` | Run clippy over all targets and features | — |
+| `make check` | `fmt-check` + `lint` | — |
+| `make all` | `check` + `test` + `build` | — |
+| `make clean` | Remove build artifacts | — |
+| `make generate-schema-shipment` | Write `docs/contract-schema.shipment.json` | Stellar CLI |
+| `make generate-schema-token` | Write `docs/contract-schema.token.json` | Stellar CLI |
+| `make generate-schema-nft` | Write `docs/contract-schema.nft.json` | Stellar CLI |
 
 ## Deployment
 
@@ -180,39 +177,27 @@ make build
 
 ## Documentation
 
+### Architecture and Contract Reference
+
+- **[Integration Guide](docs/integration-guide.md)** - Contract ABI, event payload schemas, and the [architecture overview](docs/integration-guide.md#architecture-overview)
+- **[Storage Layout](docs/storage.md)** - On-chain storage keys of the shipment contract
+- **[Storage Key Registry](docs/storage-key-registry.md)** - Versioned registry of every storage key group
+- **[Event Schema Reference](docs/events.md)** - Canonical event payloads and the `schema_version` policy
+- **[Event Payload Schemas](docs/event_schemas.md)** - Conformance fixtures for the shipment event families
+- **[Contract Package Versioning](docs/versioning.md)** - Why every contract crate stays at `version = "0.0.0"`, and which mechanisms to version instead
+- **[Config Checksum](docs/config-checksum.md)** - Deterministic drift detection for the on-chain configuration
+
 ### Frontend Integration
 
 - **[Freighter Integration Checklist](docs/freighter-integration-checklist.md)** - End-to-end checklist for frontend teams: preflight checks, signing, error handling, on-chain verification, and common failure modes
 - **[Client Examples](docs/client-examples.md)** - Copy-paste Rust contract call shapes for common shipment operations
+- **[Preflight Helpers](docs/preflight-helpers.md)** - Helpers for simulating state-changing calls before signing them
+- **[Transaction Simulation Guide](docs/simulation.md)** - How to simulate contract calls with `scripts/simulate.sh`
 
-### Contributor Guides
+### Operations
 
-- **[Contract Package Versioning](docs/versioning.md)** - Why every contract crate stays at `version = "0.0.0"`, and which mechanisms to version instead
-
-### Operational Guides
-
-- **[TTL Maintenance Playbook](contracts/shipment/docs/TTL_MAINTENANCE_PLAYBOOK.md)** - Complete operational procedures for maintaining contract state TTL health, including routine maintenance, monitoring, and emergency response
-- **[TTL Quick Reference](contracts/shipment/docs/TTL_QUICK_REFERENCE.md)** - Quick reference card for common TTL operations and emergency procedures
-- **[TTL Health Summary](contracts/shipment/docs/TTL_HEALTH_SUMMARY.md)** - Technical documentation for the TTL health monitoring query
-
-### For Operators
-
-If you're responsible for maintaining a deployed Navin contract:
-
-1. **Start here**: [TTL Quick Reference](contracts/shipment/docs/TTL_QUICK_REFERENCE.md) for common operations
-2. **Deep dive**: [TTL Maintenance Playbook](contracts/shipment/docs/TTL_MAINTENANCE_PLAYBOOK.md) for complete procedures
-3. **Set up monitoring**: Follow the automated monitoring setup in the playbook
-4. **Emergency response**: Keep the quick reference handy for incident response
-
-## Architecture
-
-Navin's smart contracts handle:
-
-- **Asset Management**: Secure storage and transfer of delivery tokens
-- **Access Control**: Role-based permissions for different stakeholders
-- **Transaction Logging**: Immutable audit trail of all operations
-- **Asset Locking**: Time-based locks for escrow and guarantees
-- **TTL Management**: Automated state persistence with configurable TTL thresholds
+- **[Deployment Guide](docs/deployment.md)** - Testnet deployment and contract initialization
+- **[Budget Report](docs/BUDGET_REPORT.md)** - Resource budget measurements for the contract entry points
 
 ## Technology Stack
 
@@ -232,7 +217,7 @@ We welcome contributions! Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for 
 
 ## Security
 
-Security is paramount for Navin. If you discover a security vulnerability, please email <navinxmr@gmail.com> instead of using the issue tracker.
+Security is paramount for Navin. If you discover a security vulnerability, please email <navinxmr@gmail.com> instead of using the issue tracker. See also [SECURITY_GUIDE.md](SECURITY_GUIDE.md).
 
 ## Resources
 

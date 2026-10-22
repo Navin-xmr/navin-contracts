@@ -22,17 +22,12 @@ and consumed by a downstream `Cargo.toml` as a version *requirement* — `"1.2"`
 
 None of that applies here:
 
-1. **No crate is published.** `token` and `shipment` set `publish = false`
-   (`contracts/token/Cargo.toml:5`, `contracts/shipment/Cargo.toml:5`), and no crate is
-   consumed by a version requirement from outside the workspace. Dependencies between
-   workspace members are declared by path
+1. **No crate is published.** `token`, `shipment`, and `nft` set `publish = false`
+   (`contracts/token/Cargo.toml:5`, `contracts/shipment/Cargo.toml:5`,
+   `contracts/nft/Cargo.toml:5`), and no crate is consumed by a version requirement from
+   outside the workspace. Dependencies between workspace members are declared by path
    (`navin-token = { path = "../token" }`, `contracts/shipment/Cargo.toml:22`), which ignores
    the version entirely.
-
-   `contracts/nft/Cargo.toml` is missing `publish = false`, so it is technically
-   publishable. That is a separate defect from the version drift this document addresses and
-   is left for a dedicated fix; nothing has published it, and `version = "0.0.0"` is accurate
-   either way.
 
 2. **Nothing reads the number.** No build script, deploy script, CI job, or documentation
    generator reads it. `scripts/build.sh`, `scripts/deploy-testnet.sh`, and
