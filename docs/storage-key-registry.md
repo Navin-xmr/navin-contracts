@@ -2,6 +2,11 @@
 
 This document defines a migration-safe registry for `DataKey` usage in `contracts/shipment/src/types.rs`.
 
+This is the single source of truth for the full list of `DataKey` variants.
+For which storage tier (instance/persistent/temporary) each key should use
+and why, see [`docs/storage.md`](storage.md) instead — that document does
+not repeat this key list.
+
 ## Registry Version
 
 - **Version:** `v1`
