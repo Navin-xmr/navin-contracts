@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=testnet-config.sh
 source "$SCRIPT_DIR/testnet-config.sh"
 require_stellar_cli
 
