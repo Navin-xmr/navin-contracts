@@ -34,18 +34,6 @@ pub fn validate_note_hash(hash: &BytesN<32>) -> Result<(), NavinError> {
 /// This validator performs a sanity check on external hashes (data_hash, reason_hash, etc.)
 /// to reject the all-zeros pattern which is commonly used as a sentinel for "no data".
 /// This prevents accidental or malicious use of zero hashes in critical fields.
-///
-/// # Arguments
-/// * `hash` - The 32-byte hash to validate.
-///
-/// # Returns
-/// * `Ok(())` if the hash contains at least one non-zero byte.
-/// * `Err(NavinError::InvalidHash)` if every byte is zero.
-///
-/// # Examples
-/// ```rust
-/// validate_hash(&hash)?;
-/// ```
 pub fn validate_hash(hash: &BytesN<32>) -> Result<(), NavinError> {
     // BytesN::iter() is not available in no_std soroban; use to_array().
     let bytes: [u8; 32] = hash.to_array();
@@ -67,19 +55,6 @@ pub fn validate_hash(hash: &BytesN<32>) -> Result<(), NavinError> {
 /// - Length: 1-12 characters (enforced by Stellar protocol)
 /// - Format: Alphanumeric and underscore only (A-Z, a-z, 0-9, _)
 /// - Invalid: spaces, hyphens, special characters, unicode, null bytes
-///
-/// # Arguments
-/// * `env` - Execution environment.
-/// * `symbol` - The Symbol to validate.
-///
-/// # Returns
-/// * `Ok(())` if the symbol is valid.
-/// * `Err(NavinError::InvalidShipmentInput)` if the symbol is empty or exceeds max length.
-///
-/// # Examples
-/// ```rust
-/// validate_symbol(&env, &Symbol::new(&env, "warehouse"))?;
-/// ```
 pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
     // XDR layout: 4-byte ScValType tag + 4-byte length field + content padded to 4-byte boundary.
     // Byte counts by character count:
@@ -109,15 +84,6 @@ pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
 /// symbol that bypasses SDK construction with non-standard characters
 /// (e.g., HTML sequences, backslashes, pipes) that could compromise
 /// indexer storage parsing.
-///
-/// # Arguments
-/// * `env`    - Execution environment (used for XDR serialisation).
-/// * `symbol` - The Symbol whose character content to inspect.
-///
-/// # Returns
-/// * `Ok(())` if every character is in `[A-Za-z0-9_]`.
-/// * `Err(NavinError::InvalidSymbol)` if any character falls outside that set,
-///   or if the symbol is empty.
 ///
 /// # Implementation note
 /// XDR layout for a `ScSymbol`: `[4-byte tag][4-byte length field][content bytes
@@ -182,19 +148,6 @@ pub fn validate_checkpoint_symbol(env: &Env, symbol: &Symbol) -> Result<(), Navi
 ///
 /// This validator ensures that all milestone checkpoint names conform to length
 /// constraints and are not duplicated within the same shipment.
-///
-/// # Arguments
-/// * `env` - Execution environment.
-/// * `milestones` - Vector of (Symbol, percentage) tuples.
-///
-/// # Returns
-/// * `Ok(())` if all symbols are valid and unique.
-/// * `Err(NavinError::InvalidShipmentInput)` if any symbol is invalid or duplicated.
-///
-/// # Examples
-/// ```rust
-/// validate_milestone_symbols(&env, &milestones)?;
-/// ```
 pub fn validate_milestone_symbols(
     env: &Env,
     milestones: &soroban_sdk::Vec<(Symbol, u32)>,
@@ -228,20 +181,6 @@ pub fn validate_milestone_symbols(
 ///
 /// This validator ensures that both metadata keys and values conform to
 /// length constraints before storage.
-///
-/// # Arguments
-/// * `env` - Execution environment.
-/// * `key` - The metadata key symbol.
-/// * `value` - The metadata value symbol.
-///
-/// # Returns
-/// * `Ok(())` if both symbols are valid.
-/// * `Err(NavinError::InvalidShipmentInput)` if either symbol is invalid.
-///
-/// # Examples
-/// ```rust
-/// validate_metadata_symbols(&env, &key, &value)?;
-/// ```
 pub fn validate_metadata_symbols(
     env: &Env,
     key: &Symbol,
@@ -264,19 +203,6 @@ pub fn validate_metadata_symbols(
 /// This validator ensures that note-related symbols conform to expected length constraints
 /// to prevent excessive storage consumption that could exhaust rent resources.
 /// Note symbols are used for labeling note metadata and categorizing commentary.
-///
-/// # Arguments
-/// * `env` - Execution environment.
-/// * `note_symbol` - The Symbol to validate.
-///
-/// # Returns
-/// * `Ok(())` if the symbol is valid and within length bounds (max 64 characters in XDR).
-/// * `Err(NavinError::InvalidShipmentInput)` if the symbol exceeds length limits.
-///
-/// # Examples
-/// ```rust
-/// validate_note_symbol(&env, &Symbol::new(&env, "evidence_1"))?;
-/// ```
 pub fn validate_note_symbol(env: &Env, note_symbol: &Symbol) -> Result<(), NavinError> {
     // XDR layout: 4-byte ScValType tag + 4-byte length field + content padded to 4-byte boundary.
     // Maximum safe note symbol length: 64 characters
@@ -297,18 +223,6 @@ pub fn validate_note_symbol(env: &Env, note_symbol: &Symbol) -> Result<(), Navin
 }
 
 /// Ensure an escrow / payment amount is positive and within a sane upper bound.
-///
-/// # Arguments
-/// * `amount` - The `i128` value to validate.
-///
-/// # Returns
-/// * `Ok(())` if `0 < amount <= MAX_AMOUNT`.
-/// * `Err(NavinError::InvalidAmount)` otherwise.
-///
-/// # Examples
-/// ```rust
-/// validate_amount(5_000_000)?;
-/// ```
 pub fn validate_amount(amount: i128) -> Result<(), NavinError> {
     if amount <= 0 || amount > MAX_AMOUNT {
         return Err(NavinError::InvalidAmount);
@@ -318,19 +232,6 @@ pub fn validate_amount(amount: i128) -> Result<(), NavinError> {
 
 /// Ensure a timestamp is neither too far in the past nor too far in the future
 /// relative to the current ledger time.
-///
-/// # Arguments
-/// * `env`       - The execution environment (used to read `ledger().timestamp()`).
-/// * `timestamp` - The `u64` UNIX timestamp to validate.
-///
-/// # Returns
-/// * `Ok(())` if the timestamp is within acceptable bounds.
-/// * `Err(NavinError::InvalidTimestamp)` otherwise.
-///
-/// # Examples
-/// ```rust
-/// validate_timestamp(&env, some_ts)?;
-/// ```
 pub fn validate_timestamp(env: &Env, timestamp: u64) -> Result<(), NavinError> {
     let now = env.ledger().timestamp();
     let earliest = now.saturating_sub(MAX_PAST_OFFSET);
@@ -343,19 +244,6 @@ pub fn validate_timestamp(env: &Env, timestamp: u64) -> Result<(), NavinError> {
 }
 
 /// Look up a shipment by ID and return it, or surface `ShipmentNotFound`.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `id`  - Shipment ID to look up.
-///
-/// # Returns
-/// * `Ok(Shipment)` if the shipment exists in persistent storage.
-/// * `Err(NavinError::ShipmentNotFound)` if no shipment is stored under `id`.
-///
-/// # Examples
-/// ```rust
-/// let shipment = validate_shipment_exists(&env, shipment_id)?;
-/// ```
 pub fn validate_shipment_exists(env: &Env, id: u64) -> Result<Shipment, NavinError> {
     storage::get_shipment(env, id).ok_or(NavinError::ShipmentNotFound)
 }
@@ -373,16 +261,6 @@ pub fn validate_shipment_exists(env: &Env, id: u64) -> Result<Shipment, NavinErr
 /// 2. **Finalization Check**: Ensures the shipment is not finalized. Finalized
 ///    shipments are locked and cannot be modified.
 ///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `shipment_id` - The ID of the shipment to check.
-///
-/// # Returns
-/// * `Ok(Shipment)` - The shipment if available for mutation.
-/// * `Err(NavinError::ShipmentNotFound)` - If shipment doesn't exist in persistent storage.
-/// * `Err(NavinError::ShipmentUnavailable)` - If shipment is archived or expired.
-/// * `Err(NavinError::ShipmentFinalized)` - If shipment is finalized and locked.
-///
 /// # Design Rationale
 ///
 /// **Why Archived Shipments Are Unavailable**:
@@ -395,13 +273,6 @@ pub fn validate_shipment_exists(env: &Env, id: u64) -> Result<Shipment, NavinErr
 /// - `ShipmentNotFound`: Shipment never existed or has expired completely
 /// - `ShipmentUnavailable`: Shipment exists but is archived (terminal state)
 /// - `ShipmentFinalized`: Shipment is locked due to settlement
-///
-/// # Examples
-/// ```rust
-/// // In a mutating endpoint:
-/// let shipment = preflight_check_shipment_available(&env, shipment_id)?;
-/// // Now safe to mutate the shipment
-/// ```
 pub fn preflight_check_shipment_available(
     env: &Env,
     shipment_id: u64,
@@ -460,14 +331,6 @@ pub fn validate_shipment_invariants(shipment: &Shipment) -> Result<(), NavinErro
 ///
 /// This ensures that the creation timestamp is not too far in the future (which would be
 /// impossible) and not too far in the past (which would indicate malformed input).
-///
-/// # Arguments
-/// * `env` - Execution environment.
-/// * `created_at` - The timestamp to validate.
-///
-/// # Returns
-/// * `Ok(())` if the timestamp is within acceptable bounds.
-/// * `Err(NavinError::InvalidTimestamp)` otherwise.
 pub fn validate_created_at_versus_now(env: &Env, created_at: u64) -> Result<(), NavinError> {
     let now = env.ledger().timestamp();
 
@@ -491,14 +354,6 @@ pub fn validate_created_at_versus_now(env: &Env, created_at: u64) -> Result<(), 
 /// This is the correct guard for `create_shipment` / `create_shipments_batch`
 /// because it surfaces `InvalidShipmentDeadline` rather than the generic
 /// `InvalidTimestamp` returned by `validate_timestamp`.
-///
-/// # Arguments
-/// * `env`      - Execution environment (used to read `ledger().timestamp()`).
-/// * `deadline` - The `u64` UNIX deadline timestamp to validate.
-///
-/// # Returns
-/// * `Ok(())` if `now < deadline <= now + MAX_FUTURE_OFFSET`.
-/// * `Err(NavinError::InvalidShipmentDeadline)` otherwise.
 pub fn validate_deadline(env: &Env, deadline: u64) -> Result<(), NavinError> {
     let now = env.ledger().timestamp();
     if deadline <= now || deadline > now.saturating_add(MAX_FUTURE_OFFSET) {
@@ -510,14 +365,6 @@ pub fn validate_deadline(env: &Env, deadline: u64) -> Result<(), NavinError> {
 /// Validate that `updated_at` is not earlier than `created_at`.
 ///
 /// This enforces the invariant that a shipment cannot be updated before it was created.
-///
-/// # Arguments
-/// * `created_at` - Timestamp when the shipment was created.
-/// * `updated_at` - Timestamp of the last update to validate.
-///
-/// # Returns
-/// * `Ok(())` if updated_at >= created_at.
-/// * `Err(NavinError::InvalidStatus)` if the relationship is impossible.
 pub fn validate_created_at_versus_updated_at(
     created_at: u64,
     updated_at: u64,
@@ -531,14 +378,6 @@ pub fn validate_created_at_versus_updated_at(
 /// Validate that `created_at` is before `deadline`.
 ///
 /// This enforces that the deadline must be in the future relative to creation time.
-///
-/// # Arguments
-/// * `created_at` - Timestamp when the shipment was created.
-/// * `deadline` - The deadline timestamp to validate.
-///
-/// # Returns
-/// * `Ok(())` if created_at < deadline.
-/// * `Err(NavinError::InvalidShipmentDeadline)` if the relationship is impossible.
 pub fn validate_created_at_versus_deadline(
     created_at: u64,
     deadline: u64,

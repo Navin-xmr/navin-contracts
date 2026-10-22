@@ -5,8 +5,8 @@ extern crate alloc;
 
 use soroban_sdk::auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation};
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, xdr::ToXdr, Address, Env, IntoVal, Symbol,
-    Vec,
+    contract, contractimpl, contracttype, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal,
+    Symbol, Vec,
 };
 
 // `audit`, `consistency`, `diagnostics` and `error_map` stay `pub` (issue
