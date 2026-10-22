@@ -161,9 +161,9 @@ Deploying contracts to Stellar testnet...
 Identity: navin-testnet
 RPC URL: https://soroban-testnet.stellar.org:443
 Deploying token contract...
-Token contract deployed: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+Token contract deployed: <TOKEN_CONTRACT_ID>
 Deploying shipment contract...
-Shipment contract deployed: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+Shipment contract deployed: <SHIPMENT_CONTRACT_ID>
 
 Deployment complete!
 Contract addresses saved to .env.testnet
@@ -189,9 +189,9 @@ Expected output:
 
 ```
 Initializing contracts on Stellar testnet...
-Token contract: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-Shipment contract: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-Admin address: GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+Token contract: <TOKEN_CONTRACT_ID>
+Shipment contract: <SHIPMENT_CONTRACT_ID>
+Admin address: <ADMIN_ADDRESS>
 
 Initializing token contract...
 Token contract initialized successfully
