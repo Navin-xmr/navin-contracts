@@ -50,7 +50,7 @@ make fmt
 make pre-commit
 ```
 
-If `make pre-commit` passes, your PR will likely pass CI! ✅
+If `make pre-commit` passes, your PR will likely pass CI.
 
 ### 4. Commit Your Changes
 
@@ -106,10 +106,10 @@ make pre-commit
 
 This single command runs:
 
-1. ✅ Format check (`cargo fmt --check`)
-2. ✅ Lint check (`cargo clippy`)
-3. ✅ All tests (`cargo test`)
-4. ✅ WASM build (`stellar contract build`)
+1. Format check (`cargo fmt --check`)
+2. Lint check (`cargo clippy`)
+3. All tests (`cargo test`)
+4. WASM build (`stellar contract build`)
 
 ### Security & License Checks
 
@@ -122,9 +122,9 @@ cargo deny check advisories licenses
 
 This check will:
 
-- ✅ Detect known security vulnerabilities in dependencies
-- ✅ Verify all dependencies have allowed licenses (MIT, Apache-2.0, BSD, ISC, MPL-2.0, Unicode-DFS-2016)
-- ✅ Reject GPL/AGPL dependencies which conflict with project licensing
+- Detect known security vulnerabilities in dependencies
+- Verify all dependencies have allowed licenses (MIT, Apache-2.0, BSD, ISC, MPL-2.0, Unicode-DFS-2016)
+- Reject GPL/AGPL dependencies which conflict with project licensing
 
 If this fails, you'll need to:
 
