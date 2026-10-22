@@ -853,8 +853,10 @@ mod tests {
 
     #[test]
     fn test_issue_889_unknown_code_contrast() {
-        let info = get_error_info(77);
-        assert_eq!(info.code, 77);
+        // 77 used to be unmapped; it now resolves to `NftMintFailed`, so an
+        // unmapped code keeps exercising the fallback.
+        let info = get_error_info(999_999);
+        assert_eq!(info.code, 999_999);
         assert_eq!(info.category, ErrorCategory::InvalidInput);
         assert_eq!(info.retry, RetryGuidance::NoRetry);
         assert_eq!(info.message, symbol_short!("unknown"));
