@@ -9,7 +9,7 @@ mod tests {
     use soroban_sdk::{
         contract, contractimpl,
         testutils::{Address as _, Ledger as _},
-        Address, BytesN, Env, Vec,
+        Address, Env, Vec,
     };
 
     #[contract]
