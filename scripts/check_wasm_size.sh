@@ -19,7 +19,7 @@ for entry in "${BUDGETS[@]}"; do
     FILEPATH="$WASM_DIR/$FILENAME"
 
     if [ ! -f "$FILEPATH" ]; then
-        echo "❌ Error: $FILENAME not found in $WASM_DIR"
+        echo "Error: $FILENAME not found in $WASM_DIR"
         EXIT_CODE=1
         continue
     fi
@@ -29,15 +29,15 @@ for entry in "${BUDGETS[@]}"; do
     SIZE_KB=$((SIZE_BYTES / 1024))
 
     if [ "$SIZE_KB" -gt "$LIMIT_KB" ]; then
-        echo "❌ $FILENAME: ${SIZE_KB}KB (Limit: ${LIMIT_KB}KB) - BUDGET EXCEEDED"
+        echo "$FILENAME: ${SIZE_KB}KB (Limit: ${LIMIT_KB}KB) - BUDGET EXCEEDED"
         EXIT_CODE=1
     else
-        echo "✅ $FILENAME: ${SIZE_KB}KB (Limit: ${LIMIT_KB}KB) - Within budget"
+        echo "$FILENAME: ${SIZE_KB}KB (Limit: ${LIMIT_KB}KB) - Within budget"
     fi
 done
 
 echo "---------------------------"
-if [ $EXIT_CODE -eq 0 ]; then
+if [ "$EXIT_CODE" -eq 0 ]; then
     echo "✓ All contracts are within their size budget."
 else
     echo "FAILED: Some contracts exceeded their size budget."

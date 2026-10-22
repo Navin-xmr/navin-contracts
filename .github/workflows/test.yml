@@ -67,6 +67,19 @@ jobs:
             target/llvm-cov/lcov.info
             target/llvm-cov/html
 
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck --source-path=scripts -x scripts/*.sh
+
   wasm-build:
     name: Build WASM Contracts
     runs-on: ubuntu-latest
