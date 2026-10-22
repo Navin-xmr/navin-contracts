@@ -62,12 +62,12 @@ The `version` field is not where release identity lives in this repo. Use these 
 |---|---|---|
 | Which source revision is deployed | Git commit SHA | Git history; tag releases if needed |
 | Which contract binary is on-chain | WASM hash | `stellar contract info`, deployment tx |
-| Whether an event payload changed | `schema_version` field | `docs/event_schemas.md`, `contracts/token/src/event_topics.rs:37` |
+| Whether an event payload changed | `schema_version` field | `docs/events.md`, `contracts/token/src/event_topics.rs:37` |
 | Whether on-chain storage changed | Storage layout docs | `docs/storage.md` |
 
 Notably, event compatibility already has a real, working version signal:
 `EVENT_SCHEMA_VERSION_STR: &str = "v1"` (`contracts/token/src/event_topics.rs:37`) is emitted
-as a topic on every token event, and `docs/event_schemas.md` documents a `schema_version: u32`
+as a topic on every token event, and `docs/events.md` documents a `schema_version: u32`
 field on shipment event families. These are on-chain and verifiable by indexers, which is
 exactly what the crate `version` is not.
 
@@ -95,5 +95,5 @@ grep -H '^version' contracts/*/Cargo.toml
 ## Related
 
 - Issue [#919](https://github.com/Navin-xmr/navin-contracts/issues/919) — established this convention.
-- [`docs/event_schemas.md`](event_schemas.md) — event payload schemas and `schema_version` policy.
+- [`docs/events.md`](events.md) — event payload schemas and `schema_version` policy.
 - [`docs/storage.md`](storage.md) — on-chain storage layout.
