@@ -307,7 +307,7 @@ pub fn cancel_active_settlement(
    - Token transfer succeeds
    - Settlement marked as Completed
    - Transaction commits
-   - Settlement record persisted ✓
+   - Settlement record persisted (yes)
 
 2. **Token Transfer Failure (Current Implementation)**
    - Settlement created in Pending state
@@ -315,7 +315,7 @@ pub fn cancel_active_settlement(
    - Settlement marked as Failed
    - Error returned to caller
    - **Transaction rolls back**
-   - Settlement record NOT persisted ✗
+   - Settlement record NOT persisted (no)
 
 3. **Concurrent Settlement Attempt**
    - Check for existing Pending settlement
@@ -532,24 +532,24 @@ env.events().publish(
 
 ## Acceptance Criteria Verification
 
-✅ **Settlement state enum + storage**
+**[Met]** Settlement state enum + storage
 - `SettlementState` enum defined with None/Pending/Completed/Failed states
 - Storage keys and functions implemented for settlement records
 - Active settlement tracking per shipment
 
-✅ **Transition states through transfer lifecycle**
+**[Met]** Transition states through transfer lifecycle
 - `create_settlement`: None → Pending
 - `complete_settlement`: Pending → Completed
 - `fail_settlement`: Pending → Failed
 - Integrated into all payment operations
 
-✅ **Tests for success/failure transitions**
+**[Met]** Tests for success/failure transitions
 - Success path tests for deposit, release, refund
 - Failure path tests for deposit and refund
 - State machine tests for concurrent operations
 - Metadata and query tests
 
-✅ **Failures leave clear state for retries/investigation**
+**[Met]** Failures leave clear state for retries/investigation
 - Failed settlements remain active
 - Error codes stored in settlement records
 - Explicit cancellation required to unblock

@@ -150,23 +150,23 @@ Located in `contracts/shipment/src/test.rs`:
 
 ## Acceptance Criteria
 
-✅ **Same config always yields same checksum**
+**[Met]** Same config always yields same checksum
 - Verified by `test_checksum_deterministic_same_config`
 - Verified by `test_checksum_stable_across_multiple_runs`
 - Verified by `test_config_checksum_stable_after_initialization`
 
-✅ **Config changes produce checksum change deterministically**
+**[Met]** Config changes produce checksum change deterministically
 - Verified by `test_checksum_changes_on_field_modification` (all 10 fields tested)
 - Verified by `test_checksum_different_for_different_configs`
 - Verified by `test_config_checksum_changes_on_config_update`
 - Verified by `test_checksum_single_bit_flip_changes_hash`
 
-✅ **Serialization order is defined**
+**[Met]** Serialization order is defined
 - Documented in this file (table above)
 - Implemented in `compute_config_checksum()` with explicit comments
 - Verified by `test_checksum_serialization_order_matters`
 
-✅ **Checksum is exposed via query**
+**[Met]** Checksum is exposed via query
 - Public contract method: `get_config_checksum(env: Env) -> Result<BytesN<32>, NavinError>`
 - Verified by `test_config_checksum_exposed_via_query`
 
