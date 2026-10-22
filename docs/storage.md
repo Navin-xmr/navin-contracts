@@ -1,8 +1,8 @@
 # Storage Layout — NavinShipment Contract
 
-> **Audit Date:** 2026-02-26  
 > **Contract:** `NavinShipment`  
-> **File Audited:** `contracts/shipment/src/storage.rs`
+> **File Audited:** `contracts/shipment/src/storage.rs`  
+> **Source of truth for key enumeration:** [`docs/storage-key-registry.md`](storage-key-registry.md) (tracks `contracts/shipment/src/types.rs`); this document does not carry its own audit date — refer to the registry's "Last Updated" field and to `types.rs`/`storage.rs` directly for the current state.
 
 ---
 
