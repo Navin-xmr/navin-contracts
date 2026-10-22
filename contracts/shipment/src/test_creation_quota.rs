@@ -1,4 +1,4 @@
-//! Tests for issue #296 — shipment creation quota window.
+//! Tests for the shipment creation quota window.
 //!
 //! Verifies that the per-company creation quota is enforced within the active
 //! window and resets correctly when the window expires.
@@ -9,7 +9,7 @@ mod tests {
     use soroban_sdk::{
         contract, contractimpl,
         testutils::{Address as _, Ledger as _},
-        Address, BytesN, Env, Vec,
+        Address, Env, Vec,
     };
 
     #[contract]
@@ -46,7 +46,7 @@ mod tests {
         (env, client, admin, company, carrier, token_id)
     }
 
-    // Consolidated to test_utils::make_hash (#1100)
+    // Shared helper, so fixture hashes match the other test modules.
     use crate::test_utils::make_hash;
 
     fn future_deadline(env: &Env) -> u64 {
@@ -581,7 +581,7 @@ mod tests {
         assert!(create_one(&env, &client, &company, &carrier, 4).is_ok());
     }
 
-    // ── [ISSUE #452] creation quota limit reset tests ─────────────────────────
+    // ── creation quota limit reset tests ─────────────────────────────────────
 
     /// Test: Reach the quota limit in a controlled fixture, then verify enforcement.
     /// This ensures that quota limits are properly enforced.
@@ -1080,7 +1080,7 @@ mod tests {
         assert_eq!(remaining, 0);
     }
 
-    // ── active shipment count after cancellation (issue #525) ───────────────
+    // ── active shipment count after cancellation ─────────────────────────────
 
     /// Cancelling a shipment must decrement the company's active shipment count.
     #[test]
@@ -1174,7 +1174,9 @@ mod tests {
         );
     }
 
-    // ── issue #638: single and batch creation share one quota implementation ──
+    // ── single and batch creation share one quota implementation ─────────────
+    // If the two paths counted separately, a company could exceed its quota by
+    // mixing single and batch calls within the same window.
 
     fn batch_input(env: &Env, carrier: &Address, seed: u8) -> crate::types::ShipmentInput {
         crate::types::ShipmentInput {
