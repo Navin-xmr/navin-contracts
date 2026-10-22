@@ -54,11 +54,22 @@ cargo --version
 
 ```
 
+## Branch model
+
+This repository uses two long-lived branches:
+
+- **`main`** — default development branch. Open pull requests against `main`. Feature work lands here first.
+- **`prod`** — production/release line. Changes reach `prod` after they are on `main`. Do not open routine feature PRs against `prod`.
+
+There is no `master` or `develop` branch. Do not target those names.
+
+CI (`.github/workflows/test.yml`) runs on `push` and `pull_request` to **`main` and `prod`**, plus `workflow_dispatch`. The scheduled fuzz workflow is independent of these branch triggers.
+
 ## Making Contributions
 
 ### Step 1: Create a Branch
 
-Always create a new branch for your work. Never commit directly to `main` or `develop`.
+Always create a new branch for your work. Never commit directly to `main` or `prod`.
 
 ```bash
 # Update your local main branch
@@ -170,11 +181,11 @@ Before submitting your PR, ensure you've completed ALL of these steps:
 - [ ] New tests added for new functionality
 - [ ] Old tests previously passing before you added changes still pass
 - [ ] Documentation updated (if applicable)
-- [ ] Branch is up to date with `main` or `dev`
+- [ ] Branch is up to date with `main`
 
 ## CI/CD Requirements
 
-Our CI pipeline runs the following checks. **All must pass** before your PR can be merged:
+Our CI pipeline (see **Branch model** above) runs the following checks on `main` and `prod`. **All must pass** before your PR can be merged:
 
 ### 1. Code Formatting Check
 
