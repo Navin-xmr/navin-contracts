@@ -67,7 +67,7 @@ This repository contains Soroban smart contracts for the Navin platform:
 
 The repository contains three smart contracts located under `contracts/`:
 
-- **`contracts/shipment`**: Core logistics and escrow contract managing shipment lifecycle, delivery tracking, and state persistence. See tests in [`contracts/shipment/src/test.rs`](contracts/shipment/src/test.rs) and state docs in [`docs/SETTLEMENT_STATE_MACHINE.md`](docs/SETTLEMENT_STATE_MACHINE.md), [`docs/CALL_ARGUMENT_CONVENTIONS.md`](docs/CALL_ARGUMENT_CONVENTIONS.md), and [`docs/FRONTEND_VERIFICATION.md`](docs/FRONTEND_VERIFICATION.md).
+- **`contracts/shipment`**: Core logistics and escrow contract managing shipment lifecycle, delivery tracking, and state persistence. See tests in [`contracts/shipment/src/`](contracts/shipment/src/) (split across multiple `test_*.rs` files) and state docs in [`docs/SETTLEMENT_STATE_MACHINE.md`](docs/SETTLEMENT_STATE_MACHINE.md), [`docs/CALL_ARGUMENT_CONVENTIONS.md`](docs/CALL_ARGUMENT_CONVENTIONS.md), and [`docs/FRONTEND_VERIFICATION.md`](docs/FRONTEND_VERIFICATION.md).
 - **`contracts/token`**: Fungible payment token contract providing balance tracking, transfer allowances, and batch transfer events. See tests in [`contracts/token/src/test.rs`](contracts/token/src/test.rs) and event docs in [`docs/events.md`](docs/events.md).
 - **`contracts/nft`**: Shipment-asset NFT scaffold contract implementing unique digital asset minting, ownership, transfer, and burning logic. See contract implementation and tests in [`contracts/nft/src/lib.rs`](contracts/nft/src/lib.rs).
 
@@ -191,18 +191,14 @@ make build
 
 ### Operational Guides
 
-- **[TTL Maintenance Playbook](contracts/shipment/docs/TTL_MAINTENANCE_PLAYBOOK.md)** - Complete operational procedures for maintaining contract state TTL health, including routine maintenance, monitoring, and emergency response
-- **[TTL Quick Reference](contracts/shipment/docs/TTL_QUICK_REFERENCE.md)** - Quick reference card for common TTL operations and emergency procedures
-- **[TTL Health Summary](contracts/shipment/docs/TTL_HEALTH_SUMMARY.md)** - Technical documentation for the TTL health monitoring query
+- **[Storage Key Registry](docs/storage-key-registry.md)** - Canonical list of on-chain storage keys, including TTL-bearing entries and their extend/bump behaviour
+- **[Storage](docs/storage.md)** - Storage layout and TTL handling for persistent contract state
 
 ### For Operators
 
-If you're responsible for maintaining a deployed Navin contract:
-
-1. **Start here**: [TTL Quick Reference](contracts/shipment/docs/TTL_QUICK_REFERENCE.md) for common operations
-2. **Deep dive**: [TTL Maintenance Playbook](contracts/shipment/docs/TTL_MAINTENANCE_PLAYBOOK.md) for complete procedures
-3. **Set up monitoring**: Follow the automated monitoring setup in the playbook
-4. **Emergency response**: Keep the quick reference handy for incident response
+If you're responsible for maintaining a deployed Navin contract, see the TTL guidance in
+[`docs/storage.md`](docs/storage.md) and [`docs/storage-key-registry.md`](docs/storage-key-registry.md)
+for which keys carry a TTL and how to keep them extended.
 
 ## Architecture
 
