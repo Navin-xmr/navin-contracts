@@ -2,6 +2,14 @@
 
 Complete guide for integrating the Navin shipment tracking smart contract with your Express.js backend using the Stellar JavaScript/TypeScript SDK.
 
+> **Scope note:** this guide covers the production backend integration path
+> (JS/TS, Stellar SDK, Express.js). For short Rust snippets that call the
+> contract directly through `NavinShipmentClient` (e.g. in tests or local
+> scripts), see [`docs/client-examples.md`](client-examples.md) instead —
+> it covers the same contract calls (`create_shipment`, `deposit_escrow`,
+> etc.) but for the Rust/Soroban test-client stack, not the JS/TS backend
+> stack documented here.
+
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
