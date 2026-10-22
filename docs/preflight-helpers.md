@@ -129,7 +129,7 @@ pub fn update_status(
     require_initialized(&env)?;
     caller.require_auth();
 
-    // ❌ Could retrieve archived shipment from temporary storage
+    // Bad: Could retrieve archived shipment from temporary storage
     let mut shipment = storage::get_shipment(&env, shipment_id)
         .ok_or(NavinError::ShipmentNotFound)?;
     
@@ -150,7 +150,7 @@ pub fn update_status(
     require_initialized(&env)?;
     caller.require_auth();
 
-    // ✅ Explicitly check availability before mutation
+    // Good: Explicitly check availability before mutation
     let mut shipment = validation::preflight_check_shipment_available(&env, shipment_id)?;
     
     // ... rest of logic ...
@@ -223,17 +223,17 @@ Error Code 42 (ShipmentUnavailable):
 
 ## Acceptance Criteria Met
 
-✅ **Mutating endpoints fail safely on unavailable state**
+OK: **Mutating endpoints fail safely on unavailable state**
 - All state-changing calls check shipment availability before mutation
 - Archived shipments are explicitly rejected
 - Finalized shipments are explicitly locked
 
-✅ **Error messages are explicit and actionable**
+OK: **Error messages are explicit and actionable**
 - `ShipmentNotFound`: Shipment doesn't exist
 - `ShipmentFinalized`: Shipment is locked
 - `ShipmentUnavailable`: Shipment is archived (reserved for future use)
 
-✅ **Tests for unavailable shipment scenarios**
+OK: **Tests for unavailable shipment scenarios**
 - Unit tests in `validation.rs` (4 tests)
 - Integration tests in `test_preflight.rs` (15+ tests)
 - All existing tests continue to pass (371 total)

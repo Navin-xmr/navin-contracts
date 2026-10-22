@@ -127,21 +127,21 @@ The same path is used internally when you run `stellar contract invoke` without
 ════════════════════════════════════════════════════════════════
   SIMULATE: create_shipment(company, receiver, carrier, ...)
 ════════════════════════════════════════════════════════════════
-ℹ️  Simulating...
+Simulating...
 
-🔒 Authorization required:
+Authorization required:
   1. company (address: GC...)
      └─ create_shipment(company: GC..., ...)
 
-⛽ Resources:
+Resources:
   CPU instructions : 1_234_567
   Memory bytes     :    56_789
   Ledger reads     :         8
   Ledger writes    :         4
 
-💰 Min recommended fee: 1234 stroops
+Min recommended fee: 1234 stroops
 
-✅ Simulation success
+OK: Simulation success
 ```
 
 ### Failed simulation
@@ -150,9 +150,9 @@ The same path is used internally when you run `stellar contract invoke` without
 ════════════════════════════════════════════════════════════════
   SIMULATE: raise_dispute(caller, shipment_id=1, reason_hash)
 ════════════════════════════════════════════════════════════════
-ℹ️  Simulating...
+Simulating...
 
-❌ Simulation failed: Error(Contract, #4) — ShipmentNotFound
+FAILED: Simulation failed: Error(Contract, #4) — ShipmentNotFound
 ```
 
 Error codes map directly to `NavinError` variants in
