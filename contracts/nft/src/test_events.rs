@@ -131,6 +131,28 @@ fn test_mint_emits_event() {
 }
 
 #[test]
+fn test_mint_batch_emits_batch_event_with_all_ids() {
+    let (env, _admin, client) = setup();
+    let recipient = Address::generate(&env);
+    let recipients = vec![&env, recipient.clone(), recipient.clone()];
+    let token_ids = vec![&env, 7_u64, 42_u64];
+    client.mint_batch(&recipients, &token_ids);
+
+    let event = last_event(&env, &client.address);
+    assert_eq!(
+        vec![&env, event],
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                topics(&env, event_topics::MINT_BATCH),
+                (token_ids, recipients, TIMESTAMP).into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
 fn test_transfer_emits_event() {
     let (env, _admin, client) = setup();
     let alice = Address::generate(&env);
@@ -195,6 +217,29 @@ fn test_burn_by_admin_emits_event_with_admin_as_caller() {
                 client.address.clone(),
                 topics(&env, event_topics::BURN),
                 (9_u64, admin, TIMESTAMP).into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_burn_batch_emits_batch_event_with_all_ids() {
+    let (env, admin, client) = setup();
+    let owner = Address::generate(&env);
+    let recipients = vec![&env, owner.clone(), owner];
+    let token_ids = vec![&env, 7_u64, 42_u64];
+    client.mint_batch(&recipients, &token_ids);
+    client.burn_batch(&admin, &token_ids);
+
+    let event = last_event(&env, &client.address);
+    assert_eq!(
+        vec![&env, event],
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                topics(&env, event_topics::BURN_BATCH),
+                (token_ids, admin, TIMESTAMP).into_val(&env),
             ),
         ]
     );

@@ -13,7 +13,6 @@ impl MockToken {
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
 }
 
-
 #[test]
 fn test_finalization_on_cancel_with_zero_escrow() {
     let (env, client, admin, token_contract) = setup_shipment_env();

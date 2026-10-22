@@ -272,6 +272,89 @@ fn test_transfer_requires_owner_auth() {
 }
 
 #[test]
+fn test_approved_transfer_requires_owner_approval_and_operator_auth() {
+    let (env, admin, client) = setup_strict();
+    let owner = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    authorize_mint(&env, &client, &admin, &owner, 1);
+    client.mint(&owner, &1);
+
+    let expiration = Some(20_u32);
+    env.mock_auths(&[MockAuth {
+        address: &operator,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "approve",
+            args: (operator.clone(), 1_u64, expiration).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(client.try_approve(&operator, &1, &expiration).is_err());
+
+    env.mock_auths(&[MockAuth {
+        address: &owner,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "approve",
+            args: (operator.clone(), 1_u64, expiration).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    client.approve(&operator, &1, &expiration);
+
+    env.mock_auths(&[]);
+    assert!(client
+        .try_transfer_from(&operator, &owner, &recipient, &1)
+        .is_err());
+
+    env.mock_auths(&[MockAuth {
+        address: &operator,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "transfer_from",
+            args: (operator.clone(), owner.clone(), recipient.clone(), 1_u64).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    client.transfer_from(&operator, &owner, &recipient, &1);
+    assert_eq!(client.owner_of(&1), recipient);
+}
+
+#[test]
+fn test_mint_batch_requires_admin_auth() {
+    let (env, admin, client) = setup_strict();
+    let recipient = Address::generate(&env);
+    let recipients = soroban_sdk::vec![&env, recipient.clone()];
+    let token_ids = soroban_sdk::vec![&env, 1_u64];
+
+    env.mock_auths(&[MockAuth {
+        address: &recipient,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "mint_batch",
+            args: (recipients.clone(), token_ids.clone()).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(client.try_mint_batch(&recipients, &token_ids).is_err());
+    assert_eq!(client.total_supply(), 0);
+
+    env.mock_auths(&[MockAuth {
+        address: &admin,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "mint_batch",
+            args: (recipients.clone(), token_ids.clone()).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    client.mint_batch(&recipients, &token_ids);
+    assert_eq!(client.owner_of(&1), recipient);
+}
+
+#[test]
 fn test_burn_requires_caller_auth() {
     let (env, admin, client) = setup_strict();
     let owner = Address::generate(&env);

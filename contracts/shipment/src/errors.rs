@@ -182,4 +182,8 @@ pub enum NavinError {
     MultiSigProposalPending = 74,
     /// Maximum allowed audit log entries has been reached.
     AuditLogLimitExceeded = 76,
+    /// The configured NFT contract failed to mint a settlement proof.
+    NftMintFailed = 77,
+    /// The NFT contract could not be initialized or authorized for settlement proofs.
+    NftConfigurationFailed = 78,
 }

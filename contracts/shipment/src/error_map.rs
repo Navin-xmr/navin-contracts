@@ -498,6 +498,18 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "Maximum allowed audit log entries has been reached.",
         ),
+        NavinError::NftMintFailed => (
+            77,
+            Transient,
+            RetryAfterDelay,
+            "Configured NFT contract failed to mint the settlement proof.",
+        ),
+        NavinError::NftConfigurationFailed => (
+            78,
+            InvalidState,
+            NoRetry,
+            "NFT contract could not be initialized or authorized for settlement proofs.",
+        ),
     };
 
     ContractErrorInfo {
@@ -583,6 +595,8 @@ fn message_for(error: NavinError) -> Symbol {
         NavinError::InvalidSymbolEncoding => symbol_short!("sym_enc"),
         NavinError::MultiSigProposalPending => symbol_short!("ms_pend"),
         NavinError::AuditLogLimitExceeded => symbol_short!("audit_lim"),
+        NavinError::NftMintFailed => symbol_short!("nft_mint"),
+        NavinError::NftConfigurationFailed => symbol_short!("nft_cfg"),
     }
 }
 
@@ -666,6 +680,8 @@ pub fn get_error_info(code: u32) -> ContractErrorInfo {
         74 => error_info(NavinError::MultiSigProposalPending),
         75 => error_info(NavinError::CarrierAlreadyWhitelisted),
         76 => error_info(NavinError::AuditLogLimitExceeded),
+        77 => error_info(NavinError::NftMintFailed),
+        78 => error_info(NavinError::NftConfigurationFailed),
         _ => ContractErrorInfo {
             code,
             category: ErrorCategory::InvalidInput,
@@ -922,6 +938,8 @@ mod tests {
             NavinError::InvalidSymbolEncoding,
             NavinError::MultiSigProposalPending,
             NavinError::AuditLogLimitExceeded,
+            NavinError::NftMintFailed,
+            NavinError::NftConfigurationFailed,
         ];
 
         for error in errors {

@@ -45,7 +45,7 @@ fn enable_auto_dispute(client: &NavinShipmentClient, admin: &Address) {
 
 /// Create a shipment and return its ID. Carrier is registered as a carrier role.
 // Consolidated to test_utils::create_test_shipment (#1099)
-    use crate::test_utils::create_test_shipment;
+use crate::test_utils::create_test_shipment;
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

@@ -32,10 +32,11 @@
 //! | max_breaches_per_shipment      | 255     | Max condition breach events per shipment         |
 //! | creation_quota_max             | 0       | Max shipments creatable per quota window (0=off) |
 //! | creation_quota_window_seconds  | 3,600   | Duration of the creation quota window (1 hour)   |
+//! | settlement_nft_contract_id     | None    | Optional NFT contract for settlement proof minting |
 
 use crate::errors::NavinError;
 use crate::types::DataKey;
-use soroban_sdk::{contracttype, BytesN, Env};
+use soroban_sdk::{contracttype, xdr::ToXdr, Address, BytesN, Env};
 
 /// Contract configuration parameters stored in instance storage.
 ///
@@ -150,6 +151,13 @@ pub struct ContractConfig {
     /// When enabled, requires nft_contract_address to be set.
     /// Default: false (disabled).
     pub auto_mint_nft: bool,
+
+    /// NFT contract used to mint proof NFTs after successful release/refund settlements.
+    /// Configure it with `configure_settlement_nft`, which initializes an
+    /// uninitialized NFT with this shipment contract as admin or verifies the
+    /// existing admin. `None` disables settlement proof minting.
+    /// Default: None (disabled).
+    pub settlement_nft_contract_id: Option<Address>,
 }
 
 impl Default for ContractConfig {
@@ -181,6 +189,7 @@ impl Default for ContractConfig {
             creation_quota_max: 0,               // disabled by default
             creation_quota_window_seconds: 3600, // 1 hour window
             auto_mint_nft: false,                // disabled by default
+            settlement_nft_contract_id: None,
         }
     }
 }
@@ -382,8 +391,9 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// 17. creation_quota_max (u32, 4 bytes, big-endian)
 /// 18. creation_quota_window_seconds (u64, 8 bytes, big-endian)
 /// 19. auto_mint_nft (bool, 1 byte: 1 = true, 0 = false)
+/// 20. settlement_nft_contract_id (presence byte + SHA-256 of address XDR, 33 bytes)
 ///
-/// Total: 90 bytes serialized, hashed to a 32-byte SHA-256 digest.
+/// Total: 123 bytes serialized, hashed to a 32-byte SHA-256 digest.
 ///
 /// Every field is serialized exactly once, in `ContractConfig` declaration
 /// order, so adding a field without extending the buffer here is caught by
@@ -408,7 +418,7 @@ pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32>
     // `debug_assert` catches any drift between the two at test time instead
     // of panicking inside a contract call at runtime.
     //
-    // Layout (90 bytes):
+    // Layout (123 bytes):
     //   u32 shipment_ttl_threshold        4
     //   u32 shipment_ttl_extension        4
     //   u64 min_status_update_interval    8
@@ -428,7 +438,8 @@ pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32>
     //   u32 creation_quota_max            4
     //   u64 creation_quota_window_seconds 8
     //   bool auto_mint_nft                1
-    let mut bytes: [u8; 90] = [0; 90];
+    //   Option<Address> settlement_nft_contract_id 33
+    let mut bytes: [u8; 123] = [0; 123];
     let mut offset = 0;
 
     macro_rules! put_u32 {
@@ -469,6 +480,15 @@ pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32>
     put_u32!(config.creation_quota_max);
     put_u64!(config.creation_quota_window_seconds);
     put_bool!(config.auto_mint_nft);
+    if let Some(nft_contract) = &config.settlement_nft_contract_id {
+        bytes[offset] = 1;
+        offset += 1;
+        let address_hash = env.crypto().sha256(&nft_contract.to_xdr(env));
+        bytes[offset..offset + 32].copy_from_slice(&address_hash.to_array());
+        offset += 32;
+    } else {
+        offset += 33;
+    }
 
     debug_assert_eq!(
         offset,
@@ -527,6 +547,7 @@ pub fn set_config_checksum(env: &Env, checksum: &BytesN<32>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_default_config_is_valid() {
@@ -805,6 +826,15 @@ mod tests {
     }
 
     #[test]
+    fn test_checksum_changes_with_settlement_nft_contract() {
+        let env = Env::default();
+        let mut config = ContractConfig::default();
+        let original = compute_config_checksum(&config, &env);
+        config.settlement_nft_contract_id = Some(soroban_sdk::Address::generate(&env));
+        assert_ne!(original, compute_config_checksum(&config, &env));
+    }
+
+    #[test]
     fn test_checksum_changes_on_field_modification() {
         // Modifying any field must change the checksum
         let env = Env::default();
@@ -1003,6 +1033,7 @@ mod tests {
             creation_quota_max: 0,
             creation_quota_window_seconds: 3600,
             auto_mint_nft: false,
+            settlement_nft_contract_id: None,
         };
 
         let checksums = [
@@ -1093,6 +1124,7 @@ mod tests {
             creation_quota_max: 0,
             creation_quota_window_seconds: 3600,
             auto_mint_nft: false,
+            settlement_nft_contract_id: None,
         };
 
         let config_max = ContractConfig {
@@ -1115,6 +1147,7 @@ mod tests {
             creation_quota_max: 100,
             creation_quota_window_seconds: 86_400,
             auto_mint_nft: false,
+            settlement_nft_contract_id: None,
         };
 
         let checksum_min = compute_config_checksum(&config_min, &env);
