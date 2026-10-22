@@ -154,9 +154,11 @@ For detailed contribution guidelines, please see [CONTRIBUTING.md](CONTRIBUTING.
 | `make check` | `fmt-check` + `lint` | — |
 | `make all` | `check` + `test` + `build` | — |
 | `make clean` | Remove build artifacts | — |
-| `make generate-schema-shipment` | Write `docs/contract-schema.shipment.json` | Stellar CLI |
-| `make generate-schema-token` | Write `docs/contract-schema.token.json` | Stellar CLI |
-| `make generate-schema-nft` | Write `docs/contract-schema.nft.json` | Stellar CLI |
+| `make generate-schema-shipment` | Regenerate `docs/contract-schema.shipment.json` | Stellar CLI |
+| `make generate-schema-token` | Regenerate `docs/contract-schema.token.json` | Stellar CLI |
+| `make generate-schema-nft` | Regenerate `docs/contract-schema.nft.json` | Stellar CLI |
+
+The `docs/contract-schema.*.json` files are generated from the built WASM; do not edit them by hand. Regenerate them when a contract's public interface changes and commit the output only when it differs.
 
 ## Deployment
 
