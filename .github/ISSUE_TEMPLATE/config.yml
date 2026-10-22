@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security Report
+    url: mailto:navinxmr@gmail.com
+    about: Please report security vulnerabilities privately by email instead of opening a public issue.
+  - name: General Discussion
+    url: https://t.me/+3svwFsQME6k1YjI0
+    about: Ask general questions in the project's Telegram group chat.
