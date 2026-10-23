@@ -1380,5 +1380,5 @@ Emitted when multiple transfers are executed atomically in a single call via `ba
 ## Token Contract Reference
 
 - **Location:** `contracts/token/src/lib.rs`
-- **Schema:** `docs/contract-schema.token.json`
+- **Schema:** `docs/contract-schema.token.json` (generated — do not hand-edit)
 - **Initialization:** See `docs/deployment.md` → Token Contract Initialization

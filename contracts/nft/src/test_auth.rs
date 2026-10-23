@@ -12,7 +12,7 @@ use crate::{test_receivers::AcceptingReceiver, NavinShipmentNft, NavinShipmentNf
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation, MockAuth, MockAuthInvoke},
-    Address, Env, IntoVal, String, Symbol,
+    Address, Env, IntoVal, Symbol, Vec,
 };
 
 /// Sets up an initialized NFT contract without enabling `mock_all_auths`.
@@ -23,8 +23,8 @@ fn setup_strict() -> (Env, Address, NavinShipmentNftClient<'static>) {
     let contract_id = env.register(NavinShipmentNft, ());
     let client = NavinShipmentNftClient::new(&env, &contract_id);
 
-    let name = String::from_str(&env, "NavinNFT");
-    let symbol = String::from_str(&env, "NNFT");
+    let name = symbol_short!("NavinNFT");
+    let symbol = symbol_short!("NNFT");
     env.mock_auths(&[MockAuth {
         address: &admin,
         invoke: &MockAuthInvoke {
@@ -148,12 +148,12 @@ fn test_mint_fails_for_former_admin_after_admin_transfer() {
         address: &admin,
         invoke: &MockAuthInvoke {
             contract: &client.address,
-            fn_name: "propose_admin_transfer",
-            args: (new_admin.clone(),).into_val(&env),
+            fn_name: "transfer_admin",
+            args: (admin.clone(), new_admin.clone()).into_val(&env),
             sub_invokes: &[],
         },
     }]);
-    client.propose_admin_transfer(&new_admin);
+    client.transfer_admin(&admin, &new_admin);
     env.mock_auths(&[MockAuth {
         address: &new_admin,
         invoke: &MockAuthInvoke {
@@ -185,13 +185,13 @@ fn test_non_admin_cannot_propose_admin_transfer() {
         address: &non_admin,
         invoke: &MockAuthInvoke {
             contract: &client.address,
-            fn_name: "propose_admin_transfer",
-            args: (new_admin.clone(),).into_val(&env),
+            fn_name: "transfer_admin",
+            args: (non_admin.clone(), new_admin.clone()).into_val(&env),
             sub_invokes: &[],
         },
     }]);
 
-    assert!(client.try_propose_admin_transfer(&new_admin).is_err());
+    assert!(client.try_transfer_admin(&non_admin, &new_admin).is_err());
     assert!(client.try_get_proposed_admin().is_err());
 }
 
@@ -226,13 +226,17 @@ fn test_transfer_requires_owner_auth() {
     let (env, admin, client) = setup_strict();
     let alice = Address::generate(&env);
     let bob = env.register(AcceptingReceiver, ());
+    // The address that signs the transfer attempt must not be the recipient
+    // contract: `mock_auths` registers a mock contract at the signed address
+    // and would replace the receiver.
+    let mallory = Address::generate(&env);
 
     authorize_mint(&env, &client, &admin, &alice, 1);
     client.mint(&alice, &1);
 
-    // Bob signing a transfer of Alice's token must fail.
+    // A signature that does not cover Alice's token must fail.
     env.mock_auths(&[MockAuth {
-        address: &bob,
+        address: &mallory,
         invoke: &MockAuthInvoke {
             contract: &client.address,
             fn_name: "transfer",
@@ -276,7 +280,7 @@ fn test_approved_transfer_requires_owner_approval_and_operator_auth() {
     let (env, admin, client) = setup_strict();
     let owner = Address::generate(&env);
     let operator = Address::generate(&env);
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
 
     authorize_mint(&env, &client, &admin, &owner, 1);
     client.mint(&owner, &1);

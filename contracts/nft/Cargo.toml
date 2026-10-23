@@ -1,6 +1,6 @@
 [package]
 name = "navin-nft"
-version = "0.1.0"
+version = "0.0.0" # Always 0.0.0 — see docs/versioning.md
 edition = "2021"
 publish = false
 
@@ -9,7 +9,9 @@ crate-type = ["lib", "cdylib"]
 doctest = false
 
 [dependencies]
-soroban-sdk = { workspace = true }
+# `alloc` gives the wasm build the SDK's bump allocator, which the token URI
+# helper needs to concatenate the base URI with the decimal token id.
+soroban-sdk = { workspace = true, features = ["alloc"] }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
