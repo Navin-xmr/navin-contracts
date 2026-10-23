@@ -5,8 +5,8 @@ extern crate alloc;
 
 use soroban_sdk::auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation};
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, xdr::ToXdr, Address, Env, IntoVal, Symbol,
-    Vec,
+    contract, contractimpl, contracttype, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal,
+    Symbol, Vec,
 };
 
 // `audit`, `consistency`, `diagnostics` and `error_map` stay `pub` (issue
@@ -226,6 +226,15 @@ pub use types::*;
 pub use validation::*;
 
 const MAX_BATCH_QUERY_SIZE: u32 = 50;
+
+/// Refresh the contract-wide instance storage TTL.
+///
+/// The admin set and the contract config live in instance storage, so an
+/// active read keeps that entry alive and the contract stays operable.
+fn extend_instance_ttl(env: &Env) {
+    let max_ttl = env.storage().max_ttl();
+    env.storage().instance().extend_ttl(max_ttl, max_ttl);
+}
 
 fn extend_shipment_ttl(env: &Env, shipment_id: u64) {
     let config = config::get_config(env);
@@ -1373,6 +1382,7 @@ impl NavinShipment {
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     pub fn get_status_summary(env: Env) -> Result<ShipmentStatusSummary, NavinError> {
         require_initialized(&env)?;
+        extend_instance_ttl(&env);
         Ok(ShipmentStatusSummary {
             created: storage::get_status_count(&env, &ShipmentStatus::Created),
             in_transit: storage::get_status_count(&env, &ShipmentStatus::InTransit),

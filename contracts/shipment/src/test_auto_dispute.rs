@@ -10,7 +10,7 @@
 extern crate std;
 
 use crate::{BreachType, NavinShipment, NavinShipmentClient, Severity, ShipmentStatus};
-use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Symbol};
 
 // ── Minimal mock token ────────────────────────────────────────────────────────
 

@@ -20,7 +20,7 @@ use shipment::{NavinError, NavinShipment, NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Ledger as _},
-    Address, BytesN, Env, String, Vec,
+    Address, BytesN, Env, Vec,
 };
 
 // ── Mock token ───────────────────────────────────────────────────────────────
@@ -112,7 +112,6 @@ struct Ctx {
     env: Env,
     shipment: NavinShipmentClient<'static>,
     nft: NavinShipmentNftClient<'static>,
-    admin: Address,
     nft_admin: Address,
     company: Address,
     carrier: Address,
@@ -181,7 +180,6 @@ fn setup_with_nft_admin(shipment_is_nft_admin: bool) -> Ctx {
         env,
         shipment,
         nft,
-        admin,
         nft_admin,
         company,
         carrier,
@@ -370,10 +368,14 @@ fn test_settlement_completion_mints_proof_nft() {
     let id = create_shipment(&ctx, &receiver, 40);
     ctx.shipment.deposit_escrow(&ctx.company, &id, &1_000);
     move_in_transit(&ctx, id, 41);
+    // `confirm_delivery` settles the escrow and completes the settlement, which
+    // mints the proof NFT to the carrier. A follow-up `release_escrow` call is
+    // rejected because the shipment is already finalized.
     ctx.shipment
         .confirm_delivery(&receiver, &id, &hash(&ctx.env, 42));
 
-    ctx.shipment.release_escrow(&receiver, &id);
+    assert!(ctx.shipment.try_release_escrow(&receiver, &id).is_err());
+    assert_eq!(ctx.shipment.get_shipment(&id).escrow_amount, 0);
 
     assert_eq!(ctx.nft.owner_of(&id), ctx.carrier);
     assert_eq!(ctx.nft.balance_of(&ctx.carrier), 1);

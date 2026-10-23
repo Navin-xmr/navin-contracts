@@ -1,6 +1,6 @@
 extern crate std;
 
-use crate::test_helpers::setup_shipment_env;
+use crate::test_helpers::{setup_initialized_shipment_env, setup_shipment_env};
 
 use crate::{NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
@@ -48,7 +48,7 @@ fn create_test_shipment(
 
 #[test]
 fn test_ttl_health_summary_no_shipments() {
-    let (_env, client, _admin, _token_contract) = setup_shipment_env();
+    let (_env, client, _admin, _token_contract) = setup_initialized_shipment_env();
 
     let health = client.get_status_summary();
 
@@ -63,7 +63,7 @@ fn test_ttl_health_summary_no_shipments() {
 
 #[test]
 fn test_ttl_health_summary_single_shipment() {
-    let (env, client, admin, _token_contract) = setup_shipment_env();
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -81,7 +81,7 @@ fn test_ttl_health_summary_single_shipment() {
 
 #[test]
 fn test_ttl_health_summary_multiple_shipments() {
-    let (env, client, admin, _token_contract) = setup_shipment_env();
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -101,7 +101,7 @@ fn test_ttl_health_summary_multiple_shipments() {
 
 #[test]
 fn test_ttl_health_summary_deterministic() {
-    let (env, client, admin, _token_contract) = setup_shipment_env();
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -131,7 +131,7 @@ fn test_ttl_health_summary_not_initialized() {
 
 #[test]
 fn test_ttl_health_summary_edge_case_exactly_20_shipments() {
-    let (env, client, admin, _token_contract) = setup_shipment_env();
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -150,7 +150,7 @@ fn test_ttl_health_summary_edge_case_exactly_20_shipments() {
 
 #[test]
 fn test_ttl_extended_on_active_mutation() {
-    let (env, client, admin, _token) = setup_shipment_env();
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -209,7 +209,7 @@ fn test_ttl_extended_on_active_mutation() {
 
 #[test]
 fn test_instance_ttl_refreshes_on_active_read() {
-    let (env, client, _admin, _token) = setup_shipment_env();
+    let (env, client, _admin, _token) = setup_initialized_shipment_env();
 
     let ttl_before_read = env.as_contract(&client.address, || env.storage().instance().get_ttl());
 
@@ -231,7 +231,7 @@ fn test_instance_ttl_refreshes_on_active_read() {
 
 #[test]
 fn test_ttl_not_extended_for_archived_terminal_shipment() {
-    let (env, client, admin, _token) = setup_shipment_env();
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -279,7 +279,7 @@ fn test_ttl_not_extended_for_archived_terminal_shipment() {
 /// Verify that health output matches actual storage state at TTL boundaries.
 #[test]
 fn test_ttl_health_output_matches_storage_state() {
-    let (env, client, admin, _token) = setup_shipment_env();
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);

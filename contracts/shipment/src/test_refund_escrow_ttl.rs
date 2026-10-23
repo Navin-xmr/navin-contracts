@@ -5,7 +5,7 @@
 
 use crate::test_helpers::*;
 use soroban_sdk::{
-    testutils::{storage::Persistent, Address as _, Ledger},
+    testutils::{storage::Persistent, Ledger},
     Address, BytesN,
 };
 

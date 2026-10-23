@@ -14,7 +14,7 @@ use crate::{test_receivers::AcceptingReceiver, NavinShipmentNft, NavinShipmentNf
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Events as _, Ledger as _},
-    vec, Address, Env, IntoVal, String, Symbol, Val, Vec,
+    vec, Address, Env, IntoVal, Symbol, Val, Vec,
 };
 
 const TIMESTAMP: u64 = 1_700_000_000;
@@ -26,11 +26,7 @@ fn setup() -> (Env, Address, NavinShipmentNftClient<'static>) {
     let contract_id = env.register(NavinShipmentNft, ());
     let client = NavinShipmentNftClient::new(&env, &contract_id);
     env.mock_all_auths();
-    client.initialize(
-        &admin,
-        &String::from_str(&env, "NavinNFT"),
-        &String::from_str(&env, "NNFT"),
-    );
+    client.initialize(&admin, &symbol_short!("NavinNFT"), &symbol_short!("NNFT"));
     (env, admin, client)
 }
 
@@ -84,8 +80,8 @@ fn test_initialize_emits_versioned_event() {
                 topics(&env, event_topics::INIT),
                 (
                     admin,
-                    String::from_str(&env, "NavinNFT"),
-                    String::from_str(&env, "NNFT"),
+                    symbol_short!("NavinNFT"),
+                    symbol_short!("NNFT"),
                     TIMESTAMP
                 )
                     .into_val(&env),
@@ -266,7 +262,7 @@ fn test_self_transfer_emits_noop_event() {
 fn test_transfer_admin_emits_event() {
     let (env, admin, client) = setup();
     let new_admin = Address::generate(&env);
-    client.propose_admin_transfer(&new_admin);
+    client.transfer_admin(&admin, &new_admin);
     client.accept_admin_transfer();
 
     let event = last_event(&env, &client.address);
@@ -287,7 +283,7 @@ fn test_transfer_admin_emits_event() {
 fn test_admin_proposal_emits_event() {
     let (env, admin, client) = setup();
     let new_admin = Address::generate(&env);
-    client.propose_admin_transfer(&new_admin);
+    client.transfer_admin(&admin, &new_admin);
 
     let event = last_event(&env, &client.address);
     assert_eq!(
