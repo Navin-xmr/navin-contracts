@@ -63,7 +63,7 @@ This query does not mutate storage and is safe to run in pre-restore triage work
 
 ## Issues Found & Recommendations
 
-### ⚠️ Note 1 — `CarrierWhitelist` should move to Persistent
+### Warning: Note 1 — `CarrierWhitelist` should move to Persistent
 
 **Current:** `instance()`  
 **Recommended:** `persistent()`  
@@ -72,7 +72,7 @@ This query does not mutate storage and is safe to run in pre-restore triage work
 
 ---
 
-### ⚠️ Note 2 — `UserRole` should move to Persistent
+### Warning: Note 2 — `UserRole` should move to Persistent
 
 **Current:** `instance()`  
 **Recommended:** `persistent()`  
@@ -81,7 +81,7 @@ This query does not mutate storage and is safe to run in pre-restore triage work
 
 ---
 
-### ⚠️ Note 3 — `ActiveShipmentCount` should move to Persistent
+### Warning: Note 3 — `ActiveShipmentCount` should move to Persistent
 
 **Current:** `instance()`  
 **Recommended:** `persistent()`  
@@ -90,7 +90,7 @@ This query does not mutate storage and is safe to run in pre-restore triage work
 
 ---
 
-### ⚠️ Note 4 — `LastStatusUpdate` should move to Temporary
+### Warning: Note 4 — `LastStatusUpdate` should move to Temporary
 
 **Current:** `persistent()`  
 **Recommended:** `temporary()`  
@@ -99,7 +99,7 @@ This query does not mutate storage and is safe to run in pre-restore triage work
 
 ---
 
-### ⚠️ Note 5 — `EventCount` should move to Temporary
+### Warning: Note 5 — `EventCount` should move to Temporary
 
 **Current:** `persistent()`  
 **Recommended:** `temporary()`  
@@ -108,7 +108,7 @@ This query does not mutate storage and is safe to run in pre-restore triage work
 
 ---
 
-### 🐛 Bug Found — Double Set in `set_confirmation_hash`
+### Bug Found — Double Set in `set_confirmation_hash`
 
 ```rust
 pub fn set_confirmation_hash(env: &Env, shipment_id: u64, hash: &BytesN<32>) {
@@ -138,9 +138,9 @@ The key is set twice identically. The second call is a wasted operation. Remove 
 ## TTL Extension Coverage
 
 The `extend_shipment_ttl` function currently extends TTL for:
-- `Shipment(id)` ✅
-- `Escrow(id)` ✅  
-- `ConfirmationHash(id)` ✅
+- `Shipment(id)` OK
+- `Escrow(id)` OK  
+- `ConfirmationHash(id)` OK
 
 After migration, it should **also** cover:
 - `LastStatusUpdate(id)` — if kept in persistent (but recommended to move to temporary)

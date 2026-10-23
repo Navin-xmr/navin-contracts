@@ -1,6 +1,7 @@
 use crate::test_helpers::*;
 use crate::test_utils::dummy_hash;
 use crate::types::*;
+use navin_nft::{NavinShipmentNft, NavinShipmentNftClient};
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::{Address, BytesN, Env};
 
@@ -273,6 +274,14 @@ fn test_refund_escrow_settlement_failure() {
 #[test]
 fn test_release_escrow_settlement_failure() {
     let (env, client, admin, _token_contract) = setup_initialized_shipment_env_with_failing_token();
+    let nft = NavinShipmentNftClient::new(&env, &env.register(NavinShipmentNft, ()));
+    client.configure_settlement_nft(
+        &admin,
+        &nft.address,
+        &soroban_sdk::symbol_short!("SettleNFT"),
+        &soroban_sdk::symbol_short!("SETTLE"),
+    );
+
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -313,6 +322,7 @@ fn test_release_escrow_settlement_failure() {
     // Verify no active settlement
     let active = client.get_active_settlement(&shipment_id);
     assert!(active.is_none());
+    assert_eq!(nft.total_supply(), 0);
 }
 
 /// Test settlement state transitions through full lifecycle.

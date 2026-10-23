@@ -3,8 +3,10 @@
 #[cfg(test)]
 extern crate alloc;
 
+use soroban_sdk::auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation};
 use soroban_sdk::{
-    contract, contractimpl, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal, Symbol, Vec,
+    contract, contractimpl, contracttype, symbol_short, xdr::ToXdr, Address, Env, IntoVal, Symbol,
+    Vec,
 };
 
 // `audit`, `consistency`, `diagnostics` and `error_map` stay `pub` (issue
@@ -46,39 +48,39 @@ mod event_topics;
 mod events;
 mod storage;
 #[cfg(test)]
+mod test_audit_trail;
+#[cfg(test)]
+mod test_auth_guardians;
+#[cfg(test)]
+mod test_config_multisig;
+#[cfg(test)]
+mod test_creation_whitelist;
+#[cfg(test)]
+mod test_cross_contract_integration;
+#[cfg(test)]
+mod test_delivery_escrow;
+#[cfg(test)]
+mod test_error_codes;
+#[cfg(test)]
+mod test_handoff_breach;
+#[cfg(test)]
 pub mod test_helpers;
 #[cfg(test)]
 mod test_initialization;
 #[cfg(test)]
-mod test_creation_whitelist;
-#[cfg(test)]
-mod test_status_escrow_queries;
-#[cfg(test)]
-mod test_delivery_escrow;
-#[cfg(test)]
-mod test_upgrade_migration;
-#[cfg(test)]
-mod test_handoff_breach;
-#[cfg(test)]
-mod test_multisig;
-#[cfg(test)]
-mod test_error_codes;
-#[cfg(test)]
-mod test_roles_events;
-#[cfg(test)]
-mod test_validation_edge;
-#[cfg(test)]
-mod test_config_multisig;
-#[cfg(test)]
-mod test_auth_guardians;
+mod test_mixed_token_shipments;
 #[cfg(test)]
 mod test_module_visibility;
 #[cfg(test)]
-mod test_audit_trail;
+mod test_multisig;
 #[cfg(test)]
-mod test_cross_contract_integration;
+mod test_roles_events;
 #[cfg(test)]
-mod test_mixed_token_shipments;
+mod test_status_escrow_queries;
+#[cfg(test)]
+mod test_upgrade_migration;
+#[cfg(test)]
+mod test_validation_edge;
 #[cfg(test)]
 mod test_zero_amount_escrow;
 
@@ -92,6 +94,11 @@ mod test_hash_emit_vectors;
 mod test_token_compatibility;
 mod types;
 mod validation;
+
+#[contracttype]
+enum SettlementProofKey {
+    Minted(u64),
+}
 
 #[cfg(test)]
 mod test_admin_pause_guards;
@@ -600,11 +607,69 @@ fn create_settlement(
 fn complete_settlement(env: &Env, settlement_id: u64, shipment_id: u64) -> Result<(), NavinError> {
     let mut settlement =
         storage::get_settlement(env, settlement_id).ok_or(NavinError::ShipmentNotFound)?; // Reusing error for simplicity
+    if matches!(
+        &settlement.operation,
+        SettlementOperation::Release | SettlementOperation::Refund
+    ) {
+        mint_settlement_proof(env, &settlement)?;
+    }
     settlement.state = SettlementState::Completed;
     settlement.completed_at = Some(env.ledger().timestamp());
     storage::set_settlement(env, &settlement);
     storage::clear_active_settlement(env, shipment_id);
     Ok(())
+}
+
+fn mint_settlement_proof(env: &Env, settlement: &SettlementRecord) -> Result<(), NavinError> {
+    let config = config::get_config(env);
+    let Some(nft_contract) = config.settlement_nft_contract_id else {
+        return Ok(());
+    };
+
+    let proof_key = SettlementProofKey::Minted(settlement.shipment_id);
+    if env.storage().persistent().has(&proof_key) {
+        return Ok(());
+    }
+
+    let mut args: Vec<soroban_sdk::Val> = Vec::new(env);
+    args.push_back(settlement.to.clone().into_val(env));
+    args.push_back(settlement.shipment_id.into_val(env));
+    authorize_nft_invocation(env, &nft_contract, Symbol::new(env, "mint"), &args);
+
+    match env.try_invoke_contract::<u64, soroban_sdk::Error>(
+        &nft_contract,
+        &Symbol::new(env, "mint"),
+        args,
+    ) {
+        Ok(Ok(token_id)) if token_id == settlement.shipment_id => {}
+        _ => return Err(NavinError::NftMintFailed),
+    }
+
+    env.storage().persistent().set(&proof_key, &true);
+    env.storage().persistent().extend_ttl(
+        &proof_key,
+        config.shipment_ttl_threshold,
+        config.shipment_ttl_extension,
+    );
+    Ok(())
+}
+
+fn authorize_nft_invocation(
+    env: &Env,
+    nft_contract: &Address,
+    function: Symbol,
+    args: &Vec<soroban_sdk::Val>,
+) {
+    let mut auth_entries = Vec::new(env);
+    auth_entries.push_back(InvokerContractAuthEntry::Contract(SubContractInvocation {
+        context: ContractContext {
+            contract: nft_contract.clone(),
+            fn_name: function,
+            args: args.clone(),
+        },
+        sub_invocations: Vec::new(env),
+    }));
+    env.authorize_as_current_contract(auth_entries);
 }
 
 /// Mark a settlement as failed with an error code.
@@ -6142,6 +6207,66 @@ impl NavinShipment {
         // Emit config_updated event
         events::emit_config_updated(&env, &admin, &new_config);
 
+        Ok(())
+    }
+
+    /// Configure settlement proof minting for an NFT contract. An uninitialized
+    /// NFT is initialized with this shipment contract as its admin; an existing
+    /// NFT must already have this shipment contract as its admin.
+    ///
+    /// Only the shipment admin may call this method. `name` and `nft_symbol`
+    /// are used only when initializing an uninitialized NFT contract.
+    pub fn configure_settlement_nft(
+        env: Env,
+        admin: Address,
+        nft_contract: Address,
+        name: Symbol,
+        nft_symbol: Symbol,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        admin.require_auth();
+        require_admin(&env, &admin)?;
+
+        let shipment_contract = env.current_contract_address();
+        if nft_contract == shipment_contract {
+            return Err(NavinError::InvalidConfig);
+        }
+
+        let get_admin_args = Vec::new(&env);
+        match env.try_invoke_contract::<Address, soroban_sdk::Error>(
+            &nft_contract,
+            &Symbol::new(&env, "get_admin"),
+            get_admin_args,
+        ) {
+            Ok(Ok(nft_admin)) if nft_admin == shipment_contract => {}
+            Ok(Ok(_)) => return Err(NavinError::NftConfigurationFailed),
+            _ => {
+                let mut initialize_args: Vec<soroban_sdk::Val> = Vec::new(&env);
+                initialize_args.push_back(shipment_contract.into_val(&env));
+                initialize_args.push_back(name.into_val(&env));
+                initialize_args.push_back(nft_symbol.into_val(&env));
+                authorize_nft_invocation(
+                    &env,
+                    &nft_contract,
+                    Symbol::new(&env, "initialize"),
+                    &initialize_args,
+                );
+                match env.try_invoke_contract::<(), soroban_sdk::Error>(
+                    &nft_contract,
+                    &Symbol::new(&env, "initialize"),
+                    initialize_args,
+                ) {
+                    Ok(Ok(())) => {}
+                    _ => return Err(NavinError::NftConfigurationFailed),
+                }
+            }
+        }
+
+        let mut new_config = config::get_config(&env);
+        new_config.settlement_nft_contract_id = Some(nft_contract);
+        config::set_config(&env, &new_config)?;
+        events::emit_config_updated(&env, &admin, &new_config);
         Ok(())
     }
 

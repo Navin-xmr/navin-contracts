@@ -1,6 +1,15 @@
 # Client Examples
 
-Short, practical snippets for common shipment contract calls. Copy the call shape and adapt it to your needs.
+Short, practical snippets for common shipment contract calls using the
+Rust/Soroban `NavinShipmentClient` (e.g. for tests or local scripts). Copy
+the call shape and adapt it to your needs.
+
+> **Scope note:** for the production backend integration path — the same
+> contract calls (`create_shipment`, `deposit_escrow`, etc.) invoked from a
+> JS/TS Express.js backend via the Stellar SDK — see
+> [`docs/integration-guide.md`](integration-guide.md#contract-invocation)
+> instead. Keep call-shape snippets here in Rust only; don't duplicate the
+> TS examples from the integration guide.
 
 ## Table of Contents
 

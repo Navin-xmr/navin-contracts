@@ -4,7 +4,6 @@ extern crate std;
 
 use super::test_helpers::*;
 
-
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_handoff_unauthorized() {

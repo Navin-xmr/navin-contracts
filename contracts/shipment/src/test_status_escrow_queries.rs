@@ -4,7 +4,6 @@ extern crate std;
 
 use super::test_helpers::*;
 
-
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_update_status_unauthorized() {
@@ -360,4 +359,3 @@ fn setup_shipment_with_status(
 
     (receiver, carrier, shipment_id)
 }
-

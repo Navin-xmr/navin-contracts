@@ -44,7 +44,7 @@ fn setup() -> (Env, NavinShipmentClient<'static>, Address, Address) {
 
 /// Create a shipment and return `(id, company, receiver, carrier)`.
 // Consolidated to test_utils::create_test_shipment (#1099)
-    use crate::test_utils::create_test_shipment;
+use crate::test_utils::create_test_shipment;
 
 /// Create a shipment and move it into `Disputed`.
 fn disputed_shipment(

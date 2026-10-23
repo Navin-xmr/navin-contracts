@@ -2,6 +2,14 @@
 
 Complete guide for integrating the Navin shipment tracking smart contract with your Express.js backend using the Stellar JavaScript/TypeScript SDK.
 
+> **Scope note:** this guide covers the production backend integration path
+> (JS/TS, Stellar SDK, Express.js). For short Rust snippets that call the
+> contract directly through `NavinShipmentClient` (e.g. in tests or local
+> scripts), see [`docs/client-examples.md`](client-examples.md) instead —
+> it covers the same contract calls (`create_shipment`, `deposit_escrow`,
+> etc.) but for the Rust/Soroban test-client stack, not the JS/TS backend
+> stack documented here.
+
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
@@ -97,7 +105,7 @@ This ensures the schema file stays in sync with the contract code on every PR. I
 
 ## Event Payload Schemas
 
-Use `docs/event_schemas.md` as the central JSON-schema-like reference for emitted event payloads and field ordering.
+Use [`docs/events.md`](events.md) as the central reference for emitted event payloads, field ordering, type mappings, and the `schema_version`/`event_counter`/`idempotency_key` versioning policy. `docs/event_schemas.md` now just links there.
 
 For quick contract client call examples, see [Client Examples](docs/client-examples.md).
 
