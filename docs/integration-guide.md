@@ -21,6 +21,9 @@ Complete guide for integrating the Navin shipment tracking smart contract with y
 7. [Event Listening](#event-listening)
 8. [Transaction Verification](#transaction-verification)
 9. [Complete Examples](#complete-examples)
+10. [Best Practices](#best-practices)
+11. [Error Code Mapping](#error-code-mapping)
+12. [Testing](#testing)
 
 ## Contract Schema (ABI)
 
@@ -1016,9 +1019,9 @@ export const ShipmentModel = mongoose.model("Shipment", shipmentSchema);
 ```bash
 # .env
 NODE_ENV=development
-STELLAR_SECRET_KEY=SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-SHIPMENT_CONTRACT_ID=CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-TOKEN_CONTRACT_ID=CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+STELLAR_SECRET_KEY=<STELLAR_SECRET_KEY>
+SHIPMENT_CONTRACT_ID=<SHIPMENT_CONTRACT_ID>
+TOKEN_CONTRACT_ID=<TOKEN_CONTRACT_ID>
 MONGODB_URI=mongodb://localhost:27017/navin
 ```
 
@@ -1166,9 +1169,9 @@ describe("Shipment Integration", () => {
 
   it("should create shipment and verify transaction", async () => {
     const shipmentData = {
-      sender: "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-      receiver: "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-      carrier: "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      sender: "GAAAAFAKESENDERADDRESS000000000000000000000000000000000",
+      receiver: "GAAAAFAKERECEIVERADDRESS00000000000000000000000000000000",
+      carrier: "GAAAAFAKECARRIERADDRESS000000000000000000000000000000000",
       offChainData: {
         description: "Test shipment",
         weight: 10.5,

@@ -1,8 +1,8 @@
 # Storage Layout — NavinShipment Contract
 
-> **Audit Date:** 2026-02-26  
 > **Contract:** `NavinShipment`  
-> **File Audited:** `contracts/shipment/src/storage.rs`
+> **File Audited:** `contracts/shipment/src/storage.rs`  
+> **Source of truth for key enumeration:** [`docs/storage-key-registry.md`](storage-key-registry.md) (tracks `contracts/shipment/src/types.rs`); this document does not carry its own audit date — refer to the registry's "Last Updated" field and to `types.rs`/`storage.rs` directly for the current state.
 
 ---
 
@@ -18,44 +18,27 @@ Stellar Soroban provides three storage tiers with distinct cost and durability p
 
 ---
 
-## Full Storage Key Layout
+## Storage Tier Classification
 
-### Instance Storage Keys
+For the full, authoritative list of `DataKey` variants grouped by purpose
+(governance, roles, shipment/escrow state, counters, proposals, etc.), see
+[`docs/storage-key-registry.md`](storage-key-registry.md) — that document
+is the single source of truth for key enumeration and is kept in sync with
+`contracts/shipment/src/types.rs`.
 
-| Key | Type | Tier (Current) | Tier (Recommended) | Rationale |
-|-----|------|---------------|-------------------|-----------|
-| `Admin` | `Address` | Instance | OK Instance | Single global config value, lives with contract |
-| `ProposedAdmin` | `Address` | Instance | OK Instance | Short-lived config; cleared after acceptance |
-| `Version` | `u32` | Instance | OK Instance | Global contract metadata |
-| `ShipmentCount` | `u64` | Instance | OK Instance | Global counter, always needed |
-| `TokenContract` | `Address` | Instance | OK Instance | Immutable config after init |
-| `AdminList` | `Vec<Address>` | Instance | OK Instance | Global multisig config |
-| `MultiSigThreshold` | `u32` | Instance | OK Instance | Global multisig config |
-| `ProposalCounter` | `u64` | Instance | OK Instance | Global counter |
-| `ShipmentLimit` | `u32` | Instance | OK Instance | Global config value |
-| `CarrierWhitelist(company, carrier)` | `bool` | Instance | Warning: **Persistent** | See note 1 |
-| `UserRole(address, role)` | `bool` | Instance | Warning: **Persistent** | See note 2 |
-| `TotalEscrowVolume` | `i128` | Instance | OK Instance | Global analytics counter |
-| `TotalDisputes` | `u64` | Instance | OK Instance | Global analytics counter |
-| `StatusCount(status)` | `u64` | Instance | OK Instance | Global analytics counter |
-| `ActiveShipmentCount(company)` | `u32` | Instance | Warning: **Persistent** | See note 3 |
+This document instead focuses on *which storage tier* (instance, persistent,
+temporary) each key currently uses, whether that is the right tier, and why.
+Only keys whose current-vs-recommended tier is a point of discussion are
+tabulated below; see [Keys That Are Correctly Classified](#keys-that-are-correctly-classified-no-change-needed)
+for the rest.
 
-### Persistent Storage Keys
-
-| Key | Type | Tier (Current) | Tier (Recommended) | Rationale |
-|-----|------|---------------|-------------------|-----------|
-| `Shipment(id)` | `Shipment` | Persistent | OK Persistent | Core shipment data must survive TTL |
-| `Escrow(id)` | `i128` | Persistent | OK Persistent | Financial data, must not expire mid-shipment |
-| `ConfirmationHash(id)` | `BytesN<32>` | Persistent | OK Persistent | Proof of delivery, must be permanently auditable |
-| `LastStatusUpdate(id)` | `u64` | Persistent | Warning: **Temporary** | See note 4 |
-| `Proposal(id)` | `Proposal` | Persistent | OK Persistent | Governance proposals need durability |
-| `EventCount(id)` | `u32` | Persistent | Warning: **Temporary** | See note 5 |
-
-### Temporary Storage Keys
-
-| Key | Type | Tier (Current) | Tier (Recommended) | Rationale |
-|-----|------|---------------|-------------------|-----------|
-| `ArchivedShipment(id)` | `Shipment` | Temporary | OK Temporary | Post-lifecycle data, cheap ephemeral access |
+| Key | Tier (Current) | Tier (Recommended) | Rationale |
+|-----|---------------|-------------------|-----------|
+| `CarrierWhitelist(company, carrier)` | Instance | ⚠️ **Persistent** | See note 1 |
+| `UserRole(address, role)` | Instance | ⚠️ **Persistent** | See note 2 |
+| `ActiveShipmentCount(company)` | Instance | ⚠️ **Persistent** | See note 3 |
+| `LastStatusUpdate(id)` | Persistent | ⚠️ **Temporary** | See note 4 |
+| `EventCount(id)` | Persistent | ⚠️ **Temporary** | See note 5 |
 
 ---
 
@@ -169,6 +152,10 @@ After moving `LastStatusUpdate` and `EventCount` to temporary, no changes to `ex
 
 ## Keys That Are Correctly Classified (No Change Needed)
 
+The keys below (see [`docs/storage-key-registry.md`](storage-key-registry.md)
+for their full `DataKey` definitions) already use the appropriate tier and
+need no migration:
+
 | Key | Tier | Reason |
 |-----|------|--------|
 | `Admin` | Instance | Single global value, needed on every call |
@@ -187,6 +174,11 @@ After moving `LastStatusUpdate` and `EventCount` to temporary, no changes to `ex
 | `ConfirmationHash(id)` | Persistent | Delivery proof, permanent audit trail |
 | `Proposal(id)` | Persistent | Governance data needs durability |
 | `ArchivedShipment(id)` | Temporary | Post-lifecycle, ephemeral is correct |
+
+This table lists tier assignments, not the full registry of `DataKey`
+variants; many other keys (e.g. `ContractConfig`, `FeeConfig`,
+`CompanyShipmentLimit(Address)`) exist and are enumerated only in the
+registry.
 
 ---
 
