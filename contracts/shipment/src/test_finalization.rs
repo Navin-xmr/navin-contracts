@@ -1,5 +1,5 @@
 use crate::test_helpers::setup_shipment_env;
-use crate::{NavinShipment, NavinShipmentClient, ShipmentStatus};
+use crate::{NavinShipmentClient, ShipmentStatus};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Symbol, Vec};
 
 #[soroban_sdk::contract]

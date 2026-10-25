@@ -2,16 +2,16 @@
 
 extern crate std;
 
-use crate::{NavinNft, NavinNftClient};
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use crate::{NavinShipmentNft, NavinShipmentNftClient};
+use soroban_sdk::{symbol_short, testutils::Address as _, Address, Env, String};
 
-fn setup() -> (Env, NavinNftClient<'static>, Address) {
+fn setup() -> (Env, NavinShipmentNftClient<'static>, Address) {
     let env = Env::default();
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register(NavinNft, ());
-    let client = NavinNftClient::new(&env, &contract_id);
-    client.initialize(&admin);
+    let contract_id = env.register(NavinShipmentNft, ());
+    let client = NavinShipmentNftClient::new(&env, &contract_id);
+    client.initialize(&admin, &symbol_short!("NavinNFT"), &symbol_short!("NNFT"));
     (env, client, admin)
 }
 
@@ -22,7 +22,7 @@ fn base_uri_is_used_for_minted_token() {
     let owner = Address::generate(&env);
 
     client.set_base_uri(&admin, &base_uri);
-    client.mint(&admin, &owner, &42, &None);
+    client.mint(&owner, &42);
 
     assert_eq!(
         client.get_token_uri(&42),
@@ -39,7 +39,8 @@ fn explicit_metadata_uri_overrides_base_uri() {
     let owner = Address::generate(&env);
 
     client.set_base_uri(&admin, &base_uri);
-    client.mint(&admin, &owner, &42, &Some(metadata_uri.clone()));
+    client.mint(&owner, &42);
+    client.set_token_uri(&admin, &42, &metadata_uri);
 
     assert_eq!(client.get_token_uri(&42), metadata_uri);
 }
@@ -56,9 +57,13 @@ fn non_admin_cannot_set_base_uri() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #6)")]
+#[should_panic(expected = "Error(Contract, #16)")]
 fn mint_without_base_or_metadata_uri_fails() {
-    let (env, client, admin) = setup();
+    let (env, client, _) = setup();
     let owner = Address::generate(&env);
-    client.mint(&admin, &owner, &42, &None);
+    client.mint(&owner, &42);
+
+    // Neither a base URI nor a per-token metadata URI is configured, so the
+    // URI of the freshly minted token cannot be resolved.
+    let _ = client.get_token_uri(&42);
 }

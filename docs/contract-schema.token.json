@@ -1,58 +1,952 @@
 [
   {
-    "udt_union_v0": {
-      "doc": "Token contract error types",
-      "lib": "",
-      "name": "TokenError",
-      "cases": [
+    "function_v0": {
+      "doc": "Holder self-service burn: `from` burns their own tokens, requiring\\nonly their own auth \\xe2\\x80\\x94 no admin involvement (issue #658).",
+      "name": "burn",
+      "inputs": [
         {
-          "unit_v0": {
-            "name": "NotInitialized"
-          }
+          "doc": "",
+          "name": "from",
+          "type": "address"
         },
         {
-          "unit_v0": {
-            "name": "AlreadyInitialized"
+          "doc": "",
+          "name": "amount",
+          "type": "i128"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
           }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Mint new tokens (admin only)",
+      "name": "mint",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type": "address"
         },
         {
-          "unit_v0": {
-            "name": "InvalidAmount"
-          }
+          "doc": "",
+          "name": "to",
+          "type": "address"
         },
         {
-          "unit_v0": {
-            "name": "InsufficientBalance"
+          "doc": "",
+          "name": "amount",
+          "type": "i128"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
           }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get token name",
+      "name": "name",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "string",
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Pause the contract, blocking transfer/transfer_from/mint/burn/\\nburn_from/admin_burn/batch_transfer until unpause() is called\\n(issue #657). Admin only.",
+      "name": "pause",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get token symbol",
+      "name": "symbol",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "string",
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Approve `spender` to transfer up to `amount` of `from`'s tokens,\\nuntil `expiration_ledger` (issue #659) \\xe2\\x80\\x94 matches the standard\\nSoroban token interface's `approve(from, spender, amount,\\nexpiration_ledger)` shape. Pass `MAX_EXPIRATION_LEDGER` for an\\nallowance that effectively never expires. `amount == 0` clears the\\nallowance regardless of `expiration_ledger`.\\n\\nSelf-approval (`from == spender`) is permitted and treated as a\\nharmless no-op, matching the standard SEP-41/Soroban token interface.",
+      "name": "approve",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "from",
+          "type": "address"
         },
         {
-          "unit_v0": {
-            "name": "InsufficientAllowance"
-          }
+          "doc": "",
+          "name": "spender",
+          "type": "address"
         },
         {
-          "unit_v0": {
-            "name": "Unauthorized"
-          }
+          "doc": "",
+          "name": "amount",
+          "type": "i128"
         },
         {
-          "unit_v0": {
-            "name": "SameAccount"
+          "doc": "",
+          "name": "expiration_ledger",
+          "type": "u32"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
           }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get balance of an address",
+      "name": "balance",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "address",
+          "type": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "i128",
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Unpause the contract, re-enabling fund-moving operations\\n(issue #657). Admin only.",
+      "name": "unpause",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get token decimals",
+      "name": "decimals",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "u32",
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Transfer tokens from caller to recipient.\\n\\nSelf-transfers (`from == to`) are permitted and treated as a harmless\\nno-op to match the standard SEP-41/Soroban token interface semantics.",
+      "name": "transfer",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "from",
+          "type": "address"
         },
         {
-          "unit_v0": {
-            "name": "Overflow"
-          }
+          "doc": "",
+          "name": "to",
+          "type": "address"
         },
         {
-          "unit_v0": {
-            "name": "ContractPaused"
+          "doc": "",
+          "name": "amount",
+          "type": "i128"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
           }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get the current allowance of `spender` for `from`'s tokens. Reads\\nback as 0 once `expiration_ledger` has passed (issue #659).",
+      "name": "allowance",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "from",
+          "type": "address"
         },
         {
-          "unit_v0": {
-            "name": "InvalidExpirationLedger"
+          "doc": "",
+          "name": "spender",
+          "type": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "i128",
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Allowance-based burn: `spender` burns `amount` of `from`'s tokens,\\nconsuming an existing allowance \\xe2\\x80\\x94 mirrors `transfer_from` but\\ndestroys the tokens instead of moving them (issue #658).",
+      "name": "burn_from",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "spender",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "amount",
+          "type": "i128"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get the token admin",
+      "name": "get_admin",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "address",
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Check whether the contract is currently paused. Read-only, no auth\\nrequired (issue #657).",
+      "name": "is_paused",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "bool",
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Admin clawback burn: burns tokens from an arbitrary `from` address,\\nauthorized by the admin rather than the holder (issue #658). Kept\\nunder this distinct name so it can't be confused with the\\nholder-authorized `burn` below, which requires `from`'s own auth.",
+      "name": "admin_burn",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "amount",
+          "type": "i128"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Initialize the token with admin, name, symbol, and total supply",
+      "name": "initialize",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "doc": "",
+          "name": "symbol",
+          "type": "string"
+        },
+        {
+          "doc": "",
+          "name": "total_supply",
+          "type": "i128"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get a metadata value by key.\\n\\n# Arguments\\n* `key` - The metadata key to retrieve.\\n\\n# Returns\\n* `Option<String>` - The metadata value if exists, None otherwise.\\n\\n# Errors\\n* `MetadataError::NotInitialized` - If contract is not initialized.",
+      "name": "get_metadata",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "key",
+          "type": "symbol"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "option": {
+                "value_type": "string"
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "MetadataError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Set a metadata key-value pair for the token.\\nOnly admin can set metadata, and only for allowed keys.\\n\\n# Arguments\\n* `admin` - Admin address authorizing the operation.\\n* `key` - The metadata key (must be in allowlist).\\n* `value` - The metadata value.\\n\\n# Errors\\n* `MetadataError::NotInitialized` - If contract is not initialized.\\n* `MetadataError::Unauthorized` - If caller is not admin.\\n* `MetadataError::KeyNotAllowed` - If key is not in allowlist.\\n* `MetadataError::InvalidValue` - If value is empty.",
+      "name": "set_metadata",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "key",
+          "type": "symbol"
+        },
+        {
+          "doc": "",
+          "name": "value",
+          "type": "string"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "MetadataError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get total supply",
+      "name": "total_supply",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "i128",
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Transfer tokens from one address to another with approval.\\n\\nSelf-transfers (`from == to`) are permitted and treated as a harmless\\nno-op to match the standard SEP-41/Soroban token interface semantics.",
+      "name": "transfer_from",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "spender",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "amount",
+          "type": "i128"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Transfer to multiple recipients in a single call (issue #656). The\\nwhole batch is validated up front \\xe2\\x80\\x94 if any leg would fail (a\\nnon-positive amount or insufficient total balance), the entire call\\nreturns Err and Soroban reverts every storage change made during this\\ninvocation, so no partial transfer can ever be observed. An empty\\n`recipients` list is rejected as InvalidAmount, mirroring how a\\nnon-positive amount is rejected everywhere else in this contract.\\n\\nSelf-transfers within the batch are permitted and treated as harmless\\nno-ops, matching the standard SEP-41/Soroban token interface.",
+      "name": "batch_transfer",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "recipients",
+          "type": {
+            "vec": {
+              "element_type": {
+                "tuple": {
+                  "value_types": [
+                    "address",
+                    "i128"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Propose a new admin address. The new admin must accept the transfer\\nbefore the contract's admin is updated.",
+      "name": "transfer_admin",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "current_admin",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "new_admin",
+          "type": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Remove a metadata key-value pair.\\nOnly admin can remove metadata.\\n\\n# Arguments\\n* `admin` - Admin address authorizing the operation.\\n* `key` - The metadata key to remove.\\n\\n# Errors\\n* `MetadataError::NotInitialized` - If contract is not initialized.\\n* `MetadataError::Unauthorized` - If caller is not admin.\\n* `MetadataError::KeyNotFound` - If key does not exist.",
+      "name": "remove_metadata",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "key",
+          "type": "symbol"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "MetadataError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Decrease the allowance for a spender by a delta.\\nReturns `InsufficientAllowance` if the delta exceeds the current allowance.\\nSelf-approval (`owner == spender`) is allowed as a no-op to match the\\nstandard SEP-41/Soroban token interface semantics.",
+      "name": "decrease_allowance",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "spender",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "delta",
+          "type": "i128"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Increase the allowance for a spender by a delta.\\nThis avoids the classic ERC-20 race condition present in `approve`.\\nSelf-approval (`owner == spender`) is allowed as a no-op to match the\\nstandard SEP-41/Soroban token interface semantics.",
+      "name": "increase_allowance",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "spender",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "delta",
+          "type": "i128"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Accept a previously proposed admin transfer. The accepting address must\\nbe the one previously nominated by the current admin.",
+      "name": "accept_admin_transfer",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "new_admin",
+          "type": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "TokenError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Check if a metadata key is in the admin-registered allowlist.\\n\\n# Arguments\\n* `key` - The metadata key to check.\\n\\n# Returns\\n* `bool` - True if the key is allowed, false otherwise.",
+      "name": "is_metadata_key_allowed",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "key",
+          "type": "symbol"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "bool",
+            "error_type": {
+              "udt": {
+                "name": "MetadataError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Add a metadata key to the admin-registered allowlist.\\nOnly admin can register allowed keys.\\n\\n# Arguments\\n* `admin` - Admin address authorizing the operation.\\n* `key` - The metadata key to allow (e.g., \"website\", \"twitter\").\\n\\n# Errors\\n* `MetadataError::NotInitialized` - If contract is not initialized.\\n* `MetadataError::Unauthorized` - If caller is not admin.\\n* `MetadataError::InvalidKey` - If key is empty.\\n* `MetadataError::KeyAlreadyExists` - If key is already allowed.",
+      "name": "add_allowed_metadata_key",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "key",
+          "type": "symbol"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "MetadataError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Get all metadata keys in the admin-registered allowlist.\\n\\n# Returns\\n* `Vec<Symbol>` - The currently allowed metadata keys in insertion order.\\n\\n# Errors\\n* `MetadataError::NotInitialized` - If contract is not initialized.",
+      "name": "get_allowed_metadata_keys",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "vec": {
+                "element_type": "symbol"
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "MetadataError"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Remove a metadata key from the admin-registered allowlist.\\nOnly admin can remove allowed keys.\\n\\n# Arguments\\n* `admin` - Admin address authorizing the operation.\\n* `key` - The metadata key to remove from allowlist.\\n\\n# Errors\\n* `MetadataError::NotInitialized` - If contract is not initialized.\\n* `MetadataError::Unauthorized` - If caller is not admin.\\n* `MetadataError::KeyNotFound` - If key is not in allowlist.",
+      "name": "remove_allowed_metadata_key",
+      "inputs": [
+        {
+          "doc": "",
+          "name": "admin",
+          "type": "address"
+        },
+        {
+          "doc": "",
+          "name": "key",
+          "type": "symbol"
+        }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": {
+              "tuple": {
+                "value_types": []
+              }
+            },
+            "error_type": {
+              "udt": {
+                "name": "MetadataError"
+              }
+            }
           }
         }
       ]
@@ -60,44 +954,210 @@
   },
   {
     "udt_union_v0": {
-      "doc": "Metadata management error types",
+      "doc": "Storage keys for token contract data",
+      "lib": "",
+      "name": "DataKey",
+      "cases": [
+        {
+          "void_v0": {
+            "doc": "",
+            "name": "Admin"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "",
+            "name": "PendingAdmin"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "",
+            "name": "Name"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "",
+            "name": "Symbol"
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "",
+            "name": "TotalSupply"
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "",
+            "name": "Balance",
+            "type": [
+              "address"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "",
+            "name": "Allowance",
+            "type": [
+              "address",
+              "address"
+            ]
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Allowed metadata keys (admin-registered allowlist)",
+            "name": "AllowedMetadataKey",
+            "type": [
+              "symbol"
+            ]
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Ordered index of all allowed metadata keys",
+            "name": "AllowedMetadataKeys"
+          }
+        },
+        {
+          "tuple_v0": {
+            "doc": "Token metadata key-value pairs",
+            "name": "Metadata",
+            "type": [
+              "symbol"
+            ]
+          }
+        },
+        {
+          "void_v0": {
+            "doc": "Contract-wide pause flag (issue #657)",
+            "name": "Paused"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "udt_struct_v0": {
+      "doc": "An allowance amount plus the ledger sequence it expires on (issue #659),\\nmatching the standard Soroban token interface's `approve`/`allowance`\\nshape. `u32::MAX` is used as the \"never expires\" sentinel.",
+      "lib": "",
+      "name": "AllowanceValue",
+      "fields": [
+        {
+          "doc": "",
+          "name": "amount",
+          "type": "i128"
+        },
+        {
+          "doc": "",
+          "name": "expiration_ledger",
+          "type": "u32"
+        }
+      ]
+    }
+  },
+  {
+    "udt_error_enum_v0": {
+      "doc": "",
+      "lib": "",
+      "name": "TokenError",
+      "cases": [
+        {
+          "doc": "",
+          "name": "AlreadyInitialized",
+          "value": 1
+        },
+        {
+          "doc": "",
+          "name": "NotInitialized",
+          "value": 2
+        },
+        {
+          "doc": "",
+          "name": "Unauthorized",
+          "value": 3
+        },
+        {
+          "doc": "",
+          "name": "InvalidAmount",
+          "value": 4
+        },
+        {
+          "doc": "",
+          "name": "InsufficientBalance",
+          "value": 5
+        },
+        {
+          "doc": "",
+          "name": "InsufficientAllowance",
+          "value": 6
+        },
+        {
+          "doc": "",
+          "name": "SameAccount",
+          "value": 7
+        },
+        {
+          "doc": "approve() was called with a non-zero amount and an expiration_ledger\\nthat has already passed (issue #659).",
+          "name": "InvalidExpirationLedger",
+          "value": 8
+        },
+        {
+          "doc": "A state-changing call was rejected because the contract is paused\\n(issue #657).",
+          "name": "ContractPaused",
+          "value": 9
+        },
+        {
+          "doc": "Arithmetic overflow/underflow (checked_add/checked_sub failed).",
+          "name": "Overflow",
+          "value": 10
+        }
+      ]
+    }
+  },
+  {
+    "udt_error_enum_v0": {
+      "doc": "",
       "lib": "",
       "name": "MetadataError",
       "cases": [
         {
-          "unit_v0": {
-            "name": "NotInitialized"
-          }
+          "doc": "",
+          "name": "NotInitialized",
+          "value": 1
         },
         {
-          "unit_v0": {
-            "name": "Unauthorized"
-          }
+          "doc": "",
+          "name": "Unauthorized",
+          "value": 2
         },
         {
-          "unit_v0": {
-            "name": "InvalidKey"
-          }
+          "doc": "",
+          "name": "KeyNotAllowed",
+          "value": 3
         },
         {
-          "unit_v0": {
-            "name": "KeyAlreadyExists"
-          }
+          "doc": "",
+          "name": "KeyNotFound",
+          "value": 4
         },
         {
-          "unit_v0": {
-            "name": "KeyNotFound"
-          }
+          "doc": "",
+          "name": "KeyAlreadyExists",
+          "value": 5
         },
         {
-          "unit_v0": {
-            "name": "KeyNotAllowed"
-          }
+          "doc": "",
+          "name": "InvalidKey",
+          "value": 6
         },
         {
-          "unit_v0": {
-            "name": "InvalidValue"
-          }
+          "doc": "",
+          "name": "InvalidValue",
+          "value": 7
         }
       ]
     }

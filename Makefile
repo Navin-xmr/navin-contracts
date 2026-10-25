@@ -24,6 +24,13 @@ help:
 	@echo "  make all          - Run checks and tests"
 	@echo ""
 
+# Contract ABI schemas
+#
+# The `docs/contract-schema.*.json` files are generated artifacts and must not
+# be edited by hand. Regenerate them with the matching target after changing a
+# contract's public interface, and commit the result only when it changes.
+# Generation requires the Stellar CLI (`stellar`).
+
 # Generate shipment contract ABI schema
 generate-schema-shipment: build
 	@echo "Generating shipment contract schema..."

@@ -10,7 +10,7 @@ use crate::test_helpers::*;
 use crate::types::{DataKey, SettlementKey};
 use crate::{storage, NavinError};
 use soroban_sdk::{
-    testutils::{storage::Persistent, Address as _, Ledger},
+    testutils::{storage::Persistent, Ledger},
     Address, BytesN, Env, Vec,
 };
 

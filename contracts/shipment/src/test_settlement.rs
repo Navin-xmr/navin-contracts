@@ -2,7 +2,6 @@ use crate::test_helpers::*;
 use crate::test_utils::dummy_hash;
 use crate::types::*;
 use navin_nft::{NavinShipmentNft, NavinShipmentNftClient};
-use soroban_sdk::testutils::Address as _;
 use soroban_sdk::{Address, BytesN, Env};
 
 fn seeded_hash(env: &Env, seed: u8) -> BytesN<32> {
