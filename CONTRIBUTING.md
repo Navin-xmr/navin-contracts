@@ -5,6 +5,7 @@ This guide will help you get started and ensure your contributions can be smooth
 
 ## Table of Contents
 
+- [Quick Start](#quick-start)
 - [Getting Started](#getting-started)
 - [Development Setup](#development-setup)
 - [Making Contributions](#making-contributions)
@@ -13,6 +14,34 @@ This guide will help you get started and ensure your contributions can be smooth
 - [Code Standards](#code-standards)
 - [Testing Guidelines](#testing-guidelines)
 - [Getting Help](#getting-help)
+
+## Quick Start
+
+In a hurry? Here is the minimum loop for a contribution:
+
+```bash
+# 1. Fork, then clone your fork and add upstream
+git clone https://github.com/YOUR-USERNAME/navin-contracts.git
+cd navin-contracts
+git remote add upstream https://github.com/Navin-xmr/navin-contracts.git
+
+# 2. Create a branch
+git checkout -b feature/your-feature-name
+
+# 3. Make your changes, then run the full pre-commit check
+make pre-commit
+
+# 4. Commit and push
+git add .
+git commit -m "feat: add your feature description"
+git push origin feature/your-feature-name
+
+# 5. Open a PR against main and fill in the PR template
+```
+
+If `make pre-commit` passes locally, your PR will very likely pass CI.
+See the sections below for full detail on each step, the CI/CD
+requirements, and the project's code and testing standards.
 
 ## Getting Started
 
