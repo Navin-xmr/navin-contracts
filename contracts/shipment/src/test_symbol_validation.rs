@@ -369,10 +369,11 @@ fn test_milestone_three_symbols_equal_split_valid() {
     );
 }
 
-// ── Regression tests added for issue #380 ────────────────────────────────────
-// These cases expand coverage for exact-length boundaries, overlong symbols,
-// and event-related symbol usage so that milestone, metadata, and event-topic
-// symbols all keep the same bounded-input guarantees.
+// ── Bounded-input regression tests ───────────────────────────────────────────
+// These cases pin exact-length boundaries, overlong symbols, and event-topic
+// symbol usage. Without them, loosening the length check in one validator
+// would let milestone, metadata, or event-topic symbols drift apart and
+// accept oversized input unnoticed.
 
 // ── Exact-length boundary: 2 chars ───────────────────────────────────────────
 
@@ -779,7 +780,9 @@ fn test_metadata_value_30_chars_rejected() {
     );
 }
 
-// ── Metadata value length boundary tests (issue #448) ────────────────────────
+// ── Metadata value length boundary tests ─────────────────────────────────────
+// Values are bounded exactly like keys; without these checks an overlong
+// value could slip past `validate_metadata_symbols` while its key is rejected.
 
 /// Empty-string symbols are rejected by `validate_symbol` (XDR length < 12 bytes).
 /// `validate_metadata_symbols` must propagate this rejection for both key and value.
@@ -1079,7 +1082,7 @@ fn test_record_milestone_empty_checkpoint_fails() {
     );
 }
 
-// ── [ISSUE #529] validate_symbol_chars — special character validation ─────────
+// ── validate_symbol_chars — special character validation ─────────────────────
 //
 // Soroban's Symbol::new enforces [a-zA-Z0-9_] at SDK construction time, so
 // special characters like '<', '>', '\\', '|' cannot be injected through the
