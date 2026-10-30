@@ -60,7 +60,7 @@ This repository contains Soroban smart contracts for the Navin platform:
 
 The repository contains three smart contracts located under `contracts/`:
 
-- **`contracts/shipment`**: Core logistics and escrow contract managing the shipment lifecycle, delivery tracking, escrow, and role-based access control. See the contract entry points in [`contracts/shipment/src/lib.rs`](contracts/shipment/src/lib.rs), the regression suites in [`contracts/shipment/src/`](contracts/shipment/src/), the cross-contract integration test in [`contracts/shipment/tests/test_nft_proof_of_delivery_integration.rs`](contracts/shipment/tests/test_nft_proof_of_delivery_integration.rs), and the contract reference documents in [`contracts/shipment/docs/`](contracts/shipment/docs/).
+- **`contracts/shipment`**: Core logistics and escrow contract managing the shipment lifecycle, delivery tracking, escrow, and role-based access control. See the contract entry points in [`contracts/shipment/src/lib.rs`](contracts/shipment/src/lib.rs), the regression suites in [`contracts/shipment/src/`](contracts/shipment/src/), the cross-contract integration test in [`contracts/shipment/tests/test_nft_proof_of_delivery_integration.rs`](contracts/shipment/tests/test_nft_proof_of_delivery_integration.rs), and the contract reference documents in [`docs/`](docs/).
 - **`contracts/token`**: Fungible payment token contract providing balance tracking, transfer allowances, and batch transfer events. See tests in [`contracts/token/src/test.rs`](contracts/token/src/test.rs) and event docs in [`docs/events.md`](docs/events.md).
 - **`contracts/nft`**: Shipment-asset NFT contract implementing unique digital asset minting, ownership, transfer, approval, and burning logic. See the contract implementation in [`contracts/nft/src/lib.rs`](contracts/nft/src/lib.rs) and its test suites in [`contracts/nft/src/`](contracts/nft/src/).
 
@@ -229,7 +229,6 @@ Security is paramount for Navin. If you discover a security vulnerability, pleas
 
 ## Community
 
-- [Twitter](https://twitter.com/navinxmr)
 - [Telegram Group Chat](https://t.me/+3svwFsQME6k1YjI0)
 
 ---
