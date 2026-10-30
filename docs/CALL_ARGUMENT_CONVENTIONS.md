@@ -5,7 +5,7 @@ integrators and contract clients for `NavinShipment`.
 
 ## Ordering Rules
 
-- Use the exact argument order from each `pub fn` in `src/lib.rs`.
+- Use the exact argument order from each `pub fn` in `../contracts/shipment/src/lib.rs`.
 - Treat ordering as part of the public interface contract.
 - For authenticated entrypoints, signatures are bound to ordered argument tuples.
 - For token interoperability, `transfer` is always invoked as
@@ -127,7 +127,7 @@ current exported methods are:
 
 ## Regression Coverage
 
-`src/test_signature_argument_ordering.rs` enforces:
+`../contracts/shipment/src/test_signature_argument_ordering.rs` enforces:
 
 - canonical auth payload tuple ordering for representative integrator calls;
 - canonical token boundary ordering for `transfer(from, to, amount)` during
