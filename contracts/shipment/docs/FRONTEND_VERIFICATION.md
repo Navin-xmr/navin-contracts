@@ -103,7 +103,7 @@ Frontends can recompute this hash to ensure the event's metadata hasn't been tam
 
 ## 4. Verification Implementation (Rust/Pseudo-code)
 
-See the reference test in [test_verification.rs](file:///Users/mac/Desktop/navin/navin-contracts/contracts/shipment/src/test_verification.rs) for the complete verification logic implementation.
+See the reference test in [test_verification.rs](../src/test_verification.rs) for the complete verification logic implementation.
 
 ```rust
 // Verify Contract ID

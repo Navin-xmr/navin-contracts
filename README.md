@@ -229,7 +229,6 @@ Security is paramount for Navin. If you discover a security vulnerability, pleas
 
 ## Community
 
-- [Twitter](https://twitter.com/navinxmr)
 - [Telegram Group Chat](https://t.me/+3svwFsQME6k1YjI0)
 
 ---

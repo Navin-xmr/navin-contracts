@@ -107,7 +107,7 @@ This ensures the schema file stays in sync with the contract code on every PR. I
 
 Use [`docs/events.md`](events.md) as the central reference for emitted event payloads, field ordering, type mappings, and the `schema_version`/`event_counter`/`idempotency_key` versioning policy. `docs/event_schemas.md` now just links there.
 
-For quick contract client call examples, see [Client Examples](docs/client-examples.md).
+For quick contract client call examples, see [Client Examples](client-examples.md).
 
 Indexer conformance fixtures are validated by tests in:
 
