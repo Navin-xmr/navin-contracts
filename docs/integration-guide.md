@@ -397,6 +397,31 @@ return scValToNative(result.returnValue);
 
 ````
 
+## Settlement Proof NFTs
+
+The shipment contract can mint a proof-of-delivery / settlement NFT on
+delivery or dispute resolution once it is configured as the NFT contract's
+admin. See `docs/deployment.md` for the full deployment sequence; the short
+version:
+
+1. Deploy the `navin-nft` contract with the **shipment contract's address**
+   as the constructor `admin` argument (not an EOA).
+2. Call `configure_settlement_nft(admin, nft_contract, name, nft_symbol)` on
+   the shipment contract. `name`/`nft_symbol` are accepted for interface
+   compatibility but ignored — collection metadata is fixed at NFT
+   deployment.
+
+`configure_settlement_nft` verifies `nft_contract.get_admin() ==
+<this shipment contract>` and fails closed otherwise:
+
+- `NftConfigurationFailed` (error code 78) — the target contract doesn't
+  expose `get_admin`, or its admin is not this shipment contract. This is
+  the expected result if the NFT was deployed with a regular account as
+  admin instead of the shipment contract.
+- `NftMintFailed` (error code 77) — returned from delivery/dispute
+  settlement flows when the configured NFT contract rejects a mint call
+  (e.g. token ID already minted).
+
 ## Immutable Provenance Queries
 
 Use these read-only methods to render verification views without fetching the full shipment payload.
