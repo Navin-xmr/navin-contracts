@@ -2145,6 +2145,11 @@ impl NavinShipment {
             require_active_company(&env, &caller)?;
         }
 
+        // A suspended carrier must not be able to build a dispute record either.
+        if caller == shipment.carrier {
+            require_active_carrier(&env, &caller)?;
+        }
+
         // Evidence only makes sense while a dispute is actually open; once an
         // admin has resolved it the record is closed.
         if shipment.status != ShipmentStatus::Disputed {
