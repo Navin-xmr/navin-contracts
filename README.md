@@ -115,6 +115,9 @@ make lint
 
 # Format check + clippy in one go (CI)
 make check
+
+# Full pre-commit checks (format, clippy with warnings denied, tests, WASM build)
+make pre-commit
 ```
 
 ## Development
@@ -152,7 +155,8 @@ For detailed contribution guidelines, please see [CONTRIBUTING.md](CONTRIBUTING.
 | `make fmt` / `make fmt-check` | Format code / verify formatting | — |
 | `make lint` | Run clippy over all targets and features | — |
 | `make check` | `fmt-check` + `lint` | — |
-| `make all` | `check` + `test` + `build` | — |
+| `make pre-commit` | `fmt-check` + `lint` + `test` + `build` | `wasm32-unknown-unknown` target |
+| `make all` | `pre-commit` (format, lint, test, build) | `wasm32-unknown-unknown` target |
 | `make clean` | Remove build artifacts | — |
 | `make generate-schema-shipment` | Regenerate `docs/contract-schema.shipment.json` | Stellar CLI |
 | `make generate-schema-token` | Regenerate `docs/contract-schema.token.json` | Stellar CLI |

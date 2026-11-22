@@ -221,7 +221,7 @@ cargo fmt
 
 ```bash
 # Command run by CI:
-cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 # This fails on ANY warnings, so fix all clippy suggestions
 ```

@@ -15,26 +15,17 @@ use soroban_sdk::{
     Address, Env, IntoVal, Symbol, Vec,
 };
 
-/// Sets up an initialized NFT contract without enabling `mock_all_auths`.
-/// Only the `initialize` call itself is authorized, and only for `admin`.
+/// Sets up a deployed NFT contract without enabling `mock_all_auths`.
 fn setup_strict() -> (Env, Address, NavinShipmentNftClient<'static>) {
     let env = Env::default();
     let admin = Address::generate(&env);
-    let contract_id = env.register(NavinShipmentNft, ());
-    let client = NavinShipmentNftClient::new(&env, &contract_id);
-
     let name = symbol_short!("NavinNFT");
     let symbol = symbol_short!("NNFT");
-    env.mock_auths(&[MockAuth {
-        address: &admin,
-        invoke: &MockAuthInvoke {
-            contract: &contract_id,
-            fn_name: "initialize",
-            args: (admin.clone(), name.clone(), symbol.clone()).into_val(&env),
-            sub_invokes: &[],
-        },
-    }]);
-    client.initialize(&admin, &name, &symbol);
+    let contract_id = env.register(
+        NavinShipmentNft,
+        (admin.clone(), name.clone(), symbol.clone()),
+    );
+    let client = NavinShipmentNftClient::new(&env, &contract_id);
 
     (env, admin, client)
 }

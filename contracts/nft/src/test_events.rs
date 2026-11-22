@@ -23,10 +23,16 @@ fn setup() -> (Env, Address, NavinShipmentNftClient<'static>) {
     let env = Env::default();
     env.ledger().set_timestamp(TIMESTAMP);
     let admin = Address::generate(&env);
-    let contract_id = env.register(NavinShipmentNft, ());
+    let contract_id = env.register(
+        NavinShipmentNft,
+        (
+            admin.clone(),
+            symbol_short!("NavinNFT"),
+            symbol_short!("NNFT"),
+        ),
+    );
     let client = NavinShipmentNftClient::new(&env, &contract_id);
     env.mock_all_auths();
-    client.initialize(&admin, &symbol_short!("NavinNFT"), &symbol_short!("NNFT"));
     (env, admin, client)
 }
 

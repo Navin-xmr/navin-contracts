@@ -2928,8 +2928,8 @@ impl NavinShipment {
     /// # let carrier = Address::generate(&env);
     /// # let shipment_id = client.create_shipment(&admin, &receiver, &carrier, &data_hash, &milestones, &deadline);
     /// // Deposit 5_000_000 stroops (0.5 tokens) into escrow for the shipment.
-    /// // The company must authorize the direct token transfer with its own
-    /// // `require_auth()` call; this path does not consume a pre-approved allowance.
+    /// // Only the shipment sender may deposit; it must authorize the direct
+    /// // token transfer with its own `require_auth()` call.
     /// client.deposit_escrow(&admin, &shipment_id, &5_000_000_i128);
     /// ```
     pub fn deposit_escrow(
@@ -2949,8 +2949,9 @@ impl NavinShipment {
             let mut shipment =
                 storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
 
-            // Sender verification check: Only the shipment's own sender (or contract admin) can deposit escrow
-            if from != shipment.sender && storage::get_admin(&env) != from {
+            // Refunds are always sent to the shipment sender, so only that
+            // address may fund its escrow.
+            if from != shipment.sender {
                 return Err(NavinError::Unauthorized);
             }
 
@@ -6220,12 +6221,15 @@ impl NavinShipment {
         Ok(())
     }
 
-    /// Configure settlement proof minting for an NFT contract. An uninitialized
-    /// NFT is initialized with this shipment contract as its admin; an existing
-    /// NFT must already have this shipment contract as its admin.
+    /// Configure settlement proof minting for an NFT deployed with this
+    /// shipment contract as its admin.
     ///
     /// Only the shipment admin may call this method. `name` and `nft_symbol`
-    /// are used only when initializing an uninitialized NFT contract.
+    /// are retained for interface compatibility and are ignored; collection
+    /// metadata must be supplied to the NFT constructor at deployment.
+    ///
+    /// Returns `NftConfigurationFailed` (#78) if the address does not expose
+    /// `get_admin` or its admin is not this shipment contract.
     pub fn configure_settlement_nft(
         env: Env,
         admin: Address,
@@ -6243,34 +6247,17 @@ impl NavinShipment {
             return Err(NavinError::InvalidConfig);
         }
 
-        let get_admin_args = Vec::new(&env);
-        match env.try_invoke_contract::<Address, soroban_sdk::Error>(
+        let _ = (name, nft_symbol);
+        let nft_admin = match env.try_invoke_contract::<Address, soroban_sdk::Error>(
             &nft_contract,
             &Symbol::new(&env, "get_admin"),
-            get_admin_args,
+            Vec::new(&env),
         ) {
-            Ok(Ok(nft_admin)) if nft_admin == shipment_contract => {}
-            Ok(Ok(_)) => return Err(NavinError::NftConfigurationFailed),
-            _ => {
-                let mut initialize_args: Vec<soroban_sdk::Val> = Vec::new(&env);
-                initialize_args.push_back(shipment_contract.into_val(&env));
-                initialize_args.push_back(name.into_val(&env));
-                initialize_args.push_back(nft_symbol.into_val(&env));
-                authorize_nft_invocation(
-                    &env,
-                    &nft_contract,
-                    Symbol::new(&env, "initialize"),
-                    &initialize_args,
-                );
-                match env.try_invoke_contract::<(), soroban_sdk::Error>(
-                    &nft_contract,
-                    &Symbol::new(&env, "initialize"),
-                    initialize_args,
-                ) {
-                    Ok(Ok(())) => {}
-                    _ => return Err(NavinError::NftConfigurationFailed),
-                }
-            }
+            Ok(Ok(nft_admin)) => nft_admin,
+            _ => return Err(NavinError::NftConfigurationFailed),
+        };
+        if nft_admin != shipment_contract {
+            return Err(NavinError::NftConfigurationFailed);
         }
 
         let mut new_config = config::get_config(&env);

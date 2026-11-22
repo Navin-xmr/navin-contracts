@@ -186,6 +186,7 @@ pub enum NavinError {
     AuditLogLimitExceeded = 76,
     /// The configured NFT contract failed to mint a settlement proof.
     NftMintFailed = 77,
-    /// The NFT contract could not be initialized or authorized for settlement proofs.
+    /// The settlement NFT does not expose a valid `get_admin` or is not
+    /// controlled by this shipment contract.
     NftConfigurationFailed = 78,
 }

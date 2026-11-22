@@ -169,6 +169,9 @@ pub enum SettlementKey {
     /// `DataKey::ActiveSettlement`, it is not cleared when the settlement
     /// completes or fails.
     Latest(u64),
+    /// All settlement IDs associated with a shipment, retained so every
+    /// record's TTL can be extended for as long as the shipment is live.
+    Ids(u64),
 }
 
 /// Storage key for a shipment's per-visit status data-hash log (issue #698).

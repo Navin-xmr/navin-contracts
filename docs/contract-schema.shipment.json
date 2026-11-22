@@ -3521,7 +3521,7 @@
   },
   {
     "function_v0": {
-      "doc": "Configure settlement proof minting for an NFT contract. An uninitialized\\nNFT is initialized with this shipment contract as its admin; an existing\\nNFT must already have this shipment contract as its admin.\\n\\nOnly the shipment admin may call this method. `name` and `nft_symbol`\\nare used only when initializing an uninitialized NFT contract.",
+      "doc": "Configure settlement proof minting for an NFT deployed with this\\nshipment contract as its admin.\\n\\nOnly the shipment admin may call this method. `name` and `nft_symbol`\\nare retained for interface compatibility and are ignored; collection\\nmetadata must be supplied to the NFT constructor at deployment.\\n\\nReturns `NftConfigurationFailed` (#78) if the address does not expose\\n`get_admin` or its admin is not this shipment contract.",
       "name": "configure_settlement_nft",
       "inputs": [
         {
@@ -5816,7 +5816,7 @@
           "type": "u64"
         },
         {
-          "doc": "NFT contract used to mint proof NFTs after successful release/refund settlements.\\nConfigure it with `configure_settlement_nft`, which initializes an\\nuninitialized NFT with this shipment contract as admin or verifies the\\nexisting admin. `None` disables settlement proof minting.\\nDefault: None (disabled).",
+          "doc": "NFT contract used to mint proof NFTs after successful release/refund settlements.\\nConfigure it with `configure_settlement_nft` after deploying the NFT\\nwith this shipment contract as its constructor-supplied admin. `None`\\ndisables settlement proof minting.\\nDefault: None (disabled).",
           "name": "settlement_nft_contract_id",
           "type": {
             "option": {

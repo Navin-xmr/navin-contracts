@@ -181,14 +181,18 @@ fn test_extend_shipment_ttl_renews_settlement_records() {
     let shipment = client.get_shipment(&shipment_id);
 
     client.deposit_escrow(&shipment.sender, &shipment_id, &1_000);
+    client.refund_escrow(&shipment.sender, &shipment_id);
 
     let settlement_count = client.get_settlement_count();
-    assert!(settlement_count > 0);
+    assert_eq!(settlement_count, 2);
 
     env.as_contract(&client.address, || {
         let latest = storage::get_latest_settlement(&env, shipment_id)
             .expect("latest settlement must be recorded");
         assert_eq!(latest, settlement_count);
+        let persistent = env.storage().persistent();
+        assert!(persistent.get_ttl(&DataKey::Settlement(1)) >= EXTEND_TO);
+        assert!(persistent.get_ttl(&DataKey::Settlement(2)) >= EXTEND_TO);
     });
 
     client.extend_shipment_ttl(&shipment_id);
@@ -198,6 +202,9 @@ fn test_extend_shipment_ttl_renews_settlement_records() {
         let latest = storage::get_latest_settlement(&env, shipment_id).unwrap();
         assert!(persistent.get_ttl(&DataKey::Settlement(latest)) >= EXTEND_TO);
         assert!(persistent.get_ttl(&SettlementKey::Latest(shipment_id)) >= EXTEND_TO);
+        assert!(persistent.get_ttl(&SettlementKey::Ids(shipment_id)) >= EXTEND_TO);
+        assert!(persistent.get_ttl(&DataKey::Settlement(1)) >= EXTEND_TO);
+        assert!(persistent.get_ttl(&DataKey::Settlement(2)) >= EXTEND_TO);
         if let Some(active) = storage::get_active_settlement(&env, shipment_id) {
             assert!(persistent.get_ttl(&DataKey::ActiveSettlement(shipment_id)) >= EXTEND_TO);
             assert!(persistent.get_ttl(&DataKey::Settlement(active)) >= EXTEND_TO);
@@ -206,8 +213,10 @@ fn test_extend_shipment_ttl_renews_settlement_records() {
 
     advance_ledgers(&env, past_min_persistent_ttl(&env));
 
-    let settlement = client.get_settlement(&settlement_count);
-    assert_eq!(settlement.shipment_id, shipment_id);
+    for settlement_id in 1..=settlement_count {
+        let settlement = client.get_settlement(&settlement_id);
+        assert_eq!(settlement.shipment_id, shipment_id);
+    }
 }
 
 #[test]

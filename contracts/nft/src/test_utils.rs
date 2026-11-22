@@ -32,13 +32,19 @@ pub fn setup_env() -> (Env, Address) {
     (env, admin)
 }
 
-/// Registers an initialized NFT contract with a base URI configured.
+/// Registers an NFT contract with a base URI configured.
 pub fn setup_nft_contract() -> (Env, NavinShipmentNftClient<'static>, Address) {
     let (env, admin) = setup_env();
-    let contract_id = env.register(NavinShipmentNft, ());
+    let contract_id = env.register(
+        NavinShipmentNft,
+        (
+            admin.clone(),
+            symbol_short!("NavinNFT"),
+            symbol_short!("NNFT"),
+        ),
+    );
     let client = NavinShipmentNftClient::new(&env, &contract_id);
 
-    client.initialize(&admin, &symbol_short!("NavinNFT"), &symbol_short!("NNFT"));
     client.set_base_uri(&admin, &String::from_str(&env, "https://example.com/nft/"));
 
     (env, client, admin)

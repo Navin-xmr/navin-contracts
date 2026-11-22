@@ -890,6 +890,20 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
     if persistent.has(&latest_key) {
         persistent.extend_ttl(&latest_key, threshold, extend_to);
     }
+    let settlement_ids_key = SettlementKey::Ids(shipment_id);
+    if persistent.has(&settlement_ids_key) {
+        persistent.extend_ttl(&settlement_ids_key, threshold, extend_to);
+    }
+    let settlement_ids: Vec<u64> = persistent
+        .get(&settlement_ids_key)
+        .unwrap_or_else(|| Vec::new(env));
+    for id in settlement_ids.iter() {
+        let key = DataKey::Settlement(id);
+        if persistent.has(&key) {
+            persistent.extend_ttl(&key, threshold, extend_to);
+        }
+    }
+    // Keep supporting records created before the settlement ID index existed.
     for id in [
         get_latest_settlement(env, shipment_id),
         get_active_settlement(env, shipment_id),
@@ -1733,13 +1747,18 @@ pub fn get_settlement(env: &Env, settlement_id: u64) -> Option<crate::types::Set
 /// // storage::set_settlement(&env, &settlement);
 /// ```
 pub fn set_settlement(env: &Env, settlement: &crate::types::SettlementRecord) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::Settlement(settlement.settlement_id), settlement);
-    env.storage().persistent().set(
+    let persistent = env.storage().persistent();
+    persistent.set(&DataKey::Settlement(settlement.settlement_id), settlement);
+    persistent.set(
         &SettlementKey::Latest(settlement.shipment_id),
         &settlement.settlement_id,
     );
+    let ids_key = SettlementKey::Ids(settlement.shipment_id);
+    let mut ids: Vec<u64> = persistent.get(&ids_key).unwrap_or_else(|| Vec::new(env));
+    if !ids.iter().any(|id| id == settlement.settlement_id) {
+        ids.push_back(settlement.settlement_id);
+    }
+    persistent.set(&ids_key, &ids);
 }
 
 /// Get the most recent settlement ID recorded for a shipment.

@@ -7,11 +7,17 @@ use soroban_sdk::{symbol_short, testutils::Address as _, Address, Env, String};
 
 fn setup() -> (Env, NavinShipmentNftClient<'static>, Address) {
     let env = Env::default();
-    env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register(NavinShipmentNft, ());
+    let contract_id = env.register(
+        NavinShipmentNft,
+        (
+            admin.clone(),
+            symbol_short!("NavinNFT"),
+            symbol_short!("NNFT"),
+        ),
+    );
     let client = NavinShipmentNftClient::new(&env, &contract_id);
-    client.initialize(&admin, &symbol_short!("NavinNFT"), &symbol_short!("NNFT"));
+    env.mock_all_auths();
     (env, client, admin)
 }
 

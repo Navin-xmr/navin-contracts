@@ -4,7 +4,7 @@
 # raise it as coverage improves so regressions become visible.
 COVERAGE_BASELINE := 40
 
-.PHONY: help build test fmt fmt-check lint clean check all generate-schema-shipment generate-schema-token generate-schema-nft coverage
+.PHONY: help build test fmt fmt-check lint clean check pre-commit all generate-schema-shipment generate-schema-token generate-schema-nft coverage
 
 # Default target
 help:
@@ -20,6 +20,7 @@ help:
 	@echo "  make fmt-check    - Check code formatting (for CI)"
 	@echo "  make lint         - Run clippy lints"
 	@echo "  make check        - Run format check and lint (for CI)"
+	@echo "  make pre-commit   - Run format check, lint, tests, and build"
 	@echo "  make clean        - Clean build artifacts"
 	@echo "  make all          - Run checks and tests"
 	@echo ""
@@ -97,7 +98,7 @@ fmt-check:
 # Run clippy lints
 lint:
 	@echo "Running clippy lints..."
-	@cargo clippy --all-targets --all-features
+	@cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 # Clean build artifacts
 clean:
@@ -108,6 +109,10 @@ clean:
 check: fmt-check lint
 	@echo "✓ All checks passed!"
 
+# Run the checks and build required before committing
+pre-commit: fmt-check lint test build
+	@echo "✓ Pre-commit checks passed!"
+
 # Run all checks and tests
-all: check test build
+all: pre-commit
 	@echo "✓ All tasks completed successfully!"
