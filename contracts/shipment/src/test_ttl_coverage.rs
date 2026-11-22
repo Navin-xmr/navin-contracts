@@ -377,3 +377,28 @@ fn test_circuit_breaker_state_and_config_survive_past_original_ttl() {
     // reading CircuitBreakerState/Config did not trap on an archived entry.
     client.reset_circuit_breaker(&admin);
 }
+
+// ── #1189: shipment_ttl_extension / threshold bounds ────────────────────────
+
+#[test]
+fn test_update_config_rejects_threshold_above_extension() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let mut cfg = client.get_contract_config();
+    cfg.shipment_ttl_threshold = 500_000;
+    cfg.shipment_ttl_extension = 100_000;
+
+    let result = client.try_update_config(&admin, &cfg);
+    assert_eq!(result, Err(Ok(NavinError::InvalidConfig)));
+}
+
+#[test]
+fn test_update_config_rejects_extension_above_max_ttl() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let max_ttl = env.as_contract(&client.address, || env.storage().max_ttl());
+    let mut cfg = client.get_contract_config();
+    cfg.shipment_ttl_threshold = 1;
+    cfg.shipment_ttl_extension = max_ttl + 1;
+
+    let result = client.try_update_config(&admin, &cfg);
+    assert_eq!(result, Err(Ok(NavinError::InvalidConfig)));
+}

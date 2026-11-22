@@ -6212,6 +6212,18 @@ impl NavinShipment {
         // Validate the new configuration
         config::validate_config(&new_config).map_err(|_| NavinError::InvalidConfig)?;
 
+        // The threshold must leave room for the extension, and the extension
+        // can never exceed what the network allows an entry to live for,
+        // otherwise every TTL-bumping entrypoint (require_initialized,
+        // extend_shipment_ttl, archive_shipment, set_status_hash_log) would
+        // trap on `extend_ttl`.
+        if new_config.shipment_ttl_threshold > new_config.shipment_ttl_extension {
+            return Err(NavinError::InvalidConfig);
+        }
+        if new_config.shipment_ttl_extension > env.storage().max_ttl() {
+            return Err(NavinError::InvalidConfig);
+        }
+
         // Store the new configuration (validates checksum isn't zero)
         config::set_config(&env, &new_config)?;
 

@@ -540,11 +540,8 @@ pub fn archive_shipment(env: &Env, shipment_id: u64, shipment: &Shipment) {
     env.storage().temporary().set(&key, shipment);
     // Extend TTL immediately on write - critical to prevent silent eviction
     let config = crate::config::get_config(env);
-    env.storage().temporary().extend_ttl(
-        &key,
-        config.shipment_ttl_threshold,
-        config.shipment_ttl_extension,
-    );
+    let (threshold, extend_to) = clamp_ttl(env, config.shipment_ttl_threshold, config.shipment_ttl_extension);
+    env.storage().temporary().extend_ttl(&key, threshold, extend_to);
     // Remove from persistent storage
     env.storage()
         .persistent()
@@ -558,11 +555,8 @@ pub fn get_archived_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
     let shipment: Option<Shipment> = env.storage().temporary().get(&key);
     if shipment.is_some() {
         let config = crate::config::get_config(env);
-        env.storage().temporary().extend_ttl(
-            &key,
-            config.shipment_ttl_threshold,
-            config.shipment_ttl_extension,
-        );
+        let (threshold, extend_to) = clamp_ttl(env, config.shipment_ttl_threshold, config.shipment_ttl_extension);
+        env.storage().temporary().extend_ttl(&key, threshold, extend_to);
     }
     shipment
 }
@@ -828,7 +822,18 @@ pub fn get_confirmation_hash(env: &Env, shipment_id: u64) -> Option<BytesN<32>> 
 /// ```rust
 /// // storage::extend_shipment_ttl(&env, 1, 1000, 500000);
 /// ```
+/// Clamp a TTL threshold/extend_to pair to the network's maximum entry TTL,
+/// matching `extend_proposal_ttl`'s `.min(env.storage().max_ttl())` guard, so
+/// a stored config can never make `extend_ttl` trap.
+pub fn clamp_ttl(env: &Env, threshold: u32, extend_to: u32) -> (u32, u32) {
+    let max_ttl = env.storage().max_ttl();
+    let extend_to = extend_to.min(max_ttl);
+    let threshold = threshold.min(extend_to);
+    (threshold, extend_to)
+}
+
 pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_to: u32) {
+    let (threshold, extend_to) = clamp_ttl(env, threshold, extend_to);
     let key = shipment_key(shipment_id);
     if env.storage().persistent().has(&key) {
         env.storage()
@@ -1959,13 +1964,10 @@ pub fn get_status_hash_log(env: &Env, shipment_id: u64) -> StatusHashLog {
 /// hashes readable from either store.
 fn set_status_hash_log(env: &Env, shipment_id: u64, log: &StatusHashLog) {
     let config = crate::config::get_config(env);
+    let (threshold, extend_to) = clamp_ttl(env, config.shipment_ttl_threshold, config.shipment_ttl_extension);
     let key = StatusHashKey::Log(shipment_id);
     env.storage().persistent().set(&key, log);
-    env.storage().persistent().extend_ttl(
-        &key,
-        config.shipment_ttl_threshold,
-        config.shipment_ttl_extension,
-    );
+    env.storage().persistent().extend_ttl(&key, threshold, extend_to);
 }
 
 /// Append one visit's data hash to a shipment's bounded status-hash log.
