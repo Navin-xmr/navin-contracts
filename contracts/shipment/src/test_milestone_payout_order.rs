@@ -76,6 +76,20 @@ fn create_milestone_shipment(
         let mut s = crate::storage::get_shipment(env, id).unwrap();
         s.status = ShipmentStatus::InTransit;
         crate::storage::set_shipment(env, &s);
+
+        // Mark each milestone's checkpoint as recorded, as `record_milestone`
+        // would have, so carrier-initiated releases pass the checkpoint gate
+        // added for issue #1188.
+        for sym in [
+            symbol_short!("alpha"),
+            symbol_short!("beta"),
+            symbol_short!("gamma"),
+        ] {
+            env.storage().persistent().set(
+                &crate::types::DataKey::MilestoneCheckpointRecorded(id, sym),
+                &true,
+            );
+        }
     });
 
     (id, company, carrier)
@@ -533,4 +547,130 @@ fn test_validation_rejects_zero_percentage_milestone() {
         result,
         Err(Ok(crate::errors::NavinError::InvalidPaymentMilestones))
     );
+}
+
+// ── Issue #1188: gate on checkpoint + payable status ───────────────────────
+
+/// A carrier cannot release any milestone while the shipment is still
+/// `Created` (checkpoint never recorded, escrow not yet in an active state).
+#[test]
+fn test_carrier_cannot_release_milestone_on_created_shipment() {
+    let (env, client, admin) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back((symbol_short!("alpha"), 100u32));
+
+    let deadline = env.ledger().timestamp() + 86_400;
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash(&env, 0x11),
+        &milestones,
+        &deadline,
+    );
+    client.deposit_escrow(&company, &id, &1_000);
+
+    // Status is still Created here — never advanced to InTransit.
+    let result = client.try_release_milestone_payment(&carrier, &id, &symbol_short!("alpha"));
+    assert_eq!(result, Err(Ok(NavinError::InvalidStatus)));
+}
+
+/// A carrier cannot release a milestone on a `Disputed` shipment, even if
+/// the checkpoint was previously recorded.
+#[test]
+fn test_carrier_cannot_release_milestone_on_disputed_shipment() {
+    let (env, client, admin) = setup();
+    let (id, _company, carrier) = create_milestone_shipment(&env, &client, &admin);
+
+    env.as_contract(&client.address, || {
+        let mut s = crate::storage::get_shipment(&env, id).unwrap();
+        s.status = ShipmentStatus::Disputed;
+        crate::storage::set_shipment(&env, &s);
+    });
+
+    let result = client.try_release_milestone_payment(&carrier, &id, &symbol_short!("alpha"));
+    assert_eq!(result, Err(Ok(NavinError::InvalidStatus)));
+}
+
+/// A carrier cannot release a milestone whose checkpoint was never recorded
+/// via `record_milestone`, even on an `InTransit` shipment.
+#[test]
+fn test_carrier_cannot_release_unrecorded_checkpoint() {
+    let (env, client, admin) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back((symbol_short!("alpha"), 100u32));
+
+    let deadline = env.ledger().timestamp() + 86_400;
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash(&env, 0x22),
+        &milestones,
+        &deadline,
+    );
+    client.deposit_escrow(&company, &id, &1_000);
+
+    // InTransit, but the checkpoint flag was never set (no record_milestone
+    // call, and the test helper that injects it was not used here).
+    env.as_contract(&client.address, || {
+        let mut s = crate::storage::get_shipment(&env, id).unwrap();
+        s.status = ShipmentStatus::InTransit;
+        crate::storage::set_shipment(&env, &s);
+    });
+
+    let result = client.try_release_milestone_payment(&carrier, &id, &symbol_short!("alpha"));
+    assert_eq!(result, Err(Ok(NavinError::InvalidStatus)));
+}
+
+/// The admin override still works even without a recorded checkpoint.
+#[test]
+fn test_admin_can_release_milestone_without_recorded_checkpoint() {
+    let (env, client, admin) = setup();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back((symbol_short!("alpha"), 100u32));
+
+    let deadline = env.ledger().timestamp() + 86_400;
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash(&env, 0x33),
+        &milestones,
+        &deadline,
+    );
+    client.deposit_escrow(&company, &id, &1_000);
+
+    env.as_contract(&client.address, || {
+        let mut s = crate::storage::get_shipment(&env, id).unwrap();
+        s.status = ShipmentStatus::InTransit;
+        crate::storage::set_shipment(&env, &s);
+    });
+
+    let result = client.try_release_milestone_payment(&admin, &id, &symbol_short!("alpha"));
+    assert!(result.is_ok(), "admin override must still work: {result:?}");
 }

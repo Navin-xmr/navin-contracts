@@ -4020,6 +4020,13 @@ impl NavinShipment {
         // consume two units of the configured budget instead of one.
         events::emit_milestone_recorded(&env, shipment_id, &checkpoint, &data_hash, &carrier);
 
+        // Mark this checkpoint as recorded so `release_milestone_payment` can
+        // require a real checkpoint before a carrier may release its payment.
+        env.storage().persistent().set(
+            &DataKey::MilestoneCheckpointRecorded(shipment_id, checkpoint.clone()),
+            &true,
+        );
+
         // Check for milestone-based payments
         let mut mut_shipment = shipment;
         let mut found_index = None;
@@ -4291,7 +4298,14 @@ impl NavinShipment {
     }
 
     /// Explicitly release a partial escrow payment for a specific milestone.
-    /// Only Carrier or Admin can call this.
+    ///
+    /// Only the assigned carrier or the admin can call this. The shipment
+    /// must be `InTransit` or `Delivered` (payment release only makes sense
+    /// while escrow is active and un-frozen; it is rejected on `Created`,
+    /// `Disputed`, `Cancelled` and `PartiallyRefunded`). A carrier caller
+    /// additionally must have actually recorded this milestone's checkpoint
+    /// via `record_milestone` first; the admin may release without a
+    /// recorded checkpoint, as a manual override.
     ///
     /// # Arguments
     /// * `env` - Execution environment.
@@ -4317,8 +4331,34 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
 
+        // Only a shipment that is actively moving (or has arrived, with a
+        // settlement still pending) can have a milestone payment released.
+        // In particular this blocks Created (nothing happened yet) and
+        // Disputed (escrow is explicitly frozen for arbitration).
+        if !matches!(
+            shipment.status,
+            ShipmentStatus::InTransit | ShipmentStatus::Delivered
+        ) {
+            return Err(NavinError::InvalidStatus);
+        }
+
         if caller == shipment.carrier {
             require_active_carrier(&env, &caller)?;
+
+            // The carrier must have actually recorded this checkpoint via
+            // `record_milestone` before it can be paid out; the admin may
+            // override this requirement.
+            let recorded: bool = env
+                .storage()
+                .persistent()
+                .get(&DataKey::MilestoneCheckpointRecorded(
+                    shipment_id,
+                    milestone_name.clone(),
+                ))
+                .unwrap_or(false);
+            if !recorded {
+                return Err(NavinError::InvalidStatus);
+            }
         }
 
         // Check if milestone exists in payment_milestones
