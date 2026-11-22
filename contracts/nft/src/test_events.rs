@@ -320,3 +320,66 @@ fn test_failed_mint_emits_no_event() {
     assert!(after <= before);
     assert_eq!(client.total_supply(), 1);
 }
+
+#[test]
+fn test_set_base_uri_emits_event() {
+    let (env, admin, client) = setup();
+    let base_uri = soroban_sdk::String::from_str(&env, "https://example.com/meta/");
+    client.set_base_uri(&admin, &base_uri);
+
+    let event = last_event(&env, &client.address);
+    assert_eq!(
+        vec![&env, event],
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                topics(&env, event_topics::BASE_URI),
+                (admin, base_uri, TIMESTAMP).into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_set_token_uri_emits_event() {
+    let (env, admin, client) = setup();
+    let owner = Address::generate(&env);
+    client.mint(&owner, &3);
+
+    let uri = soroban_sdk::String::from_str(&env, "https://example.com/meta/3.json");
+    client.set_token_uri(&admin, &3, &uri);
+
+    let event = last_event(&env, &client.address);
+    assert_eq!(
+        vec![&env, event],
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                topics(&env, event_topics::TOKEN_URI),
+                (admin, 3_u64, uri, TIMESTAMP).into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_set_base_uri_rejects_empty_string() {
+    let (env, admin, client) = setup();
+    let empty = soroban_sdk::String::from_str(&env, "");
+    let result = client.try_set_base_uri(&admin, &empty);
+    assert_eq!(result, Err(Ok(crate::NftError::InvalidUri)));
+}
+
+#[test]
+fn test_set_token_uri_rejects_oversized_string() {
+    let (env, admin, client) = setup();
+    let owner = Address::generate(&env);
+    client.mint(&owner, &4);
+
+    let too_long: std::string::String = std::iter::repeat('a').take(600).collect();
+    let uri = soroban_sdk::String::from_str(&env, &too_long);
+    let result = client.try_set_token_uri(&admin, &4, &uri);
+    assert_eq!(result, Err(Ok(crate::NftError::InvalidUri)));
+}

@@ -55,6 +55,11 @@ const TTL_THRESHOLD: u32 = 17_280;
 /// Ledgers to extend by once the threshold is hit (~30 days).
 const TTL_EXTENSION: u32 = 518_400;
 
+/// Maximum byte length accepted for a base URI or per-token metadata URI.
+/// Keeps the instance/persistent storage entries bounded instead of growing
+/// unboundedly with every `set_base_uri`/`set_token_uri` call.
+const MAX_URI_LENGTH: u32 = 512;
+
 // ── Contract ────────────────────────────────────────────────────────────────
 
 #[contract]
@@ -496,8 +501,13 @@ impl NavinShipmentNft {
         if Self::get_admin_inner(&env)? != admin {
             return Err(NftError::NotAdmin);
         }
+        Self::validate_uri(&base_uri)?;
 
         storage::set_base_uri(&env, &base_uri);
+        env.events().publish(
+            (event_topics::BASE_URI, event_topics::EVENT_SCHEMA_VERSION),
+            (admin, base_uri, env.ledger().timestamp()),
+        );
         Self::extend_instance_ttl(&env);
         Ok(())
     }
@@ -514,6 +524,7 @@ impl NavinShipmentNft {
             return Err(NftError::NotAdmin);
         }
         Self::get_owner_inner(&env, token_id)?;
+        Self::validate_uri(&uri)?;
 
         storage::set_metadata_uri(&env, token_id, &uri);
         env.storage().persistent().extend_ttl(
@@ -521,7 +532,20 @@ impl NavinShipmentNft {
             TTL_THRESHOLD,
             TTL_EXTENSION,
         );
+        env.events().publish(
+            (event_topics::TOKEN_URI, event_topics::EVENT_SCHEMA_VERSION),
+            (admin, token_id, uri, env.ledger().timestamp()),
+        );
         Self::extend_instance_ttl(&env);
+        Ok(())
+    }
+
+    /// Reject empty or over-long URIs before they are persisted.
+    fn validate_uri(uri: &String) -> Result<(), NftError> {
+        let len = uri.len();
+        if len == 0 || len as u32 > MAX_URI_LENGTH {
+            return Err(NftError::InvalidUri);
+        }
         Ok(())
     }
 

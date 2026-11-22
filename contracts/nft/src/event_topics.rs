@@ -76,3 +76,11 @@ pub const ADMIN_PROPOSED: Symbol = symbol_short!("admp");
 
 /// Admin role transferred. Payload: `(old_admin, new_admin, timestamp)`.
 pub const ADMIN_TRANSFER: Symbol = symbol_short!("admin");
+
+// ── Metadata ─────────────────────────────────────────────────────────────────
+
+/// Collection base URI changed. Payload: `(admin, base_uri, timestamp)`.
+pub const BASE_URI: Symbol = symbol_short!("baseuri");
+
+/// Per-token metadata URI changed. Payload: `(admin, token_id, uri, timestamp)`.
+pub const TOKEN_URI: Symbol = symbol_short!("tokenuri");
