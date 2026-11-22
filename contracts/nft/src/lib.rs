@@ -83,20 +83,14 @@ impl NavinShipmentNft {
         }
     }
 
-    /// Initialize the collection. `name` and `symbol` are short symbols; they
-    /// are matched against the shipment contract's settlement-NFT
-    /// configuration.
-    pub fn initialize(
+    /// Initialize collection state atomically with deployment. The constructor
+    /// permanently binds `admin` before the contract can be called.
+    pub fn __constructor(
         env: Env,
         admin: Address,
         name: Symbol,
         symbol: Symbol,
     ) -> Result<(), NftError> {
-        admin.require_auth();
-
-        if env.storage().instance().has(&NftKey::Initialized) {
-            return Err(NftError::AlreadyInitialized);
-        }
         if name == symbol_short!("") || symbol == symbol_short!("") {
             return Err(NftError::InvalidNameOrSymbol);
         }
@@ -865,18 +859,57 @@ mod tests {
 
     fn setup() -> (Env, Address, NavinShipmentNftClient<'static>) {
         let (env, admin) = test_utils::setup_env();
-        let contract_id = env.register(NavinShipmentNft, ());
+        let contract_id = env.register(
+            NavinShipmentNft,
+            (
+                admin.clone(),
+                symbol_short!("NavinNFT"),
+                symbol_short!("NNFT"),
+            ),
+        );
         let client = NavinShipmentNftClient::new(&env, &contract_id);
-        client.initialize(&admin, &symbol_short!("NavinNFT"), &symbol_short!("NNFT"));
         (env, admin, client)
     }
 
     #[test]
-    fn test_initialize_and_metadata() {
+    fn test_constructor_initializes_metadata() {
         let (_env, admin, client) = setup();
         assert_eq!(client.name(), symbol_short!("NavinNFT"));
         assert_eq!(client.nft_symbol(), symbol_short!("NNFT"));
         assert_eq!(client.get_admin(), admin);
+    }
+
+    #[test]
+    fn test_collection_cannot_be_initialized_after_deployment() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let attacker = Address::generate(&env);
+        let contract_id = env.register(
+            NavinShipmentNft,
+            (
+                admin.clone(),
+                symbol_short!("NavinNFT"),
+                symbol_short!("NNFT"),
+            ),
+        );
+        env.mock_all_auths();
+        let args = vec![
+            &env,
+            attacker.into_val(&env),
+            symbol_short!("Captured").into_val(&env),
+            symbol_short!("CAP").into_val(&env),
+        ];
+
+        let result = env.try_invoke_contract::<(), soroban_sdk::Error>(
+            &contract_id,
+            &Symbol::new(&env, "initialize"),
+            args,
+        );
+        assert!(!matches!(result, Ok(Ok(()))));
+        assert_eq!(
+            NavinShipmentNftClient::new(&env, &contract_id).get_admin(),
+            admin
+        );
     }
 
     #[test]
@@ -906,62 +939,16 @@ mod tests {
     fn test_long_metadata_is_preserved() {
         let env = Env::default();
         let admin = Address::generate(&env);
-        let contract_id = env.register(NavinShipmentNft, ());
-        let client = NavinShipmentNftClient::new(&env, &contract_id);
-        env.mock_all_auths();
         let name = symbol_short!("NavinNFT");
         let symbol = symbol_short!("NNFT");
-
-        client.initialize(&admin, &name, &symbol);
+        let contract_id = env.register(
+            NavinShipmentNft,
+            (admin.clone(), name.clone(), symbol.clone()),
+        );
+        let client = NavinShipmentNftClient::new(&env, &contract_id);
 
         assert_eq!(client.name(), name);
         assert_eq!(client.nft_symbol(), symbol);
-    }
-
-    #[test]
-    fn test_double_initialize_fails() {
-        let (env, admin, client) = setup();
-        let result = client.try_initialize(&admin, &symbol_short!("X"), &symbol_short!("X"));
-        assert!(result.is_err());
-        let _ = env;
-    }
-
-    #[test]
-    fn test_initialize_unauthenticated_fails() {
-        let env = Env::default();
-        let admin = Address::generate(&env);
-        let contract_id = env.register(NavinShipmentNft, ());
-        let client = NavinShipmentNftClient::new(&env, &contract_id);
-        // Do not mock auths - should fail auth requirement
-        let result =
-            client.try_initialize(&admin, &symbol_short!("NavinNFT"), &symbol_short!("NNFT"));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_string_metadata_arguments_are_rejected() {
-        use soroban_sdk::IntoVal;
-
-        let env = Env::default();
-        let admin = Address::generate(&env);
-        let contract_id = env.register(NavinShipmentNft, ());
-        env.mock_all_auths();
-        // The collection metadata is a `Symbol`; a `String` argument does not
-        // match the contract interface and must be rejected.
-        let args = vec![
-            &env,
-            admin.into_val(&env),
-            String::from_str(&env, "NavinNFT").into_val(&env),
-            symbol_short!("NNFT").into_val(&env),
-        ];
-
-        let result = env.try_invoke_contract::<(), soroban_sdk::Error>(
-            &contract_id,
-            &Symbol::new(&env, "initialize"),
-            args,
-        );
-
-        assert!(!matches!(result, Ok(Ok(()))));
     }
 
     #[test]
@@ -1196,7 +1183,11 @@ mod tests {
     #[test]
     fn test_burn_unauthenticated_fails() {
         let env_strict = Env::default();
-        let cid_strict = env_strict.register(NavinShipmentNft, ());
+        let admin = Address::generate(&env_strict);
+        let cid_strict = env_strict.register(
+            NavinShipmentNft,
+            (admin, symbol_short!("NavinNFT"), symbol_short!("NNFT")),
+        );
         let client_strict = NavinShipmentNftClient::new(&env_strict, &cid_strict);
 
         // Since auth is required as the first line of burn, calling try_burn without mock_all_auths fails auth
@@ -1334,29 +1325,5 @@ mod tests {
         client.mint(&alice, &1);
         client.transfer(&alice, &alice, &1, &Vec::new(&env));
         assert_eq!(client.owner_of(&1), alice);
-    }
-
-    #[test]
-    fn test_initialize_with_empty_name_fails() {
-        let env = Env::default();
-        let admin = Address::generate(&env);
-        let contract_id = env.register(NavinShipmentNft, ());
-        let client = NavinShipmentNftClient::new(&env, &contract_id);
-        env.mock_all_auths();
-
-        let res1 = client.try_initialize(&admin, &symbol_short!(""), &symbol_short!("NNFT"));
-        assert_eq!(res1, Err(Ok(NftError::InvalidNameOrSymbol)));
-    }
-
-    #[test]
-    fn test_initialize_with_empty_symbol_fails() {
-        let env = Env::default();
-        let admin = Address::generate(&env);
-        let contract_id = env.register(NavinShipmentNft, ());
-        let client = NavinShipmentNftClient::new(&env, &contract_id);
-        env.mock_all_auths();
-
-        let res2 = client.try_initialize(&admin, &symbol_short!("NavinNFT"), &symbol_short!(""));
-        assert_eq!(res2, Err(Ok(NftError::InvalidNameOrSymbol)));
     }
 }

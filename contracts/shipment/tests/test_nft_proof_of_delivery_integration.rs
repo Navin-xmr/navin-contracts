@@ -155,22 +155,26 @@ fn setup_with_nft_admin(shipment_is_nft_admin: bool) -> Ctx {
     shipment.add_carrier(&admin, &carrier);
     shipment.add_carrier_to_whitelist(&company, &carrier);
 
-    let nft = NavinShipmentNftClient::new(&env, &env.register(NavinShipmentNft, ()));
     let nft_admin = if shipment_is_nft_admin {
         shipment.address.clone()
     } else {
         Address::generate(&env)
     };
+    let nft = NavinShipmentNftClient::new(
+        &env,
+        &env.register(
+            NavinShipmentNft,
+            (
+                nft_admin.clone(),
+                symbol_short!("NavinPOD"),
+                symbol_short!("NPOD"),
+            ),
+        ),
+    );
     if shipment_is_nft_admin {
         shipment.configure_settlement_nft(
             &admin,
             &nft.address,
-            &symbol_short!("NavinPOD"),
-            &symbol_short!("NPOD"),
-        );
-    } else {
-        nft.initialize(
-            &nft_admin,
             &symbol_short!("NavinPOD"),
             &symbol_short!("NPOD"),
         );

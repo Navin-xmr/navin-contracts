@@ -119,9 +119,9 @@ pub struct ContractConfig {
     pub auto_mint_nft: bool,
 
     /// NFT contract used to mint proof NFTs after successful release/refund settlements.
-    /// Configure it with `configure_settlement_nft`, which initializes an
-    /// uninitialized NFT with this shipment contract as admin or verifies the
-    /// existing admin. `None` disables settlement proof minting.
+    /// Configure it with `configure_settlement_nft` after deploying the NFT
+    /// with this shipment contract as its constructor-supplied admin. `None`
+    /// disables settlement proof minting.
     /// Default: None (disabled).
     pub settlement_nft_contract_id: Option<Address>,
 }
