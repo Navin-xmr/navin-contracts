@@ -330,3 +330,50 @@ fn test_expired_proposal_reports_expired_not_missing() {
     let result = client.try_approve_action(&admin2, &proposal_id);
     assert_eq!(result, Err(Ok(NavinError::ProposalExpired)));
 }
+
+// ── #1190: audit-log / circuit-breaker persistent entries ──────────────────
+
+#[test]
+fn test_audit_entries_survive_past_original_ttl() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let company = Address::generate(&env);
+
+    // `add_company` is an RBAC mutation that goes through `audit::log_*`,
+    // writing `AuditEntry(id)` and bumping `AuditEntryCount`.
+    client.add_company(&admin, &company);
+
+    env.as_contract(&client.address, || {
+        let persistent = env.storage().persistent();
+        assert!(persistent.has(&DataKey::AuditEntryCount));
+        assert!(persistent.get_ttl(&DataKey::AuditEntryCount) > 0);
+        assert!(persistent.get_ttl(&DataKey::AuditEntry(0)) > 0);
+    });
+
+    // Move past the TTL the entries were originally written with.
+    advance_ledgers(&env, past_min_persistent_ttl(&env));
+
+    // A second RBAC mutation must still succeed: AuditEntryCount must not
+    // have been archived.
+    let company2 = Address::generate(&env);
+    client.add_company(&admin, &company2);
+}
+
+#[test]
+fn test_circuit_breaker_state_and_config_survive_past_original_ttl() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+
+    client.set_circuit_breaker_config(&admin, &crate::circuit_breaker::CircuitBreakerPreset::Strict);
+    client.trip_circuit_breaker(&admin);
+
+    env.as_contract(&client.address, || {
+        let persistent = env.storage().persistent();
+        assert!(persistent.get_ttl(&DataKey::CircuitBreakerState) > 0);
+        assert!(persistent.get_ttl(&DataKey::CircuitBreakerConfig) > 0);
+    });
+
+    advance_ledgers(&env, past_min_persistent_ttl(&env));
+
+    // A subsequent circuit-breaker entrypoint must still succeed, i.e.
+    // reading CircuitBreakerState/Config did not trap on an archived entry.
+    client.reset_circuit_breaker(&admin);
+}

@@ -134,11 +134,21 @@ impl CircuitBreakerPreset {
     }
 }
 
-/// Persist the admin-selected circuit breaker configuration.
-pub fn set_config(env: &Env, config: &CircuitBreakerConfig) {
+/// Extend the TTL of a circuit-breaker persistent key using the configured
+/// shipment TTL threshold/extension, so RBAC- and transfer-path reads never
+/// hit an archived entry.
+fn extend_breaker_key_ttl(env: &Env, key: &DataKey) {
+    let cfg = crate::config::get_config(env);
     env.storage()
         .persistent()
-        .set(&DataKey::CircuitBreakerConfig, config);
+        .extend_ttl(key, cfg.shipment_ttl_threshold, cfg.shipment_ttl_extension);
+}
+
+/// Persist the admin-selected circuit breaker configuration.
+pub fn set_config(env: &Env, config: &CircuitBreakerConfig) {
+    let key = DataKey::CircuitBreakerConfig;
+    env.storage().persistent().set(&key, config);
+    extend_breaker_key_ttl(env, &key);
 }
 
 /// Read the active circuit breaker configuration.
@@ -305,6 +315,7 @@ pub fn check_transfer_allowed(env: &Env, config: &CircuitBreakerConfig) -> Resul
 
     // Persist updated breaker state
     env.storage().persistent().set(&breaker_key, &breaker);
+    extend_breaker_key_ttl(env, &breaker_key);
 
     Ok(())
 }
@@ -326,6 +337,7 @@ pub fn record_transfer_success(env: &Env) {
 
     // Persist updated breaker state
     env.storage().persistent().set(&breaker_key, &breaker);
+    extend_breaker_key_ttl(env, &breaker_key);
 }
 
 /// Record a failed token transfer
@@ -393,6 +405,7 @@ pub fn manual_trip(env: &Env, admin: &Address) {
     breaker.state = CircuitBreakerState::Open;
     breaker.opened_at = env.ledger().timestamp();
     env.storage().persistent().set(&breaker_key, &breaker);
+    extend_breaker_key_ttl(env, &breaker_key);
 
     emit_breaker_opened_event(env, breaker.failure_count);
     let _ = admin;
@@ -423,6 +436,7 @@ pub fn manual_reset(env: &Env, admin: &Address) -> Result<(), NavinError> {
     let new_breaker = CircuitBreakerTracker::new();
 
     env.storage().persistent().set(&breaker_key, &new_breaker);
+    extend_breaker_key_ttl(env, &breaker_key);
 
     // Emit reset event
     emit_breaker_reset_event(env, admin);
