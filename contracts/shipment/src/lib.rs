@@ -6651,6 +6651,31 @@ impl NavinShipment {
         circuit_breaker::manual_reset(&env, &admin)
     }
 
+    /// Manually trip the circuit breaker open (admin-only).
+    ///
+    /// Real token-transfer failures cannot durably increment the breaker's
+    /// failure counter through the public entrypoints: Soroban rolls back
+    /// all storage writes of an invocation that returns `Err`, which is what
+    /// every settlement entrypoint does on a transfer failure. The breaker
+    /// is therefore admin-driven only. Operators who observe repeated
+    /// transfer failures (via monitoring or emitted events) should call this
+    /// to halt further settlement attempts, then `reset_circuit_breaker`
+    /// once the token contract issue is resolved.
+    pub fn trip_circuit_breaker(env: Env, admin: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+        let is_single_admin = env
+            .storage()
+            .instance()
+            .get::<_, Address>(&DataKey::Admin)
+            .is_some_and(|a| a == admin);
+        if !is_single_admin && !storage::is_admin(&env, &admin) {
+            return Err(NavinError::Unauthorized);
+        }
+        circuit_breaker::manual_trip(&env, &admin);
+        Ok(())
+    }
+
     /// Query the current circuit breaker status without modifying state.
     ///
     /// Returns the breaker state, accumulated failure count, and the number of
