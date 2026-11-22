@@ -1,5 +1,5 @@
 use crate::{errors::NavinError, types::*};
-use soroban_sdk::{Address, BytesN, Env, Map, Vec};
+use soroban_sdk::{Address, BytesN, Env, Map, Symbol, Vec};
 
 /// Check if the contract has been initialized (admin set).
 ///
@@ -813,6 +813,21 @@ pub fn get_confirmation_hash(env: &Env, shipment_id: u64) -> Option<BytesN<32>> 
     env.storage().persistent().get(&key)
 }
 
+/// Retrieve the metadata map for a shipment, or an empty map if none exists.
+pub fn get_shipment_metadata(env: &Env, shipment_id: u64) -> Map<Symbol, Symbol> {
+    let key = DataKey::ShipmentMetadata(shipment_id);
+    env.storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| Map::new(env))
+}
+
+/// Persist the metadata map for a shipment.
+pub fn set_shipment_metadata(env: &Env, shipment_id: u64, metadata: &Map<Symbol, Symbol>) {
+    let key = DataKey::ShipmentMetadata(shipment_id);
+    env.storage().persistent().set(&key, metadata);
+}
+
 /// Extend TTL for shipment data
 ///
 /// # Arguments
@@ -871,6 +886,13 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
         env.storage()
             .persistent()
             .extend_ttl(&dependents_key, threshold, extend_to);
+    }
+
+    let metadata_key = DataKey::ShipmentMetadata(shipment_id);
+    if env.storage().persistent().has(&metadata_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&metadata_key, threshold, extend_to);
     }
 
     let persistent = env.storage().persistent();
@@ -2154,6 +2176,9 @@ pub fn purge_status_hashes(env: &Env, shipment_id: u64) {
     env.storage()
         .persistent()
         .remove(&DataKey::ActiveSettlement(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::ShipmentMetadata(shipment_id));
     // Also ensure dependents helper is cleared (covers instance->persistent migration per diff in storage.rs)
     remove_shipment_dependents(env, shipment_id);
     // Drop the per-visit IoT status-hash log so archived shipments stop paying

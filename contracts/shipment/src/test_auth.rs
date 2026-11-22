@@ -1252,6 +1252,61 @@ fn test_set_shipment_metadata_rejects_empty_key_symbol() {
     );
 }
 
+/// Issue #1195: `set_shipment_metadata` must actually persist the key/value
+/// and enforce `max_metadata_entries`, not silently discard the write.
+#[test]
+fn test_set_shipment_metadata_persists_and_enforces_limit() {
+    extern crate std;
+    let (env, client, admin, _token) = setup_env();
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+
+    let deadline = crate::test_utils::future_deadline(&env, 3_600);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+
+    let key1 = Symbol::new(&env, "weight");
+    let value1 = Symbol::new(&env, "kg_100");
+    client.set_shipment_metadata(&company, &shipment_id, &key1, &value1);
+
+    let stored = client.get_shipment_metadata(&shipment_id);
+    assert_eq!(stored.get(key1.clone()), Some(value1.clone()));
+
+    // Overwrite the same key — should not count against the limit.
+    let value1b = Symbol::new(&env, "kg_200");
+    client.set_shipment_metadata(&company, &shipment_id, &key1, &value1b);
+    let stored = client.get_shipment_metadata(&shipment_id);
+    assert_eq!(stored.get(key1.clone()), Some(value1b));
+    assert_eq!(stored.len(), 1);
+
+    // Fill up to the default limit (5) with distinct keys.
+    for i in 2..=5u32 {
+        let key = Symbol::new(&env, &std::format!("key{}", i));
+        let value = Symbol::new(&env, "val");
+        client.set_shipment_metadata(&company, &shipment_id, &key, &value);
+    }
+    let stored = client.get_shipment_metadata(&shipment_id);
+    assert_eq!(stored.len(), 5);
+
+    // A 6th distinct key must be rejected.
+    let key6 = Symbol::new(&env, "key6");
+    let value6 = Symbol::new(&env, "val");
+    let result = client.try_set_shipment_metadata(&company, &shipment_id, &key6, &value6);
+    assert_eq!(result, Err(Ok(crate::NavinError::MetadataLimitExceeded)));
+}
+
 /// End-to-end: calling `set_shipment_metadata` with an empty value Symbol must
 /// also be rejected, ensuring both key and value are guarded.
 #[test]

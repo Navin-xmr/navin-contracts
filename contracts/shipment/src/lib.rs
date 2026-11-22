@@ -6,7 +6,7 @@ extern crate alloc;
 use soroban_sdk::auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation};
 use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal,
-    Symbol, Vec,
+    Map, Symbol, Vec,
 };
 
 // `audit`, `consistency`, `diagnostics` and `error_map` stay `pub` (issue
@@ -1064,10 +1064,37 @@ impl NavinShipment {
         if caller == shipment.sender {
             require_active_company(&env, &caller)?;
         }
+
+        let mut metadata = storage::get_shipment_metadata(&env, shipment_id);
+        if !metadata.contains_key(key.clone()) {
+            let config = config::get_config(&env);
+            if metadata.len() >= config.max_metadata_entries {
+                return Err(NavinError::MetadataLimitExceeded);
+            }
+        }
+        metadata.set(key, value);
+        storage::set_shipment_metadata(&env, shipment_id, &metadata);
+
         shipment.updated_at = env.ledger().timestamp();
         shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
         persist_shipment(&env, &shipment)?;
         Ok(())
+    }
+
+    /// Get all metadata entries stored for a shipment.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If the shipment doesn't exist.
+    pub fn get_shipment_metadata(
+        env: Env,
+        shipment_id: u64,
+    ) -> Result<Map<Symbol, Symbol>, NavinError> {
+        require_initialized(&env)?;
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+        Ok(storage::get_shipment_metadata(&env, shipment_id))
     }
 
     /// Get the current integration nonce for a shipment.
