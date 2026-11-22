@@ -4171,6 +4171,20 @@ impl NavinShipment {
             validation::validate_hash(data_hash)?;
         }
 
+        // Reject already-paid checkpoints up front so the batch behaves like
+        // record_milestone (#1277): a duplicate must fail the whole batch
+        // atomically with MilestoneAlreadyPaid, not silently push a 0 payout
+        // while still consuming a unit of the milestone budget below.
+        for (checkpoint, _) in milestones.iter() {
+            let already_paid = shipment
+                .paid_milestones
+                .iter()
+                .any(|paid| paid == checkpoint);
+            if already_paid {
+                return Err(NavinError::MilestoneAlreadyPaid);
+            }
+        }
+
         // Enforce milestone event payload size guard
         let config = config::get_config(&env);
         let current_milestone_count = storage::get_milestone_event_count(&env, shipment_id);

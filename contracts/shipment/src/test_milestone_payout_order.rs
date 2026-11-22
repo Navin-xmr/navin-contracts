@@ -469,6 +469,33 @@ fn test_record_milestones_batch_in_order_succeeds() {
     assert_eq!(shipment.escrow_amount, 0);
 }
 
+/// A batch containing a checkpoint that was already paid in a prior call must
+/// fail atomically with `MilestoneAlreadyPaid` (#1277), matching
+/// `record_milestone`, instead of silently pushing a 0 payout while still
+/// consuming a unit of the milestone budget.
+#[test]
+fn test_record_milestones_batch_rejects_already_paid() {
+    let (env, client, admin) = setup();
+    let (id, _company, carrier) = create_milestone_shipment(&env, &client, &admin);
+
+    // Pay alpha first, through the single-milestone entrypoint.
+    client.record_milestone(&carrier, &id, &symbol_short!("alpha"), &data_hash(&env, 0x11));
+    let before = client.get_shipment(&id);
+    assert_eq!(before.milestones_completed.len(), 1);
+
+    // A batch that re-submits alpha alongside beta must be rejected whole.
+    let mut milestones = Vec::new(&env);
+    milestones.push_back((symbol_short!("alpha"), data_hash(&env, 0x11)));
+    milestones.push_back((symbol_short!("beta"), data_hash(&env, 0x22)));
+
+    let result = client.try_record_milestones_batch(&carrier, &id, &milestones);
+    assert_eq!(result, Err(Ok(NavinError::MilestoneAlreadyPaid)));
+
+    // Atomic: beta must not have been applied either.
+    let after = client.get_shipment(&id);
+    assert_eq!(after.milestones_completed.len(), 1);
+}
+
 /// The three entrypoints agree: beta-before-alpha is rejected identically
 /// whether it is attempted through `release_milestone_payment`,
 /// `record_milestone`, or `record_milestones_batch`.
