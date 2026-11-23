@@ -3060,9 +3060,20 @@
   },
   {
     "function_v0": {
-      "doc": "Return a TTL health summary for all tracked shipments.\\n\\nScans up to all shipments (or a capped sample for large sets) and\\nreports how many are in persistent storage versus archived/missing,\\nalong with the configured TTL parameters and current ledger state.\\n\\nThis is a read-only query; no auth is required.",
+      "doc": "Return a TTL health summary for a window of shipment ids.\\n\\n`start_id` is the first id to inspect and `limit` caps the window size\\n(capped by `effective_batch_query_limit`). Callers can page through a\\nlarge shipment set to obtain health data for recent ids instead of\\nalways sampling the oldest ones. `sampled_start_id`/`sampled_end_id`\\nreport the actual inclusive range inspected (empty when no ids match).\\n\\nThis is a read-only query; no auth is required.",
       "name": "get_ttl_health_summary",
-      "inputs": [],
+      "inputs": [
+        {
+          "doc": "First shipment id to inspect (values below 1 are clamped to 1).",
+          "name": "start_id",
+          "type": "u64"
+        },
+        {
+          "doc": "Maximum number of ids to inspect (capped by the effective batch query limit).",
+          "name": "limit",
+          "type": "u32"
+        }
+      ],
       "outputs": [
         {
           "result": {
@@ -5477,6 +5488,16 @@
         {
           "doc": "Number of shipments sampled in this health check.",
           "name": "sampled_count",
+          "type": "u64"
+        },
+        {
+          "doc": "Last id in the sampled range (0 when the range is empty).",
+          "name": "sampled_end_id",
+          "type": "u64"
+        },
+        {
+          "doc": "First id in the sampled range (0 when the range is empty).",
+          "name": "sampled_start_id",
           "type": "u64"
         },
         {

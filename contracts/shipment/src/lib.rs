@@ -6600,27 +6600,48 @@ impl NavinShipment {
         Ok(storage::is_paused(&env))
     }
 
-    /// Return a TTL health summary for all tracked shipments.
+    /// Return a TTL health summary for a window of shipment ids.
     ///
-    /// Scans up to all shipments (or a capped sample for large sets) and
-    /// reports how many are in persistent storage versus archived/missing,
-    /// along with the configured TTL parameters and current ledger state.
+    /// `start_id` is the first id to inspect and `limit` caps the window size
+    /// (capped by `effective_batch_query_limit`). Callers can page through a
+    /// large shipment set to obtain health data for recent ids instead of
+    /// always sampling the oldest ones. `sampled_start_id`/`sampled_end_id`
+    /// report the actual inclusive range inspected (empty when no ids match).
     ///
     /// This is a read-only query; no auth is required.
-    pub fn get_ttl_health_summary(env: Env) -> Result<TtlHealthSummary, NavinError> {
+    pub fn get_ttl_health_summary(
+        env: Env,
+        start_id: u64,
+        limit: u32,
+    ) -> Result<TtlHealthSummary, NavinError> {
         require_initialized(&env)?;
 
         let config = config::get_config(&env);
         let total = storage::get_shipment_count(&env);
 
-        // Sample all shipments (cap at 100 for budget safety on large sets)
-        let sample_limit: u64 = 100;
-        let sampled_count = total.min(sample_limit);
+        let start_id = start_id.max(1);
+        let cap = effective_batch_query_limit(&env) as u64;
+        let window = (limit as u64).min(cap).max(1);
+        let requested_end = start_id.saturating_add(window - 1);
+        let sampled_end_id = requested_end.min(total);
+        let sampled_count = if sampled_end_id >= start_id {
+            sampled_end_id - start_id + 1
+        } else {
+            0
+        };
+        let sampled_start_id = if sampled_count == 0 { 0 } else { start_id };
+        let sampled_end_id = if sampled_count == 0 {
+            0
+        } else {
+            sampled_end_id
+        };
 
         let mut persistent_count: u64 = 0;
-        for id in 1..=sampled_count {
-            if storage::has_persistent_shipment(&env, id) {
-                persistent_count += 1;
+        if sampled_count > 0 {
+            for id in sampled_start_id..=sampled_end_id {
+                if storage::has_persistent_shipment(&env, id) {
+                    persistent_count += 1;
+                }
             }
         }
         let missing_or_archived_count = sampled_count.saturating_sub(persistent_count);
@@ -6630,6 +6651,8 @@ impl NavinShipment {
 
         Ok(TtlHealthSummary {
             total_shipment_count: total,
+            sampled_start_id,
+            sampled_end_id,
             sampled_count,
             persistent_count,
             missing_or_archived_count,

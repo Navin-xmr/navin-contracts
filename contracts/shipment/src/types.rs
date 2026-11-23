@@ -886,6 +886,10 @@ pub struct ProposalActionDigest {
 pub struct TtlHealthSummary {
     /// Total number of shipments tracked by the contract counter.
     pub total_shipment_count: u64,
+    /// First id in the sampled range (0 when the range is empty).
+    pub sampled_start_id: u64,
+    /// Last id in the sampled range (0 when the range is empty).
+    pub sampled_end_id: u64,
     /// Number of shipments sampled in this health check.
     pub sampled_count: u64,
     /// Number of sampled shipments found in persistent storage.
