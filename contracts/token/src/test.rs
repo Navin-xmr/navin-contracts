@@ -57,6 +57,15 @@ fn test_initialize() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #11)")]
+fn test_initialize_empty_metadata_returns_invalid_metadata() {
+    let (env, client, admin) = setup_token_env();
+    let empty = String::from_str(&env, "");
+    let symbol = String::from_str(&env, "NVN");
+    client.initialize(&admin, &empty, &symbol, &1000);
+}
+
+#[test]
 #[should_panic(expected = "Error(Contract, #1)")]
 fn test_re_initialization_fails() {
     let (env, client, admin) = setup_token_env();
@@ -157,7 +166,7 @@ fn test_add_allowed_metadata_key_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #2)")]
+#[should_panic(expected = "Error(Contract, #102)")]
 fn test_add_allowed_metadata_key_unauthorized() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -168,7 +177,7 @@ fn test_add_allowed_metadata_key_unauthorized() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #5)")]
+#[should_panic(expected = "Error(Contract, #105)")]
 fn test_add_allowed_metadata_key_already_exists() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -194,7 +203,7 @@ fn test_remove_allowed_metadata_key_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #4)")]
+#[should_panic(expected = "Error(Contract, #104)")]
 fn test_remove_allowed_metadata_key_not_found() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -204,7 +213,7 @@ fn test_remove_allowed_metadata_key_not_found() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #2)")]
+#[should_panic(expected = "Error(Contract, #102)")]
 fn test_remove_allowed_metadata_key_unauthorized() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -236,7 +245,7 @@ fn test_set_metadata_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #3)")]
+#[should_panic(expected = "Error(Contract, #103)")]
 fn test_set_metadata_key_not_allowed() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -249,7 +258,7 @@ fn test_set_metadata_key_not_allowed() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #2)")]
+#[should_panic(expected = "Error(Contract, #102)")]
 fn test_set_metadata_unauthorized() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -290,7 +299,7 @@ fn test_remove_metadata_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #4)")]
+#[should_panic(expected = "Error(Contract, #104)")]
 fn test_remove_metadata_not_found() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -300,7 +309,7 @@ fn test_remove_metadata_not_found() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #2)")]
+#[should_panic(expected = "Error(Contract, #102)")]
 fn test_remove_metadata_unauthorized() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);

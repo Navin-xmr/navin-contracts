@@ -83,7 +83,7 @@ impl NavinToken {
         }
 
         if name.is_empty() || symbol.is_empty() {
-            return Err(TokenError::InvalidAmount);
+            return Err(TokenError::InvalidMetadata);
         }
 
         if total_supply <= 0 {
