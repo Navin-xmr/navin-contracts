@@ -9,6 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+navin-nft = { path = "../contracts/nft", features = ["testutils"] }
 shipment = { path = "../contracts/shipment" }
 # This crate is intentionally kept as a standalone workspace, so the SDK pin
 # must be updated manually to match the version in the root Cargo.toml.
@@ -24,6 +25,13 @@ bench = false
 [[bin]]
 name = "rbac_authorization"
 path = "fuzz_targets/rbac_authorization.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nft_ownership"
+path = "fuzz_targets/nft_ownership.rs"
 test = false
 doc = false
 bench = false
