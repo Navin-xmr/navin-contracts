@@ -125,36 +125,60 @@ fn test_remove_guardian_still_removes_a_guardian() {
     );
 }
 
-/// A long `event_type` must not panic.
+/// Long topics the contract emits must produce a key (issue #1220).
 ///
-/// A Soroban `Symbol` allows up to 32 characters; the XDR decode writes into a
-/// 32-byte buffer and slices `8 + char_count`, so 25-32 characters run past
-/// the end. A panic aborts the whole invocation, so a merely-long event type
-/// would take down the call that emitted it.
+/// A Soroban `Symbol` allows up to 32 characters (40 bytes of XDR). The decode
+/// buffer used to be 32 bytes, so every symbol over 24 characters was
+/// rejected, including `milestone_payment_released` and five audit topics.
 #[test]
-fn test_compute_idempotency_key_rejects_oversized_symbols() {
+fn test_compute_idempotency_key_accepts_long_emitted_topics() {
     let (env, client, _admin, _token) = setup_initialized_shipment_env();
 
-    // 25 characters — the first length that overflowed the buffer.
-    let long_symbol = Symbol::new(&env, "abcdefghijklmnopqrstuvwxy");
-    let result = client.try_compute_idempotency_key(&1u64, &long_symbol, &0u32);
-    assert!(
-        result.is_err(),
-        "an oversized symbol must return an error rather than panicking"
+    let topic = Symbol::new(&env, crate::event_topics::MILESTONE_PAYMENT_RELEASED);
+    let first = client.compute_idempotency_key(&1u64, &topic, &0u32);
+    assert_eq!(
+        first,
+        client.compute_idempotency_key(&1u64, &topic, &0u32),
+        "the key must be deterministic for a 26-character topic"
     );
+    assert_ne!(
+        first,
+        client.compute_idempotency_key(&1u64, &topic, &1u32),
+        "a different counter must yield a different key"
+    );
+
+    // Long topics must not collide with a prefix of themselves.
+    let prefix = Symbol::new(&env, "milestone_payment_releas");
+    assert_ne!(first, client.compute_idempotency_key(&1u64, &prefix, &0u32));
 }
 
-/// The maximum-length symbol is handled the same way.
+/// Every topic constant the contract emits yields a key.
+#[test]
+fn test_compute_idempotency_key_ok_for_every_topic_constant() {
+    let (env, client, _admin, _token) = setup_initialized_shipment_env();
+
+    for topic in crate::event_topics::ALL_TOPICS {
+        let symbol = Symbol::new(&env, topic);
+        assert!(
+            client.try_compute_idempotency_key(&1u64, &symbol, &0u32).is_ok(),
+            "compute_idempotency_key failed for topic '{}'",
+            topic
+        );
+    }
+}
+
+/// The maximum-length symbol (32 characters) is accepted.
 #[test]
 fn test_compute_idempotency_key_handles_max_length_symbol() {
     let (env, client, _admin, _token) = setup_initialized_shipment_env();
 
-    // 32 characters — the SDK's maximum.
     let max_symbol = Symbol::new(&env, "abcdefghijklmnopqrstuvwxyz012345");
-    let result = client.try_compute_idempotency_key(&1u64, &max_symbol, &0u32);
-    assert!(
-        result.is_err(),
-        "must not panic at the maximum symbol length"
+    let short = Symbol::new(&env, "abcdefghijklmnopqrstuvwx");
+    let key = client.compute_idempotency_key(&1u64, &max_symbol, &0u32);
+    assert_ne!(
+        key,
+        client.compute_idempotency_key(&1u64, &short, &0u32),
+        "the full 32 characters must reach the preimage"
     );
 }
 
