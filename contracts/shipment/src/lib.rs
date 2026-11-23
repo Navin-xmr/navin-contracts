@@ -997,6 +997,11 @@ fn would_create_cycle(env: &Env, dependent_id: u64, proposed_prereq_id: u64) -> 
     false
 }
 
+
+/// XDR size of the longest Soroban `Symbol`: 4-byte type tag, 4-byte length
+/// and up to 32 bytes of content.
+const SYMBOL_XDR_MAX_LEN: usize = 8 + 32;
+
 #[contract]
 pub struct NavinShipment;
 
@@ -1516,18 +1521,19 @@ impl NavinShipment {
         // (4-byte type tag + 4-byte length + content) so the preimage matches
         // the canonical idempotency key format byte-for-byte.
         let xdr = event_type.clone().to_xdr(&env);
-        let mut raw = [0u8; 32];
-        let src_len = (xdr.len() as usize).min(32);
+        // Issue #1220 — a Soroban `Symbol` holds up to 32 characters, so its
+        // XDR is an 8-byte header plus up to 32 bytes of content. The buffer
+        // is sized for that maximum; the earlier 32-byte buffer only fit 24
+        // characters and rejected six topics this contract emits.
+        let mut raw = [0u8; SYMBOL_XDR_MAX_LEN];
+        let src_len = (xdr.len() as usize).min(SYMBOL_XDR_MAX_LEN);
         for (i, byte) in xdr.iter().take(src_len).enumerate() {
             raw[i] = byte;
         }
         let char_count = u32::from_be_bytes([raw[4], raw[5], raw[6], raw[7]]) as usize;
 
-        // Issue #750 — a Soroban `Symbol` may be up to 32 characters, so its
-        // XDR is 8 bytes of header plus up to 32 of content: 40 bytes, into a
-        // 32-byte buffer. Any symbol of 25-32 characters made `8 + char_count`
-        // exceed the buffer and panicked on the slice.
-        if char_count > raw.len().saturating_sub(8) {
+        // Only malformed XDR can declare more content than was actually read.
+        if src_len < 8 || 8 + char_count > src_len {
             return Err(NavinError::InvalidSymbolEncoding);
         }
 
