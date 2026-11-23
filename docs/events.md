@@ -1344,7 +1344,7 @@ Emitted when the admin removes a metadata entry via `remove_metadata()`.
 
 Emitted for each recipient leg during a batch transfer executed via `batch_transfer()`.
 
-**Topic:** `"batch_leg"`
+**Topic:** `("batch_leg", "v1")`
 **Emitted by:** `batch_transfer`
 **Caller role:** Token holder
 
@@ -1362,7 +1362,7 @@ Emitted for each recipient leg during a batch transfer executed via `batch_trans
 
 Emitted when multiple transfers are executed atomically in a single call via `batch_transfer()`.
 
-**Topic:** `"batch_tr"`
+**Topic:** `("batch_tr", "v1")`
 **Emitted by:** `batch_transfer`
 **Caller role:** Token holder
 
