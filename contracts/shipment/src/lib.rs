@@ -227,6 +227,10 @@ pub use validation::*;
 
 const MAX_BATCH_QUERY_SIZE: u32 = 50;
 
+/// Maximum number of caller-supplied candidates inspected by
+/// `list_company_carriers` in a single call (issue #1293).
+const MAX_CARRIER_SCAN: u32 = 100;
+
 /// Refresh the contract-wide instance storage TTL.
 ///
 /// The admin set and the contract config live in instance storage, so an
@@ -6782,7 +6786,9 @@ impl NavinShipment {
     ///
     /// Iterates over a caller-supplied `candidates` list and returns only those
     /// that are whitelisted. The caller provides the candidate set (e.g. from an
-    /// off-chain index); this keeps the query deterministic and bounded.
+    /// off-chain index); this keeps the query deterministic. Each call inspects
+    /// at most `MAX_CARRIER_SCAN` candidates and returns a `next_cursor` when
+    /// more remain, so the work per call is bounded.
     ///
     /// # Arguments
     /// * `env` - Execution environment.
@@ -6796,7 +6802,8 @@ impl NavinShipment {
     ///
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::InvalidConfig` - If `page_size` is 0 or > 50.
+    /// * `NavinError::InvalidConfig` - If `page_size` is 0 or > 50, or if
+    ///   `cursor` is outside the candidate list.
     pub fn list_company_carriers(
         env: Env,
         company: Address,
@@ -6811,27 +6818,28 @@ impl NavinShipment {
         }
 
         let total = candidates.len();
+        if cursor >= total {
+            return Err(NavinError::InvalidConfig);
+        }
+
         let mut result = Vec::new(&env);
         let mut scanned: u32 = 0;
-        let mut next_cursor: Option<u32> = None;
         let mut idx = cursor;
 
-        while idx < total {
+        while idx < total && scanned < MAX_CARRIER_SCAN {
             let candidate = candidates.get(idx).unwrap();
             scanned = scanned.saturating_add(1);
+            idx = idx.saturating_add(1);
 
             if storage::is_carrier_whitelisted(&env, &company, &candidate) {
                 result.push_back(candidate);
                 if result.len() == page_size {
-                    let next = idx.saturating_add(1);
-                    if next < total {
-                        next_cursor = Some(next);
-                    }
                     break;
                 }
             }
-            idx = idx.saturating_add(1);
         }
+
+        let next_cursor = if idx < total { Some(idx) } else { None };
 
         Ok(CarrierRelationshipPage {
             carriers: result,
