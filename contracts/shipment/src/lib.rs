@@ -5283,6 +5283,10 @@ impl NavinShipment {
     /// # Returns
     /// * `Result<(), NavinError>` - Ok on successful handoff.
     ///
+    /// The milestone-shaped event emitted here is informational only and does
+    /// not increment `MilestoneEventCount`, so handoffs can never exhaust
+    /// `max_milestones_per_shipment` or block `record_milestone` (issue #1285).
+    ///
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::InvalidHash` - If handoff_hash is all zeros.
@@ -5355,8 +5359,11 @@ impl NavinShipment {
         // Emit carrier_handoff_completed event
         events::emit_carrier_handoff_completed(&env, &old_carrier, &new_carrier, shipment_id);
 
-        // Record a milestone for the handoff
-        events::emit_milestone_recorded(
+        // Record a milestone-shaped event for the handoff, but do not spend
+        // the shipment's milestone budget: handoff already has its own
+        // carrier_handoff events and repeated handoffs must not block real
+        // checkpoints (issue #1285).
+        events::emit_handoff_milestone_recorded(
             &env,
             shipment_id,
             &symbol_short!("handoff"),
