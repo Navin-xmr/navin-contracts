@@ -48,6 +48,8 @@ mod event_topics;
 mod events;
 mod storage;
 #[cfg(test)]
+mod test_archived_getters;
+#[cfg(test)]
 mod test_audit_trail;
 #[cfg(test)]
 mod test_auth_guardians;
@@ -251,6 +253,19 @@ fn extend_shipment_ttl(env: &Env, shipment_id: u64) {
 #[inline]
 fn extend_shipment_ttl_cached(env: &Env, shipment_id: u64, threshold: u32, extension: u32) {
     storage::extend_shipment_ttl(env, shipment_id, threshold, extension);
+}
+
+/// Resolve a shipment for read-only access, accepting both live and archived
+/// shipments (issue #1288).
+///
+/// Archival moves the shipment from persistent to temporary storage. Every
+/// getter uses this helper so an archived ID keeps the same read surface as a
+/// live one; mutating entry points deliberately keep reading persistent
+/// storage only and still reject archived shipments.
+fn get_shipment_for_read(env: &Env, shipment_id: u64) -> Result<Shipment, NavinError> {
+    storage::get_shipment(env, shipment_id)
+        .or_else(|| storage::get_archived_shipment(env, shipment_id))
+        .ok_or(NavinError::ShipmentNotFound)
 }
 
 /// Shared existence check for the status-hash read paths.
@@ -1082,7 +1097,7 @@ impl NavinShipment {
     pub fn get_integration_nonce(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
         require_initialized(&env)?;
         let shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+            get_shipment_for_read(&env, shipment_id)?;
         Ok(shipment.integration_nonce)
     }
 
@@ -2749,7 +2764,21 @@ impl NavinShipment {
     /// ```
     pub fn get_shipment(env: Env, shipment_id: u64) -> Result<Shipment, NavinError> {
         require_initialized(&env)?;
-        storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)
+        get_shipment_for_read(&env, shipment_id)
+    }
+
+    /// Retrieve an archived shipment directly from temporary storage by ID.
+    ///
+    /// All getters already fall back to archived storage, so this explicit
+    /// accessor is mainly useful to integrators that want to distinguish a
+    /// live shipment from one that has been archived (issue #1288).
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If no archived shipment has this ID.
+    pub fn get_archived_shipment(env: Env, shipment_id: u64) -> Result<Shipment, NavinError> {
+        require_initialized(&env)?;
+        storage::get_archived_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)
     }
 
     /// Archive a shipment by moving it from persistent to temporary storage.
@@ -2763,7 +2792,7 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
         let shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+            get_shipment_for_read(&env, shipment_id)?;
         // Only allow archiving terminal state shipments (must not be already archived)
         if storage::is_shipment_archived(&env, shipment_id) {
             return Err(NavinError::ShipmentAlreadyCompleted);
@@ -2796,7 +2825,7 @@ impl NavinShipment {
     pub fn get_shipment_creator(env: Env, shipment_id: u64) -> Result<Address, NavinError> {
         require_initialized(&env)?;
         let shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+            get_shipment_for_read(&env, shipment_id)?;
         Ok(shipment.sender)
     }
 
@@ -2815,7 +2844,7 @@ impl NavinShipment {
     pub fn get_shipment_receiver(env: Env, shipment_id: u64) -> Result<Address, NavinError> {
         require_initialized(&env)?;
         let shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+            get_shipment_for_read(&env, shipment_id)?;
         Ok(shipment.receiver)
     }
 
@@ -2831,7 +2860,7 @@ impl NavinShipment {
     pub fn get_shipment_created_at(env: Env, shipment_id: u64) -> Result<u64, NavinError> {
         require_initialized(&env)?;
         let shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+            get_shipment_for_read(&env, shipment_id)?;
         Ok(shipment.created_at)
     }
 
@@ -2844,7 +2873,7 @@ impl NavinShipment {
     pub fn get_shipment_sender(env: Env, shipment_id: u64) -> Result<Address, NavinError> {
         require_initialized(&env)?;
         let shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+            get_shipment_for_read(&env, shipment_id)?;
         Ok(shipment.sender)
     }
 
@@ -2859,7 +2888,7 @@ impl NavinShipment {
     pub fn get_shipment_updated_at(env: Env, shipment_id: u64) -> Result<u64, NavinError> {
         require_initialized(&env)?;
         let shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+            get_shipment_for_read(&env, shipment_id)?;
         Ok(shipment.updated_at)
     }
 
@@ -2871,7 +2900,7 @@ impl NavinShipment {
     pub fn get_shipment_carrier(env: Env, shipment_id: u64) -> Result<Address, NavinError> {
         require_initialized(&env)?;
         let shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+            get_shipment_for_read(&env, shipment_id)?;
         Ok(shipment.carrier)
     }
 
@@ -3375,7 +3404,7 @@ impl NavinShipment {
     /// ```
     pub fn get_escrow_balance(env: Env, shipment_id: u64) -> Result<i128, NavinError> {
         require_initialized(&env)?;
-        if storage::get_shipment(&env, shipment_id).is_none() {
+        if get_shipment_for_read(&env, shipment_id).is_err() {
             return Err(NavinError::ShipmentNotFound);
         }
         Ok(storage::get_escrow_balance(&env, shipment_id))
@@ -3394,7 +3423,7 @@ impl NavinShipment {
         shipment_id: u64,
     ) -> Result<Option<EscrowFreezeReason>, NavinError> {
         require_initialized(&env)?;
-        if storage::get_shipment(&env, shipment_id).is_none() {
+        if get_shipment_for_read(&env, shipment_id).is_err() {
             return Err(NavinError::ShipmentNotFound);
         }
         Ok(storage::get_escrow_freeze_reason(&env, shipment_id))
@@ -3492,7 +3521,7 @@ impl NavinShipment {
 
         let mut results = Vec::new(&env);
         for shipment_id in shipment_ids.iter() {
-            results.push_back(storage::get_shipment(&env, shipment_id));
+            results.push_back(get_shipment_for_read(&env, shipment_id).ok());
         }
 
         Ok(results)
@@ -3530,7 +3559,7 @@ impl NavinShipment {
     pub fn get_event_count(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
         require_initialized(&env)?;
         // Verify shipment exists
-        if storage::get_shipment(&env, shipment_id).is_none() {
+        if get_shipment_for_read(&env, shipment_id).is_err() {
             return Err(NavinError::ShipmentNotFound);
         }
         Ok(storage::get_event_count(&env, shipment_id))
@@ -5563,7 +5592,7 @@ impl NavinShipment {
         validation::validate_hash(&proof_hash)?;
 
         // Ensure the shipment exists
-        if storage::get_shipment(&env, shipment_id).is_none() {
+        if get_shipment_for_read(&env, shipment_id).is_err() {
             return Err(NavinError::ShipmentNotFound);
         }
 
@@ -6498,7 +6527,7 @@ impl NavinShipment {
         shipment_id: u64,
     ) -> Result<soroban_sdk::String, NavinError> {
         require_initialized(&env)?;
-        if storage::get_shipment(&env, shipment_id).is_none() {
+        if get_shipment_for_read(&env, shipment_id).is_err() {
             return Err(NavinError::ShipmentNotFound);
         }
 
@@ -7009,7 +7038,7 @@ impl NavinShipment {
         require_initialized(&env)?;
         validation::validate_hash(&proof_hash)?;
 
-        if storage::get_shipment(&env, shipment_id).is_none() {
+        if get_shipment_for_read(&env, shipment_id).is_err() {
             return Err(NavinError::ShipmentNotFound);
         }
 
