@@ -869,6 +869,41 @@ fn test_batch_transfer_empty_batch_rejected() {
 }
 
 #[test]
+fn test_batch_transfer_accepts_max_batch() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let recipient = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    for _ in 0..crate::MAX_BATCH_SIZE {
+        recipients.push_back((recipient.clone(), 1));
+    }
+
+    client.batch_transfer(&admin, &recipients);
+    assert_eq!(client.balance(&recipient), crate::MAX_BATCH_SIZE as i128);
+}
+
+#[test]
+fn test_batch_transfer_rejects_over_max_batch() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let recipient = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    for _ in 0..=crate::MAX_BATCH_SIZE {
+        recipients.push_back((recipient.clone(), 1));
+    }
+
+    assert_eq!(
+        client.try_batch_transfer(&admin, &recipients),
+        Err(Ok(crate::TokenError::BatchTooLarge)),
+        "MAX_BATCH_SIZE + 1 recipients must fail fast"
+    );
+    assert_eq!(client.balance(&recipient), 0);
+    assert_eq!(client.balance(&admin), 1_000_000);
+}
+
+#[test]
 fn test_batch_transfer_skips_self_transfer_leg() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);

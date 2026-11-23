@@ -18,6 +18,9 @@ pub use types::*;
 /// effectively never expires (issue #659).
 pub const MAX_EXPIRATION_LEDGER: u32 = u32::MAX;
 
+/// Maximum number of recipients accepted by `batch_transfer` (issue #1296).
+pub const MAX_BATCH_SIZE: u32 = 100;
+
 #[contract]
 pub struct NavinToken;
 
@@ -707,6 +710,9 @@ impl NavinToken {
 
         if recipients.is_empty() {
             return Err(TokenError::InvalidAmount);
+        }
+        if recipients.len() > MAX_BATCH_SIZE {
+            return Err(TokenError::BatchTooLarge);
         }
 
         let mut total: i128 = 0;

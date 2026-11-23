@@ -55,6 +55,9 @@ const TTL_THRESHOLD: u32 = 17_280;
 /// Ledgers to extend by once the threshold is hit (~30 days).
 const TTL_EXTENSION: u32 = 518_400;
 
+/// Maximum number of tokens accepted by `mint_batch` and `burn_batch` (issue #1296).
+pub const MAX_BATCH_SIZE: u32 = 100;
+
 // ── Contract ────────────────────────────────────────────────────────────────
 
 #[contract]
@@ -156,8 +159,11 @@ impl NavinShipmentNft {
     ) -> Result<(), NftError> {
         Self::require_not_paused(&env)?;
         Self::require_admin(&env)?;
-        if recipients.len() != token_ids.len() {
+        if recipients.is_empty() || recipients.len() != token_ids.len() {
             return Err(NftError::InvalidBatchLength);
+        }
+        if recipients.len() > MAX_BATCH_SIZE {
+            return Err(NftError::BatchTooLarge);
         }
 
         let mut total_supply: u64 = env
@@ -353,6 +359,13 @@ impl NavinShipmentNft {
         caller.require_auth();
         let admin = Self::get_admin_inner(&env)?;
         let is_admin = caller == admin;
+
+        if token_ids.is_empty() {
+            return Err(NftError::InvalidBatchLength);
+        }
+        if token_ids.len() > MAX_BATCH_SIZE {
+            return Err(NftError::BatchTooLarge);
+        }
 
         for token_id in token_ids.iter() {
             let owner = Self::get_owner_inner(&env, token_id)?;
@@ -1002,6 +1015,92 @@ mod tests {
             Err(Ok(NftError::InvalidBatchLength))
         );
         assert_eq!(client.total_supply(), 0);
+    }
+
+    #[test]
+    fn test_mint_batch_rejects_empty_batch() {
+        let (env, _admin, client) = setup();
+        assert_eq!(
+            client.try_mint_batch(&Vec::new(&env), &Vec::new(&env)),
+            Err(Ok(NftError::InvalidBatchLength))
+        );
+        assert_eq!(client.total_supply(), 0);
+    }
+
+    #[test]
+    fn test_mint_batch_accepts_max_batch() {
+        let (env, _admin, client) = setup();
+        let recipient = Address::generate(&env);
+        let mut recipients = Vec::new(&env);
+        let mut token_ids = Vec::new(&env);
+        for token_id in 1..=MAX_BATCH_SIZE as u64 {
+            recipients.push_back(recipient.clone());
+            token_ids.push_back(token_id);
+        }
+
+        client.mint_batch(&recipients, &token_ids);
+        assert_eq!(client.total_supply(), MAX_BATCH_SIZE as u64);
+        assert_eq!(client.balance_of(&recipient), MAX_BATCH_SIZE as u64);
+    }
+
+    #[test]
+    fn test_mint_batch_rejects_over_max_batch() {
+        let (env, _admin, client) = setup();
+        let recipient = Address::generate(&env);
+        let mut recipients = Vec::new(&env);
+        let mut token_ids = Vec::new(&env);
+        for token_id in 1..=MAX_BATCH_SIZE as u64 + 1 {
+            recipients.push_back(recipient.clone());
+            token_ids.push_back(token_id);
+        }
+
+        assert_eq!(
+            client.try_mint_batch(&recipients, &token_ids),
+            Err(Ok(NftError::BatchTooLarge)),
+            "MAX_BATCH_SIZE + 1 tokens must fail fast"
+        );
+        assert_eq!(client.total_supply(), 0);
+    }
+
+    #[test]
+    fn test_burn_batch_rejects_empty_batch() {
+        let (env, admin, client) = setup();
+        assert_eq!(
+            client.try_burn_batch(&admin, &Vec::new(&env)),
+            Err(Ok(NftError::InvalidBatchLength))
+        );
+    }
+
+    #[test]
+    fn test_burn_batch_accepts_max_batch() {
+        let (env, admin, client) = setup();
+        let owner = Address::generate(&env);
+        let mut recipients = Vec::new(&env);
+        let mut token_ids = Vec::new(&env);
+        for token_id in 1..=MAX_BATCH_SIZE as u64 {
+            recipients.push_back(owner.clone());
+            token_ids.push_back(token_id);
+        }
+        client.mint_batch(&recipients, &token_ids);
+
+        client.burn_batch(&admin, &token_ids);
+        assert_eq!(client.total_supply(), 0);
+        assert_eq!(client.balance_of(&owner), 0);
+    }
+
+    #[test]
+    fn test_burn_batch_rejects_over_max_batch() {
+        let (env, admin, client) = setup();
+        let mut token_ids = Vec::new(&env);
+        for token_id in 1..=MAX_BATCH_SIZE as u64 + 1 {
+            token_ids.push_back(token_id);
+        }
+
+        assert_eq!(
+            client.try_burn_batch(&admin, &token_ids),
+            Err(Ok(NftError::BatchTooLarge)),
+            "MAX_BATCH_SIZE + 1 tokens must fail fast"
+        );
     }
 
     #[test]
