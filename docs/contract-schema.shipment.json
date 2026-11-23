@@ -2936,7 +2936,7 @@
   },
   {
     "function_v0": {
-      "doc": "Emit the one-time deadline warning when a shipment enters its warning window.\\nThis is permissionless so an indexer or scheduled crank can call it.\\n\\nThe warning window is `deadline_grace_seconds` from contract configuration.\\nCalls outside that window are harmless no-ops; repeated calls after the first\\nwarning are also no-ops.",
+      "doc": "Emit the one-time deadline warning when a shipment enters its warning window.\\nThis is permissionless so an indexer or scheduled crank can call it.\\n\\nThe warning window is `deadline_grace_seconds` from contract configuration.\\nCalls outside that window are harmless no-ops; repeated calls after the first\\nwarning are also no-ops. Finalized/terminal shipments are skipped, and the\\ncall is rejected while the contract is paused because it writes storage.\\n\\nThe `data_hash` argument is retained for API compatibility but ignored:\\nthe notification always uses the shipment's own validated data hash so a\\npermissionless caller cannot attach arbitrary hashes to official notices.",
       "name": "check_deadline_warning",
       "inputs": [
         {

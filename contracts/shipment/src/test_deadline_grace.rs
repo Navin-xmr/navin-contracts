@@ -296,6 +296,91 @@ mod tests {
         );
     }
 
+    /// A permissionless caller's hash is ignored; the official notification
+    /// carries the shipment's own validated hash, so a zero hash has no effect.
+    #[test]
+    fn deadline_warning_ignores_caller_hash() {
+        let (env, client, admin) = setup();
+        let now = env.ledger().timestamp();
+        let deadline = now + 1000;
+        let id = create_with_deadline(&env, &client, &admin, 0x07, deadline);
+        set_grace(&client, &admin, 300);
+        test_utils::set_ledger_time(&env, deadline - 100);
+
+        // Explicitly ignore a zero hash supplied by an untrusted caller.
+        client.check_deadline_warning(&id, &BytesN::from_array(&env, &[0u8; 32]));
+        let events = env.events().all();
+        assert_eq!(events.len(), 2, "both parties must be notified");
+        for (_contract, _topics, data) in events.iter() {
+            let (_recipient, kind, shipment_id, hash): (
+                Address,
+                NotificationType,
+                u64,
+                BytesN<32>,
+            ) = TryFromVal::try_from_val(&env, &data).expect("notification must deserialize");
+            assert_eq!(kind, NotificationType::DeadlineApproaching);
+            assert_eq!(shipment_id, id);
+            assert_eq!(hash, BytesN::from_array(&env, &[0x07u8; 32]));
+        }
+    }
+
+    /// Terminal shipments must never emit approaching-deadline warnings.
+    #[test]
+    fn deadline_warning_noop_for_delivered_shipment() {
+        let (env, client, admin) = setup();
+        let now = env.ledger().timestamp();
+        let deadline = now + 1000;
+        let company = Address::generate(&env);
+        let receiver = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let data_hash = BytesN::from_array(&env, &[0x0bu8; 32]);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
+        let id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &data_hash,
+            &Vec::new(&env),
+            &deadline,
+        );
+        client.update_status(&carrier, &id, &ShipmentStatus::InTransit, &data_hash);
+        // Avoid the per-address status-update rate limit between transitions.
+        test_utils::set_ledger_time(&env, now + 100);
+        client.update_status(&carrier, &id, &ShipmentStatus::Delivered, &data_hash);
+        assert_eq!(client.get_shipment(&id).status, ShipmentStatus::Delivered);
+
+        set_grace(&client, &admin, 300);
+        test_utils::set_ledger_time(&env, deadline - 100);
+        env.events().all();
+
+        client.check_deadline_warning(&id, &data_hash);
+        assert_eq!(
+            env.events().all().len(),
+            0,
+            "delivered shipments must not warn"
+        );
+    }
+
+    /// Warning emission writes DeadlineWarningEmitted, so it is gated by pause.
+    #[test]
+    fn deadline_warning_rejected_while_paused() {
+        let (env, client, admin) = setup();
+        let now = env.ledger().timestamp();
+        let deadline = now + 1000;
+        let id = create_with_deadline(&env, &client, &admin, 0x0c, deadline);
+        set_grace(&client, &admin, 300);
+        test_utils::set_ledger_time(&env, deadline - 100);
+        client.pause(&admin);
+
+        let result = client.try_check_deadline_warning(&id, &BytesN::from_array(&env, &[0x0c; 32]));
+        assert!(
+            matches!(result, Err(Ok(crate::NavinError::ContractPaused))),
+            "check_deadline_warning must be blocked while paused"
+        );
+    }
+
     // ── Max cap enforcement ───────────────────────────────────────────────────
 
     /// Configuring deadline_grace_seconds = 604_800 (exactly 7 days) must succeed.

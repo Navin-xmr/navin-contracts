@@ -6350,15 +6350,34 @@ impl NavinShipment {
     ///
     /// The warning window is `deadline_grace_seconds` from contract configuration.
     /// Calls outside that window are harmless no-ops; repeated calls after the first
-    /// warning are also no-ops.
+    /// warning are also no-ops. Finalized/terminal shipments are skipped, and the
+    /// call is rejected while the contract is paused because it writes storage.
+    ///
+    /// The `data_hash` argument is retained for API compatibility but ignored:
+    /// the notification always uses the shipment's own validated data hash so a
+    /// permissionless caller cannot attach arbitrary hashes to official notices.
     pub fn check_deadline_warning(
         env: Env,
         shipment_id: u64,
         data_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
+        let _ = data_hash; // caller-supplied hash is intentionally ignored
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         let shipment =
             storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
+        if shipment.finalized
+            || matches!(
+                shipment.status,
+                ShipmentStatus::Delivered
+                    | ShipmentStatus::Cancelled
+                    | ShipmentStatus::PartiallyRefunded
+            )
+        {
+            return Ok(());
+        }
+        let data_hash = shipment.data_hash.clone();
+        validation::validate_hash(&data_hash)?;
         if env
             .storage()
             .persistent()
