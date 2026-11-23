@@ -48,9 +48,11 @@ export STELLAR_RPC_URL="https://my-rpc-endpoint.com"
 
 The token contract (`navin-token`) must be initialized before the shipment contract can reference it. Initialization sets the admin, token name, symbol, and total supply.
 
+`NavinToken` supports both atomic deployment via `__constructor` and authenticated post-deployment `initialize`, both of which strictly require admin authorization.
+
 **Initialize Parameters:**
 
-- `admin` — Account that will own the token and manage metadata/pause operations
+- `admin` — Account that will own the token and manage metadata/pause operations (must authorize initialization)
 - `name` — Token name (e.g., "Navin Token")
 - `symbol` — Token ticker (e.g., "NAV")
 - `total_supply` — Initial supply in stroops (smallest unit; 7 decimals). Default: 1,000,000,000.0000000 (10^16 stroops)

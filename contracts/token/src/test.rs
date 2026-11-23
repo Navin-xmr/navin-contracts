@@ -41,6 +41,32 @@ fn test_initialize() {
 }
 
 #[test]
+#[should_panic]
+fn test_initialize_unauthenticated_fails() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let contract_id = env.register(NavinToken, ());
+    let client = NavinTokenClient::new(&env, &contract_id);
+    let name = String::from_str(&env, "NavinToken");
+    let symbol = String::from_str(&env, "NVN");
+    // Without admin auth / mock_all_auths, must fail authentication
+    client.initialize(&admin, &name, &symbol, &1_000_000);
+}
+
+#[test]
+fn test_constructor_initialization() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    env.mock_all_auths();
+    let name = String::from_str(&env, "NavinToken");
+    let symbol = String::from_str(&env, "NVN");
+    let contract_id = env.register(NavinToken, (&admin, &name, &symbol, &1_000_000i128));
+    let client = NavinTokenClient::new(&env, &contract_id);
+    assert_eq!(client.get_admin(), admin);
+    assert_eq!(client.total_supply(), 1_000_000);
+}
+
+#[test]
 #[should_panic(expected = "Error(Contract, #1)")]
 fn test_re_initialization_fails() {
     let (env, client, admin) = setup_token_env();

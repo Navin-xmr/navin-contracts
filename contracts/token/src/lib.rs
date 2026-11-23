@@ -33,6 +33,17 @@ fn require_not_paused(env: &Env) -> Result<(), TokenError> {
 
 #[contractimpl]
 impl NavinToken {
+    /// Atomic constructor executed at deploy time (Soroban SDK v22)
+    pub fn __constructor(
+        env: Env,
+        admin: Address,
+        name: String,
+        symbol: String,
+        total_supply: i128,
+    ) -> Result<(), TokenError> {
+        Self::initialize(env, admin, name, symbol, total_supply)
+    }
+
     /// Initialize the token with admin, name, symbol, and total supply
     pub fn initialize(
         env: Env,
@@ -41,6 +52,8 @@ impl NavinToken {
         symbol: String,
         total_supply: i128,
     ) -> Result<(), TokenError> {
+        admin.require_auth();
+
         if storage::is_initialized(&env) {
             return Err(TokenError::AlreadyInitialized);
         }
