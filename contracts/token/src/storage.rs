@@ -2,6 +2,23 @@ use soroban_sdk::{Address, Env, String, Symbol, Vec};
 
 pub use crate::types::{AllowanceValue, DataKey};
 
+/// Ledgers remaining before a TTL bump kicks in (~1 day), mirroring the NFT
+/// contract's approach.
+pub const INSTANCE_TTL_THRESHOLD: u32 = 17_280;
+
+/// Ledgers to extend the instance TTL by once the threshold is hit (~30 days).
+pub const INSTANCE_TTL_EXTEND_TO: u32 = 518_400;
+
+/// Extend the lifetime of instance storage (admin, name, symbol, total supply,
+/// pending admin, pause flag, metadata key list). Without regular bumps the
+/// whole contract's instance entry can be archived even while persistent
+/// balances are still alive (issue #1286).
+pub fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
+}
+
 /// Check if the contract has been initialized
 pub fn is_initialized(env: &Env) -> bool {
     env.storage().instance().has(&DataKey::Admin)
@@ -211,9 +228,6 @@ pub fn add_allowed_metadata_key(env: &Env, key: &Symbol) {
             .instance()
             .set(&DataKey::AllowedMetadataKeys, &keys);
     }
-    env.storage()
-        .instance()
-        .extend_ttl(METADATA_TTL_THRESHOLD, METADATA_TTL_EXTEND_TO);
 }
 
 /// Remove a key from the allowed metadata keys list

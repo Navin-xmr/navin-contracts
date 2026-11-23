@@ -67,6 +67,8 @@ impl NavinToken {
             (admin.clone(), total_supply),
         );
 
+        storage::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -159,6 +161,8 @@ impl NavinToken {
             (from, to, amount),
         );
 
+        storage::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -220,6 +224,8 @@ impl NavinToken {
             (from, to, spender, amount),
         );
 
+        storage::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -267,6 +273,8 @@ impl NavinToken {
             ),
             (from, spender, amount, expiration_ledger),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -319,6 +327,8 @@ impl NavinToken {
             (owner, spender, delta, new_allowance),
         );
 
+        storage::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -364,6 +374,8 @@ impl NavinToken {
             (owner, spender, delta, new_allowance),
         );
 
+        storage::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -398,6 +410,8 @@ impl NavinToken {
             (current_admin, new_admin),
         );
 
+        storage::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -426,6 +440,8 @@ impl NavinToken {
             ),
             (old_admin, new_admin),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -466,6 +482,8 @@ impl NavinToken {
             ),
             (to, amount),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -521,6 +539,8 @@ impl NavinToken {
             (from, amount),
         );
 
+        storage::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -561,6 +581,8 @@ impl NavinToken {
             ),
             (from, amount),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -620,6 +642,8 @@ impl NavinToken {
             (from, spender, amount),
         );
 
+        storage::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -646,6 +670,8 @@ impl NavinToken {
             (admin,),
         );
 
+        storage::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -670,6 +696,8 @@ impl NavinToken {
             ),
             (admin,),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -773,6 +801,8 @@ impl NavinToken {
             (from, filtered_recipients.clone(), filtered_recipients.len()),
         );
 
+        storage::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -828,6 +858,8 @@ impl NavinToken {
             (admin, key),
         );
 
+        storage::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -871,6 +903,8 @@ impl NavinToken {
             ),
             (admin, key),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -958,6 +992,8 @@ impl NavinToken {
             (admin, key, value),
         );
 
+        storage::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -1015,6 +1051,8 @@ impl NavinToken {
             ),
             (admin, key),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
