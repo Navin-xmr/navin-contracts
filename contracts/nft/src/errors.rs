@@ -31,4 +31,6 @@ pub enum NftError {
     BaseUriNotSet = 16,
     /// Batch input exceeds the maximum supported number of entries.
     BatchTooLarge = 17,
+    /// The proposed admin is already the current admin.
+    SameAccount = 18,
 }

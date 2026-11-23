@@ -306,6 +306,27 @@ fn test_admin_proposal_emits_event() {
 }
 
 #[test]
+fn test_admin_cancellation_emits_event() {
+    let (env, admin, client) = setup();
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+    client.cancel_admin_transfer(&admin);
+
+    let event = last_event(&env, &client.address);
+    assert_eq!(
+        vec![&env, event],
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                topics(&env, event_topics::ADMIN_CANCELLED),
+                (admin, new_admin, TIMESTAMP).into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
 fn test_failed_mint_emits_no_event() {
     let (env, _admin, client) = setup();
     let recipient = Address::generate(&env);

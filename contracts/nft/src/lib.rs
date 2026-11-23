@@ -559,6 +559,9 @@ impl NavinShipmentNft {
         if Self::get_admin_inner(&env)? != admin {
             return Err(NftError::NotAdmin);
         }
+        if new_admin == admin {
+            return Err(NftError::SameAccount);
+        }
 
         env.storage()
             .instance()
@@ -569,6 +572,30 @@ impl NavinShipmentNft {
                 event_topics::EVENT_SCHEMA_VERSION,
             ),
             (admin, new_admin, env.ledger().timestamp()),
+        );
+        Self::extend_instance_ttl(&env);
+        Ok(())
+    }
+
+    /// Cancel a pending admin transfer. Only the current admin can revoke it.
+    pub fn cancel_admin_transfer(env: Env, admin: Address) -> Result<(), NftError> {
+        admin.require_auth();
+        if Self::get_admin_inner(&env)? != admin {
+            return Err(NftError::NotAdmin);
+        }
+
+        let proposed_admin: Address = env
+            .storage()
+            .instance()
+            .get(&NftKey::ProposedAdmin)
+            .ok_or(NftError::NoProposedAdmin)?;
+        env.storage().instance().remove(&NftKey::ProposedAdmin);
+        env.events().publish(
+            (
+                event_topics::ADMIN_CANCELLED,
+                event_topics::EVENT_SCHEMA_VERSION,
+            ),
+            (admin, proposed_admin, env.ledger().timestamp()),
         );
         Self::extend_instance_ttl(&env);
         Ok(())
@@ -946,6 +973,57 @@ mod tests {
             client.try_get_proposed_admin(),
             Err(Ok(NftError::NoProposedAdmin))
         );
+    }
+
+    #[test]
+    fn test_admin_transfer_rejects_self_nomination() {
+        let (_env, admin, client) = setup();
+        assert_eq!(
+            client.try_transfer_admin(&admin, &admin),
+            Err(Ok(NftError::SameAccount))
+        );
+        assert_eq!(
+            client.try_get_proposed_admin(),
+            Err(Ok(NftError::NoProposedAdmin))
+        );
+    }
+
+    #[test]
+    fn test_cancel_admin_transfer_revokes_proposal() {
+        let (env, admin, client) = setup();
+        let new_admin = Address::generate(&env);
+
+        client.transfer_admin(&admin, &new_admin);
+        assert_eq!(client.get_proposed_admin(), new_admin);
+
+        client.cancel_admin_transfer(&admin);
+        assert_eq!(
+            client.try_get_proposed_admin(),
+            Err(Ok(NftError::NoProposedAdmin))
+        );
+        assert_eq!(client.get_admin(), admin);
+    }
+
+    #[test]
+    fn test_cancel_admin_transfer_rejects_non_admin_and_missing_proposal() {
+        let (env, admin, client) = setup();
+        let non_admin = Address::generate(&env);
+        assert_eq!(
+            client.try_cancel_admin_transfer(&non_admin),
+            Err(Ok(NftError::NotAdmin))
+        );
+        assert_eq!(
+            client.try_cancel_admin_transfer(&admin),
+            Err(Ok(NftError::NoProposedAdmin))
+        );
+
+        let new_admin = Address::generate(&env);
+        client.transfer_admin(&admin, &new_admin);
+        assert_eq!(
+            client.try_cancel_admin_transfer(&non_admin),
+            Err(Ok(NftError::NotAdmin))
+        );
+        assert_eq!(client.get_proposed_admin(), new_admin);
     }
 
     #[test]

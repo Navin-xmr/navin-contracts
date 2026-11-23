@@ -996,6 +996,52 @@ fn test_transfer_admin_success() {
 }
 
 #[test]
+fn test_pending_admin_query_and_cancel() {
+    use crate::TokenError;
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    assert_eq!(
+        client.try_get_pending_admin(),
+        Err(Ok(TokenError::Unauthorized)),
+        "no nominee before a proposal"
+    );
+
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+    assert_eq!(client.get_pending_admin(), new_admin);
+
+    client.cancel_admin_transfer(&admin);
+    assert_eq!(
+        client.try_get_pending_admin(),
+        Err(Ok(TokenError::Unauthorized)),
+        "cancelled nominee must no longer be queryable"
+    );
+    assert_eq!(
+        client.try_accept_admin_transfer(&new_admin),
+        Err(Ok(TokenError::Unauthorized)),
+        "cancelled nominee must not be able to accept"
+    );
+    assert_eq!(client.get_admin(), admin);
+}
+
+#[test]
+fn test_cancel_admin_transfer_rejects_non_admin() {
+    use crate::TokenError;
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+
+    let non_admin = Address::generate(&env);
+    assert_eq!(
+        client.try_cancel_admin_transfer(&non_admin),
+        Err(Ok(TokenError::Unauthorized))
+    );
+    assert_eq!(client.get_pending_admin(), new_admin);
+}
+
+#[test]
 #[should_panic(expected = "Error(Contract, #7)")]
 fn test_transfer_admin_rejects_self_transfer() {
     let (env, client, admin) = setup_token_env();
