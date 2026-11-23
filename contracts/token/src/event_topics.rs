@@ -25,6 +25,23 @@
 //! element is the schema version, giving indexers a stable way to detect
 //! payload shape changes without breaking on the name alone.
 //!
+//! ## SEP-41 compatibility
+//!
+//! Movement events (`transfer` including `transfer_from`/`batch_transfer`,
+//! `approve`, `mint`, `burn` including `burn_from`/`admin_burn`) also publish
+//! an unversioned SEP-41-shaped event with address topics:
+//!
+//! ```text
+//! transfer: topics ["transfer", from, to], data amount: i128
+//! approve:  topics ["approve", from, spender], data (amount: i128, expiration_ledger: u32)
+//! mint:     topics ["mint", to], data amount: i128
+//! burn:     topics ["burn", from], data amount: i128
+//! ```
+//!
+//! The legacy `v1` event is emitted last for each operation so existing
+//! indexers that expect it as the final event keep working. Indexers may use
+//! either shape, but should not count both when reconstructing balances.
+//!
 //! ## Backward Compatibility
 //!
 //! The string value of every constant **must** remain identical to what was

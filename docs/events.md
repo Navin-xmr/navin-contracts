@@ -80,11 +80,30 @@
 All events are published via the Soroban SDK's `env.events().publish()` method:
 
 - **Shipment Contract:** `topic: (Symbol,)` — single descriptive symbol for stream filtering.
-- **Token Contract:** `topic: (Symbol::new(name), Symbol::new(EVENT_SCHEMA_VERSION_STR))` — 2-element topic tuple carrying the event name symbol and schema version string (e.g., `"v1"`), as defined in [`contracts/token/src/event_topics.rs`](../contracts/token/src/event_topics.rs).
+- **Token Contract:** `topic: (Symbol::new(name), Symbol::new(EVENT_SCHEMA_VERSION_STR))` — 2-element topic tuple carrying the event name symbol and schema version string (e.g., `"v1"`), as defined in [`contracts/token/src/event_topics.rs`](../contracts/token/src/event_topics.rs). Movement events additionally emit a SEP-41-shaped event with address topics (see below).
 
 ```
 data:   (field1, field2, ...)    — tuple of typed payload fields
 ```
+
+### SEP-41 token events (#1292)
+
+Token balance movements now also publish standard SEP-41 events alongside the
+legacy versioned (`v1`) events. The legacy event is published last for each
+operation; indexers must decode **one** shape, not sum both.
+
+| Event | Topics | Data |
+| --- | --- | --- |
+| `transfer` | `["transfer", from, to]` | `amount: i128` |
+| `approve` | `["approve", from, spender]` | `(amount: i128, expiration_ledger: u32)` |
+| `mint` | `["mint", to]` | `amount: i128` |
+| `burn` | `["burn", from]` | `amount: i128` |
+
+`transfer_from` and `batch_transfer` legs emit `transfer`; `burn_from` and
+`admin_burn` emit `burn`; `increase_allowance`/`decrease_allowance` emit
+`approve` with the resulting allowance. Initialization emits `mint` for the
+initial supply, so a SEP-41 indexer can reconstruct balances from these events
+alone.
 
 When subscribing to Horizon's event stream, filter by `contract_id` and the `topic[0]` symbol
 to receive only the relevant event type.

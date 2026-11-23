@@ -24,6 +24,22 @@ fn initialize_token(client: &NavinTokenClient, env: &Env, admin: &Address, total
     client.initialize(admin, &name, &symbol, &total_supply);
 }
 
+// Finds an unversioned SEP-41 event by its first topic.
+fn find_sep41_event(
+    env: &Env,
+    name: &str,
+) -> Option<(soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val)> {
+    env.events()
+        .all()
+        .iter()
+        .find(|(_cid, topics, _data)| {
+            topics.len() > 1
+                && Symbol::try_from_val(env, &topics.get(0).unwrap()).ok()
+                    == Some(Symbol::new(env, name))
+        })
+        .map(|(_cid, topics, data)| (topics, data))
+}
+
 // ============================================================================
 // Basic Token Tests
 // ============================================================================
@@ -1218,4 +1234,76 @@ fn event_fixtures_schema_version_topics_all_events() {
         Symbol::try_from_val(&env, &admin_tr_event.1.get(1).unwrap()).unwrap(),
         Symbol::new(&env, "v1")
     );
+}
+
+#[test]
+fn sep41_events_have_address_topics_and_amount_data() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1000);
+    env.mock_all_auths();
+
+    // Initialization mints the supply to the admin.
+    let (topics, data) = find_sep41_event(&env, "mint").expect("mint event");
+    assert_eq!(topics.len(), 2);
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(1).unwrap()).unwrap(),
+        admin
+    );
+    assert_eq!(i128::try_from_val(&env, &data).unwrap(), 1000);
+
+    let to = Address::generate(&env);
+    let spender = Address::generate(&env);
+    client.approve(&admin, &spender, &100, &u32::MAX);
+    let (topics, data) = find_sep41_event(&env, "approve").expect("approve event");
+    assert_eq!(topics.len(), 3);
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(1).unwrap()).unwrap(),
+        admin
+    );
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(2).unwrap()).unwrap(),
+        spender
+    );
+    let (amount, expiration): (i128, u32) = TryFromVal::try_from_val(&env, &data).unwrap();
+    assert_eq!((amount, expiration), (100, u32::MAX));
+
+    client.transfer(&admin, &to, &10);
+    let (topics, data) = find_sep41_event(&env, "transfer").expect("transfer event");
+    assert_eq!(topics.len(), 3);
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(1).unwrap()).unwrap(),
+        admin
+    );
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(2).unwrap()).unwrap(),
+        to
+    );
+    assert_eq!(i128::try_from_val(&env, &data).unwrap(), 10);
+
+    client.transfer_from(&spender, &admin, &to, &5);
+    // transfer_from also emits a standard transfer event for (from, to).
+    let transfers = env.events().all();
+    let mut found = false;
+    for (_cid, topics, data) in transfers.iter() {
+        if Symbol::try_from_val(&env, &topics.get(0).unwrap()).ok()
+            != Some(Symbol::new(&env, "transfer"))
+        {
+            continue;
+        }
+        let from = Address::try_from_val(&env, &topics.get(1).unwrap()).unwrap();
+        let recipient = Address::try_from_val(&env, &topics.get(2).unwrap()).unwrap();
+        if from == admin && recipient == to && i128::try_from_val(&env, &data).unwrap() == 5 {
+            found = true;
+        }
+    }
+    assert!(found, "transfer_from must emit a SEP-41 transfer event");
+
+    client.burn_from(&spender, &admin, &7);
+    let (topics, data) = find_sep41_event(&env, "burn").expect("burn event");
+    assert_eq!(topics.len(), 2);
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(1).unwrap()).unwrap(),
+        admin
+    );
+    assert_eq!(i128::try_from_val(&env, &data).unwrap(), 7);
 }

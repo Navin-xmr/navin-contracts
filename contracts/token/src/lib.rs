@@ -31,6 +31,43 @@ fn require_not_paused(env: &Env) -> Result<(), TokenError> {
     Ok(())
 }
 
+// SEP-41-shaped events: topics are ["transfer"/"approve"/"mint"/"burn",
+// address topics...] and the data is the amount (plus expiration_ledger for
+// approve). These are emitted in addition to the legacy v1 events so that
+// generic Stellar indexers can reconstruct balances without knowing the
+// Navin-specific schema.
+fn emit_sep41_transfer(env: &Env, from: &Address, to: &Address, amount: i128) {
+    env.events().publish(
+        (
+            Symbol::new(env, event_topics::TRANSFER),
+            from.clone(),
+            to.clone(),
+        ),
+        amount,
+    );
+}
+
+fn emit_sep41_approve(env: &Env, from: &Address, spender: &Address, amount: i128, expiration: u32) {
+    env.events().publish(
+        (
+            Symbol::new(env, event_topics::APPROVE),
+            from.clone(),
+            spender.clone(),
+        ),
+        (amount, expiration),
+    );
+}
+
+fn emit_sep41_mint(env: &Env, to: &Address, amount: i128) {
+    env.events()
+        .publish((Symbol::new(env, event_topics::MINT), to.clone()), amount);
+}
+
+fn emit_sep41_burn(env: &Env, from: &Address, amount: i128) {
+    env.events()
+        .publish((Symbol::new(env, event_topics::BURN), from.clone()), amount);
+}
+
 #[contractimpl]
 impl NavinToken {
     /// Initialize the token with admin, name, symbol, and total supply
@@ -59,6 +96,7 @@ impl NavinToken {
         storage::set_total_supply(&env, total_supply);
         storage::set_balance(&env, &admin, total_supply);
 
+        emit_sep41_mint(&env, &admin, total_supply);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::INIT),
@@ -151,6 +189,7 @@ impl NavinToken {
         // Extend TTL for affected balances
         storage::extend_balance_ttl_for(&env, &[from.clone(), to.clone()], 1000, 500000);
 
+        emit_sep41_transfer(&env, &from, &to, amount);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::TRANSFER),
@@ -212,6 +251,7 @@ impl NavinToken {
         storage::extend_balance_ttl_for(&env, &[from.clone(), to.clone()], 1000, 500000);
         storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
 
+        emit_sep41_transfer(&env, &from, &to, amount);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::TRANSFER_FROM),
@@ -260,6 +300,7 @@ impl NavinToken {
         // (issue #659).
         storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
 
+        emit_sep41_approve(&env, &from, &spender, amount, expiration_ledger);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::APPROVE),
@@ -311,6 +352,7 @@ impl NavinToken {
         storage::set_allowance(&env, &owner, &spender, new_allowance, expiration_ledger);
         storage::extend_allowance_ttl(&env, &owner, &spender, 1000, 500000);
 
+        emit_sep41_approve(&env, &owner, &spender, new_allowance, expiration_ledger);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::ALLOWANCE_INCREASED),
@@ -356,6 +398,7 @@ impl NavinToken {
         storage::set_allowance(&env, &owner, &spender, new_allowance, expiration_ledger);
         storage::extend_allowance_ttl(&env, &owner, &spender, 1000, 500000);
 
+        emit_sep41_approve(&env, &owner, &spender, new_allowance, expiration_ledger);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::ALLOWANCE_DECREASED),
@@ -459,6 +502,7 @@ impl NavinToken {
         // Extend TTL for the recipient's balance
         storage::extend_balance_ttl(&env, &to, 1000, 500000);
 
+        emit_sep41_mint(&env, &to, amount);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::MINT),
@@ -513,6 +557,7 @@ impl NavinToken {
         // Extend TTL for the source's balance
         storage::extend_balance_ttl(&env, &from, 1000, 500000);
 
+        emit_sep41_burn(&env, &from, amount);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::ADMIN_BURN),
@@ -554,6 +599,7 @@ impl NavinToken {
         storage::set_balance(&env, &from, new_from_balance);
         storage::extend_balance_ttl(&env, &from, 1000, 500000);
 
+        emit_sep41_burn(&env, &from, amount);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::BURN),
@@ -612,6 +658,7 @@ impl NavinToken {
         storage::extend_balance_ttl(&env, &from, 1000, 500000);
         storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
 
+        emit_sep41_burn(&env, &from, amount);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::BURN_FROM),
@@ -763,6 +810,7 @@ impl NavinToken {
                 continue;
             }
             filtered_recipients.push_back((to.clone(), amount));
+            emit_sep41_transfer(&env, &from, &to, amount);
             env.events().publish(
                 (Symbol::new(&env, event_topics::BATCH_LEG),),
                 (from.clone(), to, amount),
