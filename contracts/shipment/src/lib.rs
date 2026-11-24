@@ -2094,7 +2094,22 @@ impl NavinShipment {
         require_initialized(&env)?;
         caller.require_auth();
         require_admin(&env, &caller)?;
-        Ok(consistency::check_batch_consistency(&env, &ids))
+
+        // Deduplicate while preserving order, then enforce the batch cap.
+        let mut seen: Vec<u64> = Vec::new(&env);
+        let mut unique_ids: Vec<u64> = Vec::new(&env);
+        for id in ids.iter() {
+            let already = seen.iter().any(|x| x == id);
+            if !already {
+                seen.push_back(id);
+                unique_ids.push_back(id);
+            }
+        }
+        if unique_ids.len() as u32 > MAX_BATCH_QUERY_SIZE {
+            return Err(NavinError::BatchTooLarge);
+        }
+
+        Ok(consistency::check_batch_consistency(&env, &unique_ids))
     }
 
     /// Attach evidence to an active shipment dispute.
@@ -2274,11 +2289,29 @@ impl NavinShipment {
 
         let current_role = storage::get_role(&env, &target).unwrap_or(Role::Unassigned);
 
+        // Reject revocation of a target that holds no role.
+        if current_role == Role::Unassigned {
+            return Err(NavinError::RoleMismatch);
+        }
+
         match current_role {
-            Role::Company => storage::revoke_role(&env, &target, &Role::Company),
-            Role::Carrier => storage::revoke_role(&env, &target, &Role::Carrier),
-            Role::Guardian => storage::revoke_role(&env, &target, &Role::Guardian),
-            Role::Operator => storage::revoke_role(&env, &target, &Role::Operator),
+            Role::Company => {
+                storage::revoke_role(&env, &target, &Role::Company);
+                storage::reactivate_role(&env, &target, &Role::Company);
+                storage::reactivate_company(&env, &target);
+            }
+            Role::Carrier => {
+                storage::revoke_role(&env, &target, &Role::Carrier);
+                storage::reactivate_role(&env, &target, &Role::Carrier);
+            }
+            Role::Guardian => {
+                storage::revoke_role(&env, &target, &Role::Guardian);
+                storage::reactivate_role(&env, &target, &Role::Guardian);
+            }
+            Role::Operator => {
+                storage::revoke_role(&env, &target, &Role::Operator);
+                storage::reactivate_role(&env, &target, &Role::Operator);
+            }
             Role::Unassigned => {}
         }
 
