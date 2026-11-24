@@ -52,6 +52,12 @@ pub const MINT: Symbol = symbol_short!("mint");
 /// Token burned. Payload: `(token_id, caller, timestamp)`.
 pub const BURN: Symbol = symbol_short!("burn");
 
+/// Owner approved burning a token. Payload: `(owner, token_id, timestamp)`.
+pub const BURN_APPROVED: Symbol = symbol_short!("burn_ok");
+
+/// Owner revoked a burn approval. Payload: `(owner, token_id, timestamp)`.
+pub const BURN_APPROVAL_REVOKED: Symbol = symbol_short!("burn_rv");
+
 /// Batch of tokens minted. Payload: `(token_ids, recipients, timestamp)`.
 pub const MINT_BATCH: Symbol = symbol_short!("mintbatch");
 
