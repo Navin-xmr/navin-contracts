@@ -640,6 +640,10 @@ impl NavinShipmentNft {
             return Err(NftError::NotAdmin);
         }
         env.storage().instance().set(&NftKey::Paused, &true);
+        env.events().publish(
+            (event_topics::PAUSED, event_topics::EVENT_SCHEMA_VERSION),
+            (admin, env.ledger().timestamp()),
+        );
         Self::extend_instance_ttl(&env);
         Ok(())
     }
@@ -650,8 +654,20 @@ impl NavinShipmentNft {
             return Err(NftError::NotAdmin);
         }
         env.storage().instance().set(&NftKey::Paused, &false);
+        env.events().publish(
+            (event_topics::UNPAUSED, event_topics::EVENT_SCHEMA_VERSION),
+            (admin, env.ledger().timestamp()),
+        );
         Self::extend_instance_ttl(&env);
         Ok(())
+    }
+
+    pub fn is_paused(env: Env) -> bool {
+        Self::extend_instance_ttl(&env);
+        env.storage()
+            .instance()
+            .get(&NftKey::Paused)
+            .unwrap_or(false)
     }
 
     pub fn owner_of(env: Env, token_id: u64) -> Result<Address, NftError> {
