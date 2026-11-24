@@ -5820,6 +5820,19 @@ impl NavinShipment {
         proposer: Address,
         action: crate::types::AdminAction,
     ) -> Result<u64, NavinError> {
+        Self::propose_action_inner(env, proposer, action, None)
+    }
+
+    /// Shared body of `propose_action` and `propose_action_with_salt`.
+    ///
+    /// When `salt` is `Some`, it must not have been used before; it is recorded
+    /// against the new proposal and folded into the proposal's digest.
+    fn propose_action_inner(
+        env: Env,
+        proposer: Address,
+        action: crate::types::AdminAction,
+        salt: Option<BytesN<32>>,
+    ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
         proposer.require_auth();
@@ -5827,6 +5840,12 @@ impl NavinShipment {
         // Check if proposer is in admin list
         if !storage::is_admin(&env, &proposer) {
             return Err(NavinError::NotAnAdmin);
+        }
+
+        if let Some(salt) = &salt {
+            if storage::is_proposal_salt_used(&env, salt) {
+                return Err(NavinError::ProposalSaltReused);
+            }
         }
 
         // Validate action
@@ -5862,9 +5881,12 @@ impl NavinShipment {
 
         storage::set_proposal(&env, &proposal);
         storage::set_proposal_counter(&env, proposal_id);
+        if let Some(salt) = &salt {
+            storage::set_proposal_salt_used(&env, salt, proposal_id, expires_at);
+        }
 
         // Compute and store the deterministic action digest (issue #297).
-        let digest_hash = compute_action_digest(&env, proposal_id, &action);
+        let digest_hash = compute_action_digest(&env, proposal_id, &action, salt.as_ref());
         let digest_record = crate::types::ProposalActionDigest {
             proposal_id,
             digest: digest_hash.clone(),
@@ -5919,34 +5941,38 @@ impl NavinShipment {
         Ok(())
     }
 
-    /// Propose an action with a unique salt to prevent replay attacks.
+    /// Propose an action with a one-time salt.
     /// Same as `propose_action` but accepts an explicit salt value.
-    /// The salt is stored and checked — reuse of the same salt is rejected
-    /// with `ProposalSaltReused`.
+    ///
+    /// # Salt semantics
+    /// * The salt is an opaque 32-byte nonce chosen by the proposer. Each salt
+    ///   can back one proposal; reusing it is rejected with `ProposalSaltReused`.
+    /// * It is bound to the proposal's digest:
+    ///   `sha256(proposal_id_be_u64 || action_xdr || salt)`. A salted proposal
+    ///   therefore never shares a digest with an unsalted (or differently
+    ///   salted) proposal for the same action, and signers can verify the digest
+    ///   only if they know the salt.
+    /// * The used-salt marker is kept in persistent storage (salt -> proposal
+    ///   id), not instance storage, so salted proposals do not add to the cost
+    ///   of every contract call. Its TTL follows `proposal_expiry_seconds`: once
+    ///   the proposal can no longer be executed, the salt may be reused.
+    /// * A salt does not deduplicate actions: the same action proposed again
+    ///   with a fresh salt is a separate proposal with its own digest.
+    ///
+    /// # Errors
+    /// Same as `propose_action`, plus `NavinError::ProposalSaltReused` if the
+    /// salt is already in use.
     pub fn propose_action_with_salt(
         env: Env,
         proposer: Address,
         action: crate::types::AdminAction,
         salt: BytesN<32>,
     ) -> Result<u64, NavinError> {
-        require_initialized(&env)?;
-        require_not_paused(&env)?;
-
-        if !storage::is_admin(&env, &proposer) {
-            return Err(NavinError::NotAnAdmin);
-        }
-
-        if storage::is_proposal_salt_used(&env, &salt) {
-            return Err(NavinError::ProposalSaltReused);
-        }
-
-        storage::set_proposal_salt_used(&env, &salt);
-
-        // Delegate to the standard propose_action logic, which performs the
-        // proposer's require_auth(). Do not also require_auth() here — the
-        // host rejects a second require_auth() for the same identity within
-        // one invocation as "frame is already authorized".
-        Self::propose_action(env, proposer, action)
+        // The shared body performs the proposer's require_auth(). Do not also
+        // require_auth() here — the host rejects a second require_auth() for
+        // the same identity within one invocation as "frame is already
+        // authorized".
+        Self::propose_action_inner(env, proposer, action, Some(salt))
     }
 
     /// Approve a pending proposal. Only admins in the admin list can approve.
@@ -7047,7 +7073,7 @@ impl NavinShipment {
         proposal_id: u64,
         action: crate::types::AdminAction,
     ) -> BytesN<32> {
-        compute_action_digest(&env, proposal_id, &action)
+        compute_action_digest(&env, proposal_id, &action, None)
     }
 
     /// Compute a deterministic SHA-256 hash of an ordered list of values.
@@ -7114,11 +7140,14 @@ fn is_allowed_migration(current: u32, target: u32) -> bool {
 
 /// Compute the deterministic SHA-256 digest for a proposal action.
 ///
-/// Canonical serialization: `sha256(proposal_id_be_u64 || action_xdr)`
+/// Canonical serialization: `sha256(proposal_id_be_u64 || action_xdr)`, with
+/// the 32 salt bytes appended for a salted proposal
+/// (`propose_action_with_salt`). Unsalted digests are unchanged.
 fn compute_action_digest(
     env: &Env,
     proposal_id: u64,
     action: &crate::types::AdminAction,
+    salt: Option<&BytesN<32>>,
 ) -> BytesN<32> {
     let mut payload = soroban_sdk::Bytes::new(env);
     payload.append(&soroban_sdk::Bytes::from_array(
@@ -7126,6 +7155,9 @@ fn compute_action_digest(
         &proposal_id.to_be_bytes(),
     ));
     payload.append(&action.clone().to_xdr(env));
+    if let Some(salt) = salt {
+        payload.append(&soroban_sdk::Bytes::from_array(env, &salt.to_array()));
+    }
     env.crypto().sha256(&payload).into()
 }
 

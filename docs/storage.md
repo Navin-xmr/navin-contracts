@@ -173,6 +173,7 @@ need no migration:
 | `Escrow(id)` | Persistent | Financial data, must not expire |
 | `ConfirmationHash(id)` | Persistent | Delivery proof, permanent audit trail |
 | `Proposal(id)` | Persistent | Governance data needs durability |
+| `ProposalSalt(salt)` | Persistent | One entry per salted proposal, so it must not grow instance storage; TTL follows the proposal expiry |
 | `ArchivedShipment(id)` | Temporary | Post-lifecycle, ephemeral is correct |
 
 This table lists tier assignments, not the full registry of `DataKey`

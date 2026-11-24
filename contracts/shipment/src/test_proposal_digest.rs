@@ -10,6 +10,7 @@
 #[cfg(test)]
 mod tests {
     use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient};
+    use soroban_sdk::testutils::storage::Persistent as _;
     use soroban_sdk::testutils::Ledger as _;
     use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
 
@@ -1484,6 +1485,85 @@ mod tests {
             result,
             Err(Ok(NavinError::InsufficientApprovals)),
             "Upgrade should be blocked without sufficient approvals"
+        );
+    }
+
+    // ── salted proposals (issue #1230) ───────────────────────────────────────
+
+    #[test]
+    fn salted_digest_differs_from_unsalted_for_same_action() {
+        let (env, client, admin, _admin2) = setup_multisig();
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let salt = wasm_hash(&env, 7);
+        let other_salt = wasm_hash(&env, 8);
+
+        let unsalted = crate::compute_action_digest(&env, 1, &action, None);
+        let salted = crate::compute_action_digest(&env, 1, &action, Some(&salt));
+        let other = crate::compute_action_digest(&env, 1, &action, Some(&other_salt));
+        assert_ne!(unsalted, salted, "salt must change the digest");
+        assert_ne!(salted, other, "different salts must give different digests");
+        assert_eq!(
+            unsalted,
+            client.compute_proposal_digest(&1, &action),
+            "unsalted digests must be unchanged"
+        );
+
+        // The digest stored for a salted proposal is the salted one.
+        let proposal_id = client.propose_action_with_salt(&admin, &action, &salt);
+        assert_eq!(proposal_id, 1);
+        let stored = client.get_proposal_action_digest(&proposal_id).digest;
+        assert_eq!(stored, salted);
+        assert_ne!(
+            stored,
+            client.compute_proposal_digest(&proposal_id, &action)
+        );
+    }
+
+    #[test]
+    fn salts_use_persistent_storage_not_instance_storage() {
+        let (env, client, admin, _admin2) = setup_multisig();
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let min_ttl = (client.get_contract_config().proposal_expiry_seconds / 5) as u32;
+
+        for seed in 1u8..=5 {
+            let salt = wasm_hash(&env, seed);
+            let proposal_id = client.propose_action_with_salt(&admin, &action, &salt);
+
+            env.as_contract(&client.address, || {
+                let key = crate::types::DataKey::ProposalSalt(salt.clone());
+                assert!(
+                    !env.storage().instance().has(&key),
+                    "salt {seed} must not be written to instance storage"
+                );
+                assert_eq!(
+                    env.storage().persistent().get::<_, u64>(&key),
+                    Some(proposal_id),
+                    "salt must be bound to its proposal in persistent storage"
+                );
+                assert!(
+                    env.storage().persistent().get_ttl(&key) >= min_ttl,
+                    "salt TTL must cover the proposal expiry window"
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn salt_recorded_in_instance_storage_is_still_rejected() {
+        let (env, client, admin, _admin2) = setup_multisig();
+        let action = crate::types::AdminAction::TransferAdmin(Address::generate(&env));
+        let salt = wasm_hash(&env, 9);
+
+        // A salt written before the move to persistent storage.
+        env.as_contract(&client.address, || {
+            env.storage()
+                .instance()
+                .set(&crate::types::DataKey::ProposalSalt(salt.clone()), &true);
+        });
+
+        assert_eq!(
+            client.try_propose_action_with_salt(&admin, &action, &salt),
+            Err(Ok(NavinError::ProposalSaltReused))
         );
     }
 }

@@ -426,7 +426,10 @@ pub fn is_role_suspended(env: &Env, address: &Address, role: &Role) -> bool {
     if env.storage().persistent().has(&suspend_key) {
         extend_role_suspended_ttl(env, address, role);
     }
-    env.storage().persistent().get(&suspend_key).unwrap_or(false)
+    env.storage()
+        .persistent()
+        .get(&suspend_key)
+        .unwrap_or(false)
 }
 
 /// Extend TTL for a role suspended entry.
@@ -1239,6 +1242,17 @@ const SECONDS_PER_LEDGER: u64 = 5;
 /// readable (and can report `ProposalExpired`) right after it expires.
 const PROPOSAL_TTL_MARGIN_LEDGERS: u32 = 17_280; // ~1 day
 
+/// Ledgers a proposal-scoped entry must live so it outlives `expires_at`
+/// (remaining time plus `PROPOSAL_TTL_MARGIN_LEDGERS`, capped at the network max).
+fn proposal_ttl_ledgers(env: &Env, expires_at: u64) -> u32 {
+    let remaining_secs = expires_at.saturating_sub(env.ledger().timestamp());
+    let remaining_ledgers = remaining_secs.div_ceil(SECONDS_PER_LEDGER);
+    u32::try_from(remaining_ledgers)
+        .unwrap_or(u32::MAX)
+        .saturating_add(PROPOSAL_TTL_MARGIN_LEDGERS)
+        .min(env.storage().max_ttl())
+}
+
 /// Extend the TTL of a proposal and its action digest so both outlive the
 /// proposal's own `expires_at`; otherwise the digest could be evicted while
 /// the proposal is still executable.
@@ -1253,12 +1267,7 @@ const PROPOSAL_TTL_MARGIN_LEDGERS: u32 = 17_280; // ~1 day
 /// // storage::extend_proposal_ttl(&env, 1, proposal.expires_at);
 /// ```
 pub fn extend_proposal_ttl(env: &Env, proposal_id: u64, expires_at: u64) {
-    let remaining_secs = expires_at.saturating_sub(env.ledger().timestamp());
-    let remaining_ledgers = remaining_secs.div_ceil(SECONDS_PER_LEDGER);
-    let extend_to = u32::try_from(remaining_ledgers)
-        .unwrap_or(u32::MAX)
-        .saturating_add(PROPOSAL_TTL_MARGIN_LEDGERS)
-        .min(env.storage().max_ttl());
+    let extend_to = proposal_ttl_ledgers(env, expires_at);
 
     // The instance holds the admin set and config a proposal needs to execute,
     // so it has to outlive the proposal as well.
@@ -2020,17 +2029,27 @@ pub fn get_proposal_digest(
 // ============= Proposal Salt Storage Functions =============
 
 /// Check if a proposal salt has been used.
+///
+/// Salts live in persistent storage. The instance lookup only covers salts
+/// recorded before they were moved out of instance storage, so those stay
+/// rejected.
 pub fn is_proposal_salt_used(env: &Env, salt: &BytesN<32>) -> bool {
-    env.storage()
-        .instance()
-        .has(&DataKey::ProposalSalt(salt.clone()))
+    let key = DataKey::ProposalSalt(salt.clone());
+    env.storage().persistent().has(&key) || env.storage().instance().has(&key)
 }
 
-/// Mark a proposal salt as used.
-pub fn set_proposal_salt_used(env: &Env, salt: &BytesN<32>) {
+/// Mark a proposal salt as used by `proposal_id`.
+///
+/// The entry is kept in persistent storage (never instance storage, which is
+/// loaded on every invocation) and its TTL is derived from the proposal's
+/// `expires_at`, so it lapses together with the proposal it was bound to.
+pub fn set_proposal_salt_used(env: &Env, salt: &BytesN<32>, proposal_id: u64, expires_at: u64) {
+    let key = DataKey::ProposalSalt(salt.clone());
+    env.storage().persistent().set(&key, &proposal_id);
+    let extend_to = proposal_ttl_ledgers(env, expires_at);
     env.storage()
-        .instance()
-        .set(&DataKey::ProposalSalt(salt.clone()), &true);
+        .persistent()
+        .extend_ttl(&key, extend_to, extend_to);
 }
 
 // ============= Shipment Dependency Storage Functions =============

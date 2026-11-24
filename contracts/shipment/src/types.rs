@@ -130,7 +130,8 @@ pub enum DataKey {
     /// Total count of recovery action records for a shipment.
     /// Discriminant reserved for storage compatibility.
     RecoveryRecordCount(u64),
-    /// Proposal salt used to prevent replay attacks — salt -> bool.
+    /// Proposal salt marked as used — salt -> id of the proposal it is bound to.
+    /// Persistent storage, TTL tied to that proposal's expiry.
     ProposalSalt(BytesN<32>),
     /// Prerequisite shipment IDs for a dependent — dependent_id -> Vec<u64>.
     ShipmentDependents(u64),
