@@ -113,8 +113,12 @@ pub struct ContractConfig {
     /// Default: 3600 (1 hour).
     pub creation_quota_window_seconds: u64,
 
-    /// Enable automatic NFT minting when shipments are created.
-    /// When enabled, requires nft_contract_address to be set.
+    /// Master switch for settlement-proof NFT minting (#1225).
+    /// When `false`, `mint_settlement_proof` never mints, even if
+    /// `settlement_nft_contract_id` is configured: release/refund settlements
+    /// complete without touching the NFT contract. When `true`, a proof NFT is
+    /// minted after each completed Release/Refund settlement (requires
+    /// `settlement_nft_contract_id` to be set).
     /// Default: false (disabled).
     pub auto_mint_nft: bool,
 

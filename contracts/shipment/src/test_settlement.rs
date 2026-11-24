@@ -691,3 +691,142 @@ fn test_resolve_dispute_partial_refund_creates_split_settlements() {
     assert_eq!(shipment.status, ShipmentStatus::PartiallyRefunded);
     assert_eq!(shipment.escrow_amount, 0);
 }
+
+// ── #1225: ContractConfig::auto_mint_nft gates settlement proof minting ──────
+
+/// Register a settlement NFT and return its client.
+fn register_settlement_nft<'a>(
+    env: &'a Env,
+    client: &crate::NavinShipmentClient,
+    admin: &Address,
+) -> NavinShipmentNftClient<'a> {
+    let nft = NavinShipmentNftClient::new(
+        env,
+        &env.register(
+            NavinShipmentNft,
+            (
+                client.address.clone(),
+                soroban_sdk::symbol_short!("SettleNFT"),
+                soroban_sdk::symbol_short!("SETTLE"),
+            ),
+        ),
+    );
+    client.configure_settlement_nft(
+        admin,
+        &nft.address,
+        &soroban_sdk::symbol_short!("SettleNFT"),
+        &soroban_sdk::symbol_short!("SETTLE"),
+    );
+    nft
+}
+
+/// Drive a shipment to Delivered with escrow held, then release to carrier.
+fn deliver_and_release(
+    env: &Env,
+    client: &crate::NavinShipmentClient,
+    admin: &Address,
+    company: &Address,
+    carrier: &Address,
+    receiver: &Address,
+) -> u64 {
+    let shipment_id = client.create_shipment(
+        company,
+        receiver,
+        carrier,
+        &dummy_hash(env),
+        &soroban_sdk::Vec::new(env),
+        &(env.ledger().timestamp() + 86400),
+    );
+    client.deposit_escrow(company, &shipment_id, &5_000);
+    client.update_status(
+        admin,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &BytesN::from_array(env, &[0x71u8; 32]),
+    );
+    client.update_status(
+        admin,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &BytesN::from_array(env, &[0x72u8; 32]),
+    );
+    client.update_status(
+        admin,
+        &shipment_id,
+        &ShipmentStatus::Delivered,
+        &BytesN::from_array(env, &[0x73u8; 32]),
+    );
+    client.release_escrow(receiver, &shipment_id);
+    shipment_id
+}
+
+/// With `auto_mint_nft = false` (the default), a configured settlement NFT
+/// must NOT be minted to on release — the flag is the master switch (#1225).
+#[test]
+fn test_auto_mint_nft_disabled_skips_minting() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let nft = register_settlement_nft(&env, &client, &admin);
+    assert!(!client.get_contract_config().auto_mint_nft);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let shipment_id = deliver_and_release(
+        &env,
+        &client,
+        &admin,
+        &company,
+        &carrier,
+        &receiver,
+    );
+
+    // The settlement still completed — only the NFT mint is skipped.
+    let release = client.get_settlement(&2);
+    assert_eq!(release.state, SettlementState::Completed);
+    assert_eq!(
+        nft.total_supply(),
+        0,
+        "no proof NFT may be minted while auto_mint_nft is false"
+    );
+    let _ = shipment_id;
+}
+
+/// With `auto_mint_nft = true`, the same release mints exactly one proof NFT.
+#[test]
+fn test_auto_mint_nft_enabled_mints_settlement_proof() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let nft = register_settlement_nft(&env, &client, &admin);
+
+    let mut cfg = client.get_contract_config();
+    cfg.auto_mint_nft = true;
+    client.update_config(&admin, &cfg);
+    assert!(client.get_contract_config().auto_mint_nft);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let shipment_id = deliver_and_release(
+        &env,
+        &client,
+        &admin,
+        &company,
+        &carrier,
+        &receiver,
+    );
+
+    assert_eq!(
+        nft.total_supply(),
+        1,
+        "exactly one proof NFT must be minted when auto_mint_nft is true"
+    );
+    // The proof is minted to the settlement recipient (the carrier on release).
+    assert_eq!(nft.owner_of(&shipment_id), carrier);
+}

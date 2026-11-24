@@ -647,6 +647,11 @@ fn complete_settlement(env: &Env, settlement_id: u64, shipment_id: u64) -> Resul
 
 fn mint_settlement_proof(env: &Env, settlement: &SettlementRecord) -> Result<(), NavinError> {
     let config = config::get_config(env);
+    // #1225 — `auto_mint_nft` is the master switch: when it is disabled the
+    // mint is a no-op even if a settlement NFT contract is configured.
+    if !config.auto_mint_nft {
+        return Ok(());
+    }
     let Some(nft_contract) = config.settlement_nft_contract_id else {
         return Ok(());
     };
