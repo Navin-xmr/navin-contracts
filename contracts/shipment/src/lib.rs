@@ -315,6 +315,65 @@ fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(),
     Ok(())
 }
 
+
+fn open_dispute(
+    env: &Env,
+    shipment: &mut Shipment,
+    caller: &Address,
+    reason_hash: &BytesN<32>,
+) -> Result<(), NavinError> {
+    crate::validate_shipment_transition(&shipment.status, &ShipmentStatus::Disputed)?;
+
+    let shipment_id = shipment.shipment_id;
+    let old_status = shipment.status.clone();
+    shipment.status = ShipmentStatus::Disputed;
+    shipment.updated_at = env.ledger().timestamp();
+    shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
+
+    persist_shipment(env, shipment)?;
+    storage::decrement_status_count(env, &old_status);
+    storage::increment_status_count(env, &ShipmentStatus::Disputed);
+    storage::increment_total_disputes(env);
+    storage::set_escrow_freeze_reason(
+        env,
+        shipment_id,
+        &crate::types::EscrowFreezeReason::DisputeRaised,
+    );
+
+    extend_shipment_ttl(env, shipment_id);
+
+    events::emit_dispute_raised(env, shipment_id, caller, reason_hash);
+    events::emit_escrow_frozen(
+        env,
+        shipment_id,
+        crate::types::EscrowFreezeReason::DisputeRaised,
+        caller,
+    );
+    events::emit_notification(
+        env,
+        &shipment.sender,
+        NotificationType::DisputeRaised,
+        shipment_id,
+        reason_hash,
+    );
+    events::emit_notification(
+        env,
+        &shipment.receiver,
+        NotificationType::DisputeRaised,
+        shipment_id,
+        reason_hash,
+    );
+    events::emit_notification(
+        env,
+        &shipment.carrier,
+        NotificationType::DisputeRaised,
+        shipment_id,
+        reason_hash,
+    );
+
+    Ok(())
+}
+
 fn persist_shipment(env: &Env, shipment: &Shipment) -> Result<(), NavinError> {
     validation::validate_shipment_invariants(shipment)?;
     storage::set_shipment(env, shipment);
@@ -5067,52 +5126,7 @@ impl NavinShipment {
             return Err(NavinError::ShipmentAlreadyCompleted);
         }
 
-        let old_status = shipment.status.clone();
-        shipment.status = ShipmentStatus::Disputed;
-        shipment.updated_at = env.ledger().timestamp();
-        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
-
-        persist_shipment(&env, &shipment)?;
-        storage::decrement_status_count(&env, &old_status);
-        storage::increment_status_count(&env, &ShipmentStatus::Disputed);
-        storage::increment_total_disputes(&env);
-        storage::set_escrow_freeze_reason(
-            &env,
-            shipment_id,
-            &crate::types::EscrowFreezeReason::DisputeRaised,
-        );
-
-        extend_shipment_ttl(&env, shipment_id);
-
-        events::emit_dispute_raised(&env, shipment_id, &caller, &reason_hash);
-        // Emit a structured freeze reason so indexers can classify the escrow block.
-        events::emit_escrow_frozen(
-            &env,
-            shipment_id,
-            crate::types::EscrowFreezeReason::DisputeRaised,
-            &caller,
-        );
-        events::emit_notification(
-            &env,
-            &shipment.sender,
-            NotificationType::DisputeRaised,
-            shipment_id,
-            &reason_hash,
-        );
-        events::emit_notification(
-            &env,
-            &shipment.receiver,
-            NotificationType::DisputeRaised,
-            shipment_id,
-            &reason_hash,
-        );
-        events::emit_notification(
-            &env,
-            &shipment.carrier,
-            NotificationType::DisputeRaised,
-            shipment_id,
-            &reason_hash,
-        );
+        open_dispute(&env, &mut shipment, &caller, &reason_hash)?;
 
         Ok(())
     }
@@ -5570,44 +5584,11 @@ impl NavinShipment {
         let cfg = config::get_config(&env);
         if cfg.auto_dispute_breach
             && severity == Severity::Critical
-            && shipment.status != ShipmentStatus::Cancelled
-            && shipment.status != ShipmentStatus::Disputed
+            && crate::validate_shipment_transition(&shipment.status, &ShipmentStatus::Disputed)
+                .is_ok()
         {
-            let old_status = shipment.status.clone();
             let mut s = shipment;
-            s.status = ShipmentStatus::Disputed;
-            s.updated_at = env.ledger().timestamp();
-            s.integration_nonce = s.integration_nonce.saturating_add(1);
-            let sender = s.sender.clone();
-            let receiver = s.receiver.clone();
-            storage::set_shipment(&env, &s);
-            storage::decrement_status_count(&env, &old_status);
-            storage::increment_status_count(&env, &ShipmentStatus::Disputed);
-            storage::increment_total_disputes(&env);
-            extend_shipment_ttl(&env, shipment_id);
-            // Use the breach data hash as the dispute reason so indexers can correlate
-            events::emit_dispute_raised(&env, shipment_id, &carrier, &data_hash);
-            events::emit_notification(
-                &env,
-                &sender,
-                NotificationType::DisputeRaised,
-                shipment_id,
-                &data_hash,
-            );
-            events::emit_notification(
-                &env,
-                &receiver,
-                NotificationType::DisputeRaised,
-                shipment_id,
-                &data_hash,
-            );
-            events::emit_notification(
-                &env,
-                &carrier,
-                NotificationType::DisputeRaised,
-                shipment_id,
-                &data_hash,
-            );
+            open_dispute(&env, &mut s, &carrier, &data_hash)?;
         }
 
         Ok(())
