@@ -515,3 +515,210 @@ fn test_multiple_shipments_independent_settlements() {
 
     assert_eq!(client.get_settlement_count(), 2);
 }
+
+// ── Settlement proof NFT (issue #1229) ────────────────────────────────────────
+//
+// The proof NFT is minted best-effort, and only for the final settlement (the
+// Release/Refund that leaves the shipment with no escrow).
+
+mod settlement_proof {
+    use super::*;
+    use crate::{NavinShipmentClient, SettlementProofKey};
+    use soroban_sdk::{
+        contract, contractimpl, symbol_short, testutils::Events, Symbol, TryFromVal, Vec,
+    };
+
+    /// NFT contract that passes `configure_settlement_nft` (it reports the
+    /// shipment contract as its admin) but whose `mint` always fails.
+    #[contract]
+    struct AlwaysFailingNft;
+
+    #[contractimpl]
+    impl AlwaysFailingNft {
+        pub fn __constructor(env: Env, admin: Address) {
+            env.storage()
+                .instance()
+                .set(&symbol_short!("admin"), &admin);
+        }
+
+        pub fn get_admin(env: Env) -> Address {
+            env.storage()
+                .instance()
+                .get(&symbol_short!("admin"))
+                .unwrap()
+        }
+
+        pub fn mint(_env: Env, _to: Address, _token_id: u64) -> u64 {
+            panic!("settlement NFT mint always fails");
+        }
+    }
+
+    /// Contract address that opts in to receiving settlement proof NFTs. The
+    /// NFT only mints to contract addresses that implement `can_receive_nft`.
+    #[contract]
+    struct OptInReceiver;
+
+    #[contractimpl]
+    impl OptInReceiver {
+        pub fn can_receive_nft(_env: Env, _token_id: u64) -> bool {
+            true
+        }
+    }
+
+    /// Whether `topic` was emitted by the most recent contract invocation.
+    fn emitted(env: &Env, topic: &str) -> bool {
+        env.events()
+            .all()
+            .into_iter()
+            .any(|(_contract, topics, _data)| {
+                topics
+                    .get(0)
+                    .and_then(|v| Symbol::try_from_val(env, &v).ok())
+                    .is_some_and(|sym| sym == Symbol::new(env, topic))
+            })
+    }
+
+    fn proof_recorded(env: &Env, client: &NavinShipmentClient, shipment_id: u64) -> bool {
+        env.as_contract(&client.address, || {
+            env.storage()
+                .persistent()
+                .has(&SettlementProofKey::Minted(shipment_id))
+        })
+    }
+
+    /// Create a funded shipment (10_000 escrow). Returns (id, company, receiver).
+    fn funded_shipment(
+        env: &Env,
+        client: &NavinShipmentClient,
+        admin: &Address,
+        carrier: &Address,
+        milestones: &Vec<(Symbol, u32)>,
+    ) -> (u64, Address, Address) {
+        let company = Address::generate(env);
+        let receiver = Address::generate(env);
+        client.add_company(admin, &company);
+        client.add_carrier(admin, carrier);
+        client.add_carrier_to_whitelist(&company, carrier);
+
+        let id = client.create_shipment(
+            &company,
+            &receiver,
+            carrier,
+            &dummy_hash(env),
+            milestones,
+            &(env.ledger().timestamp() + 86_400),
+        );
+        client.deposit_escrow(&company, &id, &10_000);
+        (id, company, receiver)
+    }
+
+    fn failing_nft_env() -> (Env, NavinShipmentClient<'static>, Address) {
+        let (env, client, admin, _token) = setup_initialized_shipment_env();
+        let nft = env.register(AlwaysFailingNft, (client.address.clone(),));
+        client.configure_settlement_nft(
+            &admin,
+            &nft,
+            &symbol_short!("SettleNFT"),
+            &symbol_short!("SETTLE"),
+        );
+        (env, client, admin)
+    }
+
+    /// A broken NFT contract must not block escrow release.
+    #[test]
+    fn test_release_escrow_completes_when_nft_mint_always_fails() {
+        let (env, client, admin) = failing_nft_env();
+        let carrier = Address::generate(&env);
+        let (id, _company, receiver) =
+            funded_shipment(&env, &client, &admin, &carrier, &Vec::new(&env));
+        env.as_contract(&client.address, || {
+            let mut shipment = crate::storage::get_shipment(&env, id).unwrap();
+            shipment.status = ShipmentStatus::Delivered;
+            crate::storage::set_shipment(&env, &shipment);
+        });
+
+        client.release_escrow(&receiver, &id);
+        let failed_event = emitted(&env, crate::event_topics::PROOF_MINT_FAILED);
+
+        let shipment = client.get_shipment(&id);
+        assert_eq!(shipment.escrow_amount, 0, "escrow must still be released");
+        assert!(shipment.finalized);
+        let settlement = client.get_settlement(&2);
+        assert_eq!(settlement.operation, SettlementOperation::Release);
+        assert_eq!(settlement.state, SettlementState::Completed);
+        assert!(failed_event, "a failed mint must emit proof_mint_failed");
+        assert!(!proof_recorded(&env, &client, id));
+    }
+
+    /// A broken NFT contract must not block escrow refund either.
+    #[test]
+    fn test_refund_escrow_completes_when_nft_mint_always_fails() {
+        let (env, client, admin) = failing_nft_env();
+        let carrier = Address::generate(&env);
+        let (id, company, _receiver) =
+            funded_shipment(&env, &client, &admin, &carrier, &Vec::new(&env));
+
+        client.refund_escrow(&company, &id);
+        let failed_event = emitted(&env, crate::event_topics::PROOF_MINT_FAILED);
+
+        let shipment = client.get_shipment(&id);
+        assert_eq!(shipment.escrow_amount, 0, "escrow must still be refunded");
+        assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+        let settlement = client.get_settlement(&2);
+        assert_eq!(settlement.operation, SettlementOperation::Refund);
+        assert_eq!(settlement.state, SettlementState::Completed);
+        assert!(failed_event, "a failed mint must emit proof_mint_failed");
+    }
+
+    /// Partial milestone releases never mint (and never attempt to, so a
+    /// failing NFT is not even touched); the settlement that empties the
+    /// escrow is the one that mints the proof.
+    #[test]
+    fn test_proof_minted_only_by_final_settlement() {
+        let (env, client, admin, _token) = setup_initialized_shipment_env();
+        let nft = NavinShipmentNftClient::new(
+            &env,
+            &env.register(
+                NavinShipmentNft,
+                (
+                    client.address.clone(),
+                    symbol_short!("SettleNFT"),
+                    symbol_short!("SETTLE"),
+                ),
+            ),
+        );
+        client.configure_settlement_nft(
+            &admin,
+            &nft.address,
+            &symbol_short!("SettleNFT"),
+            &symbol_short!("SETTLE"),
+        );
+
+        let mut milestones = Vec::new(&env);
+        milestones.push_back((symbol_short!("alpha"), 40u32));
+        milestones.push_back((symbol_short!("beta"), 35u32));
+        milestones.push_back((symbol_short!("gamma"), 25u32));
+        let carrier = env.register(OptInReceiver, ());
+        let (id, _company, _receiver) =
+            funded_shipment(&env, &client, &admin, &carrier, &milestones);
+        env.as_contract(&client.address, || {
+            let mut shipment = crate::storage::get_shipment(&env, id).unwrap();
+            shipment.status = ShipmentStatus::InTransit;
+            crate::storage::set_shipment(&env, &shipment);
+        });
+
+        client.release_milestone_payment(&carrier, &id, &symbol_short!("alpha"));
+        client.release_milestone_payment(&carrier, &id, &symbol_short!("beta"));
+        assert_eq!(client.get_shipment(&id).escrow_amount, 2_500);
+        assert_eq!(nft.total_supply(), 0, "partial releases must not mint");
+        assert!(!proof_recorded(&env, &client, id));
+
+        client.release_milestone_payment(&carrier, &id, &symbol_short!("gamma"));
+        let failed_event = emitted(&env, crate::event_topics::PROOF_MINT_FAILED);
+        assert!(!failed_event);
+        assert_eq!(client.get_shipment(&id).escrow_amount, 0);
+        assert_eq!(nft.total_supply(), 1, "the final release mints the proof");
+        assert_eq!(nft.owner_of(&id), carrier);
+        assert!(proof_recorded(&env, &client, id));
+    }
+}

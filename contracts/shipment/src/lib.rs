@@ -427,8 +427,10 @@ fn internal_release_escrow(
 
         match transfer_result {
             Ok(()) => {
+                // Final only when this payout empties the escrow.
+                let final_settlement = actual_release == shipment.escrow_amount;
                 // Mark settlement as completed
-                complete_settlement(env, settlement_id, shipment.id)?;
+                complete_settlement(env, settlement_id, shipment.id, final_settlement)?;
 
                 shipment.escrow_amount =
                     checked_sub_escrow(shipment.escrow_amount, actual_release)?;
@@ -478,7 +480,8 @@ fn settle_escrow(
             escrow_amount,
         )?;
 
-        complete_settlement(env, settlement_id, shipment.id)?;
+        // Moves the whole escrow, so this is the final settlement.
+        complete_settlement(env, settlement_id, shipment.id, true)?;
 
         shipment.escrow_amount = 0;
 
@@ -613,14 +616,33 @@ fn create_settlement(
 }
 
 /// Mark a settlement as completed.
-fn complete_settlement(env: &Env, settlement_id: u64, shipment_id: u64) -> Result<(), NavinError> {
+///
+/// # Settlement proof rules
+/// * A settlement-proof NFT (when one is configured) is minted at most once
+///   per shipment, for the *final* settlement: the Release or Refund that
+///   leaves no escrow in the shipment (`final_settlement == true`).
+/// * Partial settlements never mint: a partial milestone release or the first
+///   leg of a split dispute payout would otherwise use up the single
+///   per-shipment proof before the shipment is actually settled.
+/// * Minting is best-effort. If the NFT contract is paused, upgraded or
+///   broken, `proof_mint_failed` is emitted and the settlement still completes,
+///   so escrow movement never depends on the NFT contract. There is no retry:
+///   a failed final proof is not re-minted by a later settlement.
+fn complete_settlement(
+    env: &Env,
+    settlement_id: u64,
+    shipment_id: u64,
+    final_settlement: bool,
+) -> Result<(), NavinError> {
     let mut settlement =
         storage::get_settlement(env, settlement_id).ok_or(NavinError::ShipmentNotFound)?; // Reusing error for simplicity
-    if matches!(
-        &settlement.operation,
-        SettlementOperation::Release | SettlementOperation::Refund
-    ) {
-        mint_settlement_proof(env, &settlement)?;
+    if final_settlement
+        && matches!(
+            &settlement.operation,
+            SettlementOperation::Release | SettlementOperation::Refund
+        )
+    {
+        mint_settlement_proof(env, &settlement);
     }
     settlement.state = SettlementState::Completed;
     settlement.completed_at = Some(env.ledger().timestamp());
@@ -629,15 +651,17 @@ fn complete_settlement(env: &Env, settlement_id: u64, shipment_id: u64) -> Resul
     Ok(())
 }
 
-fn mint_settlement_proof(env: &Env, settlement: &SettlementRecord) -> Result<(), NavinError> {
+/// Best-effort mint of the settlement-proof NFT; never fails the settlement.
+/// See [`complete_settlement`] for when this is called.
+fn mint_settlement_proof(env: &Env, settlement: &SettlementRecord) {
     let config = config::get_config(env);
     let Some(nft_contract) = config.settlement_nft_contract_id else {
-        return Ok(());
+        return;
     };
 
     let proof_key = SettlementProofKey::Minted(settlement.shipment_id);
     if env.storage().persistent().has(&proof_key) {
-        return Ok(());
+        return;
     }
 
     let mut args: Vec<soroban_sdk::Val> = Vec::new(env);
@@ -651,7 +675,15 @@ fn mint_settlement_proof(env: &Env, settlement: &SettlementRecord) -> Result<(),
         args,
     ) {
         Ok(Ok(token_id)) if token_id == settlement.shipment_id => {}
-        _ => return Err(NavinError::NftMintFailed),
+        _ => {
+            events::emit_proof_mint_failed(
+                env,
+                settlement.shipment_id,
+                settlement.settlement_id,
+                &settlement.to,
+            );
+            return;
+        }
     }
 
     env.storage().persistent().set(&proof_key, &true);
@@ -660,7 +692,6 @@ fn mint_settlement_proof(env: &Env, settlement: &SettlementRecord) -> Result<(),
         config.shipment_ttl_threshold,
         config.shipment_ttl_extension,
     );
-    Ok(())
 }
 
 fn authorize_nft_invocation(
@@ -3073,7 +3104,7 @@ impl NavinShipment {
 
             match transfer_result {
                 Ok(()) => {
-                    complete_settlement(&env, settlement_id, shipment_id)?;
+                    complete_settlement(&env, settlement_id, shipment_id, false)?;
 
                     let mut net_amount = amount;
                     if let Some(fee_config) = storage::get_fee_config(&env) {
@@ -5218,7 +5249,7 @@ impl NavinShipment {
                         &recipient,
                         escrow_amount,
                     )?;
-                    complete_settlement(&env, settlement_id, shipment_id)?;
+                    complete_settlement(&env, settlement_id, shipment_id, true)?;
                 }
                 DisputeResolution::RefundToCompany => {
                     let recipient = shipment.sender.clone();
@@ -5237,7 +5268,7 @@ impl NavinShipment {
                         &recipient,
                         escrow_amount,
                     )?;
-                    complete_settlement(&env, settlement_id, shipment_id)?;
+                    complete_settlement(&env, settlement_id, shipment_id, true)?;
                 }
                 DisputeResolution::PartialRefund => {
                     // Arbiter-provided partial flag: split escrow evenly between carrier and company.
@@ -5260,7 +5291,8 @@ impl NavinShipment {
                             &shipment.carrier,
                             carrier_share,
                         )?;
-                        complete_settlement(&env, settlement_id, shipment_id)?;
+                        // First leg of the split; the company leg is final.
+                        complete_settlement(&env, settlement_id, shipment_id, false)?;
                     }
                     if company_share > 0 {
                         let settlement_id = create_settlement(
@@ -5278,7 +5310,7 @@ impl NavinShipment {
                             &shipment.sender,
                             company_share,
                         )?;
-                        complete_settlement(&env, settlement_id, shipment_id)?;
+                        complete_settlement(&env, settlement_id, shipment_id, true)?;
                     }
                 }
             }

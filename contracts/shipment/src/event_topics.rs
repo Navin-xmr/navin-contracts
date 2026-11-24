@@ -277,6 +277,10 @@ pub const HASH_DOMAIN_PLATFORM: u8 = 0x0B;
 /// indexers can classify the freeze without parsing free-form text.
 pub const ESCROW_FROZEN: &str = "escrow_frozen";
 
+/// Emitted when the settlement-proof NFT could not be minted for a final
+/// settlement. The settlement itself still completes.
+pub const PROOF_MINT_FAILED: &str = "proof_mint_failed";
+
 pub const CARRIER_SUSPENDED: &str = "carrier_suspended";
 pub const CARRIER_REACTIVATED: &str = "carrier_reactivated";
 pub const DELIVERY_CONFIRMED: &str = "delivery_confirmed";
@@ -345,6 +349,7 @@ pub(crate) const ALL_TOPICS: &[&str] = &[
     NOTIFICATION,
     EVIDENCE_ADDED,
     ESCROW_FROZEN,
+    PROOF_MINT_FAILED,
     CARRIER_SUSPENDED,
     CARRIER_REACTIVATED,
     DELIVERY_CONFIRMED,
@@ -367,6 +372,7 @@ const NON_DEFAULT_HASH_DOMAINS: &[(&str, u8)] = &[
     (ESCROW_REFUNDED, HASH_DOMAIN_ESCROW),
     (MILESTONE_PAYMENT_RELEASED, HASH_DOMAIN_ESCROW),
     (ESCROW_FROZEN, HASH_DOMAIN_ESCROW),
+    (PROOF_MINT_FAILED, HASH_DOMAIN_ESCROW),
     // Disputes
     (DISPUTE_RAISED, HASH_DOMAIN_DISPUTE),
     (DISPUTE_RESOLVED, HASH_DOMAIN_DISPUTE),
