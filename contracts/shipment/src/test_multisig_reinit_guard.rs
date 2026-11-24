@@ -3,35 +3,8 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient};
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env, Vec};
-
-    #[contract]
-    struct MockToken;
-    #[contractimpl]
-    impl MockToken {
-        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
-        pub fn decimals(_env: Env) -> u32 {
-            7
-        }
-    }
-
-    /// Initialised contract with a two-admin, threshold-2 multi-sig.
-    fn setup_multisig() -> (Env, NavinShipmentClient<'static>, Address, Address) {
-        let (env, admin) = test_utils::setup_env();
-        let contract_id = env.register(NavinShipment, ());
-        let client = NavinShipmentClient::new(&env, &contract_id);
-        let token_id = env.register(MockToken, ());
-        client.initialize(&admin, &token_id);
-
-        let admin2 = Address::generate(&env);
-        let mut admins = Vec::new(&env);
-        admins.push_back(admin.clone());
-        admins.push_back(admin2.clone());
-        client.init_multisig(&admin, &admins, &2);
-
-        (env, client, admin, admin2)
-    }
+    use crate::{test_utils::setup_multisig, NavinError};
+    use soroban_sdk::{testutils::Address as _, Address, Env, Vec};
 
     fn admin_list(env: &Env, a: &Address, b: &Address) -> Vec<Address> {
         let mut admins = Vec::new(env);

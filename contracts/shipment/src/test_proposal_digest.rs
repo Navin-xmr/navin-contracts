@@ -9,36 +9,9 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient};
+    use crate::{test_utils::setup_multisig, NavinError};
     use soroban_sdk::testutils::Ledger as _;
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
-
-    #[contract]
-    struct MockToken;
-    #[contractimpl]
-    impl MockToken {
-        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
-        pub fn decimals(_env: Env) -> u32 {
-            7
-        }
-    }
-
-    fn setup_multisig() -> (Env, NavinShipmentClient<'static>, Address, Address) {
-        let (env, admin) = test_utils::setup_env();
-        let contract_id = env.register(NavinShipment, ());
-        let client = NavinShipmentClient::new(&env, &contract_id);
-        let token_id = env.register(MockToken, ());
-        client.initialize(&admin, &token_id);
-
-        // Set up multi-sig with two admins and threshold 2.
-        let admin2 = Address::generate(&env);
-        let mut admins = Vec::new(&env);
-        admins.push_back(admin.clone());
-        admins.push_back(admin2.clone());
-        client.init_multisig(&admin, &admins, &2);
-
-        (env, client, admin, admin2)
-    }
+    use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec};
 
     fn wasm_hash(env: &Env, seed: u8) -> BytesN<32> {
         BytesN::from_array(env, &[seed; 32])
