@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(clippy::duplicated_attributes)]
 
 #[cfg(test)]
 extern crate alloc;
@@ -997,7 +998,6 @@ fn would_create_cycle(env: &Env, dependent_id: u64, proposed_prereq_id: u64) -> 
     false
 }
 
-
 /// XDR size of the longest Soroban `Symbol`: 4-byte type tag, 4-byte length
 /// and up to 32 bytes of content.
 const SYMBOL_XDR_MAX_LEN: usize = 8 + 32;
@@ -1821,8 +1821,10 @@ impl NavinShipment {
         require_not_paused(&env)?;
         admin.require_auth();
 
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
+        require_admin(&env, &admin)?;
+
+        if storage::has_role(&env, &guardian, &Role::Guardian) {
+            return Err(NavinError::RoleAlreadyAssigned);
         }
 
         storage::set_role(&env, &guardian, &Role::Guardian);
@@ -1863,8 +1865,10 @@ impl NavinShipment {
         require_not_paused(&env)?;
         admin.require_auth();
 
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
+        require_admin(&env, &admin)?;
+
+        if storage::has_role(&env, &operator, &Role::Operator) {
+            return Err(NavinError::RoleAlreadyAssigned);
         }
 
         storage::set_role(&env, &operator, &Role::Operator);
@@ -4091,7 +4095,8 @@ impl NavinShipment {
         }
 
         finalize_if_settled(&env, &mut mut_shipment);
-        storage::set_shipment(&env, &mut_shipment);
+        persist_shipment(&env, &mut_shipment)?;
+        extend_shipment_ttl(&env, shipment_id);
 
         Ok(())
     }
@@ -4291,7 +4296,8 @@ impl NavinShipment {
         }
 
         finalize_if_settled(&env, &mut mut_shipment);
-        storage::set_shipment(&env, &mut_shipment);
+        persist_shipment(&env, &mut_shipment)?;
+        extend_shipment_ttl(&env, shipment_id);
 
         Ok(release_amounts)
     }
@@ -4402,7 +4408,8 @@ impl NavinShipment {
         }
 
         finalize_if_settled(&env, &mut shipment);
-        storage::set_shipment(&env, &shipment);
+        persist_shipment(&env, &shipment)?;
+        extend_shipment_ttl(&env, shipment_id);
 
         Ok(())
     }

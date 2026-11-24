@@ -160,7 +160,9 @@ fn test_compute_idempotency_key_ok_for_every_topic_constant() {
     for topic in crate::event_topics::ALL_TOPICS {
         let symbol = Symbol::new(&env, topic);
         assert!(
-            client.try_compute_idempotency_key(&1u64, &symbol, &0u32).is_ok(),
+            client
+                .try_compute_idempotency_key(&1u64, &symbol, &0u32)
+                .is_ok(),
             "compute_idempotency_key failed for topic '{}'",
             topic
         );
@@ -263,4 +265,24 @@ fn test_non_admin_cannot_check_batch_consistency() {
 
     let outsider = Address::generate(&env);
     client.check_batch_consistency(&outsider, &Vec::from_array(&env, [id1]));
+}
+
+#[test]
+fn test_add_guardian_rejects_already_assigned() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let guardian = Address::generate(&env);
+    client.add_guardian(&admin, &guardian);
+
+    let result = client.try_add_guardian(&admin, &guardian);
+    assert_eq!(result, Err(Ok(crate::NavinError::RoleAlreadyAssigned)));
+}
+
+#[test]
+fn test_add_operator_rejects_already_assigned() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let operator = Address::generate(&env);
+    client.add_operator(&admin, &operator);
+
+    let result = client.try_add_operator(&admin, &operator);
+    assert_eq!(result, Err(Ok(crate::NavinError::RoleAlreadyAssigned)));
 }
