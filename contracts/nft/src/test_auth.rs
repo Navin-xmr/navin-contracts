@@ -114,7 +114,7 @@ fn test_non_admin_minting_to_self_fails() {
 #[test]
 fn test_mint_requires_admin_auth() {
     let (env, admin, client) = setup_strict();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
 
     // With no authorization at all the call must fail.
     env.mock_auths(&[]);
@@ -133,7 +133,7 @@ fn test_mint_requires_admin_auth() {
 fn test_mint_fails_for_former_admin_after_admin_transfer() {
     let (env, admin, client) = setup_strict();
     let new_admin = Address::generate(&env);
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
 
     env.mock_auths(&[MockAuth {
         address: &admin,
@@ -191,7 +191,7 @@ fn test_non_admin_cannot_propose_admin_transfer() {
 #[test]
 fn test_require_admin_is_enforced_on_mint() {
     let (env, admin, client) = setup_strict();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
 
     authorize_mint(&env, &client, &admin, &recipient, 3);
     client.mint(&recipient, &3);
@@ -215,7 +215,7 @@ fn test_require_admin_is_enforced_on_mint() {
 #[test]
 fn test_transfer_requires_owner_auth() {
     let (env, admin, client) = setup_strict();
-    let alice = Address::generate(&env);
+    let alice = env.register(AcceptingReceiver, ());
     let bob = env.register(AcceptingReceiver, ());
     // The address that signs the transfer attempt must not be the recipient
     // contract: `mock_auths` registers a mock contract at the signed address
@@ -269,9 +269,9 @@ fn test_transfer_requires_owner_auth() {
 #[test]
 fn test_approved_transfer_requires_owner_approval_and_operator_auth() {
     let (env, admin, client) = setup_strict();
-    let owner = Address::generate(&env);
+    let owner = env.register(AcceptingReceiver, ());
     let operator = Address::generate(&env);
-    let recipient = crate::test_utils::account_address(&env, 0);
+    let recipient = crate::test_utils::account_address(&env, 1);
 
     authorize_mint(&env, &client, &admin, &owner, 1);
     client.mint(&owner, &1);
@@ -320,12 +320,13 @@ fn test_approved_transfer_requires_owner_approval_and_operator_auth() {
 #[test]
 fn test_mint_batch_requires_admin_auth() {
     let (env, admin, client) = setup_strict();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
+    let non_admin = Address::generate(&env);
     let recipients = soroban_sdk::vec![&env, recipient.clone()];
     let token_ids = soroban_sdk::vec![&env, 1_u64];
 
     env.mock_auths(&[MockAuth {
-        address: &recipient,
+        address: &non_admin,
         invoke: &MockAuthInvoke {
             contract: &client.address,
             fn_name: "mint_batch",
@@ -352,7 +353,7 @@ fn test_mint_batch_requires_admin_auth() {
 #[test]
 fn test_burn_requires_caller_auth() {
     let (env, admin, client) = setup_strict();
-    let owner = Address::generate(&env);
+    let owner = env.register(AcceptingReceiver, ());
     let stranger = Address::generate(&env);
 
     authorize_mint(&env, &client, &admin, &owner, 1);
@@ -371,7 +372,7 @@ fn test_burn_requires_caller_auth() {
 #[test]
 fn test_burn_by_owner_succeeds() {
     let (env, admin, client) = setup_strict();
-    let owner = Address::generate(&env);
+    let owner = env.register(AcceptingReceiver, ());
 
     authorize_mint(&env, &client, &admin, &owner, 1);
     client.mint(&owner, &1);
@@ -387,7 +388,7 @@ fn test_burn_by_owner_succeeds() {
 #[test]
 fn test_burn_by_admin_succeeds() {
     let (env, admin, client) = setup_strict();
-    let owner = Address::generate(&env);
+    let owner = crate::test_utils::account_address(&env, 0);
 
     authorize_mint(&env, &client, &admin, &owner, 1);
     client.mint(&owner, &1);
