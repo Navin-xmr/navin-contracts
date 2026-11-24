@@ -584,7 +584,8 @@ fn test_check_deadline_creates_refund_settlement() {
 
     // Jump past deadline + default grace period (86400s).
     use soroban_sdk::testutils::Ledger;
-    env.ledger().set_timestamp(env.ledger().timestamp() + 86400 + 86400 + 1);
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 86400 + 86400 + 1);
     client.check_deadline(&shipment_id);
 
     assert_eq!(client.get_settlement_count(), 2);
@@ -775,14 +776,7 @@ fn test_auto_mint_nft_disabled_skips_minting() {
     client.add_carrier(&admin, &carrier);
     client.add_carrier_to_whitelist(&company, &carrier);
 
-    let shipment_id = deliver_and_release(
-        &env,
-        &client,
-        &admin,
-        &company,
-        &carrier,
-        &receiver,
-    );
+    let shipment_id = deliver_and_release(&env, &client, &admin, &company, &carrier, &receiver);
 
     // The settlement still completed — only the NFT mint is skipped.
     let release = client.get_settlement(&2);
@@ -813,14 +807,7 @@ fn test_auto_mint_nft_enabled_mints_settlement_proof() {
     client.add_carrier(&admin, &carrier);
     client.add_carrier_to_whitelist(&company, &carrier);
 
-    let shipment_id = deliver_and_release(
-        &env,
-        &client,
-        &admin,
-        &company,
-        &carrier,
-        &receiver,
-    );
+    let shipment_id = deliver_and_release(&env, &client, &admin, &company, &carrier, &receiver);
 
     assert_eq!(
         nft.total_supply(),

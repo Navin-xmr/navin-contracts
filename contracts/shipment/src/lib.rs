@@ -527,7 +527,14 @@ fn settle_escrow(
     next_status: ShipmentStatus,
 ) -> Result<(), NavinError> {
     let escrow_amount = shipment.escrow_amount;
-    settle_escrow_amount(env, shipment, destination, operation, escrow_amount, &next_status)?;
+    settle_escrow_amount(
+        env,
+        shipment,
+        destination,
+        operation,
+        escrow_amount,
+        &next_status,
+    )?;
     apply_settlement_status(env, shipment, next_status)
 }
 
