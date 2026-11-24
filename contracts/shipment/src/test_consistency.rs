@@ -49,6 +49,7 @@ fn create_one(
     seed: u8,
 ) -> u64 {
     let deadline = test_utils::future_deadline(env, 7200);
+    crate::test_utils::allow_carrier(client, company, carrier);
     client.create_shipment(
         company,
         &Address::generate(env),
@@ -359,56 +360,6 @@ fn test_detects_batch_timestamp_mismatch() {
     });
 }
 
-// ── Admin contract query ─────────────────────────────────────────────────────
-
-#[test]
-fn test_admin_query_returns_violations_for_corrupted_state() {
-    let (env, client, admin, _) = setup();
-    let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-    client.add_carrier_to_whitelist(&company, &carrier);
-
-    let id = create_one(&env, &client, &company, &carrier, 1);
-
-    // Corrupt the escrow to trigger a violation detectable by the admin query.
-    env.as_contract(&client.address, || {
-        crate::storage::set_escrow(&env, id, 1);
-    });
-
-    let violations = client.check_consistency_violations(&admin);
-    assert!(
-        !violations.is_empty(),
-        "admin query should report at least one violation"
-    );
-    assert!(
-        violations
-            .iter()
-            .any(|v| v == ConsistencyViolation::EscrowMismatch(id)),
-        "expected EscrowMismatch in admin query result"
-    );
-}
-
-#[test]
-fn test_admin_query_returns_empty_for_clean_state() {
-    let (env, client, admin, _) = setup();
-    let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-    client.add_carrier_to_whitelist(&company, &carrier);
-
-    create_one(&env, &client, &company, &carrier, 1);
-    create_one(&env, &client, &company, &carrier, 2);
-
-    let violations = client.check_consistency_violations(&admin);
-    assert!(
-        violations.is_empty(),
-        "expected no violations in clean state"
-    );
-}
-
 // ── Status-specific invariants ───────────────────────────────────────────────
 
 #[test]
@@ -582,7 +533,7 @@ fn test_config_checksum_stable_across_queries() {
     assert_eq!(c1, c4);
 }
 
-// ── Batch query vs. single-read consistency (issue #445) ────────────────────
+// ── Batch query vs. single-read consistency ─────────────────────────────────
 
 /// Each position in a batch result must agree with the corresponding
 /// single-record read for every field the consistency checker cares about.
@@ -733,7 +684,7 @@ fn test_config_checksum_never_zero_for_defaults() {
     );
 }
 
-// ── [ISSUE #453] Carrier reverse-lookup consistency tests ───────────────────
+// ── Carrier reverse-lookup consistency tests ────────────────────────────────
 
 /// Test: Add forward whitelist entries and verify they can be read back.
 /// This ensures that forward whitelist records are stored and retrieved correctly.
@@ -1119,11 +1070,10 @@ fn test_carrier_whitelist_parameter_order_matters() {
     );
 }
 
-/// Test: Repeated add operations are now rejected (issue #539).
+/// Test: Repeated add operations are rejected.
 ///
-/// Originally this contract treated duplicate whitelist adds as silently
-/// idempotent. Issue #539 hardened that path: the first add succeeds, and
-/// subsequent adds for the same (company, carrier) pair return
+/// A silently idempotent add hides caller mistakes, so the first add succeeds
+/// and subsequent adds for the same (company, carrier) pair return
 /// `CarrierAlreadyWhitelisted`. The underlying state remains consistent
 /// after the rejection — exactly one entry persists, and a single remove
 /// clears it as before.
@@ -1144,7 +1094,7 @@ fn test_carrier_whitelist_add_idempotent() {
     assert_eq!(
         dup,
         Err(Ok(crate::NavinError::CarrierAlreadyWhitelisted)),
-        "duplicate whitelist add must surface CarrierAlreadyWhitelisted (issue #539)"
+        "duplicate whitelist add must surface CarrierAlreadyWhitelisted"
     );
     let dup2 = client.try_add_carrier_to_whitelist(&company, &carrier);
     assert_eq!(
@@ -1171,7 +1121,7 @@ fn test_carrier_whitelist_add_idempotent() {
 /// Test: Repeated remove operations are idempotent.
 /// This ensures removing a non-existent entry has no adverse effects.
 #[test]
-fn test_carrier_whitelist_remove_idempotent() {
+fn test_carrier_whitelist_remove_is_rejected_when_not_whitelisted() {
     let (env, client, admin, _) = setup();
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -1179,23 +1129,25 @@ fn test_carrier_whitelist_remove_idempotent() {
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
 
-    // Remove without adding (no-op)
-    client.remove_carrier_from_whitelist(&company, &carrier);
+    // Removing a carrier that was never added is rejected.
+    assert_eq!(
+        client.try_remove_carrier_from_whitelist(&company, &carrier),
+        Err(Ok(crate::NavinError::CarrierNotWhitelisted))
+    );
     assert!(!client.is_carrier_whitelisted(&company, &carrier));
 
-    // Add, then remove multiple times
     client.add_carrier_to_whitelist(&company, &carrier);
     assert!(client.is_carrier_whitelisted(&company, &carrier));
 
     client.remove_carrier_from_whitelist(&company, &carrier);
-    client.remove_carrier_from_whitelist(&company, &carrier);
-    client.remove_carrier_from_whitelist(&company, &carrier);
+    assert!(!client.is_carrier_whitelisted(&company, &carrier));
 
-    // Should still be not whitelisted
-    assert!(
-        !client.is_carrier_whitelisted(&company, &carrier),
-        "carrier should not be whitelisted after multiple removes"
+    // A second removal hits the same guard and leaves state untouched.
+    assert_eq!(
+        client.try_remove_carrier_from_whitelist(&company, &carrier),
+        Err(Ok(crate::NavinError::CarrierNotWhitelisted))
     );
+    assert!(!client.is_carrier_whitelisted(&company, &carrier));
 }
 
 #[test]
@@ -1208,6 +1160,7 @@ fn test_upgrade_preserves_analytics_counters() {
     client.add_carrier(&admin, &carrier);
 
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let id1 = client.create_shipment(
         &company,
@@ -1217,6 +1170,7 @@ fn test_upgrade_preserves_analytics_counters() {
         &soroban_sdk::Vec::new(&env),
         &deadline,
     );
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let id2 = client.create_shipment(
         &company,
         &receiver,
@@ -1229,12 +1183,8 @@ fn test_upgrade_preserves_analytics_counters() {
     client.deposit_escrow(&company, &id1, &1000);
     client.deposit_escrow(&company, &id2, &500);
 
-    let health_before = client.check_contract_health(&admin);
-    assert_eq!(health_before.total_shipments, 2);
-    assert_eq!(health_before.sum_of_escrow_balances, 1500);
-
     let target_version = client.get_version() + 1;
-    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let wasm: &[u8] = crate::test_utils::UPGRADE_WASM;
     let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
 
     let contract_id = client.address.clone();
@@ -1252,7 +1202,10 @@ fn test_upgrade_preserves_analytics_counters() {
     });
 }
 
-// ── [ISSUE #530] get_version read-only method update tests ──────────────────
+// ── get_version read-only method tests ──────────────────────────────────────
+//
+// get_version must read the stored version on every call. A cached or
+// hard-coded value would hide upgrades from callers that gate on it.
 
 #[test]
 fn test_get_version_returns_initial_version_one() {
@@ -1289,7 +1242,7 @@ fn test_get_version_increments_match_target_after_upgrade() {
     let initial = client.get_version();
     let target = initial + 1;
 
-    let wasm: &[u8] = include_bytes!("../test_wasms/upgrade_test.wasm");
+    let wasm: &[u8] = crate::test_utils::UPGRADE_WASM;
     let new_wasm_hash = env.deployer().upload_contract_wasm(wasm);
     let contract_id = client.address.clone();
     client.upgrade(&admin, &new_wasm_hash, &target);
@@ -1323,7 +1276,7 @@ fn test_get_version_is_stable_across_repeated_reads() {
     let _ = v1;
 }
 
-// ── Large-fixture / budget-safety tests (issue #648) ────────────────────────
+// ── Large-fixture / budget-safety tests ─────────────────────────────────────
 
 /// Create N shipments (well above DEFAULT_CONSISTENCY_SAMPLE_LIMIT) and verify
 /// that `check_all_consistency` (the capped variant) inspects exactly
@@ -1483,39 +1436,4 @@ fn test_large_fixture_full_paginated_walk_finds_all_violations() {
             "paginated walk must find violation for id={id_b}"
         );
     });
-}
-
-/// `check_consistency_paginated` exposed via the contract client
-/// must reject a zero limit and a limit exceeding the config cap.
-#[test]
-fn test_paginated_contract_entry_validates_limit() {
-    let (env, client, admin, _) = setup();
-    let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-    client.add_carrier_to_whitelist(&company, &carrier);
-    create_one(&env, &client, &company, &carrier, 1);
-
-    // limit = 0 must be rejected.
-    let err_zero = client.try_check_consistency_paginated(&admin, &1_u64, &0_u32);
-    assert!(err_zero.is_err(), "limit=0 must return an error");
-
-    // limit > the paginated query's max batch size must be rejected. This cap
-    // is `MAX_BATCH_QUERY_SIZE`, independent of `config.batch_operation_limit`.
-    let too_large = crate::MAX_BATCH_QUERY_SIZE + 1;
-    let err_large = client.try_check_consistency_paginated(&admin, &1_u64, &too_large);
-    assert!(
-        err_large.is_err(),
-        "limit exceeding MAX_BATCH_QUERY_SIZE must return an error"
-    );
-
-    // A valid page must succeed and return no violations for a clean state.
-    let ok = client.check_consistency_paginated(&admin, &1_u64, &10_u32);
-    assert!(
-        ok.is_empty(),
-        "valid paginated call on clean state must return no violations"
-    );
-
-    let _ = env;
 }

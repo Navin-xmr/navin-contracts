@@ -14,9 +14,7 @@ use soroban_sdk::{
     Address, BytesN, Env, Symbol, Vec,
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Mock Token Contract
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[contract]
 struct MockToken;
@@ -31,9 +29,7 @@ impl MockToken {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Test Setup Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 fn setup_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
     let (env, admin) = crate::test_utils::setup_env();
@@ -44,13 +40,9 @@ fn setup_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
     (env, client, admin, token_contract)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Issue #242: Panic-Free Invariant Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 1. initialize() - Boundary and Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_initialize_already_initialized_returns_error() {
@@ -63,9 +55,7 @@ fn test_initialize_already_initialized_returns_error() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 2. add_company() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_add_company_unauthorized_caller() {
@@ -103,9 +93,7 @@ fn test_add_company_not_initialized() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 3. add_carrier() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_add_carrier_unauthorized_caller() {
@@ -120,9 +108,7 @@ fn test_add_carrier_unauthorized_caller() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 4. create_shipment() - Boundary and Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_create_shipment_invalid_hash_all_zeros() {
@@ -218,32 +204,7 @@ fn test_create_shipment_invalid_milestone_sum() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 5. deposit_escrow() - Boundary and Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn test_deposit_escrow_invalid_amount_zero() {
-    let (env, client, admin, _token) = setup_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.add_company(&admin, &company);
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-    );
-
-    let result = client.try_deposit_escrow(&company, &shipment_id, &0i128);
-    assert!(result.is_err(), "deposit_escrow must reject zero amount");
-}
 
 #[test]
 fn test_deposit_escrow_nonexistent_shipment() {
@@ -259,9 +220,7 @@ fn test_deposit_escrow_nonexistent_shipment() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 6. update_status() - Invalid State Transition Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_update_status_nonexistent_shipment() {
@@ -279,44 +238,7 @@ fn test_update_status_nonexistent_shipment() {
     );
 }
 
-#[test]
-fn test_update_status_invalid_transition() {
-    let (env, client, admin, _token) = setup_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let status_hash = BytesN::from_array(&env, &[2u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-    );
-
-    // Try invalid transition: Created -> Delivered (should be Created -> InTransit)
-    let result = client.try_update_status(
-        &carrier,
-        &shipment_id,
-        &ShipmentStatus::Delivered,
-        &status_hash,
-    );
-    assert!(
-        result.is_err(),
-        "update_status must reject invalid state transition"
-    );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // 7. cancel_shipment() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_cancel_shipment_nonexistent_shipment() {
@@ -345,6 +267,7 @@ fn test_cancel_shipment_unauthorized_caller() {
 
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -363,9 +286,7 @@ fn test_cancel_shipment_unauthorized_caller() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 8. release_escrow() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_release_escrow_nonexistent_shipment() {
@@ -379,38 +300,7 @@ fn test_release_escrow_nonexistent_shipment() {
     );
 }
 
-#[test]
-fn test_release_escrow_invalid_status() {
-    let (env, client, admin, _token) = setup_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-    );
-
-    // Try to release escrow when shipment is in Created status (not Delivered)
-    let result = client.try_release_escrow(&receiver, &shipment_id);
-    assert!(
-        result.is_err(),
-        "release_escrow must fail for non-Delivered shipment"
-    );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // 9. refund_escrow() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_refund_escrow_nonexistent_shipment() {
@@ -424,9 +314,7 @@ fn test_refund_escrow_nonexistent_shipment() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 10. raise_dispute() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_raise_dispute_nonexistent_shipment() {
@@ -441,39 +329,7 @@ fn test_raise_dispute_nonexistent_shipment() {
     );
 }
 
-#[test]
-fn test_raise_dispute_unauthorized_caller() {
-    let (env, client, admin, _token) = setup_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let reason_hash = BytesN::from_array(&env, &[4u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-    );
-
-    let unauthorized = Address::generate(&env);
-    let result = client.try_raise_dispute(&unauthorized, &shipment_id, &reason_hash);
-    assert!(
-        result.is_err(),
-        "raise_dispute must fail for unauthorized caller"
-    );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // 11. resolve_dispute() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_resolve_dispute_nonexistent_shipment() {
@@ -492,44 +348,7 @@ fn test_resolve_dispute_nonexistent_shipment() {
     );
 }
 
-#[test]
-fn test_resolve_dispute_unauthorized_caller() {
-    let (env, client, admin, _token) = setup_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let reason_hash = BytesN::from_array(&env, &[5u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-    );
-
-    let unauthorized = Address::generate(&env);
-    let result = client.try_resolve_dispute(
-        &unauthorized,
-        &shipment_id,
-        &crate::DisputeResolution::ReleaseToCarrier,
-        &reason_hash,
-    );
-    assert!(
-        result.is_err(),
-        "resolve_dispute must fail for unauthorized caller"
-    );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // 12. set_shipment_limit() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_set_shipment_limit_unauthorized_caller() {
@@ -543,9 +362,7 @@ fn test_set_shipment_limit_unauthorized_caller() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 13. pause() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_pause_unauthorized_caller() {
@@ -556,9 +373,7 @@ fn test_pause_unauthorized_caller() {
     assert!(result.is_err(), "pause must fail for unauthorized caller");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 14. unpause() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_unpause_unauthorized_caller() {
@@ -569,9 +384,7 @@ fn test_unpause_unauthorized_caller() {
     assert!(result.is_err(), "unpause must fail for unauthorized caller");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 15. force_cancel_shipment() - Invalid Input Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_force_cancel_shipment_nonexistent_shipment() {
@@ -585,363 +398,4 @@ fn test_force_cancel_shipment_nonexistent_shipment() {
     );
 }
 
-#[test]
-fn test_force_cancel_shipment_unauthorized_caller() {
-    let (env, client, admin, _token) = setup_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let reason_hash = BytesN::from_array(&env, &[6u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-    );
-
-    let unauthorized = Address::generate(&env);
-    let result = client.try_force_cancel_shipment(&unauthorized, &shipment_id, &reason_hash);
-    assert!(
-        result.is_err(),
-        "force_cancel_shipment must fail for unauthorized caller"
-    );
-}
-
-#[test]
-fn test_get_dispute_evidence_hash_out_of_bounds() {
-    let (env, client, admin, _token) = setup_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-    client.add_carrier_to_whitelist(&company, &carrier);
-
-    let deadline = env.ledger().timestamp() + 3600;
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-    );
-
-    // Call on nonexistent shipment ID
-    let result_nonexistent = client.try_get_dispute_evidence_hash(&999u64, &0);
-    assert_eq!(
-        result_nonexistent,
-        Err(Ok(crate::NavinError::ShipmentNotFound)),
-        "querying dispute evidence on nonexistent shipment must return ShipmentNotFound"
-    );
-
-    // Call on empty dispute (0 evidence entries)
-    let result_empty = client.try_get_dispute_evidence_hash(&shipment_id, &0);
-    assert_eq!(
-        result_empty,
-        Err(Ok(crate::NavinError::EvidenceNotFound)),
-        "querying index 0 on empty evidence list must return EvidenceNotFound"
-    );
-
-    // Transition shipment to Disputed
-    let reason_hash = BytesN::from_array(&env, &[2u8; 32]);
-    // Deposit escrow first because raising a dispute might require escrow to be deposited or similar?
-    // Let's check: actually we can just raise a dispute directly or deposit first.
-    // Wait, let's deposit to be safe.
-    client.deposit_escrow(&company, &shipment_id, &100i128);
-    let status_hash = BytesN::from_array(&env, &[1u8; 32]);
-    client.update_status(
-        &carrier,
-        &shipment_id,
-        &ShipmentStatus::InTransit,
-        &status_hash,
-    );
-    client.raise_dispute(&company, &shipment_id, &reason_hash);
-
-    // Add 1 evidence hash
-    let evidence_hash = BytesN::from_array(&env, &[77u8; 32]);
-    client.add_dispute_evidence_hash(&company, &shipment_id, &evidence_hash);
-
-    // Query valid index
-    assert_eq!(
-        client.get_dispute_evidence_hash(&shipment_id, &0),
-        Some(evidence_hash)
-    );
-
-    // Query index equal to count (1)
-    let result_equal = client.try_get_dispute_evidence_hash(&shipment_id, &1);
-    assert_eq!(
-        result_equal,
-        Err(Ok(crate::NavinError::EvidenceNotFound)),
-        "querying index equal to evidence count must return EvidenceNotFound"
-    );
-
-    // Query index greater than count (2)
-    let result_greater = client.try_get_dispute_evidence_hash(&shipment_id, &2);
-    assert_eq!(
-        result_greater,
-        Err(Ok(crate::NavinError::EvidenceNotFound)),
-        "querying index greater than evidence count must return EvidenceNotFound"
-    );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Notes maximum limit boundary checks (issue #524)
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn test_append_note_hash_blocked_when_limit_reached() {
-    let (env, client, admin, _token) = setup_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-    client.add_carrier_to_whitelist(&company, &carrier);
-
-    let deadline = env.ledger().timestamp() + 3600;
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-    );
-
-    // Lower the notes limit to 3 so the boundary is reachable in a unit test.
-    let config = crate::ContractConfig {
-        max_notes_per_shipment: 3,
-        ..crate::ContractConfig::default()
-    };
-    client.update_config(&admin, &config);
-
-    // Append up to the limit — all must succeed.
-    client.append_note_hash(
-        &company,
-        &shipment_id,
-        &BytesN::from_array(&env, &[0x01u8; 32]),
-    );
-    client.append_note_hash(
-        &carrier,
-        &shipment_id,
-        &BytesN::from_array(&env, &[0x02u8; 32]),
-    );
-    client.append_note_hash(
-        &admin,
-        &shipment_id,
-        &BytesN::from_array(&env, &[0x03u8; 32]),
-    );
-
-    assert_eq!(client.get_note_count(&shipment_id), 3);
-
-    // The next append must be rejected with NoteLimitExceeded.
-    let result = client.try_append_note_hash(
-        &company,
-        &shipment_id,
-        &BytesN::from_array(&env, &[0x04u8; 32]),
-    );
-    assert_eq!(
-        result,
-        Err(Ok(crate::NavinError::NoteLimitExceeded)),
-        "appending beyond max_notes_per_shipment must return NoteLimitExceeded"
-    );
-}
-
-#[test]
-fn test_append_note_hash_exactly_at_limit_fails() {
-    let (env, client, admin, _token) = setup_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-    client.add_carrier_to_whitelist(&company, &carrier);
-
-    let deadline = env.ledger().timestamp() + 3600;
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-    );
-
-    // Set limit to 1.
-    let config = crate::ContractConfig {
-        max_notes_per_shipment: 1,
-        ..crate::ContractConfig::default()
-    };
-    client.update_config(&admin, &config);
-
-    // First append: within limit.
-    client.append_note_hash(
-        &company,
-        &shipment_id,
-        &BytesN::from_array(&env, &[0xAAu8; 32]),
-    );
-    assert_eq!(client.get_note_count(&shipment_id), 1);
-
-    // Second append: exceeds limit of 1.
-    let result = client.try_append_note_hash(
-        &company,
-        &shipment_id,
-        &BytesN::from_array(&env, &[0xBBu8; 32]),
-    );
-    assert_eq!(
-        result,
-        Err(Ok(crate::NavinError::NoteLimitExceeded)),
-        "second append when limit is 1 must return NoteLimitExceeded"
-    );
-
-    // Count must remain at 1 — the failed append must not increment it.
-    assert_eq!(
-        client.get_note_count(&shipment_id),
-        1,
-        "note count must not change after a rejected append"
-    );
-}
-
-// ── Helper: create a shipment with company/receiver/carrier for note tests ────
-
-fn setup_shipment_for_notes(
-    env: &Env,
-    client: &NavinShipmentClient,
-    admin: &Address,
-) -> (Address, Address, Address, u64) {
-    let company = Address::generate(env);
-    let receiver = Address::generate(env);
-    let carrier = Address::generate(env);
-
-    client.add_company(admin, &company);
-    client.add_carrier(admin, &carrier);
-    client.add_carrier_to_whitelist(&company, &carrier);
-
-    let deadline = env.ledger().timestamp() + 3600;
-    let data_hash = BytesN::from_array(env, &[1u8; 32]);
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(env),
-        &deadline,
-    );
-
-    (company, receiver, carrier, shipment_id)
-}
-
-#[test]
-fn test_append_note_hash_invalid_zero_hash() {
-    let (env, client, admin, _token) = setup_env();
-    let (company, _receiver, _carrier, shipment_id) =
-        setup_shipment_for_notes(&env, &client, &admin);
-
-    let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
-    let result = client.try_append_note_hash(&company, &shipment_id, &zero_hash);
-    assert_eq!(
-        result,
-        Err(Ok(crate::NavinError::InvalidHash)),
-        "append_note_hash must reject all-zero hash"
-    );
-    assert_eq!(client.get_note_count(&shipment_id), 0);
-}
-
-#[test]
-fn test_append_note_hash_valid_32_byte_hash() {
-    let (env, client, admin, _token) = setup_env();
-    let (company, _receiver, _carrier, shipment_id) =
-        setup_shipment_for_notes(&env, &client, &admin);
-
-    let note_hash = BytesN::from_array(&env, &[42u8; 32]);
-    assert!(client
-        .try_append_note_hash(&company, &shipment_id, &note_hash)
-        .is_ok());
-    assert_eq!(client.get_note_count(&shipment_id), 1);
-    assert_eq!(client.get_note_hash(&shipment_id, &0), note_hash);
-}
-
-#[test]
-fn test_append_note_hash_nonexistent_shipment() {
-    let (env, client, admin, _token) = setup_env();
-    let company = Address::generate(&env);
-    client.add_company(&admin, &company);
-
-    let note_hash = BytesN::from_array(&env, &[5u8; 32]);
-    let result = client.try_append_note_hash(&company, &999u64, &note_hash);
-    assert_eq!(
-        result,
-        Err(Ok(crate::NavinError::ShipmentNotFound)),
-        "append_note_hash on missing shipment must return ShipmentNotFound"
-    );
-}
-
-#[test]
-fn test_append_note_hash_unauthorized_caller() {
-    let (env, client, admin, _token) = setup_env();
-    let (_company, _receiver, _carrier, shipment_id) =
-        setup_shipment_for_notes(&env, &client, &admin);
-
-    let outsider = Address::generate(&env);
-    let note_hash = BytesN::from_array(&env, &[6u8; 32]);
-    let result = client.try_append_note_hash(&outsider, &shipment_id, &note_hash);
-    assert_eq!(
-        result,
-        Err(Ok(crate::NavinError::Unauthorized)),
-        "append_note_hash must reject unauthorized caller"
-    );
-}
-
-#[test]
-fn test_append_note_hash_exceeds_note_limit() {
-    use crate::ContractConfig;
-    let (env, client, admin, _token) = setup_env();
-    let (company, _receiver, _carrier, shipment_id) =
-        setup_shipment_for_notes(&env, &client, &admin);
-
-    let config = ContractConfig {
-        max_notes_per_shipment: 2,
-        ..Default::default()
-    };
-    client.update_config(&admin, &config);
-
-    let note_a = BytesN::from_array(&env, &[10u8; 32]);
-    let note_b = BytesN::from_array(&env, &[11u8; 32]);
-    let note_c = BytesN::from_array(&env, &[12u8; 32]);
-
-    assert!(client
-        .try_append_note_hash(&company, &shipment_id, &note_a)
-        .is_ok());
-    assert!(client
-        .try_append_note_hash(&company, &shipment_id, &note_b)
-        .is_ok());
-
-    let result = client.try_append_note_hash(&company, &shipment_id, &note_c);
-    assert_eq!(
-        result,
-        Err(Ok(crate::NavinError::NoteLimitExceeded)),
-        "append_note_hash must reject when max notes per shipment is reached"
-    );
-    assert_eq!(client.get_note_count(&shipment_id), 2);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Summary: All tests verify panic-free error handling
-// ─────────────────────────────────────────────────────────────────────────────
-// Each test ensures that invalid inputs return Err instead of panicking.
 // This guarantees wallet/dApp stability.

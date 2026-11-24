@@ -20,12 +20,14 @@ Before deploying, ensure you have:
 
 3. **Build tools**: Make sure you can build the contracts locally:
    ```bash
-   cargo build
+   make build
    ```
 
 ## Environment Variables
 
-The deployment scripts use the following environment variables:
+Both scripts source `scripts/testnet-config.sh` for these defaults. The deploy
+script writes the selected values to `.env.testnet`, and the initialization
+script loads them from that file along with the contract IDs.
 
 | Variable                     | Default                                   | Description                                        |
 | ---------------------------- | ----------------------------------------- | -------------------------------------------------- |
@@ -33,7 +35,7 @@ The deployment scripts use the following environment variables:
 | `STELLAR_RPC_URL`            | `https://soroban-testnet.stellar.org:443` | Stellar testnet RPC endpoint                       |
 | `STELLAR_NETWORK_PASSPHRASE` | `Test SDF Network ; September 2015`       | Network passphrase for testnet                     |
 
-You can override these by exporting them before running the scripts:
+You can override these by exporting them before deployment:
 
 ```bash
 export STELLAR_IDENTITY="my-custom-identity"
@@ -87,34 +89,62 @@ The token contract begins with the admin holding the entire `total_supply` balan
 
 ---
 
+## NFT Contract Deployment
+
+### NFT Contract Setup
+
+The NFT contract (`navin-nft` / `contracts/nft`) manages shipment digital assets. Its collection metadata and admin are supplied atomically as constructor arguments at deployment; there is no separate `initialize` invocation.
+
+**Constructor Parameters:**
+
+- `admin` — Address that owns the NFT contract and manages minting/pausing operations. For settlement proofs, use the deployed shipment contract address.
+- `name` — NFT collection name (e.g., "Navin Shipment NFT")
+- `symbol` — NFT collection ticker symbol (e.g., "NAVNFT")
+
+**Example deployment command:**
+
+```bash
+stellar contract deploy \
+  --wasm target/wasm32-unknown-unknown/release/navin_nft.wasm \
+  --source-account "$STELLAR_IDENTITY" \
+  --rpc-url "$STELLAR_RPC_URL" \
+  --network-passphrase "$STELLAR_NETWORK_PASSPHRASE" \
+  -- \
+  --admin "$NFT_ADMIN_ADDRESS" \
+  --name "Navin Shipment NFT" \
+  --symbol "NAVNFT"
+```
+
+For a settlement-proof NFT, deploy the shipment contract first and set
+`NFT_ADMIN_ADDRESS` to its contract address. Then register the NFT with
+`configure_settlement_nft`; that call verifies `get_admin()` and does not
+initialize or modify the NFT.
+
+### NFT Admin Operations
+
+After deployment, the admin can perform the following operations:
+
+1. **Mint Shipment NFTs** — Mint a new shipment NFT via `mint(admin, to, token_id)`
+2. **Transfer Admin Rights** — Pass control to another address via `transfer_admin(current_admin, new_admin)`
+3. **Pause/Unpause Operations** — Block or unblock NFT minting and transfers via `pause(admin)` and `unpause(admin)`
+
+---
+
 ## Deployment Steps
 
 ### 1. Build Contracts
 
-Build both contracts to optimized WASM:
+Build all workspace contracts for the WASM target:
 
 ```bash
-./scripts/build.sh
+make build
 ```
 
-This will:
-
-- Compile both `navin-token` and `shipment` contracts
-- Verify WASM files are generated
-- Display file sizes
-
-Expected output:
-
-```
-Building Soroban contracts...
-Build successful!
-Token WASM: target/wasm32-unknown-unknown/release/navin_token.wasm (XXX KB)
-Shipment WASM: target/wasm32-unknown-unknown/release/shipment.wasm (XXX KB)
-```
+This builds `navin-token`, `navin-nft`, and `shipment`.
 
 ### 2. Deploy Contracts
 
-Deploy both contracts to testnet:
+Deploy the contracts to testnet:
 
 ```bash
 ./scripts/deploy-testnet.sh
@@ -134,9 +164,9 @@ Deploying contracts to Stellar testnet...
 Identity: navin-testnet
 RPC URL: https://soroban-testnet.stellar.org:443
 Deploying token contract...
-Token contract deployed: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+Token contract deployed: <TOKEN_CONTRACT_ID>
 Deploying shipment contract...
-Shipment contract deployed: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+Shipment contract deployed: <SHIPMENT_CONTRACT_ID>
 
 Deployment complete!
 Contract addresses saved to .env.testnet
@@ -144,7 +174,7 @@ Contract addresses saved to .env.testnet
 
 ### 3. Initialize Contracts
 
-Initialize both contracts with default parameters:
+Initialize the token and shipment contracts with default parameters:
 
 ```bash
 ./scripts/init-testnet.sh
@@ -162,9 +192,9 @@ Expected output:
 
 ```
 Initializing contracts on Stellar testnet...
-Token contract: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-Shipment contract: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-Admin address: GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+Token contract: <TOKEN_CONTRACT_ID>
+Shipment contract: <SHIPMENT_CONTRACT_ID>
+Admin address: <ADMIN_ADDRESS>
 
 Initializing token contract...
 Token contract initialized successfully
@@ -191,13 +221,24 @@ After deployment, verify the contracts are working:
      --network-passphrase "$STELLAR_NETWORK_PASSPHRASE" \
      -- \
      balance \
-     --id "$(stellar keys address $STELLAR_IDENTITY)"
+     --address "$(stellar keys address $STELLAR_IDENTITY)"
    ```
 
 2. **Check shipment contract admin**:
    ```bash
    stellar contract invoke \
      --id "$SHIPMENT_CONTRACT_ID" \
+     --source-account "$STELLAR_IDENTITY" \
+     --rpc-url "$STELLAR_RPC_URL" \
+     --network-passphrase "$STELLAR_NETWORK_PASSPHRASE" \
+     -- \
+     get_admin
+   ```
+
+3. **Check NFT contract admin**:
+   ```bash
+   stellar contract invoke \
+     --id "$NFT_CONTRACT_ID" \
      --source-account "$STELLAR_IDENTITY" \
      --rpc-url "$STELLAR_RPC_URL" \
      --network-passphrase "$STELLAR_NETWORK_PASSPHRASE" \
@@ -217,10 +258,10 @@ cargo install --locked stellar-cli
 
 ### "WASM not found"
 
-Run the build script first:
+Run the canonical build command first:
 
 ```bash
-./scripts/build.sh
+make build
 ```
 
 ### "Account not funded" or transaction failures

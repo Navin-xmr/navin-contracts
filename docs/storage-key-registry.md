@@ -2,10 +2,15 @@
 
 This document defines a migration-safe registry for `DataKey` usage in `contracts/shipment/src/types.rs`.
 
+This is the single source of truth for the full list of `DataKey` variants.
+For which storage tier (instance/persistent/temporary) each key should use
+and why, see [`docs/storage.md`](storage.md) instead — that document does
+not repeat this key list.
+
 ## Registry Version
 
 - **Version:** `v1`
-- **Last Updated:** `2026-04-28`
+- **Last Updated:** `2026-09-25`
 - **Source of Truth:** `contracts/shipment/src/types.rs`
 
 ## Policy
@@ -34,17 +39,17 @@ These ranges are policy ranges for planning and review safety; they are not runt
 - `ContractConfig`
 - `ConfigChecksum`
 - `IsPaused`
+- `FeeConfig`
+- `Treasury`
 
 ### Role and Access Control
 
 - `Company(Address)`
 - `Carrier(Address)`
-- `CarrierSuspended(Address)`
 - `CompanySuspended(Address)`
 - `CarrierWhitelist(Address, Address)`
 - `UserRole(Address, Role)`
 - `RoleSuspended(Address, Role)`
-- `Role(Address)`
 
 ### Shipment and Escrow State
 
@@ -52,10 +57,12 @@ These ranges are policy ranges for planning and review safety; they are not runt
 - `Escrow(u64)`
 - `ConfirmationHash(u64)`
 - `LastStatusUpdate(u64)`
+- `DeadlineWarningEmitted(u64)`
 - `ArchivedShipment(u64)`
 - `EscrowFreezeReasonByShipment(u64)`
 - `StatusHash(u64, ShipmentStatus)`
 - `ReentrancyLock`
+- `ShipmentDependents(u64)`
 
 ### Counters / Analytics
 
@@ -79,6 +86,8 @@ These ranges are policy ranges for planning and review safety; they are not runt
 - `MultiSigThreshold`
 - `ProposalCounter`
 - `Proposal(u64)`
+- `ProposalDigest(u64)`
+- `ProposalSalt(BytesN<32>)`
 
 ### Append-Only Audit / Evidence
 
@@ -98,6 +107,18 @@ These ranges are policy ranges for planning and review safety; they are not runt
 - `IdempotencyWindow(BytesN<32>)`
 - `ActorQuota(Address)`
 - `CircuitBreakerState`
+- `CircuitBreakerConfig`
+
+### Quotas / Limits
+
+- `CompanyCreationQuota(Address)`
+- `CreationQuotaConfig`
+
+### Historical / Reserved Keys
+
+- `Treasury` (reserved standalone slot; platform treasury configured in `FeeConfig::treasury`)
+- `RecoveryRecord(u64, u32)` (reserved historical discriminant)
+- `RecoveryRecordCount(u64)` (reserved historical discriminant)
 
 ## Storage Key Wrapper Helpers
 

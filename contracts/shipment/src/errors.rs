@@ -106,7 +106,7 @@ pub enum NavinError {
     DataHashMismatch = 45,
     /// Circuit breaker is open; token transfers are temporarily disabled.
     CircuitBreakerOpen = 46,
-    /// Migration version transition is not allowed.
+    /// Migration version transition is not allowed (only current + 1 is permitted).
     InvalidMigrationEdge = 47,
     /// Maximum allowed milestone events for a shipment has been reached.
     MilestoneLimitExceeded = 48,
@@ -151,16 +151,42 @@ pub enum NavinError {
     EvidenceNotFound = 67,
     /// Address already holds the requested role.
     RoleAlreadyAssigned = 68,
-    /// Issue #539 — caller attempted to add a carrier to a company's
-    /// whitelist that is already present. The whitelist is set-like;
-    /// duplicate additions are rejected with this dedicated error so
-    /// off-chain monitors can distinguish a no-op from a real failure
-    /// without falling back on the generic `AlreadyInitialized` code.
-    CarrierAlreadyWhitelisted = 69,
+    /// Caller attempted to add a carrier to a company's whitelist that
+    /// already contains it. The whitelist is set-like; duplicate additions
+    /// are rejected with this dedicated error so off-chain monitors can
+    /// distinguish a no-op from a real failure without falling back on the
+    /// generic `AlreadyInitialized` code.
+    CarrierAlreadyWhitelisted = 75,
+    /// Caller attempted to remove a carrier from a company's whitelist
+    /// that was never whitelisted. This mirrors the symmetric check in
+    /// add_carrier_to_whitelist, ensuring removal events are only emitted
+    /// for actual removals, not spurious no-ops.
+    CarrierNotWhitelisted = 69,
     /// Address is invalid (e.g., zero-address sentinel).
     InvalidAddress = 70,
-    /// Maximum allowed recovery action entries for a shipment has been reached.
-    RecoveryLimitExceeded = 71,
-    /// Maximum number of live audit log entries has been reached.
-    AuditLogLimitExceeded = 72,
+    // Code 71 is reserved: it belonged to a recovery-limit variant that was
+    // never reachable. Reusing it would make clients built against the old
+    // codes misreport the new error.
+    /// The target of a role-specific revocation does not hold the role
+    /// being revoked. Raised instead of silently revoking whatever role the
+    /// address happens to have, which previously let `remove_guardian`
+    /// strip an unrelated Company role.
+    RoleMismatch = 72,
+    /// A `Symbol` could not be decoded from its XDR encoding because the
+    /// declared content length does not fit the buffer. Returned instead of
+    /// panicking on an out-of-range slice.
+    InvalidSymbolEncoding = 73,
+    /// `init_multisig` was called again while a proposal is still pending.
+    /// Re-initialising then would reset the proposal counter and hand a live
+    /// proposal's id to a different action. Keep its code distinct from
+    /// `RoleMismatch` (72): when the two shared a discriminant, this variant
+    /// was silently dropped from the enum.
+    MultiSigProposalPending = 74,
+    /// Maximum allowed audit log entries has been reached.
+    AuditLogLimitExceeded = 76,
+    /// The configured NFT contract failed to mint a settlement proof.
+    NftMintFailed = 77,
+    /// The settlement NFT does not expose a valid `get_admin` or is not
+    /// controlled by this shipment contract.
+    NftConfigurationFailed = 78,
 }

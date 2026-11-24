@@ -50,6 +50,7 @@ mod tests {
 
         client.add_company(admin, &company);
         client.add_carrier(admin, &carrier);
+        crate::test_utils::allow_carrier(client, &company, &carrier);
 
         let shipment_id = client.create_shipment(
             &company,
@@ -183,6 +184,7 @@ mod tests {
         let new_hash = BytesN::from_array(&env, &[0x44u8; 32]);
         let new_deadline = test_utils::future_deadline(&env, 3600);
         let new_receiver = Address::generate(&env);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let result = client.try_create_shipment(
             &company,
             &new_receiver,
@@ -277,6 +279,7 @@ mod tests {
         client.reactivate_company(&admin, &company);
         let new_hash2 = BytesN::from_array(&env, &[0x88u8; 32]);
         let deadline2 = test_utils::future_deadline(&env, 3600);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
         let result = client.try_create_shipment(
             &company,
             &receiver,
@@ -546,5 +549,126 @@ mod tests {
             result_exit.is_err(),
             "suspended carrier must not report ZoneExit"
         );
+    }
+
+    // ── Issue #1039 — single carrier suspension mechanism ──────────────────────
+
+    /// `suspend_role` on a carrier shares the same flag as `suspend_carrier`,
+    /// so `is_carrier_suspended` reflects it and carrier-gated calls fail with
+    /// `CarrierSuspended` rather than a generic `Unauthorized`.
+    #[test]
+    fn issue_1039_suspend_role_on_carrier_surfaces_carrier_suspended() {
+        let (env, client, admin) = setup();
+        let (_, _, carrier, shipment_id, _) = create_in_transit_shipment(&env, &client, &admin);
+
+        client.suspend_role(&admin, &carrier);
+        assert!(client.is_carrier_suspended(&carrier));
+
+        test_utils::advance_past_rate_limit(&env);
+        let update_hash = BytesN::from_array(&env, &[0xB1u8; 32]);
+        let result = client.try_update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::AtCheckpoint,
+            &update_hash,
+        );
+        assert_eq!(result, Err(Ok(crate::NavinError::CarrierSuspended)));
+    }
+
+    /// Reactivating via either entry point clears the single shared flag.
+    #[test]
+    fn issue_1039_reactivate_role_clears_suspend_carrier() {
+        let (env, client, admin) = setup();
+        let (_, _, carrier, shipment_id, _) = create_in_transit_shipment(&env, &client, &admin);
+
+        client.suspend_carrier(&admin, &carrier);
+        assert!(client.is_carrier_suspended(&carrier));
+
+        client.reactivate_role(&admin, &carrier);
+        assert!(!client.is_carrier_suspended(&carrier));
+
+        test_utils::advance_past_rate_limit(&env);
+        let update_hash = BytesN::from_array(&env, &[0xB2u8; 32]);
+        let result = client.try_update_status(
+            &carrier,
+            &shipment_id,
+            &ShipmentStatus::AtCheckpoint,
+            &update_hash,
+        );
+        assert!(
+            result.is_ok(),
+            "carrier reactivated via reactivate_role must be able to update status"
+        );
+    }
+
+    #[test]
+    fn test_suspend_carrier_rejects_non_carrier() {
+        let (env, client, admin) = setup();
+        let non_carrier = Address::generate(&env);
+        let res = client.try_suspend_carrier(&admin, &non_carrier);
+        assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
+        let audit = client.query_audit_history_for_target(&non_carrier);
+        assert_eq!(audit.len(), 0);
+    }
+
+    #[test]
+    fn test_reactivate_carrier_rejects_non_carrier() {
+        let (env, client, admin) = setup();
+        let non_carrier = Address::generate(&env);
+        let res = client.try_reactivate_carrier(&admin, &non_carrier);
+        assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
+        let audit = client.query_audit_history_for_target(&non_carrier);
+        assert_eq!(audit.len(), 0);
+    }
+
+    #[test]
+    fn test_reactivate_carrier_rejects_not_suspended() {
+        let (env, client, admin) = setup();
+        let carrier = Address::generate(&env);
+        client.add_carrier(&admin, &carrier);
+        let res = client.try_reactivate_carrier(&admin, &carrier);
+        assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
+        let audit = client.query_audit_history_for_target(&carrier);
+        // Only the add_carrier audit entry exists, no reactivation
+        assert_eq!(audit.len(), 1);
+    }
+
+    #[test]
+    fn test_reactivate_company_rejects_non_company() {
+        let (env, client, admin) = setup();
+        let non_company = Address::generate(&env);
+        let res = client.try_reactivate_company(&admin, &non_company);
+        assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
+        let audit = client.query_audit_history_for_target(&non_company);
+        assert_eq!(audit.len(), 0);
+    }
+
+    #[test]
+    fn test_reactivate_company_rejects_not_suspended() {
+        let (env, client, admin) = setup();
+        let company = Address::generate(&env);
+        client.add_company(&admin, &company);
+        let res = client.try_reactivate_company(&admin, &company);
+        assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
+        let audit = client.query_audit_history_for_target(&company);
+        // Only the add_company audit entry exists
+        assert_eq!(audit.len(), 1);
+    }
+
+    #[test]
+    fn test_reactivate_role_rejects_not_suspended() {
+        let (env, client, admin) = setup();
+        let carrier = Address::generate(&env);
+        client.add_carrier(&admin, &carrier);
+        let res = client.try_reactivate_role(&admin, &carrier);
+        assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
+    }
+
+    #[test]
+    fn test_reactivate_role_rejects_unassigned() {
+        let (env, client, admin) = setup();
+        let unassigned = Address::generate(&env);
+        let res = client.try_reactivate_role(&admin, &unassigned);
+        assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
     }
 }

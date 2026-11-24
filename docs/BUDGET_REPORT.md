@@ -3,7 +3,11 @@
 Contract: **shipment**
 SDK version: **soroban-sdk 22.0.0**
 Captured: **2026-03-30**
-Branch: `issue/197-195-budget-benchmark-schema-compat`
+Baseline commit: `20252bfdcc07beee5d5739fdcb127971009024f3` (main)
+
+> This report is tied to the commit hash above, not to any feature branch.
+> Regenerate and update both the date and commit hash whenever the baseline
+> figures below are refreshed.
 
 ---
 
@@ -18,14 +22,19 @@ cargo test --package shipment budget_bench -- --nocapture 2>&1 \
 The test suite writes one `[budget]` line per operation to stdout.
 Redirect output and paste the table below.
 
+CI enforces the same thresholds automatically via `cargo test --package shipment budget_bench -- --nocapture`.
+Any operation that regresses by more than 20% for either CPU or memory fails the job; a 10% drift prints a review warning and should be triaged before merge.
+
 ---
 
 ## Baseline figures
 
-> **Note:** Run `cargo test --package shipment budget_bench -- --nocapture`
-> and replace the placeholder values below with the actual output on first
-> commit of this file.  Values will vary slightly between machines; what
-> matters is the *delta* between releases on the same machine.
+> **Note:** These figures were captured at the commit hash listed above by
+> running `cargo test --package shipment budget_bench -- --nocapture`. They
+> are a baseline, not placeholders — when you regenerate this report, replace
+> both the values below and the "Baseline commit" line above. Values will
+> vary slightly between machines; what matters is the *delta* between
+> releases on the same machine.
 
 | Operation | CPU instructions | Memory bytes |
 |-----------|-----------------|--------------|
@@ -95,11 +104,11 @@ Re-run and commit an updated table:
 
 ## Schema compatibility
 
-Schema compatibility tests live in
-[`contracts/shipment/src/schema_compat.rs`](../contracts/shipment/src/schema_compat.rs).
+Schema compatibility expectations are covered by the checked-in preservation
+tests in [`contracts/shipment/src/preservation_property_tests.rs`](../contracts/shipment/src/preservation_property_tests.rs).
 
 They guard:
-- `NavinError` discriminant values (31 variants, codes 1–31)
+- `NavinError` discriminant values (71 variants, codes 1–71)
 - `ShipmentStatus` FSM transition table
 - All enum variant sets (`Role`, `BreachType`, `GeofenceEvent`, `DisputeResolution`, `NotificationType`, `AdminAction`)
 - Struct field names and types (`Shipment`, `ShipmentInput`, `ContractMetadata`, `Analytics`)

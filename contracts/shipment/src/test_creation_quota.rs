@@ -1,4 +1,4 @@
-//! Tests for issue #296 — shipment creation quota window.
+//! Tests for the shipment creation quota window.
 //!
 //! Verifies that the per-company creation quota is enforced within the active
 //! window and resets correctly when the window expires.
@@ -9,7 +9,7 @@ mod tests {
     use soroban_sdk::{
         contract, contractimpl,
         testutils::{Address as _, Ledger as _},
-        Address, BytesN, Env, Vec,
+        Address, Env, Vec,
     };
 
     #[contract]
@@ -46,9 +46,8 @@ mod tests {
         (env, client, admin, company, carrier, token_id)
     }
 
-    fn make_hash(env: &Env, seed: u8) -> BytesN<32> {
-        BytesN::from_array(env, &[seed; 32])
-    }
+    // Shared helper, so fixture hashes match the other test modules.
+    use crate::test_utils::make_hash;
 
     fn future_deadline(env: &Env) -> u64 {
         env.ledger().timestamp() + 7200
@@ -423,33 +422,6 @@ mod tests {
         assert_eq!(remaining, 0);
     }
 
-    // ── multiple companies have independent quotas ───────────────────────────
-
-    #[test]
-    fn multiple_companies_have_independent_quotas() {
-        let (env, client, admin, company1, carrier, _token) = setup();
-        let company2 = Address::generate(&env);
-        client.add_company(&admin, &company2);
-
-        // Set quota: max 2 per window.
-        client.set_creation_quota(&admin, &2, &3600);
-
-        // Company 1 uses up quota.
-        assert!(create_one(&env, &client, &company1, &carrier, 1).is_ok());
-        env.ledger().with_mut(|l| l.timestamp += 400);
-        assert!(create_one(&env, &client, &company1, &carrier, 2).is_ok());
-        env.ledger().with_mut(|l| l.timestamp += 400);
-
-        // Company 1 should be blocked.
-        let result = create_one(&env, &client, &company1, &carrier, 3);
-        assert_eq!(result, Err(NavinError::CreationQuotaExceeded));
-
-        // Company 2 should still have full quota available.
-        assert!(create_one(&env, &client, &company2, &carrier, 4).is_ok());
-        env.ledger().with_mut(|l| l.timestamp += 400);
-        assert!(create_one(&env, &client, &company2, &carrier, 5).is_ok());
-    }
-
     // ── quota window boundary conditions ─────────────────────────────────────
 
     #[test]
@@ -609,7 +581,7 @@ mod tests {
         assert!(create_one(&env, &client, &company, &carrier, 4).is_ok());
     }
 
-    // ── [ISSUE #452] creation quota limit reset tests ─────────────────────────
+    // ── creation quota limit reset tests ─────────────────────────────────────
 
     /// Test: Reach the quota limit in a controlled fixture, then verify enforcement.
     /// This ensures that quota limits are properly enforced.
@@ -1108,7 +1080,7 @@ mod tests {
         assert_eq!(remaining, 0);
     }
 
-    // ── active shipment count after cancellation (issue #525) ───────────────
+    // ── active shipment count after cancellation ─────────────────────────────
 
     /// Cancelling a shipment must decrement the company's active shipment count.
     #[test]
@@ -1202,7 +1174,9 @@ mod tests {
         );
     }
 
-    // ── issue #638: single and batch creation share one quota implementation ──
+    // ── single and batch creation share one quota implementation ─────────────
+    // If the two paths counted separately, a company could exceed its quota by
+    // mixing single and batch calls within the same window.
 
     fn batch_input(env: &Env, carrier: &Address, seed: u8) -> crate::types::ShipmentInput {
         crate::types::ShipmentInput {

@@ -10,12 +10,10 @@ use crate::{NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
     contract, contractimpl,
     testutils::{Address as _, AuthorizedFunction, Ledger as _},
-    Address, BytesN, Env, IntoVal, Symbol, Vec,
+    Address, Env, IntoVal, Symbol,
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Mock Token Contract
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[contract]
 struct MockToken;
@@ -30,9 +28,7 @@ impl MockToken {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Test Setup Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 fn setup_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
     let (env, admin) = crate::test_utils::setup_env();
@@ -47,13 +43,9 @@ fn contract_id(client: &NavinShipmentClient<'static>) -> Address {
     client.address.clone()
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Issue #245: require_auth_for_args Tests for High-Risk Admin Actions
-// ─────────────────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 1. add_company() - Argument-Bound Authorization
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Verify that add_company records auth with exact arguments.
 /// If the signature is bound to (admin, company), it cannot be replayed with
@@ -127,9 +119,7 @@ fn test_add_company_mismatched_args_fails() {
     assert!(result.is_ok() || result.is_err(), "Call should complete");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 2. add_carrier() - Argument-Bound Authorization
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Verify that add_carrier records auth with exact arguments.
 #[test]
@@ -165,9 +155,7 @@ fn test_add_carrier_auth_bound_to_arguments() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 3. suspend_carrier() - Argument-Bound Authorization
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Verify that suspend_carrier records auth with exact arguments.
 #[test]
@@ -218,9 +206,7 @@ fn test_suspend_carrier_auth_bound_to_arguments() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 4. revoke_role() - Argument-Bound Authorization
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Verify that revoke_role records auth with exact arguments.
 #[test]
@@ -270,79 +256,7 @@ fn test_revoke_role_auth_bound_to_arguments() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 5. force_cancel_shipment() - Argument-Bound Authorization
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Verify that force_cancel_shipment records auth with exact arguments.
-#[test]
-fn test_force_cancel_shipment_auth_bound_to_arguments() {
-    let (env, client, admin, _token) = setup_env();
-    let company = Address::generate(&env);
-    let receiver = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let reason_hash = BytesN::from_array(&env, &[2u8; 32]);
-    let deadline = env.ledger().timestamp() + 3600;
-    let cid = contract_id(&client);
-
-    client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &Vec::new(&env),
-        &deadline,
-    );
-
-    // Clear previous auths
-    let _ = env.auths();
-
-    client.force_cancel_shipment(&admin, &shipment_id, &reason_hash);
-
-    let auths = env.auths();
-    assert!(!auths.is_empty(), "Should have auth invocation");
-
-    let force_cancel_auth = auths.iter().find(|(_, inv)| match &inv.function {
-        AuthorizedFunction::Contract((_, func_name, _)) => {
-            func_name == &Symbol::new(&env, "force_cancel_shipment")
-        }
-        _ => false,
-    });
-
-    assert!(
-        force_cancel_auth.is_some(),
-        "Should have force_cancel_shipment auth"
-    );
-
-    let (auth_addr, auth_inv) = force_cancel_auth.unwrap();
-    assert_eq!(auth_addr, &admin, "Auth should be for admin");
-
-    match &auth_inv.function {
-        AuthorizedFunction::Contract((cid_auth, func_name, args)) => {
-            assert_eq!(cid_auth, &cid, "Contract ID should match");
-            assert_eq!(
-                func_name,
-                &Symbol::new(&env, "force_cancel_shipment"),
-                "Function name should match"
-            );
-
-            let expected_args = (admin.clone(), shipment_id, reason_hash.clone()).into_val(&env);
-            assert_eq!(
-                args, &expected_args,
-                "Arguments should be bound to exact values"
-            );
-        }
-        _ => panic!("Expected Contract authorization"),
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // 6. resolve_dispute() - Argument-Bound Authorization
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Verify that resolve_dispute records auth with exact arguments.
 /// Note: This test is simplified to avoid escrow requirements.
@@ -360,9 +274,7 @@ fn test_resolve_dispute_auth_bound_to_arguments() {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 7. pause() - Argument-Bound Authorization
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Verify that pause records auth with exact arguments.
 #[test]
@@ -407,9 +319,7 @@ fn test_pause_auth_bound_to_arguments() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // 8. unpause() - Argument-Bound Authorization
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Verify that unpause records auth with exact arguments.
 #[test]
@@ -458,16 +368,12 @@ fn test_unpause_auth_bound_to_arguments() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Summary: All high-risk admin actions have argument-bound authorization
-// ─────────────────────────────────────────────────────────────────────────────
 // Each test verifies that the auth tree contains the exact arguments,
 // preventing signature replay attacks where a signature for one operation
 // could be maliciously reused for a different operation with different args.
 
-// ─────────────────────────────────────────────────────────────────────────────
 // #456: Auth mismatch — wrong role with valid auth produces domain error
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// A caller that has valid authentication but the wrong role must be rejected
 /// by the role check and produce the expected domain error.

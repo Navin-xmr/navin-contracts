@@ -1,7 +1,8 @@
-use crate::test::*;
+use crate::test_helpers::*;
 use crate::test_utils::dummy_hash;
 use crate::types::*;
-use soroban_sdk::testutils::Address as _;
+use crate::NavinError;
+use navin_nft::{NavinShipmentNft, NavinShipmentNftClient};
 use soroban_sdk::{Address, BytesN, Env};
 
 fn seeded_hash(env: &Env, seed: u8) -> BytesN<32> {
@@ -11,6 +12,44 @@ fn seeded_hash(env: &Env, seed: u8) -> BytesN<32> {
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_deposit_escrow_rejects_admin_as_non_sender() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &dummy_hash(&env),
+        &soroban_sdk::Vec::new(&env),
+        &(env.ledger().timestamp() + 86400),
+    );
+
+    let result = client.try_deposit_escrow(&admin, &shipment_id, &1_000);
+    assert_eq!(result, Err(Ok(NavinError::Unauthorized)));
+    assert_eq!(client.get_settlement_count(), 0);
+}
+
+#[test]
+fn test_configure_settlement_nft_rejects_non_nft_address() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let not_an_nft = Address::generate(&env);
+
+    let result = client.try_configure_settlement_nft(
+        &admin,
+        &not_an_nft,
+        &soroban_sdk::symbol_short!("SettleNFT"),
+        &soroban_sdk::symbol_short!("SETTLE"),
+    );
+    assert_eq!(result, Err(Ok(NavinError::NftConfigurationFailed)));
+}
 
 /// Test that deposit_escrow creates a settlement record in Pending state
 /// and transitions to Completed on success.
@@ -273,6 +312,24 @@ fn test_refund_escrow_settlement_failure() {
 #[test]
 fn test_release_escrow_settlement_failure() {
     let (env, client, admin, _token_contract) = setup_initialized_shipment_env_with_failing_token();
+    let nft = NavinShipmentNftClient::new(
+        &env,
+        &env.register(
+            NavinShipmentNft,
+            (
+                client.address.clone(),
+                soroban_sdk::symbol_short!("SettleNFT"),
+                soroban_sdk::symbol_short!("SETTLE"),
+            ),
+        ),
+    );
+    client.configure_settlement_nft(
+        &admin,
+        &nft.address,
+        &soroban_sdk::symbol_short!("SettleNFT"),
+        &soroban_sdk::symbol_short!("SETTLE"),
+    );
+
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     let receiver = Address::generate(&env);
@@ -313,6 +370,7 @@ fn test_release_escrow_settlement_failure() {
     // Verify no active settlement
     let active = client.get_active_settlement(&shipment_id);
     assert!(active.is_none());
+    assert_eq!(nft.total_supply(), 0);
 }
 
 /// Test settlement state transitions through full lifecycle.

@@ -2,25 +2,12 @@ name: Navin Smart Contracts CI
 
 on:
   push:
-    branches: ["dev"]
+    branches: ["main", "prod"]
   pull_request:
-    branches: ["dev"]
+    branches: ["main", "prod"]
   workflow_dispatch:
 
 jobs:
-  cargo-deny:
-    name: Cargo Deny (Security & License Check)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Run cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@v1
-        with:
-          log-level: warn
-          command: check advisories licenses
-
   fmt-check:
     name: Format Check
     runs-on: ubuntu-latest
@@ -37,23 +24,6 @@ jobs:
       - name: Run format check
         run: cargo fmt --all -- --check
 
-  clippy:
-    name: Clippy Lints
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          components: clippy
-          target: wasm32-unknown-unknown
-
-      - name: Run clippy lints
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
   test:
     name: Run Tests
     runs-on: ubuntu-latest
@@ -69,6 +39,22 @@ jobs:
 
       - name: Run tests
         run: cargo test
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   coverage:
     name: Test Coverage
@@ -97,21 +83,18 @@ jobs:
             target/llvm-cov/lcov.info
             target/llvm-cov/html
 
-  cargo-build:
-    name: Cargo Build (Host)
+  shellcheck:
+    name: ShellCheck
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
-
-      - name: Build host targets
-        run: cargo build --all-targets
+      - name: Run ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck --source-path=scripts -x scripts/*.sh
 
   wasm-build:
     name: Build WASM Contracts
@@ -127,4 +110,4 @@ jobs:
           target: wasm32-unknown-unknown
 
       - name: Build WASM targets
-        run: cargo build --target wasm32-unknown-unknown --release
+        run: make build

@@ -4,7 +4,7 @@
 # raise it as coverage improves so regressions become visible.
 COVERAGE_BASELINE := 40
 
-.PHONY: help build test fmt fmt-check lint clean check all generate-schema-shipment generate-schema-token coverage
+.PHONY: help build test fmt fmt-check lint clean check pre-commit all generate-schema-shipment generate-schema-token generate-schema-nft coverage
 
 # Default target
 help:
@@ -12,6 +12,7 @@ help:
 	@echo ""
 	@echo "  make generate-schema-shipment - Generate shipment contract ABI schema"
 	@echo "  make generate-schema-token    - Generate token contract ABI schema"
+	@echo "  make generate-schema-nft      - Generate NFT contract ABI schema"
 	@echo "  make build        - Build all contracts"
 	@echo "  make test         - Run all tests"
 	@echo "  make coverage     - Measure test coverage with cargo-llvm-cov"
@@ -19,9 +20,17 @@ help:
 	@echo "  make fmt-check    - Check code formatting (for CI)"
 	@echo "  make lint         - Run clippy lints"
 	@echo "  make check        - Run format check and lint (for CI)"
+	@echo "  make pre-commit   - Run format check, lint, tests, and build"
 	@echo "  make clean        - Clean build artifacts"
 	@echo "  make all          - Run checks and tests"
 	@echo ""
+
+# Contract ABI schemas
+#
+# The `docs/contract-schema.*.json` files are generated artifacts and must not
+# be edited by hand. Regenerate them with the matching target after changing a
+# contract's public interface, and commit the result only when it changes.
+# Generation requires the Stellar CLI (`stellar`).
 
 # Generate shipment contract ABI schema
 generate-schema-shipment: build
@@ -40,6 +49,15 @@ generate-schema-token: build
 		--output json-formatted \
 		> docs/contract-schema.token.json
 	@echo "Schema written to docs/contract-schema.token.json"
+
+# Generate NFT contract ABI schema
+generate-schema-nft: build
+	@echo "Generating NFT contract schema..."
+	@stellar contract info interface \
+		--wasm target/wasm32-unknown-unknown/release/navin_nft.wasm \
+		--output json-formatted \
+		> docs/contract-schema.nft.json
+	@echo "Schema written to docs/contract-schema.nft.json"
 
 # Build all contracts for wasm
 build:
@@ -80,7 +98,7 @@ fmt-check:
 # Run clippy lints
 lint:
 	@echo "Running clippy lints..."
-	@cargo clippy --all-targets --all-features
+	@cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 # Clean build artifacts
 clean:
@@ -91,7 +109,10 @@ clean:
 check: fmt-check lint
 	@echo "✓ All checks passed!"
 
-# Run all checks and tests
-all: check test build
-	@echo "✓ All tasks completed successfully!"
+# Run the checks and build required before committing
+pre-commit: fmt-check lint test build
+	@echo "✓ Pre-commit checks passed!"
 
+# Run all checks and tests
+all: pre-commit
+	@echo "✓ All tasks completed successfully!"

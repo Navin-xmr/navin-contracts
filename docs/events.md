@@ -37,6 +37,9 @@
    - [admin_proposed](#admin_proposed)
    - [admin_transferred](#admin_transferred)
    - [contract_upgraded](#contract_upgraded)
+   - [init](#init)
+   - [set_limit](#set_limit)
+   - [set_cmp_limit](#set_cmp_limit)
 9. [Notification Events](#notification-events)
    - [notification](#notification)
 10. [Lifecycle Sequence Diagram](#lifecycle-sequence-diagram)
@@ -45,28 +48,47 @@
 ### Token Contract
 
 12. [Token Transfer Events](#token-transfer-events)
-    - [init](#token-init)
-    - [transfer](#token-transfer)
-    - [tr_from](#token-transfer-from)
-    - [approve](#token-approve)
-    - [inc_alw](#token-increase-allowance)
-    - [dec_alw](#token-decrease-allowance)
+    - [init](#init-1)
+    - [transfer](#transfer)
+    - [tr_from](#tr_from)
+    - [approve](#approve)
+    - [inc_alw](#inc_alw)
+    - [dec_alw](#dec_alw)
 13. [Token Supply Events](#token-supply-events)
-    - [mint](#token-mint)
-    - [burn](#token-burn)
-    - [adm_burn](#token-admin-burn)
-    - [burn_from](#token-burn-from)
+    - [mint](#mint)
+    - [burn](#burn)
+    - [adm_burn](#adm_burn)
+14. [Token Batch Events](#token-batch-events)
+    - [batch_leg](#batch_leg)
+    - [batch_tr](#batch_tr)
+
+### NFT Contract — Event Schema Reference
+
+15. [NFT Contract Events](#nft-contract-events)
+    - [init (NFT)](#init-nft)
+    - [mint (NFT)](#mint-nft)
+    - [burn (NFT)](#burn-nft)
+    - [mintbatch](#mintbatch)
+    - [burnbatch](#burnbatch)
+    - [xfer (NFT)](#xfer-nft)
+    - [approve (NFT)](#approve-nft)
+    - [revoked (NFT)](#revoked-nft)
+    - [admp](#admp)
+    - [admin (NFT)](#admin-nft)
+    - [burn_from](#burn_from)
 14. [Token Admin Events](#token-admin-events)
-    - [admin_tr](#token-admin-transfer)
-    - [paused](#token-paused)
-    - [unpaused](#token-unpaused)
+    - [admin_pro](#admin_pro)
+    - [admin_tr](#admin_tr)
+    - [paused](#paused)
+    - [unpaused](#unpaused)
 15. [Token Metadata Events](#token-metadata-events)
-    - [meta_add](#token-metadata-add)
-    - [meta_rm](#token-metadata-remove)
-    - [meta_set](#token-metadata-set)
-    - [meta_del](#token-metadata-delete)
+    - [meta_add](#meta_add)
+    - [meta_rm](#meta_rm)
+    - [meta_set](#meta_set)
+    - [meta_del](#meta_del)
 16. [Token Batch Events](#token-batch-events)
-    - [batch_tr](#token-batch-transfer)
+    - [batch_leg](#batch_leg)
+    - [batch_tr](#batch_tr)
 
 ---
 
@@ -74,8 +96,10 @@
 
 All events are published via the Soroban SDK's `env.events().publish()` method:
 
+- **Shipment Contract:** `topic: (Symbol,)` — single descriptive symbol for stream filtering.
+- **Token Contract:** `topic: (Symbol::new(name), Symbol::new(EVENT_SCHEMA_VERSION_STR))` — 2-element topic tuple carrying the event name symbol and schema version string (e.g., `"v1"`), as defined in [`contracts/token/src/event_topics.rs`](../contracts/token/src/event_topics.rs).
+
 ```
-topic:  (Symbol,)                — single descriptive symbol for stream filtering
 data:   (field1, field2, ...)    — tuple of typed payload fields
 ```
 
@@ -170,6 +194,9 @@ This enables safe parser upgrades and indexer deduplication during contract evol
 | `admin_proposed`       | Admin     | `propose_admin`                                                               |
 | `admin_transferred`    | Admin     | `accept_admin`, `multi_sig_execute`                                           |
 | `contract_upgraded`    | Admin     | `upgrade_contract`, `multi_sig_execute`                                       |
+| `init`                 | Admin     | `initialize`                                                                  |
+| `set_limit`            | Admin     | `set_shipment_limit`                                                          |
+| `set_cmp_limit`        | Admin     | `set_company_shipment_limit`                                                  |
 | `notification`         | System    | Multiple — see [notification](#notification)                                  |
 
 ---
@@ -537,6 +564,74 @@ Emitted when the contract WASM is upgraded.
 | 3   | `version`       | `u32`        | Contract version after upgrade   |
 
 **Backend action:** Record the new version and WASM hash in the deployment registry.
+
+---
+
+### `init`
+
+Emitted once when the shipment contract is initialized. `init` is the only topic string for this event.
+
+**Topic:** `"init"`
+**Emitted by:** `initialize`
+**Caller role:** Admin
+
+| #   | Field            | Soroban Type | Description                    |
+| --- | ---------------- | ------------ | ------------------------------ |
+| 1   | `admin`          | `Address`    | Initial admin address          |
+| 2   | `token_contract` | `Address`    | Token contract used for escrow |
+
+**Backend action:** Record the deployment's admin and token contract.
+
+---
+
+### `set_limit`
+
+Emitted when the admin updates the global active-shipment limit. `set_limit` is the only topic string for this event.
+
+**Topic:** `"set_limit"`
+**Emitted by:** `set_shipment_limit`
+**Caller role:** Admin
+
+| #   | Field   | Soroban Type | Description                      |
+| --- | ------- | ------------ | -------------------------------- |
+| 1   | `admin` | `Address`    | Admin that changed the limit     |
+| 2   | `limit` | `u32`        | New global active-shipment limit |
+
+**Backend action:** Update the stored global shipment limit.
+
+---
+
+### `set_cmp_limit`
+
+Emitted when the admin sets a company-specific active-shipment limit. `set_cmp_limit` is the only topic string for this event.
+
+**Topic:** `"set_cmp_limit"`
+**Emitted by:** `set_company_shipment_limit`
+**Caller role:** Admin
+
+| #   | Field     | Soroban Type | Description                           |
+| --- | --------- | ------------ | ------------------------------------- |
+| 1   | `admin`   | `Address`    | Admin that changed the limit          |
+| 2   | `company` | `Address`    | Company the override applies to       |
+| 3   | `limit`   | `u32`        | New active-shipment limit for company |
+
+**Backend action:** Update the stored limit override for the company.
+
+### `quota_set`
+
+Emitted when the admin configures the global shipment creation quota window. `quota_set` is the only topic string for this event.
+
+**Topic:** `"quota_set"`
+**Emitted by:** `set_creation_quota`
+**Caller role:** Admin
+
+| #   | Field            | Soroban Type | Description                             |
+| --- | ---------------- | ------------ | --------------------------------------- |
+| 1   | `admin`          | `Address`    | Admin that configured the quota         |
+| 2   | `max_per_window` | `u32`        | Maximum shipments allowed per window    |
+| 3   | `window_seconds` | `u64`        | Duration of the quota window in seconds |
+
+**Backend action:** Update the global quota configuration.
 
 ---
 
@@ -1139,18 +1234,35 @@ Emitted when tokens are burned using an allowance via `burn_from()`.
 
 ## Token Admin Events
 
-### `admin_tr`
+### `admin_pro`
 
-Emitted when admin rights are transferred to a new address via `transfer_admin()`.
+Emitted when an admin transfer is proposed to a new address via `transfer_admin()`.
 
-**Topic:** `"admin_tr"`
+**Topic:** `"admin_pro"`
 **Emitted by:** `transfer_admin`
 **Caller role:** Current admin
 
 | #   | Field           | Soroban Type | Description     |
 | --- | --------------- | ------------ | --------------- |
-| 1   | `current_admin` | `Address`    | Departing admin |
-| 2   | `new_admin`     | `Address`    | Incoming admin  |
+| 1   | `current_admin` | `Address`    | Current admin   |
+| 2   | `new_admin`     | `Address`    | Nominated admin |
+
+**Backend action:** Record pending admin proposal.
+
+---
+
+### `admin_tr`
+
+Emitted when a proposed admin transfer is accepted via `accept_admin_transfer()`.
+
+**Topic:** `"admin_tr"`
+**Emitted by:** `accept_admin_transfer`
+**Caller role:** Nominated admin
+
+| #   | Field       | Soroban Type | Description     |
+| --- | ----------- | ------------ | --------------- |
+| 1   | `old_admin` | `Address`    | Departing admin |
+| 2   | `new_admin` | `Address`    | Incoming admin  |
 
 **Backend action:** Update admin record in control registry.
 
@@ -1261,18 +1373,37 @@ Emitted when the admin removes a metadata entry via `remove_metadata()`.
 
 ## Token Batch Events
 
+### `batch_leg`
+
+Emitted for each recipient leg during a batch transfer executed via `batch_transfer()`.
+
+**Topic:** `("batch_leg", "v1")`
+**Emitted by:** `batch_transfer`
+**Caller role:** Token holder
+
+| #   | Field    | Soroban Type | Description                    |
+| --- | -------- | ------------ | ------------------------------ |
+| 1   | `from`   | `Address`    | Source account                 |
+| 2   | `to`     | `Address`    | Recipient account              |
+| 3   | `amount` | `i128`       | Leg transfer amount in stroops |
+
+**Backend action:** Track individual recipient leg within batch execution.
+
+---
+
 ### `batch_tr`
 
 Emitted when multiple transfers are executed atomically in a single call via `batch_transfer()`.
 
-**Topic:** `"batch_tr"`
+**Topic:** `("batch_tr", "v1")`
 **Emitted by:** `batch_transfer`
 **Caller role:** Token holder
 
-| #   | Field             | Soroban Type | Description                   |
-| --- | ----------------- | ------------ | ----------------------------- |
-| 1   | `from`            | `Address`    | Source account                |
-| 2   | `recipient_count` | `u64`        | Number of recipients in batch |
+| #   | Field        | Soroban Type           | Description                         |
+| --- | ------------ | ---------------------- | ----------------------------------- |
+| 1   | `from`       | `Address`              | Source account                      |
+| 2   | `recipients` | `Vec<(Address, i128)>` | List of recipient and amount pairs  |
+| 3   | `leg_count`  | `u32`                  | Total number of recipients in batch |
 
 **Backend action:** Record atomic batch settlement; all transfers succeed or all revert.
 
@@ -1281,5 +1412,74 @@ Emitted when multiple transfers are executed atomically in a single call via `ba
 ## Token Contract Reference
 
 - **Location:** `contracts/token/src/lib.rs`
-- **Schema:** `docs/contract-schema.token.json`
+- **Schema:** `docs/contract-schema.token.json` (generated — do not hand-edit)
 - **Initialization:** See `docs/deployment.md` → Token Contract Initialization
+
+---
+
+## NFT Contract — Event Schema Reference
+
+The NFT contract (`contracts/nft/src/lib.rs`) emits events using topic schema versioning defined in `contracts/nft/src/event_topics.rs`. Every NFT event carries `(TOPIC, "v1")` as its topic tuple.
+
+### `init (NFT)`
+Emitted when the NFT contract is initialized with admin credentials and metadata.
+**Topics:** `("init", "v1")`
+**Emitted by:** `initialize`
+**Payload:** `(admin: Address, name: String, symbol: String, timestamp: u64)`
+
+### `mint (NFT)`
+Emitted when an individual proof-of-delivery NFT is minted to a recipient.
+**Topics:** `("mint", "v1")`
+**Emitted by:** `mint`
+**Payload:** `(token_id: u64, to: Address, timestamp: u64)`
+
+### `burn (NFT)`
+Emitted when an NFT token is burned.
+**Topics:** `("burn", "v1")`
+**Emitted by:** `burn`
+**Payload:** `(token_id: u64, caller: Address, timestamp: u64)`
+
+### `mintbatch`
+Emitted for atomic batch mint operations.
+**Topics:** `("mintbatch", "v1")`
+**Emitted by:** `mint_batch`
+**Payload:** `(token_ids: Vec<u64>, recipients: Vec<Address>, timestamp: u64)`
+
+### `burnbatch`
+Emitted for atomic batch burn operations.
+**Topics:** `("burnbatch", "v1")`
+**Emitted by:** `burn_batch`
+**Payload:** `(token_ids: Vec<u64>, caller: Address, timestamp: u64)`
+
+### `xfer (NFT)`
+Emitted when an NFT token is transferred between accounts. Note the short topic `"xfer"` (distinct from the token contract's `"transfer"`).
+**Topics:** `("xfer", "v1")`
+**Emitted by:** `transfer`, `transfer_from`
+**Payload:** `(token_id: u64, from: Address, to: Address, timestamp: u64)`
+
+### `approve (NFT)`
+Emitted when an operator approval is set for a token.
+**Topics:** `("approve", "v1")`
+**Emitted by:** `approve`
+**Payload:** `(owner: Address, operator: Address, token_id: u64, expiration_ledger: u32, timestamp: u64)`
+
+### `revoked (NFT)`
+Emitted when an operator approval is revoked.
+**Topics:** `("revoked", "v1")`
+**Emitted by:** `revoke_approval`
+**Payload:** `(owner: Address, operator: Address, token_id: u64, timestamp: u64)`
+
+### `admp`
+Emitted when an admin ownership transfer is proposed. Note the short topic `"admp"` (distinct from the token contract's `"admin_pro"`).
+**Topics:** `("admp", "v1")`
+**Emitted by:** `propose_admin`
+**Payload:** `(admin: Address, proposed_admin: Address, timestamp: u64)`
+
+### `admin (NFT)`
+Emitted when proposed admin ownership transfer is accepted.
+**Topics:** `("admin", "v1")`
+**Emitted by:** `accept_admin`
+**Payload:** `(old_admin: Address, new_admin: Address, timestamp: u64)`
+
+> **Pause/Unpause Note:** Pause and unpause operations in the NFT contract do not emit events by current design; indexers should monitor ledger state or instance storage for pause status.
+

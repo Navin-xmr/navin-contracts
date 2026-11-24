@@ -1,6 +1,6 @@
 extern crate std;
 
-use crate::{test::setup_shipment_env, types::DataKey, NavinError};
+use crate::{test_helpers::setup_shipment_env, types::DataKey, NavinError};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Vec};
 
 fn setup_single_shipment() -> (
@@ -22,6 +22,7 @@ fn setup_single_shipment() -> (
 
     let data_hash = BytesN::from_array(&env, &[9u8; 32]);
     let deadline = env.ledger().timestamp() + 3600;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
     let shipment_id = client.create_shipment(
         &company,
         &receiver,

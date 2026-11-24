@@ -1,9 +1,14 @@
 extern crate std;
 
+use crate::test_helpers::{setup_initialized_shipment_env, setup_shipment_env};
+
 use crate::{NavinShipment, NavinShipmentClient};
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::{storage::Persistent, Address as _, Ledger},
+    testutils::{
+        storage::{Instance, Persistent},
+        Address as _, Ledger,
+    },
     Address, BytesN, Env,
 };
 
@@ -18,21 +23,6 @@ impl TtlMockToken {
     pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
 }
 
-fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address) {
-    let (env, admin) = crate::test_utils::setup_env();
-    let token = env.register(TtlMockToken {}, ());
-    let cid = env.register(NavinShipment, ());
-    let client = NavinShipmentClient::new(&env, &cid);
-
-    // Extend contract instance TTL immediately after registration to a huge value
-    env.as_contract(&cid, || {
-        env.storage().instance().extend_ttl(500000, 500000);
-    });
-
-    client.initialize(&admin, &token);
-    (env, client, admin, token)
-}
-
 fn create_test_shipment(
     client: &NavinShipmentClient,
     env: &Env,
@@ -44,6 +34,7 @@ fn create_test_shipment(
     // Use hash_bytes + 1 to avoid all-zero hash which is rejected by validation
     let data_hash = BytesN::from_array(env, &[hash_bytes.wrapping_add(1); 32]);
     let deadline = env.ledger().timestamp() + 86400;
+    crate::test_utils::allow_carrier(client, company, carrier);
 
     client.create_shipment(
         company,
@@ -57,7 +48,7 @@ fn create_test_shipment(
 
 #[test]
 fn test_ttl_health_summary_no_shipments() {
-    let (_env, client, _admin, _token_contract) = setup_shipment_env();
+    let (_env, client, _admin, _token_contract) = setup_initialized_shipment_env();
 
     let health = client.get_status_summary();
 
@@ -72,7 +63,7 @@ fn test_ttl_health_summary_no_shipments() {
 
 #[test]
 fn test_ttl_health_summary_single_shipment() {
-    let (env, client, admin, _token_contract) = setup_shipment_env();
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -90,7 +81,7 @@ fn test_ttl_health_summary_single_shipment() {
 
 #[test]
 fn test_ttl_health_summary_multiple_shipments() {
-    let (env, client, admin, _token_contract) = setup_shipment_env();
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -110,7 +101,7 @@ fn test_ttl_health_summary_multiple_shipments() {
 
 #[test]
 fn test_ttl_health_summary_deterministic() {
-    let (env, client, admin, _token_contract) = setup_shipment_env();
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -140,7 +131,7 @@ fn test_ttl_health_summary_not_initialized() {
 
 #[test]
 fn test_ttl_health_summary_edge_case_exactly_20_shipments() {
-    let (env, client, admin, _token_contract) = setup_shipment_env();
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -159,7 +150,7 @@ fn test_ttl_health_summary_edge_case_exactly_20_shipments() {
 
 #[test]
 fn test_ttl_extended_on_active_mutation() {
-    let (env, client, admin, _token) = setup_shipment_env();
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
@@ -173,6 +164,7 @@ fn test_ttl_extended_on_active_mutation() {
     let receiver = Address::generate(&env);
     let create_hash = BytesN::from_array(&env, &[0x01u8; 32]);
     let deadline = env.ledger().timestamp() + 86_400;
+    crate::test_utils::allow_carrier(&client, &company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,
@@ -216,13 +208,36 @@ fn test_ttl_extended_on_active_mutation() {
 }
 
 #[test]
+fn test_instance_ttl_refreshes_on_active_read() {
+    let (env, client, _admin, _token) = setup_initialized_shipment_env();
+
+    let ttl_before_read = env.as_contract(&client.address, || env.storage().instance().get_ttl());
+
+    // Move close to the expiry window without allowing the instance entry to
+    // expire. A normal read must refresh the contract-wide instance storage.
+    env.ledger().with_mut(|ledger| {
+        ledger.sequence_number += 500_000;
+        ledger.timestamp += 500_000;
+    });
+
+    client.get_status_summary();
+
+    let ttl_after_read = env.as_contract(&client.address, || env.storage().instance().get_ttl());
+    assert!(
+        ttl_after_read > ttl_before_read.saturating_sub(500_000),
+        "active reads must refresh the instance storage TTL"
+    );
+}
+
+#[test]
 fn test_ttl_not_extended_for_archived_terminal_shipment() {
-    let (env, client, admin, _token) = setup_shipment_env();
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);
     client.add_company(&admin, &company);
     client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let receiver = Address::generate(&env);
     let create_hash = BytesN::from_array(&env, &[0x03u8; 32]);
@@ -264,7 +279,7 @@ fn test_ttl_not_extended_for_archived_terminal_shipment() {
 /// Verify that health output matches actual storage state at TTL boundaries.
 #[test]
 fn test_ttl_health_output_matches_storage_state() {
-    let (env, client, admin, _token) = setup_shipment_env();
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
 
     let company = Address::generate(&env);
     let carrier = Address::generate(&env);

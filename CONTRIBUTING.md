@@ -5,6 +5,7 @@ This guide will help you get started and ensure your contributions can be smooth
 
 ## Table of Contents
 
+- [Quick Start](#quick-start)
 - [Getting Started](#getting-started)
 - [Development Setup](#development-setup)
 - [Making Contributions](#making-contributions)
@@ -13,6 +14,34 @@ This guide will help you get started and ensure your contributions can be smooth
 - [Code Standards](#code-standards)
 - [Testing Guidelines](#testing-guidelines)
 - [Getting Help](#getting-help)
+
+## Quick Start
+
+In a hurry? Here is the minimum loop for a contribution:
+
+```bash
+# 1. Fork, then clone your fork and add upstream
+git clone https://github.com/YOUR-USERNAME/navin-contracts.git
+cd navin-contracts
+git remote add upstream https://github.com/Navin-xmr/navin-contracts.git
+
+# 2. Create a branch
+git checkout -b feature/your-feature-name
+
+# 3. Make your changes, then run the full pre-commit check
+make pre-commit
+
+# 4. Commit and push
+git add .
+git commit -m "feat: add your feature description"
+git push origin feature/your-feature-name
+
+# 5. Open a PR against main and fill in the PR template
+```
+
+If `make pre-commit` passes locally, your PR will very likely pass CI.
+See the sections below for full detail on each step, the CI/CD
+requirements, and the project's code and testing standards.
 
 ## Getting Started
 
@@ -54,11 +83,22 @@ cargo --version
 
 ```
 
+## Branch model
+
+This repository uses two long-lived branches:
+
+- **`main`** — default development branch. Open pull requests against `main`. Feature work lands here first.
+- **`prod`** — production/release line. Changes reach `prod` after they are on `main`. Do not open routine feature PRs against `prod`.
+
+There is no `master` or `develop` branch. Do not target those names.
+
+CI (`.github/workflows/test.yml`) runs on `push` and `pull_request` to **`main` and `prod`**, plus `workflow_dispatch`. The scheduled fuzz workflow is independent of these branch triggers.
+
 ## Making Contributions
 
 ### Step 1: Create a Branch
 
-Always create a new branch for your work. Never commit directly to `main` or `develop`.
+Always create a new branch for your work. Never commit directly to `main` or `prod`.
 
 ```bash
 # Update your local main branch
@@ -106,7 +146,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 
 # 4. Build contracts (WASM target)
-cargo build --target wasm32-unknown-unknown --release
+make build
 ```
 
 **Important**: If any of these commands fail, fix the issues before pushing!
@@ -161,20 +201,11 @@ git push origin issue#<number>
 
 ## Pre-PR Checklist
 
-Before submitting your PR, ensure you've completed ALL of these steps:
-
-- [ ] Code is formatted with `cargo fmt`
-- [ ] No clippy warnings: `cargo clippy --all-targets --all-features -- -D warnings`
-- [ ] All tests pass: `cargo test`
-- [ ] WASM builds successfully: `cargo build --target wasm32-unknown-unknown --release`
-- [ ] New tests added for new functionality
-- [ ] Old tests previously passing before you added changes still pass
-- [ ] Documentation updated (if applicable)
-- [ ] Branch is up to date with `main` or `dev`
+Before submitting your PR, review the checklist in the [PR Template](.github/PULL_REQUEST_TEMPLATE.md) and ensure all items are complete.
 
 ## CI/CD Requirements
 
-Our CI pipeline runs the following checks. **All must pass** before your PR can be merged:
+Our CI pipeline (see **Branch model** above) runs the following checks on `main` and `prod`. **All must pass** before your PR can be merged:
 
 ### 1. Code Formatting Check
 
@@ -190,7 +221,7 @@ cargo fmt
 
 ```bash
 # Command run by CI:
-cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 # This fails on ANY warnings, so fix all clippy suggestions
 ```
@@ -208,7 +239,7 @@ cargo test
 
 ```bash
 # Command run by CI:
-cargo build --target wasm32-unknown-unknown --release
+make build
 
 # Ensure contracts compile to WASM without errors
 ```
@@ -243,6 +274,23 @@ To ensure our contracts remain deployable on-chain, we enforce strict size limit
 - Follow the official [Rust Style Guide](https://doc.rust-lang.org/nightly/style-guide/)
 - Use `cargo fmt` to automatically format code
 - Use descriptive variable names relevant to the feature
+
+### Contract Package Versioning
+
+Every contract crate stays at `version = "0.0.0"`. **Do not bump it.**
+
+The `version` field is a crates.io publication mechanism, and nothing here publishes to a
+registry: all three crates are `publish = false`, workspace members depend on each other by
+path, no script or CI job reads the number, and deployments are identified by WASM hash
+rather than version. It has already drifted once with no recorded decision, which is the
+problem a fixed value removes.
+
+Version the things that are actually verifiable instead: git commit SHA for a source
+revision, WASM hash for a deployed binary, `schema_version` /
+`EVENT_SCHEMA_VERSION_STR` for event payload compatibility, and [`docs/storage.md`](docs/storage.md)
+for on-chain layout.
+
+Full rationale and contributor rules: **[`docs/versioning.md`](docs/versioning.md)**.
 
 ### Contract-Specific Guidelines
 
@@ -404,7 +452,7 @@ Please do not just combine both conflicts when trying to resolve merge conflicts
 cargo fmt
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
-cargo build --target wasm32-unknown-unknown --release
+make build
 
 # Create and switch to a new branch
 git checkout -b issue#<number>

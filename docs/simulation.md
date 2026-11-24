@@ -4,6 +4,16 @@ Simulate Navin Shipment contract calls to estimate success/failure and resource
 usage **before** submitting real transactions. No ledger state is modified and
 no fees are charged during simulation.
 
+> **Scope note:** this is client-side simulation — `stellar contract invoke`
+> (or an RPC `simulateTransaction` call) running the contract off-chain
+> against current ledger state to preview the outcome. It is unrelated to
+> the on-chain `preflight_check_shipment_available` guard described in
+> [`docs/preflight-helpers.md`](preflight-helpers.md), which runs inside the
+> contract itself on every real invocation to reject mutations on archived
+> shipment data. Simulation can surface the same `ShipmentUnavailable`
+> error the preflight helper would raise on submission, but it does not
+> replace or duplicate that on-chain check.
+
 ---
 
 ## Why simulate?
@@ -127,21 +137,21 @@ The same path is used internally when you run `stellar contract invoke` without
 ════════════════════════════════════════════════════════════════
   SIMULATE: create_shipment(company, receiver, carrier, ...)
 ════════════════════════════════════════════════════════════════
-ℹ️  Simulating...
+Simulating...
 
-🔒 Authorization required:
+Authorization required:
   1. company (address: GC...)
      └─ create_shipment(company: GC..., ...)
 
-⛽ Resources:
+Resources:
   CPU instructions : 1_234_567
   Memory bytes     :    56_789
   Ledger reads     :         8
   Ledger writes    :         4
 
-💰 Min recommended fee: 1234 stroops
+Min recommended fee: 1234 stroops
 
-✅ Simulation success
+OK: Simulation success
 ```
 
 ### Failed simulation
@@ -150,9 +160,9 @@ The same path is used internally when you run `stellar contract invoke` without
 ════════════════════════════════════════════════════════════════
   SIMULATE: raise_dispute(caller, shipment_id=1, reason_hash)
 ════════════════════════════════════════════════════════════════
-ℹ️  Simulating...
+Simulating...
 
-❌ Simulation failed: Error(Contract, #4) — ShipmentNotFound
+FAILED: Simulation failed: Error(Contract, #4) — ShipmentNotFound
 ```
 
 Error codes map directly to `NavinError` variants in

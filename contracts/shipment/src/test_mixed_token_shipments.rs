@@ -59,6 +59,22 @@ mod mock_fail {
     }
 }
 
+mod mock_bad_decimals {
+    use soroban_sdk::{contract, contractimpl, Address, Env};
+
+    #[contract]
+    pub struct BadDecimalsToken;
+
+    #[contractimpl]
+    impl BadDecimalsToken {
+        pub fn decimals(_env: Env) -> u32 {
+            6
+        }
+
+        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+    }
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 fn dummy_hash(env: &Env, seed: u8) -> BytesN<32> {
@@ -164,6 +180,20 @@ fn setup() -> MixedCtx {
         client_sac,
         client_nvn,
     }
+}
+
+#[test]
+fn test_initialize_rejects_invalid_token_decimals() {
+    let (env, admin) = test_utils::setup_env();
+    let token = env.register(mock_bad_decimals::BadDecimalsToken {}, ());
+    let client = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
+
+    let result = client.try_initialize(&admin, &token);
+    assert_eq!(
+        result,
+        Err(Ok(NavinError::InvalidTokenDecimals)),
+        "initialize() must reject a token whose decimals are not 7"
+    );
 }
 
 // ── #298-1: SAC escrow deposit does not affect NVN balances ──────────────────
