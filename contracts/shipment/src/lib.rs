@@ -201,6 +201,9 @@ mod stress_test;
 mod test_dispute_evidence;
 
 #[cfg(test)]
+mod test_instance_storage_bounded;
+
+#[cfg(test)]
 mod preservation_property_tests;
 #[cfg(test)]
 mod test_randomized_escrow_arithmetic;
