@@ -561,7 +561,7 @@ mod tests {
         let (env, client, admin) = setup();
         let (_, _, carrier, shipment_id, _) = create_in_transit_shipment(&env, &client, &admin);
 
-        client.suspend_role(&admin, &carrier);
+        client.suspend_role(&admin, &carrier, &crate::types::Role::Carrier);
         assert!(client.is_carrier_suspended(&carrier));
 
         test_utils::advance_past_rate_limit(&env);
@@ -584,7 +584,7 @@ mod tests {
         client.suspend_carrier(&admin, &carrier);
         assert!(client.is_carrier_suspended(&carrier));
 
-        client.reactivate_role(&admin, &carrier);
+        client.reactivate_role(&admin, &carrier, &crate::types::Role::Carrier);
         assert!(!client.is_carrier_suspended(&carrier));
 
         test_utils::advance_past_rate_limit(&env);
@@ -599,6 +599,79 @@ mod tests {
             result.is_ok(),
             "carrier reactivated via reactivate_role must be able to update status"
         );
+    }
+
+    // ── Issue #1267 — suspend/reactivate a named role of a multi-role address ──
+
+    /// An address holding both Company and Carrier has only the named role
+    /// suspended; its other role keeps working.
+    #[test]
+    fn issue_1267_suspend_role_targets_named_role_of_multi_role_address() {
+        use crate::types::Role;
+
+        let (env, client, admin) = setup();
+        let dual = Address::generate(&env);
+        client.add_company(&admin, &dual);
+        client.add_carrier(&admin, &dual);
+        env.as_contract(&client.address, || {
+            assert!(crate::storage::has_role(&env, &dual, &Role::Company));
+            assert!(crate::storage::has_role(&env, &dual, &Role::Carrier));
+        });
+
+        client.suspend_role(&admin, &dual, &Role::Carrier);
+        assert!(client.is_carrier_suspended(&dual));
+        env.as_contract(&client.address, || {
+            assert!(!crate::storage::is_role_suspended(&env, &dual, &Role::Company));
+        });
+
+        // The Company role is untouched: `dual` can still create shipments.
+        let other_carrier = Address::generate(&env);
+        client.add_carrier(&admin, &other_carrier);
+        crate::test_utils::allow_carrier(&client, &dual, &other_carrier);
+        let receiver = Address::generate(&env);
+        let created = client.try_create_shipment(
+            &dual,
+            &receiver,
+            &other_carrier,
+            &BytesN::from_array(&env, &[0x67u8; 32]),
+            &Vec::new(&env),
+            &test_utils::future_deadline(&env, 7200),
+        );
+        assert!(
+            created.is_ok(),
+            "suspending the Carrier role must not suspend the Company role"
+        );
+
+        // Company is not suspended, so it cannot be reactivated.
+        assert_eq!(
+            client.try_reactivate_role(&admin, &dual, &Role::Company),
+            Err(Ok(crate::NavinError::Unauthorized))
+        );
+
+        client.reactivate_role(&admin, &dual, &Role::Carrier);
+        assert!(!client.is_carrier_suspended(&dual));
+    }
+
+    /// Naming a role the address does not hold fails with `RoleMismatch` and
+    /// suspends nothing.
+    #[test]
+    fn issue_1267_suspend_role_rejects_role_not_held() {
+        use crate::types::Role;
+
+        let (env, client, admin) = setup();
+        let dual = Address::generate(&env);
+        client.add_company(&admin, &dual);
+        client.add_carrier(&admin, &dual);
+
+        assert_eq!(
+            client.try_suspend_role(&admin, &dual, &Role::Guardian),
+            Err(Ok(crate::NavinError::RoleMismatch))
+        );
+        assert_eq!(
+            client.try_reactivate_role(&admin, &dual, &Role::Operator),
+            Err(Ok(crate::NavinError::RoleMismatch))
+        );
+        assert!(!client.is_carrier_suspended(&dual));
     }
 
     #[test]
@@ -660,7 +733,7 @@ mod tests {
         let (env, client, admin) = setup();
         let carrier = Address::generate(&env);
         client.add_carrier(&admin, &carrier);
-        let res = client.try_reactivate_role(&admin, &carrier);
+        let res = client.try_reactivate_role(&admin, &carrier, &crate::types::Role::Carrier);
         assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
     }
 
@@ -668,7 +741,7 @@ mod tests {
     fn test_reactivate_role_rejects_unassigned() {
         let (env, client, admin) = setup();
         let unassigned = Address::generate(&env);
-        let res = client.try_reactivate_role(&admin, &unassigned);
-        assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
+        let res = client.try_reactivate_role(&admin, &unassigned, &crate::types::Role::Carrier);
+        assert_eq!(res, Err(Ok(crate::NavinError::RoleMismatch)));
     }
 }

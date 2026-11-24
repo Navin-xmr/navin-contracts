@@ -885,6 +885,46 @@ pub fn get_confirmation_hash(env: &Env, shipment_id: u64) -> Option<BytesN<32>> 
     env.storage().persistent().get(&key)
 }
 
+/// Read every partial-delivery proof hash recorded for a shipment, oldest first.
+///
+/// Returns an empty vector when the shipment has no partial confirmations.
+pub fn get_partial_delivery_proofs(env: &Env, shipment_id: u64) -> Vec<BytesN<32>> {
+    env.storage()
+        .persistent()
+        .get(&DeliveryProofKey::PartialLog(shipment_id))
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+/// Read the partial-delivery proof hash recorded at `index` (zero-based).
+pub fn get_partial_delivery_proof(
+    env: &Env,
+    shipment_id: u64,
+    index: u32,
+) -> Option<BytesN<32>> {
+    get_partial_delivery_proofs(env, shipment_id).get(index)
+}
+
+/// Append one partial-delivery proof hash to a shipment's append-only log.
+///
+/// Returns the zero-based index assigned to `hash`. Fails with
+/// `CounterOverflow` once [`MAX_PARTIAL_DELIVERY_PROOFS`] hashes are stored.
+pub fn append_partial_delivery_proof(
+    env: &Env,
+    shipment_id: u64,
+    hash: &BytesN<32>,
+) -> Result<u32, NavinError> {
+    let mut proofs = get_partial_delivery_proofs(env, shipment_id);
+    let index = proofs.len();
+    if index >= MAX_PARTIAL_DELIVERY_PROOFS {
+        return Err(NavinError::CounterOverflow);
+    }
+    proofs.push_back(hash.clone());
+    env.storage()
+        .persistent()
+        .set(&DeliveryProofKey::PartialLog(shipment_id), &proofs);
+    Ok(index)
+}
+
 /// Extend TTL for shipment data
 ///
 /// # Arguments
@@ -992,6 +1032,13 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
     // Keep the per-visit status-hash log alive as long as the shipment is;
     // verified hashes must not expire under a live shipment.
     extend_status_hash_ttl(env, shipment_id, threshold, extend_to);
+
+    // Same for the partial-delivery proof log: earlier slices released escrow
+    // and their proofs must stay checkable while the shipment is alive.
+    let partial_proofs_key = DeliveryProofKey::PartialLog(shipment_id);
+    if persistent.has(&partial_proofs_key) {
+        persistent.extend_ttl(&partial_proofs_key, threshold, extend_to);
+    }
 }
 
 /// Backwards-compatible wrapper used by existing contract code/tests.
@@ -2239,7 +2286,8 @@ pub fn purge_status_hash_log(env: &Env, shipment_id: u64) {
 /// if present, preventing unbounded growth of `ConfirmationHash`, `LastStatusUpdate`,
 /// `DeadlineWarningEmitted`, `BreachEventCount`, `MilestoneEventCount`, `EventCount`,
 /// `ShipmentDependents`, `EscrowFreezeReasonByShipment`, and `ActiveSettlement` entries.
-/// The per-visit status-hash log is purged alongside them.
+/// The per-visit status-hash log and the partial-delivery proof log are purged
+/// alongside them.
 pub fn purge_status_hashes(env: &Env, shipment_id: u64) {
     // Resolve status from persistent or archived storage. `archive_shipment`
     // moves the shipment to temporary storage *before* calling this, so the
@@ -2295,6 +2343,10 @@ pub fn purge_status_hashes(env: &Env, shipment_id: u64) {
     // Drop the per-visit IoT status-hash log so archived shipments stop paying
     // rent for verification hashes they can no longer transition.
     purge_status_hash_log(env, shipment_id);
+    // The partial-delivery proof log is purged with `ConfirmationHash`.
+    env.storage()
+        .persistent()
+        .remove(&DeliveryProofKey::PartialLog(shipment_id));
 }
 
 #[cfg(test)]

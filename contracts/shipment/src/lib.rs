@@ -104,6 +104,8 @@ enum SettlementProofKey {
 #[cfg(test)]
 mod test_admin_pause_guards;
 #[cfg(test)]
+mod test_storage_key_registry;
+#[cfg(test)]
 mod test_auth_matrix;
 #[cfg(test)]
 mod test_carrier_relationship;
@@ -2360,15 +2362,23 @@ impl NavinShipment {
         Ok(())
     }
 
-    /// Suspend a role temporarily (e.g., for investigation or compliance review).
+    /// Suspend one role of an address temporarily (e.g., for investigation or
+    /// compliance review).
     ///
     /// Only the admin can suspend roles. Suspended addresses retain their role
-    /// assignment but cannot perform role-gated actions until reactivated.
+    /// assignment but cannot perform actions gated on that role until
+    /// reactivated.
+    ///
+    /// An address can hold several roles at once (each is its own
+    /// `UserRole(address, role)` entry), so the caller names the role to
+    /// suspend. Only that role is suspended; any other role the address holds
+    /// stays active. To suspend every role, call this once per role.
     ///
     /// # Arguments
     /// * `env` - Execution environment.
     /// * `admin` - Contract admin executing the suspension.
     /// * `target` - The address whose role is being suspended.
+    /// * `role` - The role to suspend.
     ///
     /// # Returns
     /// * `Result<(), NavinError>` - Ok on successful suspension.
@@ -2377,12 +2387,18 @@ impl NavinShipment {
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::Unauthorized` - If called by a non-admin.
     /// * `NavinError::CannotSelfRevoke` - If admin tries to suspend their own role.
+    /// * `NavinError::RoleMismatch` - If `target` does not hold `role`.
     ///
     /// # Examples
     /// ```rust
-    /// // contract.suspend_role(&env, &admin, &target_addr);
+    /// // contract.suspend_role(&env, &admin, &target_addr, &Role::Carrier);
     /// ```
-    pub fn suspend_role(env: Env, admin: Address, target: Address) -> Result<(), NavinError> {
+    pub fn suspend_role(
+        env: Env,
+        admin: Address,
+        target: Address,
+        role: Role,
+    ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
         admin.require_auth();
@@ -2395,51 +2411,54 @@ impl NavinShipment {
             return Err(NavinError::CannotSelfRevoke);
         }
 
-        let current_role = storage::get_role(&env, &target).unwrap_or(Role::Unassigned);
-
-        if current_role == Role::Unassigned {
-            return Err(NavinError::Unauthorized);
+        // Issue #1267 — act on the named role, not on whichever role
+        // `storage::get_role` happens to return first for a multi-role address.
+        if !storage::has_role(&env, &target, &role) {
+            return Err(NavinError::RoleMismatch);
         }
 
         // Mark as suspended in storage
-        storage::suspend_role(&env, &target, &current_role);
+        storage::suspend_role(&env, &target, &role);
 
         // Emit role history event
-        events::emit_role_changed(
-            &env,
-            &RoleChangeAction::Suspended,
-            &admin,
-            &target,
-            &current_role,
-        );
+        events::emit_role_changed(&env, &RoleChangeAction::Suspended, &admin, &target, &role);
 
-        audit::log_role_suspended(&env, &admin, &target, &current_role)?;
+        audit::log_role_suspended(&env, &admin, &target, &role)?;
 
         Ok(())
     }
 
-    /// Reactivate a previously suspended role.
+    /// Reactivate one previously suspended role of an address.
     ///
     /// Only the admin can reactivate roles. This restores the address's
-    /// ability to perform role-gated actions.
+    /// ability to perform actions gated on `role`. Like [`Self::suspend_role`],
+    /// it acts only on the named role; other roles of the address are left
+    /// untouched.
     ///
     /// # Arguments
     /// * `env` - Execution environment.
     /// * `admin` - Contract admin executing the reactivation.
     /// * `target` - The address whose role is being reactivated.
+    /// * `role` - The role to reactivate.
     ///
     /// # Returns
     /// * `Result<(), NavinError>` - Ok on successful reactivation.
     ///
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::Unauthorized` - If called by a non-admin or target not suspended.
+    /// * `NavinError::Unauthorized` - If called by a non-admin or `role` is not suspended.
+    /// * `NavinError::RoleMismatch` - If `target` does not hold `role`.
     ///
     /// # Examples
     /// ```rust
-    /// // contract.reactivate_role(&env, &admin, &target_addr);
+    /// // contract.reactivate_role(&env, &admin, &target_addr, &Role::Carrier);
     /// ```
-    pub fn reactivate_role(env: Env, admin: Address, target: Address) -> Result<(), NavinError> {
+    pub fn reactivate_role(
+        env: Env,
+        admin: Address,
+        target: Address,
+        role: Role,
+    ) -> Result<(), NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
         admin.require_auth();
@@ -2448,29 +2467,21 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
 
-        let current_role = storage::get_role(&env, &target).unwrap_or(Role::Unassigned);
-
-        if current_role == Role::Unassigned {
-            return Err(NavinError::Unauthorized);
+        if !storage::has_role(&env, &target, &role) {
+            return Err(NavinError::RoleMismatch);
         }
 
-        if !storage::is_role_suspended(&env, &target, &current_role) {
+        if !storage::is_role_suspended(&env, &target, &role) {
             return Err(NavinError::Unauthorized);
         }
 
         // Reactivate the role
-        storage::reactivate_role(&env, &target, &current_role);
+        storage::reactivate_role(&env, &target, &role);
 
         // Emit role history event
-        events::emit_role_changed(
-            &env,
-            &RoleChangeAction::Reactivated,
-            &admin,
-            &target,
-            &current_role,
-        );
+        events::emit_role_changed(&env, &RoleChangeAction::Reactivated, &admin, &target, &role);
 
-        audit::log_role_reactivated(&env, &admin, &target, &current_role)?;
+        audit::log_role_reactivated(&env, &admin, &target, &role)?;
 
         Ok(())
     }
@@ -3766,6 +3777,12 @@ impl NavinShipment {
     /// `release_percent` of `total_escrow`, and cumulative releases are bounded
     /// so they never exceed the escrow initially deposited.
     ///
+    /// Each slice's `confirmation_hash` is appended to the shipment's
+    /// partial-delivery proof log, so every slice stays verifiable through
+    /// [`Self::verify_partial_delivery_proof`]. `DataKey::ConfirmationHash`
+    /// is also set to the latest slice's hash, which is what
+    /// [`Self::verify_delivery_proof`] checks.
+    ///
     /// # Arguments
     /// * `env` - Execution environment.
     /// * `receiver` - Receiver address confirming the partial delivery.
@@ -3843,6 +3860,7 @@ impl NavinShipment {
         storage::decrement_status_count(&env, &old_status);
         storage::increment_status_count(&env, &shipment.status);
         storage::set_confirmation_hash(&env, shipment_id, &confirmation_hash);
+        storage::append_partial_delivery_proof(&env, shipment_id, &confirmation_hash)?;
         if shipment.status == ShipmentStatus::Delivered {
             storage::decrement_active_shipment_count(&env, &shipment.sender);
         }
@@ -5618,6 +5636,11 @@ impl NavinShipment {
     /// Returns `true` if `proof_hash` matches the hash stored during delivery confirmation,
     /// `false` if delivered but hashes differ, and errors if the shipment does not exist.
     ///
+    /// Only one hash is checked: `DataKey::ConfirmationHash`, the hash from the
+    /// most recent `confirm_delivery` or `confirm_partial_delivery` call. Use
+    /// [`Self::verify_partial_delivery_proof`] to check an earlier partial
+    /// slice.
+    ///
     /// # Arguments
     /// * `env` - Execution environment.
     /// * `shipment_id` - ID of the shipment.
@@ -5652,6 +5675,70 @@ impl NavinShipment {
 
         let stored = storage::get_confirmation_hash(&env, shipment_id);
         Ok(stored == Some(proof_hash))
+    }
+
+    /// Verify a hash against one partial-delivery slice's recorded proof.
+    ///
+    /// `index` is zero-based: the first `confirm_partial_delivery` call for a
+    /// shipment is index `0`, the second index `1`, and so on. Unlike
+    /// [`Self::verify_delivery_proof`], earlier slices are not overwritten by
+    /// later ones.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment_id` - ID of the shipment.
+    /// * `index` - Zero-based index of the partial confirmation.
+    /// * `proof_hash` - Hash to verify against the recorded slice hash.
+    ///
+    /// # Returns
+    /// * `Result<bool, NavinError>` - True if the slice at `index` exists and its
+    ///   hash matches, false otherwise.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::InvalidHash` - If proof_hash is all zeros.
+    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
+    ///
+    /// # Examples
+    /// ```rust
+    /// // let is_valid = contract.verify_partial_delivery_proof(&env, 1, 0, hash);
+    /// ```
+    pub fn verify_partial_delivery_proof(
+        env: Env,
+        shipment_id: u64,
+        index: u32,
+        proof_hash: BytesN<32>,
+    ) -> Result<bool, NavinError> {
+        require_initialized(&env)?;
+        validation::validate_hash(&proof_hash)?;
+
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+
+        let stored = storage::get_partial_delivery_proof(&env, shipment_id, index);
+        Ok(stored == Some(proof_hash))
+    }
+
+    /// Number of partial-delivery proofs recorded for a shipment.
+    ///
+    /// Valid indices for [`Self::verify_partial_delivery_proof`] are
+    /// `0..get_partial_delivery_proof_count(shipment_id)`.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
+    pub fn get_partial_delivery_proof_count(
+        env: Env,
+        shipment_id: u64,
+    ) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+
+        if storage::get_shipment(&env, shipment_id).is_none() {
+            return Err(NavinError::ShipmentNotFound);
+        }
+
+        Ok(storage::get_partial_delivery_proofs(&env, shipment_id).len())
     }
 
     /// Propose a new admin for the contract. Only the current admin can call this.
