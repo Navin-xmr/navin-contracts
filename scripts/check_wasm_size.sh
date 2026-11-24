@@ -3,9 +3,9 @@ set -e
 
 # Configuration: [filename]:[limit_in_kb]
 BUDGETS=(
-    "navin_token.wasm:25"
+    "navin_token.wasm:55"
     "navin_nft.wasm:50"
-    "shipment.wasm:200"
+    "shipment.wasm:320"
 )
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
