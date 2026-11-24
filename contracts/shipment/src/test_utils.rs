@@ -424,3 +424,34 @@ pub fn create_test_shipment(
 
     (shipment_id, company, receiver, carrier)
 }
+
+#[soroban_sdk::contract]
+pub struct MockToken;
+
+#[soroban_sdk::contractimpl]
+impl MockToken {
+    pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+    pub fn decimals(_env: Env) -> u32 {
+        7
+    }
+}
+
+/// Initialised contract with a two-admin, threshold-2 multi-sig (issue #1072).
+///
+/// Consolidates the duplicate `setup_multisig` helpers from
+/// `test_proposal_digest`, `test_multisig_reinit_guard`, and `test_admin_pause_guards`.
+pub fn setup_multisig() -> (Env, crate::NavinShipmentClient<'static>, Address, Address) {
+    let (env, admin) = setup_env();
+    let contract_id = env.register(crate::NavinShipment, ());
+    let client = crate::NavinShipmentClient::new(&env, &contract_id);
+    let token_id = env.register(MockToken, ());
+    client.initialize(&admin, &token_id);
+
+    let admin2 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    (env, client, admin, admin2)
+}
