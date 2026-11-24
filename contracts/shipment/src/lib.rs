@@ -399,6 +399,8 @@ fn internal_release_escrow(
 
     if actual_release > 0 {
         let carrier = shipment.carrier.clone();
+        // Report the shipment's actual status at release time (#1226).
+        let status = shipment.status.clone();
         // Single escrow-moving primitive (#1224): settlement record, transfer,
         // completion, escrow decrement and the escrow_released event.
         settle_escrow_amount(
@@ -407,6 +409,7 @@ fn internal_release_escrow(
             &carrier,
             SettlementOperation::Release,
             actual_release,
+            &status,
         )?;
 
         shipment.updated_at = env.ledger().timestamp();
@@ -433,6 +436,7 @@ fn settle_escrow_amount(
     destination: &Address,
     operation: SettlementOperation,
     amount: i128,
+    status: &ShipmentStatus,
 ) -> Result<(), NavinError> {
     if amount <= 0 {
         return Ok(());
@@ -458,10 +462,10 @@ fn settle_escrow_amount(
 
     match operation {
         SettlementOperation::Release => {
-            events::emit_escrow_released(env, shipment.id, destination, amount);
+            events::emit_escrow_released(env, shipment.id, destination, amount, status);
         }
         SettlementOperation::Refund => {
-            events::emit_escrow_refunded(env, shipment.id, destination, amount);
+            events::emit_escrow_refunded(env, shipment.id, destination, amount, status);
         }
         SettlementOperation::Deposit | SettlementOperation::MilestonePayment => {
             // Not used for escrow-out settlement.
@@ -523,7 +527,7 @@ fn settle_escrow(
     next_status: ShipmentStatus,
 ) -> Result<(), NavinError> {
     let escrow_amount = shipment.escrow_amount;
-    settle_escrow_amount(env, shipment, destination, operation, escrow_amount)?;
+    settle_escrow_amount(env, shipment, destination, operation, escrow_amount, &next_status)?;
     apply_settlement_status(env, shipment, next_status)
 }
 
@@ -3047,7 +3051,13 @@ impl NavinShipment {
                     storage::add_total_escrow_volume(&env, amount)?;
                     extend_shipment_ttl(&env, shipment_id);
 
-                    events::emit_escrow_deposited(&env, shipment_id, &from, net_amount);
+                    events::emit_escrow_deposited(
+                        &env,
+                        shipment_id,
+                        &from,
+                        net_amount,
+                        &shipment.status,
+                    );
                 }
                 Err(e) => {
                     fail_settlement(&env, settlement_id, shipment_id, e as u32)?;
@@ -4101,6 +4111,7 @@ impl NavinShipment {
                 &checkpoint,
                 release_amount,
                 &mut_shipment.carrier,
+                &mut_shipment.status,
             );
             internal_release_escrow(&env, &mut mut_shipment, release_amount)?;
         }
@@ -4296,6 +4307,7 @@ impl NavinShipment {
                         &checkpoint,
                         release_amount,
                         &mut_shipment.carrier,
+                        &mut_shipment.status,
                     );
                     internal_release_escrow(&env, &mut mut_shipment, release_amount)?;
                     released_this_milestone = release_amount;
@@ -4412,6 +4424,7 @@ impl NavinShipment {
                 &milestone_name,
                 release_amount,
                 &shipment.carrier,
+                &shipment.status,
             );
             internal_release_escrow(&env, &mut shipment, release_amount)?;
         }
@@ -5110,6 +5123,7 @@ impl NavinShipment {
                         &recipient,
                         SettlementOperation::Release,
                         escrow_amount,
+                        &next_status,
                     )?;
                 }
                 DisputeResolution::RefundToCompany => {
@@ -5120,6 +5134,7 @@ impl NavinShipment {
                         &recipient,
                         SettlementOperation::Refund,
                         escrow_amount,
+                        &next_status,
                     )?;
                 }
                 DisputeResolution::PartialRefund => {
@@ -5133,6 +5148,7 @@ impl NavinShipment {
                             &recipient,
                             SettlementOperation::Release,
                             carrier_share,
+                            &next_status,
                         )?;
                     }
                     if company_share > 0 {
@@ -5143,6 +5159,7 @@ impl NavinShipment {
                             &recipient,
                             SettlementOperation::Refund,
                             company_share,
+                            &next_status,
                         )?;
                     }
                 }

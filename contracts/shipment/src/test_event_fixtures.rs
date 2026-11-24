@@ -1046,7 +1046,13 @@ fn test_escrow_deposited_data_hash_differs_by_amount() {
 
     let emitted_hash = |amount: i128| -> BytesN<32> {
         env.as_contract(&client.address, || {
-            crate::events::emit_escrow_deposited(&env, 1, &company, amount);
+            crate::events::emit_escrow_deposited(
+                &env,
+                1,
+                &company,
+                amount,
+                &crate::types::ShipmentStatus::Created,
+            );
         });
         let payload = find_event_data(&env, crate::event_topics::ESCROW_DEPOSITED)
             .expect("escrow_deposited event not emitted");
@@ -1062,5 +1068,146 @@ fn test_escrow_deposited_data_hash_differs_by_amount() {
     assert_ne!(
         first, second,
         "different amounts must yield different data_hash"
+    );
+}
+
+// ── #1226: escrow events report the real shipment status ─────────────────────
+
+/// Decode the status slot (index 1) of an escrow event payload.
+fn event_status(env: &Env, topic: &str) -> crate::types::ShipmentStatus {
+    let payload =
+        find_event_data(env, topic).unwrap_or_else(|| panic!("{topic} event not emitted"));
+    payload
+        .get(1)
+        .unwrap()
+        .try_into_val(env)
+        .expect("status slot must decode to ShipmentStatus")
+}
+
+/// A partial escrow release through the milestone path must report InTransit
+/// (the shipment's actual status), not the old hardcoded Delivered.
+#[test]
+fn test_escrow_released_reports_actual_status_on_milestone_release() {
+    use soroban_sdk::{testutils::Ledger, Symbol};
+
+    let (env, client, _admin, company, carrier, receiver) = fixture_env();
+    let data_hash = BytesN::from_array(&env, &[41u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back((Symbol::new(&env, "alpha"), 50u32));
+    milestones.push_back((Symbol::new(&env, "beta"), 50u32));
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+    client.deposit_escrow(&company, &id, &1_000i128);
+
+    env.ledger().set_timestamp(env.ledger().timestamp() + 65);
+    client.update_status(
+        &carrier,
+        &id,
+        &crate::types::ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[42u8; 32]),
+    );
+
+    env.ledger().set_timestamp(env.ledger().timestamp() + 65);
+    client.record_milestone(
+        &carrier,
+        &id,
+        &Symbol::new(&env, "alpha"),
+        &BytesN::from_array(&env, &[43u8; 32]),
+    );
+
+    let released = find_event_data(&env, crate::event_topics::ESCROW_RELEASED)
+        .expect("escrow_released must be emitted for the milestone payout");
+    assert_eq!(
+        event_status(&env, crate::event_topics::ESCROW_RELEASED),
+        crate::types::ShipmentStatus::InTransit,
+        "escrow_released must report the shipment's actual status (InTransit)"
+    );
+    // Payload shape is unchanged: 6 fields, amount at index 5.
+    assert_eq!(released.len(), 6);
+    let amount: i128 = released.get(5).unwrap().try_into_val(&env).unwrap();
+    assert_eq!(amount, 500);
+}
+
+/// PartialRefund dispute resolution: both escrow events must report the
+/// resulting PartiallyRefunded status (previously hardcoded Delivered/Cancelled).
+#[test]
+fn test_escrow_events_report_partially_refunded_on_partial_dispute() {
+    let (env, client, admin, company, carrier, receiver) = fixture_env();
+    let data_hash = BytesN::from_array(&env, &[51u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &id, &1_001i128);
+    client.update_status(
+        &carrier,
+        &id,
+        &crate::types::ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[52u8; 32]),
+    );
+    client.raise_dispute(&company, &id, &BytesN::from_array(&env, &[53u8; 32]));
+    client.resolve_dispute(
+        &admin,
+        &id,
+        &crate::types::DisputeResolution::PartialRefund,
+        &BytesN::from_array(&env, &[54u8; 32]),
+    );
+
+    assert_eq!(
+        event_status(&env, crate::event_topics::ESCROW_RELEASED),
+        crate::types::ShipmentStatus::PartiallyRefunded,
+        "escrow_released must report the resulting PartiallyRefunded status"
+    );
+    assert_eq!(
+        event_status(&env, crate::event_topics::ESCROW_REFUNDED),
+        crate::types::ShipmentStatus::PartiallyRefunded,
+        "escrow_refunded must report the resulting PartiallyRefunded status"
+    );
+}
+
+/// Paths whose resulting status matches the old hardcoded values keep
+/// reporting them: deposit → Created, refund_escrow → Cancelled.
+#[test]
+fn test_escrow_event_statuses_unchanged_for_created_and_cancelled_paths() {
+    let (env, client, _admin, company, carrier, receiver) = fixture_env();
+    let data_hash = BytesN::from_array(&env, &[61u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    let id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &id, &700i128);
+
+    assert_eq!(
+        event_status(&env, crate::event_topics::ESCROW_DEPOSITED),
+        crate::types::ShipmentStatus::Created,
+        "escrow_deposited must report Created"
+    );
+
+    client.refund_escrow(&company, &id);
+    assert_eq!(
+        event_status(&env, crate::event_topics::ESCROW_REFUNDED),
+        crate::types::ShipmentStatus::Cancelled,
+        "escrow_refunded must report Cancelled after refund_escrow"
     );
 }
