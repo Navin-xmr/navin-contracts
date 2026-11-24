@@ -300,8 +300,9 @@ fn test_approved_transfer_requires_owner_approval_and_operator_auth() {
     client.approve(&operator, &1, &expiration);
 
     env.mock_auths(&[]);
+    let empty_data = soroban_sdk::Vec::new(&env);
     assert!(client
-        .try_transfer_from(&operator, &owner, &recipient, &1)
+        .try_transfer_from(&operator, &owner, &recipient, &1, &empty_data)
         .is_err());
 
     env.mock_auths(&[MockAuth {
@@ -309,11 +310,18 @@ fn test_approved_transfer_requires_owner_approval_and_operator_auth() {
         invoke: &MockAuthInvoke {
             contract: &client.address,
             fn_name: "transfer_from",
-            args: (operator.clone(), owner.clone(), recipient.clone(), 1_u64).into_val(&env),
+            args: (
+                operator.clone(),
+                owner.clone(),
+                recipient.clone(),
+                1_u64,
+                empty_data.clone(),
+            )
+                .into_val(&env),
             sub_invokes: &[],
         },
     }]);
-    client.transfer_from(&operator, &owner, &recipient, &1);
+    client.transfer_from(&operator, &owner, &recipient, &1, &empty_data);
     assert_eq!(client.owner_of(&1), recipient);
 }
 

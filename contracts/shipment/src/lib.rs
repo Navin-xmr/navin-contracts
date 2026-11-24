@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(clippy::duplicated_attributes)]
 
 #[cfg(test)]
 extern crate alloc;
@@ -997,7 +998,6 @@ fn would_create_cycle(env: &Env, dependent_id: u64, proposed_prereq_id: u64) -> 
     false
 }
 
-
 /// XDR size of the longest Soroban `Symbol`: 4-byte type tag, 4-byte length
 /// and up to 32 bytes of content.
 const SYMBOL_XDR_MAX_LEN: usize = 8 + 32;
@@ -1924,17 +1924,26 @@ impl NavinShipment {
 
     /// Suspend a carrier from carrier-only operations.
     ///
-    /// Only the admin can call this function.
+    /// Only the admin or an operator can call this function.
     ///
     /// This is equivalent to `suspend_role` on the carrier's `Carrier` role:
     /// both share one suspension flag, and carrier-gated calls by a suspended
     /// carrier fail with `NavinError::CarrierSuspended`.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ContractPaused` - If contract is paused.
+    /// * `NavinError::Unauthorized` - If called by non-admin/operator or target is not a carrier.
     pub fn suspend_carrier(env: Env, admin: Address, carrier: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
         admin.require_auth();
 
         require_admin_or_operator(&env, &admin)?;
+
+        if !storage::has_carrier_role(&env, &carrier) {
+            return Err(NavinError::Unauthorized);
+        }
 
         storage::suspend_carrier(&env, &carrier);
         events::emit_carrier_suspended(&env, &admin, &carrier);
@@ -1944,7 +1953,12 @@ impl NavinShipment {
 
     /// Reactivate a previously suspended carrier.
     ///
-    /// Only the admin can call this function.
+    /// Only the admin or an operator can call this function.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ContractPaused` - If contract is paused.
+    /// * `NavinError::Unauthorized` - If called by non-admin/operator, target is not a carrier, or target is not suspended.
     pub fn reactivate_carrier(
         env: Env,
         admin: Address,
@@ -1955,6 +1969,14 @@ impl NavinShipment {
         admin.require_auth();
 
         require_admin_or_operator(&env, &admin)?;
+
+        if !storage::has_carrier_role(&env, &carrier) {
+            return Err(NavinError::Unauthorized);
+        }
+
+        if !storage::is_carrier_suspended(&env, &carrier) {
+            return Err(NavinError::Unauthorized);
+        }
 
         storage::reactivate_carrier(&env, &carrier);
         events::emit_carrier_reactivated(&env, &admin, &carrier);
@@ -2392,6 +2414,10 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
 
+        if !storage::is_role_suspended(&env, &target, &current_role) {
+            return Err(NavinError::Unauthorized);
+        }
+
         // Reactivate the role
         storage::reactivate_role(&env, &target, &current_role);
 
@@ -2438,6 +2464,13 @@ impl NavinShipment {
     }
 
     /// Reactivate a suspended company.
+    ///
+    /// Only the admin or an operator can call this function.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ContractPaused` - If contract is paused.
+    /// * `NavinError::Unauthorized` - If called by non-admin/operator, target is not a company, or target is not suspended.
     pub fn reactivate_company(
         env: Env,
         admin: Address,
@@ -2448,6 +2481,14 @@ impl NavinShipment {
         admin.require_auth();
 
         require_admin_or_operator(&env, &admin)?;
+
+        if !storage::has_company_role(&env, &company) {
+            return Err(NavinError::Unauthorized);
+        }
+
+        if !storage::is_company_suspended(&env, &company) {
+            return Err(NavinError::Unauthorized);
+        }
 
         storage::reactivate_company(&env, &company);
 

@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(clippy::duplicated_attributes)]
 
 extern crate alloc;
 
@@ -224,16 +225,20 @@ impl NavinShipmentNft {
         from: Address,
         to: Address,
         token_id: u64,
+        data: Vec<Val>,
     ) -> Result<(), NftError> {
         Self::require_not_paused(&env)?;
         operator.require_auth();
 
         let owner = Self::get_owner_inner(&env, token_id)?;
-        if owner != from || Self::get_approved_inner(&env, token_id)? != Some(operator) {
+        if owner != from {
+            return Err(NftError::NotOwner);
+        }
+        if Self::get_approved_inner(&env, token_id)? != Some(operator) {
             return Err(NftError::ApprovalNotActive);
         }
 
-        Self::transfer_token(&env, &from, &to, token_id, Vec::new(&env))
+        Self::transfer_token(&env, &from, &to, token_id, data)
     }
 
     fn transfer_token(
@@ -411,6 +416,16 @@ impl NavinShipmentNft {
         let owner = Self::get_owner_inner(&env, token_id)?;
         owner.require_auth();
 
+        if operator == owner {
+            return Err(NftError::SelfApproval);
+        }
+
+        if let Some(exp) = expiration_ledger {
+            if exp < env.ledger().sequence() {
+                return Err(NftError::InvalidExpirationLedger);
+            }
+        }
+
         Self::clear_approval(&env, &owner, token_id);
         env.storage().persistent().set(
             &NftKey::Approval(owner.clone(), operator.clone(), token_id),
@@ -445,17 +460,19 @@ impl NavinShipmentNft {
             .storage()
             .persistent()
             .get::<_, Address>(&NftKey::ApprovedOperator(token_id))
-            == Some(operator.clone())
+            != Some(operator.clone())
         {
-            Self::clear_approval(&env, &owner, token_id);
-            env.events().publish(
-                (
-                    event_topics::APPROVAL_REVOKED,
-                    event_topics::EVENT_SCHEMA_VERSION,
-                ),
-                (owner.clone(), operator, token_id, env.ledger().timestamp()),
-            );
+            return Err(NftError::ApprovalNotActive);
         }
+
+        Self::clear_approval(&env, &owner, token_id);
+        env.events().publish(
+            (
+                event_topics::APPROVAL_REVOKED,
+                event_topics::EVENT_SCHEMA_VERSION,
+            ),
+            (owner.clone(), operator, token_id, env.ledger().timestamp()),
+        );
         Self::extend_instance_ttl(&env);
         Self::extend_persistent_ttl(&env, &owner);
         Ok(())
@@ -1068,7 +1085,7 @@ mod tests {
         assert_eq!(client.get_approved(&1), Some(operator.clone()));
 
         env.ledger().with_mut(|ledger| ledger.sequence_number = 10);
-        client.transfer_from(&operator, &owner, &recipient, &1);
+        client.transfer_from(&operator, &owner, &recipient, &1, &Vec::new(&env));
         assert_eq!(client.owner_of(&1), recipient);
         assert_eq!(client.get_approved(&1), None);
     }
@@ -1085,10 +1102,64 @@ mod tests {
         env.ledger().with_mut(|ledger| ledger.sequence_number = 11);
         assert_eq!(client.get_approved(&1), None);
         assert_eq!(
-            client.try_transfer_from(&operator, &owner, &recipient, &1),
+            client.try_transfer_from(&operator, &owner, &recipient, &1, &Vec::new(&env)),
             Err(Ok(NftError::ApprovalNotActive))
         );
         assert_eq!(client.owner_of(&1), owner);
+    }
+
+    #[test]
+    fn test_approve_rejects_past_expiration_ledger() {
+        let (env, _admin, client) = setup();
+        let owner = Address::generate(&env);
+        let operator = Address::generate(&env);
+        client.mint(&owner, &1);
+        env.ledger().with_mut(|l| l.sequence_number = 100);
+
+        let res = client.try_approve(&operator, &1, &Some(99_u32));
+        assert_eq!(res, Err(Ok(NftError::InvalidExpirationLedger)));
+    }
+
+    #[test]
+    fn test_approve_rejects_self_approval() {
+        let (env, _admin, client) = setup();
+        let owner = Address::generate(&env);
+        client.mint(&owner, &1);
+
+        let res = client.try_approve(&owner, &1, &None);
+        assert_eq!(res, Err(Ok(NftError::SelfApproval)));
+    }
+
+    #[test]
+    fn test_revoke_approval_rejects_unapproved_operator() {
+        let (env, _admin, client) = setup();
+        let owner = Address::generate(&env);
+        let operator = Address::generate(&env);
+        client.mint(&owner, &1);
+
+        // No approval active
+        let res = client.try_revoke_approval(&operator, &1);
+        assert_eq!(res, Err(Ok(NftError::ApprovalNotActive)));
+
+        // Different operator approved
+        let other_operator = Address::generate(&env);
+        client.approve(&other_operator, &1, &None);
+        let res2 = client.try_revoke_approval(&operator, &1);
+        assert_eq!(res2, Err(Ok(NftError::ApprovalNotActive)));
+    }
+
+    #[test]
+    fn test_transfer_from_rejects_not_owner() {
+        let (env, _admin, client) = setup();
+        let owner = Address::generate(&env);
+        let non_owner = Address::generate(&env);
+        let operator = Address::generate(&env);
+        let recipient = test_utils::account_address(&env, 0);
+        client.mint(&owner, &1);
+        client.approve(&operator, &1, &None);
+
+        let res = client.try_transfer_from(&operator, &non_owner, &recipient, &1, &Vec::new(&env));
+        assert_eq!(res, Err(Ok(NftError::NotOwner)));
     }
 
     #[test]
