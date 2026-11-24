@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(clippy::duplicated_attributes)]
 
 #[cfg(test)]
 extern crate alloc;
@@ -199,6 +200,9 @@ mod e2e_test;
 mod stress_test;
 #[cfg(test)]
 mod test_dispute_evidence;
+
+#[cfg(test)]
+mod test_instance_storage_bounded;
 
 #[cfg(test)]
 mod preservation_property_tests;
@@ -996,7 +1000,6 @@ fn would_create_cycle(env: &Env, dependent_id: u64, proposed_prereq_id: u64) -> 
 
     false
 }
-
 
 /// XDR size of the longest Soroban `Symbol`: 4-byte type tag, 4-byte length
 /// and up to 32 bytes of content.
@@ -1821,8 +1824,10 @@ impl NavinShipment {
         require_not_paused(&env)?;
         admin.require_auth();
 
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
+        require_admin(&env, &admin)?;
+
+        if storage::has_role(&env, &guardian, &Role::Guardian) {
+            return Err(NavinError::RoleAlreadyAssigned);
         }
 
         storage::set_role(&env, &guardian, &Role::Guardian);
@@ -1863,8 +1868,10 @@ impl NavinShipment {
         require_not_paused(&env)?;
         admin.require_auth();
 
-        if storage::get_admin(&env) != admin {
-            return Err(NavinError::Unauthorized);
+        require_admin(&env, &admin)?;
+
+        if storage::has_role(&env, &operator, &Role::Operator) {
+            return Err(NavinError::RoleAlreadyAssigned);
         }
 
         storage::set_role(&env, &operator, &Role::Operator);
@@ -1924,17 +1931,26 @@ impl NavinShipment {
 
     /// Suspend a carrier from carrier-only operations.
     ///
-    /// Only the admin can call this function.
+    /// Only the admin or an operator can call this function.
     ///
     /// This is equivalent to `suspend_role` on the carrier's `Carrier` role:
     /// both share one suspension flag, and carrier-gated calls by a suspended
     /// carrier fail with `NavinError::CarrierSuspended`.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ContractPaused` - If contract is paused.
+    /// * `NavinError::Unauthorized` - If called by non-admin/operator or target is not a carrier.
     pub fn suspend_carrier(env: Env, admin: Address, carrier: Address) -> Result<(), NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
         admin.require_auth();
 
         require_admin_or_operator(&env, &admin)?;
+
+        if !storage::has_carrier_role(&env, &carrier) {
+            return Err(NavinError::Unauthorized);
+        }
 
         storage::suspend_carrier(&env, &carrier);
         events::emit_carrier_suspended(&env, &admin, &carrier);
@@ -1944,7 +1960,12 @@ impl NavinShipment {
 
     /// Reactivate a previously suspended carrier.
     ///
-    /// Only the admin can call this function.
+    /// Only the admin or an operator can call this function.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ContractPaused` - If contract is paused.
+    /// * `NavinError::Unauthorized` - If called by non-admin/operator, target is not a carrier, or target is not suspended.
     pub fn reactivate_carrier(
         env: Env,
         admin: Address,
@@ -1955,6 +1976,14 @@ impl NavinShipment {
         admin.require_auth();
 
         require_admin_or_operator(&env, &admin)?;
+
+        if !storage::has_carrier_role(&env, &carrier) {
+            return Err(NavinError::Unauthorized);
+        }
+
+        if !storage::is_carrier_suspended(&env, &carrier) {
+            return Err(NavinError::Unauthorized);
+        }
 
         storage::reactivate_carrier(&env, &carrier);
         events::emit_carrier_reactivated(&env, &admin, &carrier);
@@ -2094,7 +2123,22 @@ impl NavinShipment {
         require_initialized(&env)?;
         caller.require_auth();
         require_admin(&env, &caller)?;
-        Ok(consistency::check_batch_consistency(&env, &ids))
+
+        // Deduplicate while preserving order, then enforce the batch cap.
+        let mut seen: Vec<u64> = Vec::new(&env);
+        let mut unique_ids: Vec<u64> = Vec::new(&env);
+        for id in ids.iter() {
+            let already = seen.iter().any(|x| x == id);
+            if !already {
+                seen.push_back(id);
+                unique_ids.push_back(id);
+            }
+        }
+        if unique_ids.len() as u32 > MAX_BATCH_QUERY_SIZE {
+            return Err(NavinError::BatchTooLarge);
+        }
+
+        Ok(consistency::check_batch_consistency(&env, &unique_ids))
     }
 
     /// Attach evidence to an active shipment dispute.
@@ -2274,11 +2318,29 @@ impl NavinShipment {
 
         let current_role = storage::get_role(&env, &target).unwrap_or(Role::Unassigned);
 
+        // Reject revocation of a target that holds no role.
+        if current_role == Role::Unassigned {
+            return Err(NavinError::RoleMismatch);
+        }
+
         match current_role {
-            Role::Company => storage::revoke_role(&env, &target, &Role::Company),
-            Role::Carrier => storage::revoke_role(&env, &target, &Role::Carrier),
-            Role::Guardian => storage::revoke_role(&env, &target, &Role::Guardian),
-            Role::Operator => storage::revoke_role(&env, &target, &Role::Operator),
+            Role::Company => {
+                storage::revoke_role(&env, &target, &Role::Company);
+                storage::reactivate_role(&env, &target, &Role::Company);
+                storage::reactivate_company(&env, &target);
+            }
+            Role::Carrier => {
+                storage::revoke_role(&env, &target, &Role::Carrier);
+                storage::reactivate_role(&env, &target, &Role::Carrier);
+            }
+            Role::Guardian => {
+                storage::revoke_role(&env, &target, &Role::Guardian);
+                storage::reactivate_role(&env, &target, &Role::Guardian);
+            }
+            Role::Operator => {
+                storage::revoke_role(&env, &target, &Role::Operator);
+                storage::reactivate_role(&env, &target, &Role::Operator);
+            }
             Role::Unassigned => {}
         }
 
@@ -2392,6 +2454,10 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
 
+        if !storage::is_role_suspended(&env, &target, &current_role) {
+            return Err(NavinError::Unauthorized);
+        }
+
         // Reactivate the role
         storage::reactivate_role(&env, &target, &current_role);
 
@@ -2438,6 +2504,13 @@ impl NavinShipment {
     }
 
     /// Reactivate a suspended company.
+    ///
+    /// Only the admin or an operator can call this function.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ContractPaused` - If contract is paused.
+    /// * `NavinError::Unauthorized` - If called by non-admin/operator, target is not a company, or target is not suspended.
     pub fn reactivate_company(
         env: Env,
         admin: Address,
@@ -2448,6 +2521,14 @@ impl NavinShipment {
         admin.require_auth();
 
         require_admin_or_operator(&env, &admin)?;
+
+        if !storage::has_company_role(&env, &company) {
+            return Err(NavinError::Unauthorized);
+        }
+
+        if !storage::is_company_suspended(&env, &company) {
+            return Err(NavinError::Unauthorized);
+        }
 
         storage::reactivate_company(&env, &company);
 
@@ -4091,7 +4172,8 @@ impl NavinShipment {
         }
 
         finalize_if_settled(&env, &mut mut_shipment);
-        storage::set_shipment(&env, &mut_shipment);
+        persist_shipment(&env, &mut_shipment)?;
+        extend_shipment_ttl(&env, shipment_id);
 
         Ok(())
     }
@@ -4291,7 +4373,8 @@ impl NavinShipment {
         }
 
         finalize_if_settled(&env, &mut mut_shipment);
-        storage::set_shipment(&env, &mut_shipment);
+        persist_shipment(&env, &mut_shipment)?;
+        extend_shipment_ttl(&env, shipment_id);
 
         Ok(release_amounts)
     }
@@ -4402,7 +4485,8 @@ impl NavinShipment {
         }
 
         finalize_if_settled(&env, &mut shipment);
-        storage::set_shipment(&env, &shipment);
+        persist_shipment(&env, &shipment)?;
+        extend_shipment_ttl(&env, shipment_id);
 
         Ok(())
     }

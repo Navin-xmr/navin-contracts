@@ -10,7 +10,13 @@
 extern crate std;
 
 use crate::event_topics::{self, EVENT_SCHEMA_VERSION};
-use crate::{test_receivers::AcceptingReceiver, NavinShipmentNft, NavinShipmentNftClient};
+use crate::{
+    test_receivers::{
+        panic_receiver::{PanicReceiver, PanicReceiverClient},
+        AcceptingReceiver,
+    },
+    NavinShipmentNft, NavinShipmentNftClient,
+};
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Events as _, Ledger as _},
@@ -99,7 +105,7 @@ fn test_initialize_emits_versioned_event() {
 #[test]
 fn test_mint_emits_schema_versioned_topics() {
     let (env, _admin, client) = setup();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
     client.mint(&recipient, &7);
 
     let event = last_event(&env, &client.address);
@@ -114,7 +120,7 @@ fn test_mint_emits_schema_versioned_topics() {
 #[test]
 fn test_mint_emits_event() {
     let (env, _admin, client) = setup();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
     client.mint(&recipient, &42);
 
     let event = last_event(&env, &client.address);
@@ -135,7 +141,7 @@ fn test_mint_emits_event() {
 #[test]
 fn test_mint_batch_emits_batch_event_with_all_ids() {
     let (env, _admin, client) = setup();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
     let recipients = vec![&env, recipient.clone(), recipient.clone()];
     let token_ids = vec![&env, 7_u64, 42_u64];
     client.mint_batch(&recipients, &token_ids);
@@ -157,7 +163,7 @@ fn test_mint_batch_emits_batch_event_with_all_ids() {
 #[test]
 fn test_transfer_emits_event() {
     let (env, _admin, client) = setup();
-    let alice = Address::generate(&env);
+    let alice = crate::test_utils::account_address(&env, 0);
     let bob = env.register(AcceptingReceiver, ());
     client.mint(&alice, &1);
     client.transfer(&alice, &bob, &1, &Vec::new(&env));
@@ -183,7 +189,7 @@ fn test_transfer_emits_event() {
 #[test]
 fn test_burn_emits_event() {
     let (env, _admin, client) = setup();
-    let owner = Address::generate(&env);
+    let owner = crate::test_utils::account_address(&env, 0);
     client.mint(&owner, &5);
     client.approve_burn(&5);
     client.burn(&owner, &5);
@@ -206,7 +212,7 @@ fn test_burn_emits_event() {
 #[test]
 fn test_burn_by_admin_emits_event_with_admin_as_caller() {
     let (env, admin, client) = setup();
-    let owner = Address::generate(&env);
+    let owner = crate::test_utils::account_address(&env, 0);
     client.mint(&owner, &9);
     client.burn(&admin, &9);
 
@@ -227,7 +233,7 @@ fn test_burn_by_admin_emits_event_with_admin_as_caller() {
 #[test]
 fn test_burn_batch_emits_batch_event_with_all_ids() {
     let (env, admin, client) = setup();
-    let owner = Address::generate(&env);
+    let owner = crate::test_utils::account_address(&env, 0);
     let recipients = vec![&env, owner.clone(), owner];
     let token_ids = vec![&env, 7_u64, 42_u64];
     client.mint_batch(&recipients, &token_ids);
@@ -250,7 +256,7 @@ fn test_burn_batch_emits_batch_event_with_all_ids() {
 #[test]
 fn test_self_transfer_emits_noop_event() {
     let (env, _admin, client) = setup();
-    let alice = Address::generate(&env);
+    let alice = crate::test_utils::account_address(&env, 0);
     client.mint(&alice, &1);
     client.transfer(&alice, &alice, &1, &Vec::new(&env));
 
@@ -306,9 +312,33 @@ fn test_admin_proposal_emits_event() {
 }
 
 #[test]
+/// Verifies CEI ordering: the xfer event and ownership are recorded before
+/// `on_nft_received` is invoked, so a contract recipient that has no callback
+/// logic still sees the token in its balance and the event in the log.
+///
+/// Uses `PanicReceiver` (a minimal receiver with a no-op callback) to confirm
+/// that the event is emitted whether or not the callback does anything.
+#[test]
+fn test_xfer_event_and_ownership_recorded_before_callback_body_runs() {
+    let (env, _admin, client) = setup();
+    let alice = crate::test_utils::account_address(&env, 0);
+    let receiver_id = env.register(PanicReceiver, ());
+    let _ = PanicReceiverClient::new(&env, &receiver_id);
+
+    client.mint(&alice, &1);
+    client.transfer(&alice, &receiver_id, &1, &Vec::new(&env));
+
+    // The xfer event is in the log (CEI: emitted before the callback).
+    assert_eq!(
+        count_events(&env, &client.address, event_topics::TRANSFER),
+        1
+    );
+}
+
+#[test]
 fn test_failed_mint_emits_no_event() {
     let (env, _admin, client) = setup();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
     client.mint(&recipient, &1);
     let before = count_events(&env, &client.address, event_topics::MINT);
 

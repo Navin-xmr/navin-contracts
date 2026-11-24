@@ -1065,7 +1065,6 @@ fn test_escrow_deposited_data_hash_differs_by_amount() {
     );
 }
 
-
 // ── quota_set event payload shape ────────────────────────────────────────────
 //
 // Expected tuple: (admin, max_per_window, window_seconds)
@@ -1092,7 +1091,10 @@ fn test_snapshot_quota_set_payload_shape() {
     let event_window_seconds: u64 = payload.get(2).unwrap().try_into_val(&env).unwrap();
 
     assert_eq!(event_admin, admin, "admin must be at index 0");
-    assert_eq!(event_max_per_window, 10, "max_per_window must be at index 1");
+    assert_eq!(
+        event_max_per_window, 10,
+        "max_per_window must be at index 1"
+    );
     assert_eq!(
         event_window_seconds, 3600,
         "window_seconds must be at index 2"
