@@ -38,6 +38,8 @@ mod test_event_fixtures;
 #[cfg(test)]
 mod test_finalization;
 #[cfg(test)]
+mod test_handoff_breach;
+#[cfg(test)]
 mod test_hash_emit_vectors;
 #[cfg(test)]
 mod test_performance;
@@ -1912,6 +1914,31 @@ impl NavinShipment {
         Ok(audit::query_audit_history(&env, start_time, end_time))
     }
 
+    /// Remove audit entries older than the provided timestamp.
+    ///
+    /// Only the contract admin can clean up audit history. Removed entries
+    /// free capacity for future role and permission changes.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `admin` - Contract admin authorizing cleanup.
+    /// * `before_timestamp` - Remove entries with an earlier timestamp.
+    ///
+    /// # Returns
+    /// * `Result<u32, NavinError>` - Number of entries removed.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::Unauthorized` - If caller is not the contract admin.
+    pub fn cleanup_audit_logs(
+        env: Env,
+        admin: Address,
+        before_timestamp: u64,
+    ) -> Result<u32, NavinError> {
+        require_initialized(&env)?;
+        audit::cleanup_audit_logs(&env, &admin, before_timestamp)
+    }
+
     /// Revoke a previously assigned role from an address.
     ///
     /// Only the admin can revoke roles. The admin cannot revoke their own role;
@@ -2818,6 +2845,13 @@ impl NavinShipment {
 
         storage::decrement_status_count(&env, &old_status);
         storage::increment_status_count(&env, &shipment.status);
+
+        if (new_status == ShipmentStatus::Delivered || new_status == ShipmentStatus::Cancelled)
+            && old_status != ShipmentStatus::Delivered
+            && old_status != ShipmentStatus::Cancelled
+        {
+            storage::decrement_active_shipment_count(&env, &shipment.sender);
+        }
 
         finalize_if_settled(&env, &mut shipment);
         persist_shipment(&env, &shipment)?;
@@ -5046,7 +5080,7 @@ impl NavinShipment {
     /// * `NavinError::InvalidHash` - If handoff_hash is all zeros.
     /// * `NavinError::Unauthorized` - If current_carrier is not the assigned carrier.
     /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
-    /// * `NavinError::ShipmentAlreadyCompleted` - If shipment is already completed.
+    /// * `NavinError::ShipmentAlreadyCompleted` - If shipment is Delivered, Disputed, or Cancelled.
     ///
     /// # Examples
     /// ```rust
@@ -5077,9 +5111,9 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
 
-        // Prevent handoff from completed shipments
+        // Prevent handoff from completed or disputed shipments
         match shipment.status {
-            ShipmentStatus::Delivered | ShipmentStatus::Cancelled => {
+            ShipmentStatus::Delivered | ShipmentStatus::Disputed | ShipmentStatus::Cancelled => {
                 return Err(NavinError::ShipmentAlreadyCompleted);
             }
             _ => {}

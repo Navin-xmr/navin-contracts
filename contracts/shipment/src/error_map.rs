@@ -474,6 +474,12 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             NoRetry,
             "Maximum allowed recovery action entries for a shipment has been reached.",
         ),
+        NavinError::AuditLogLimitExceeded => (
+            72,
+            LimitExceeded,
+            RetryAfterStateChange,
+            "Maximum number of live audit log entries has been reached; clean up old entries before retrying.",
+        ),
     };
 
     ContractErrorInfo {
@@ -492,6 +498,7 @@ fn message_for(error: NavinError) -> Symbol {
         NavinError::ShipmentNotFound => symbol_short!("shipment"),
         NavinError::InvalidStatus => symbol_short!("invalid"),
         NavinError::InvalidHash => symbol_short!("hash_err"),
+        NavinError::AuditLogLimitExceeded => symbol_short!("audit_cap"),
         NavinError::TokenTransferFailed => symbol_short!("token"),
         NavinError::TokenMintFailed => symbol_short!("token"),
         NavinError::CircuitBreakerOpen => symbol_short!("circuit"),
@@ -575,6 +582,7 @@ pub fn get_error_info(code: u32) -> ContractErrorInfo {
         69 => error_info(NavinError::CarrierAlreadyWhitelisted),
         70 => error_info(NavinError::InvalidAddress),
         71 => error_info(NavinError::RecoveryLimitExceeded),
+        72 => error_info(NavinError::AuditLogLimitExceeded),
         _ => ContractErrorInfo {
             code,
             category: ErrorCategory::InvalidInput,
@@ -681,6 +689,7 @@ mod tests {
             (NavinError::ShipmentFinalized, 38),
             (NavinError::ShipmentNotFound, 4),
             (NavinError::Unauthorized, 3),
+            (NavinError::AuditLogLimitExceeded, 72),
         ];
         for (err, expected_code) in cases {
             let info = error_info(*err);

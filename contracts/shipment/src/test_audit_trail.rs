@@ -4,9 +4,9 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::audit::AuditEventType;
+    use crate::audit::{AuditEventType, AuditLogEntry};
     use crate::test_utils::setup_env;
-    use crate::{NavinShipment, NavinShipmentClient};
+    use crate::{audit, NavinError, NavinShipment, NavinShipmentClient};
     use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env};
 
     #[contract]
@@ -201,6 +201,51 @@ mod tests {
 
         let out_of_range = client.query_audit_history(&0, &(before - 1));
         assert_eq!(out_of_range.len(), 0);
+    }
+
+    #[test]
+    fn test_cleanup_audit_logs_frees_capacity_without_reusing_ids() {
+        let (env, admin) = setup_env();
+        let token = env.register(MockToken {}, ());
+        let contract_id = env.register(NavinShipment, ());
+        let client = NavinShipmentClient::new(&env, &contract_id);
+        client.initialize(&admin, &token);
+
+        let filler_target = Address::generate(&env);
+        env.as_contract(&contract_id, || {
+            for _ in 0..audit::MAX_AUDIT_LOG_ENTRIES {
+                let entry_id = audit::get_next_audit_entry_id(&env).unwrap();
+                audit::store_audit_entry(
+                    &env,
+                    &AuditLogEntry {
+                        entry_id,
+                        event_type: AuditEventType::RoleAssigned,
+                        actor: admin.clone(),
+                        target: filler_target.clone(),
+                        timestamp: env.ledger().timestamp(),
+                    },
+                );
+            }
+        });
+
+        let carrier = Address::generate(&env);
+        assert_eq!(
+            client.try_add_carrier(&admin, &carrier),
+            Err(Ok(NavinError::AuditLogLimitExceeded))
+        );
+
+        let before_timestamp = env.ledger().timestamp() + 1;
+        assert_eq!(
+            client
+                .cleanup_audit_logs(&admin, &before_timestamp)
+                .unwrap(),
+            audit::MAX_AUDIT_LOG_ENTRIES
+        );
+        client.add_carrier(&admin, &carrier);
+
+        let entries = client.query_audit_history_for_target(&carrier);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries.get(0).unwrap().entry_id, 1000);
     }
 
     #[test]

@@ -161,4 +161,6 @@ pub enum NavinError {
     InvalidAddress = 70,
     /// Maximum allowed recovery action entries for a shipment has been reached.
     RecoveryLimitExceeded = 71,
+    /// Maximum number of live audit log entries has been reached.
+    AuditLogLimitExceeded = 72,
 }
