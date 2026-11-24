@@ -558,10 +558,10 @@ Emitted once when the shipment contract is initialized. `init` is the only topic
 **Emitted by:** `initialize`
 **Caller role:** Admin
 
-| #   | Field            | Soroban Type | Description                       |
-| --- | ---------------- | ------------ | --------------------------------- |
-| 1   | `admin`          | `Address`    | Initial admin address             |
-| 2   | `token_contract` | `Address`    | Token contract used for escrow    |
+| #   | Field            | Soroban Type | Description                    |
+| --- | ---------------- | ------------ | ------------------------------ |
+| 1   | `admin`          | `Address`    | Initial admin address          |
+| 2   | `token_contract` | `Address`    | Token contract used for escrow |
 
 **Backend action:** Record the deployment's admin and token contract.
 
@@ -575,10 +575,10 @@ Emitted when the admin updates the global active-shipment limit. `set_limit` is 
 **Emitted by:** `set_shipment_limit`
 **Caller role:** Admin
 
-| #   | Field   | Soroban Type | Description                       |
-| --- | ------- | ------------ | --------------------------------- |
-| 1   | `admin` | `Address`    | Admin that changed the limit      |
-| 2   | `limit` | `u32`        | New global active-shipment limit  |
+| #   | Field   | Soroban Type | Description                      |
+| --- | ------- | ------------ | -------------------------------- |
+| 1   | `admin` | `Address`    | Admin that changed the limit     |
+| 2   | `limit` | `u32`        | New global active-shipment limit |
 
 **Backend action:** Update the stored global shipment limit.
 
@@ -592,13 +592,29 @@ Emitted when the admin sets a company-specific active-shipment limit. `set_cmp_l
 **Emitted by:** `set_company_shipment_limit`
 **Caller role:** Admin
 
-| #   | Field     | Soroban Type | Description                            |
-| --- | --------- | ------------ | -------------------------------------- |
-| 1   | `admin`   | `Address`    | Admin that changed the limit           |
-| 2   | `company` | `Address`    | Company the override applies to        |
-| 3   | `limit`   | `u32`        | New active-shipment limit for company  |
+| #   | Field     | Soroban Type | Description                           |
+| --- | --------- | ------------ | ------------------------------------- |
+| 1   | `admin`   | `Address`    | Admin that changed the limit          |
+| 2   | `company` | `Address`    | Company the override applies to       |
+| 3   | `limit`   | `u32`        | New active-shipment limit for company |
 
 **Backend action:** Update the stored limit override for the company.
+
+### `quota_set`
+
+Emitted when the admin configures the global shipment creation quota window. `quota_set` is the only topic string for this event.
+
+**Topic:** `"quota_set"`
+**Emitted by:** `set_creation_quota`
+**Caller role:** Admin
+
+| #   | Field            | Soroban Type | Description                             |
+| --- | ---------------- | ------------ | --------------------------------------- |
+| 1   | `admin`          | `Address`    | Admin that configured the quota         |
+| 2   | `max_per_window` | `u32`        | Maximum shipments allowed per window    |
+| 3   | `window_seconds` | `u64`        | Duration of the quota window in seconds |
+
+**Backend action:** Update the global quota configuration.
 
 ---
 
@@ -1366,11 +1382,11 @@ Emitted when multiple transfers are executed atomically in a single call via `ba
 **Emitted by:** `batch_transfer`
 **Caller role:** Token holder
 
-| #   | Field        | Soroban Type           | Description                        |
-| --- | ------------ | ---------------------- | ---------------------------------- |
-| 1   | `from`       | `Address`              | Source account                     |
-| 2   | `recipients` | `Vec<(Address, i128)>` | List of recipient and amount pairs |
-| 3   | `leg_count`  | `u32`                  | Total number of recipients in batch|
+| #   | Field        | Soroban Type           | Description                         |
+| --- | ------------ | ---------------------- | ----------------------------------- |
+| 1   | `from`       | `Address`              | Source account                      |
+| 2   | `recipients` | `Vec<(Address, i128)>` | List of recipient and amount pairs  |
+| 3   | `leg_count`  | `u32`                  | Total number of recipients in batch |
 
 **Backend action:** Record atomic batch settlement; all transfers succeed or all revert.
 

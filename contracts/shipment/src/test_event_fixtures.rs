@@ -1064,3 +1064,37 @@ fn test_escrow_deposited_data_hash_differs_by_amount() {
         "different amounts must yield different data_hash"
     );
 }
+
+
+// ── quota_set event payload shape ────────────────────────────────────────────
+//
+// Expected tuple: (admin, max_per_window, window_seconds)
+// Length: 3
+
+#[test]
+fn test_snapshot_quota_set_payload_shape() {
+    let (env, client, admin, _company, _carrier, _receiver) = fixture_env();
+
+    client.set_creation_quota(&admin, &10, &3600);
+
+    let payload =
+        find_event_data(&env, crate::event_topics::QUOTA_SET).expect("quota_set event not emitted");
+
+    assert_eq!(
+        payload.len(),
+        3,
+        "quota_set payload must have exactly 3 fields; got {}",
+        payload.len()
+    );
+
+    let event_admin: Address = payload.get(0).unwrap().try_into_val(&env).unwrap();
+    let event_max_per_window: u32 = payload.get(1).unwrap().try_into_val(&env).unwrap();
+    let event_window_seconds: u64 = payload.get(2).unwrap().try_into_val(&env).unwrap();
+
+    assert_eq!(event_admin, admin, "admin must be at index 0");
+    assert_eq!(event_max_per_window, 10, "max_per_window must be at index 1");
+    assert_eq!(
+        event_window_seconds, 3600,
+        "window_seconds must be at index 2"
+    );
+}
