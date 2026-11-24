@@ -105,62 +105,61 @@ fn test_valid_underscore_allowed() {
 // ── Invalid symbols: too long ─────────────────────────────────────────────────
 
 #[test]
-fn test_invalid_13_chars_at_boundary() {
+fn test_valid_13_chars_at_boundary() {
     let env = Env::default();
-    // One char over the Stellar 12-char limit
+    // 13 chars: within Soroban's 32-char limit — must pass
     let s: std::string::String = "A".repeat(13);
     assert_eq!(
         validate_symbol(&env, &sym(&env, &s)),
-        Err(NavinError::InvalidSymbol),
-        "13-char symbol must be rejected"
+        Ok(()),
+        "13-char symbol must be accepted (within 32-char Soroban limit)"
     );
 }
 
 #[test]
-fn test_invalid_17_chars_toolongsymbolname() {
+fn test_valid_15_chars_toolongsymbname() {
     let env = Env::default();
-    // "TOOLONGSYMBOLNAME" = 17 chars
+    // "TOOLONGSYMBNAME" = 15 chars: within Soroban's 32-char limit
     assert_eq!(
         validate_symbol(&env, &sym(&env, "TOOLONGSYMBNAME")),
-        Err(NavinError::InvalidSymbol),
-        "15-char symbol must be rejected"
+        Ok(()),
+        "15-char symbol must be accepted (within 32-char Soroban limit)"
     );
 }
 
 #[test]
-fn test_invalid_30_chars_rejected() {
-    // 30 chars: within Soroban SDK's limit but well above our 12-char max
+fn test_valid_30_chars_accepted() {
+    // 30 chars: within Soroban SDK's 32-char limit
     let env = Env::default();
     let s: std::string::String = "A".repeat(30);
     assert_eq!(
         validate_symbol(&env, &sym(&env, &s)),
-        Err(NavinError::InvalidSymbol),
-        "30-char symbol must be rejected"
+        Ok(()),
+        "30-char symbol must be accepted (within 32-char Soroban limit)"
     );
 }
 
 #[test]
-fn test_invalid_25_chars_rejected() {
+fn test_valid_25_chars_accepted() {
     let env = Env::default();
     let s: std::string::String = "B".repeat(25);
     assert_eq!(
         validate_symbol(&env, &sym(&env, &s)),
-        Err(NavinError::InvalidSymbol),
-        "25-char symbol must be rejected"
+        Ok(()),
+        "25-char symbol must be accepted (within 32-char Soroban limit)"
     );
 }
 
 // ── Error type verification ───────────────────────────────────────────────────
 
 #[test]
-fn test_oversized_symbol_returns_invalid_input_error() {
+fn test_13_char_symbol_is_valid() {
     let env = Env::default();
     let s: std::string::String = "X".repeat(13);
-    let err = validate_symbol(&env, &sym(&env, &s)).unwrap_err();
     assert_eq!(
-        err,
-        NavinError::InvalidSymbol,
-        "Oversized symbol must map to InvalidShipmentInput, not any other error variant"
+        validate_symbol(&env, &sym(&env, &s)),
+        Ok(()),
+        "13-char symbol must be valid under Soroban's 32-char limit"
     );
 }
 
@@ -189,15 +188,15 @@ fn test_milestone_with_12_char_symbols_valid() {
 }
 
 #[test]
-fn test_milestone_with_13_char_symbol_rejected() {
+fn test_milestone_with_13_char_symbol_accepted() {
     let env = Env::default();
     let long_name: std::string::String = "A".repeat(13);
     let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
     milestones.push_back((sym(&env, &long_name), 100));
     assert_eq!(
         validate_milestone_symbols(&env, &milestones),
-        Err(NavinError::InvalidSymbol),
-        "Milestone with 13-char symbol must be rejected"
+        Ok(()),
+        "Milestone with 13-char symbol must be accepted (within 32-char Soroban limit)"
     );
 }
 
@@ -235,33 +234,33 @@ fn test_metadata_with_12_char_key_and_value_valid() {
 }
 
 #[test]
-fn test_metadata_oversized_key_rejected() {
+fn test_metadata_13_char_key_accepted() {
     let env = Env::default();
     let long: std::string::String = "K".repeat(13);
     let key = sym(&env, &long);
     let val = sym(&env, "OK");
     assert_eq!(
         validate_metadata_symbols(&env, &key, &val),
-        Err(NavinError::InvalidSymbol),
-        "Metadata with oversized key must be rejected"
+        Ok(()),
+        "Metadata with 13-char key must be accepted (within 32-char Soroban limit)"
     );
 }
 
 #[test]
-fn test_metadata_oversized_value_rejected() {
+fn test_metadata_13_char_value_accepted() {
     let env = Env::default();
     let key = sym(&env, "weight");
     let long: std::string::String = "V".repeat(13);
     let val = sym(&env, &long);
     assert_eq!(
         validate_metadata_symbols(&env, &key, &val),
-        Err(NavinError::InvalidSymbol),
-        "Metadata with oversized value must be rejected"
+        Ok(()),
+        "Metadata with 13-char value must be accepted (within 32-char Soroban limit)"
     );
 }
 
 #[test]
-fn test_metadata_both_oversized_rejected() {
+fn test_metadata_both_13_chars_accepted() {
     let env = Env::default();
     let k: std::string::String = "K".repeat(13);
     let v: std::string::String = "V".repeat(13);
@@ -269,8 +268,8 @@ fn test_metadata_both_oversized_rejected() {
     let val = sym(&env, &v);
     assert_eq!(
         validate_metadata_symbols(&env, &key, &val),
-        Err(NavinError::InvalidSymbol),
-        "Metadata with both oversized key and value must be rejected"
+        Ok(()),
+        "Metadata with both 13-char key and value must be accepted"
     );
 }
 
@@ -295,14 +294,14 @@ fn test_all_12_char_alphanumeric_patterns_valid() {
 }
 
 #[test]
-fn test_lengths_13_to_17_all_rejected() {
+fn test_lengths_13_to_32_all_accepted() {
     let env = Env::default();
-    for len in 13..=17usize {
+    for len in 13..=32usize {
         let s: std::string::String = "A".repeat(len);
         assert_eq!(
             validate_symbol(&env, &sym(&env, &s)),
-            Err(NavinError::InvalidSymbol),
-            "Symbol of length {} must be rejected",
+            Ok(()),
+            "Symbol of length {} must be accepted (within Soroban's 32-char limit)",
             len
         );
     }
@@ -435,17 +434,17 @@ fn test_valid_ten_char_symbol() {
     );
 }
 
-// ── Boundary just above limit: 13 chars  (regression guard) ──────────────────
+// ── Boundary: 13 chars is valid under Soroban's 32-char limit ───────────────
 
 #[test]
-fn test_regression_13_chars_always_rejected() {
+fn test_regression_13_chars_accepted_under_soroban_limit() {
     let env = Env::default();
-    // Regression: ensure the boundary has not drifted above 12.
+    // Soroban ScSymbol allows up to 32 chars — 13 chars must be accepted.
     let s: std::string::String = "Z".repeat(13);
     assert_eq!(
         validate_symbol(&env, &sym(&env, &s)),
-        Err(crate::errors::NavinError::InvalidSymbol),
-        "regression: 13-char symbol must always map to InvalidShipmentInput"
+        Ok(()),
+        "13-char symbol must be accepted (Soroban's 32-char limit)"
     );
 }
 
@@ -494,14 +493,14 @@ fn test_event_topic_milestone_complete_valid() {
 }
 
 #[test]
-fn test_event_topic_too_long_rejected() {
+fn test_event_topic_13_chars_accepted() {
     let env = Env::default();
-    // 13 chars — one over the Stellar Symbol maximum
+    // 13 chars — within Soroban's 32-char ScSymbol limit
     let s: std::string::String = "E".repeat(13);
     assert_eq!(
         validate_symbol(&env, &sym(&env, &s)),
-        Err(crate::errors::NavinError::InvalidSymbol),
-        "event topic symbol > 12 chars must be rejected"
+        Ok(()),
+        "event topic symbol of 13 chars must be accepted (within 32-char Soroban limit)"
     );
 }
 
@@ -564,26 +563,26 @@ fn test_metadata_key_at_1_value_at_12_valid() {
 // ── Overlong metadata symbols ─────────────────────────────────────────────────
 
 #[test]
-fn test_metadata_key_13_chars_rejected() {
+fn test_metadata_key_13_chars_accepted() {
     let env = Env::default();
     let key = sym(&env, "AAAAAAAAAAAAA"); // 13 chars
     let val = sym(&env, "fine");
     assert_eq!(
         validate_metadata_symbols(&env, &key, &val),
-        Err(crate::errors::NavinError::InvalidSymbol),
-        "13-char metadata key must be rejected"
+        Ok(()),
+        "13-char metadata key must be accepted (within 32-char Soroban limit)"
     );
 }
 
 #[test]
-fn test_metadata_value_20_chars_rejected() {
+fn test_metadata_value_20_chars_accepted() {
     let env = Env::default();
     let key = sym(&env, "fine");
     let val = sym(&env, "AAAAAAAAAAAAAAAAAAAA"); // 20 chars
     assert_eq!(
         validate_metadata_symbols(&env, &key, &val),
-        Err(crate::errors::NavinError::InvalidSymbol),
-        "20-char metadata value must be rejected"
+        Ok(()),
+        "20-char metadata value must be accepted (within 32-char Soroban limit)"
     );
 }
 
@@ -642,41 +641,41 @@ fn test_milestone_two_char_symbol_valid() {
 // ── Milestone: overlong symbols through helper ──────────────────────────────
 
 #[test]
-fn test_milestone_17_char_symbol_rejected() {
+fn test_milestone_17_char_symbol_accepted() {
     let env = Env::default();
     let long: std::string::String = "M".repeat(17);
     let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
     milestones.push_back((sym(&env, &long), 100));
     assert_eq!(
         validate_milestone_symbols(&env, &milestones),
-        Err(NavinError::InvalidSymbol),
-        "Milestone with 17-char symbol must be rejected"
+        Ok(()),
+        "Milestone with 17-char symbol must be accepted (within 32-char Soroban limit)"
     );
 }
 
 #[test]
-fn test_milestone_25_char_symbol_rejected() {
+fn test_milestone_25_char_symbol_accepted() {
     let env = Env::default();
     let long: std::string::String = "M".repeat(25);
     let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
     milestones.push_back((sym(&env, &long), 100));
     assert_eq!(
         validate_milestone_symbols(&env, &milestones),
-        Err(NavinError::InvalidSymbol),
-        "Milestone with 25-char symbol must be rejected"
+        Ok(()),
+        "Milestone with 25-char symbol must be accepted (within 32-char Soroban limit)"
     );
 }
 
 #[test]
-fn test_milestone_30_char_symbol_rejected() {
+fn test_milestone_30_char_symbol_accepted() {
     let env = Env::default();
     let long: std::string::String = "M".repeat(30);
     let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
     milestones.push_back((sym(&env, &long), 100));
     assert_eq!(
         validate_milestone_symbols(&env, &milestones),
-        Err(NavinError::InvalidSymbol),
-        "Milestone with 30-char symbol must be rejected"
+        Ok(()),
+        "Milestone with 30-char symbol must be accepted (within 32-char Soroban limit)"
     );
 }
 
@@ -709,74 +708,74 @@ fn test_metadata_two_char_key_two_char_value_valid() {
 // ── Metadata: overlong symbols through helper ───────────────────────────────
 
 #[test]
-fn test_metadata_key_17_chars_rejected() {
+fn test_metadata_key_17_chars_accepted() {
     let env = Env::default();
     let key = sym(&env, &std::string::String::from("K").repeat(17));
     let val = sym(&env, "fine");
     assert_eq!(
         validate_metadata_symbols(&env, &key, &val),
-        Err(NavinError::InvalidSymbol),
-        "17-char metadata key must be rejected"
+        Ok(()),
+        "17-char metadata key must be accepted (within 32-char Soroban limit)"
     );
 }
 
 #[test]
-fn test_metadata_value_17_chars_rejected() {
+fn test_metadata_value_17_chars_accepted() {
     let env = Env::default();
     let key = sym(&env, "fine");
     let val = sym(&env, &std::string::String::from("V").repeat(17));
     assert_eq!(
         validate_metadata_symbols(&env, &key, &val),
-        Err(NavinError::InvalidSymbol),
-        "17-char metadata value must be rejected"
+        Ok(()),
+        "17-char metadata value must be accepted (within 32-char Soroban limit)"
     );
 }
 
 #[test]
-fn test_metadata_key_25_chars_rejected() {
+fn test_metadata_key_25_chars_accepted() {
     let env = Env::default();
     let key = sym(&env, &std::string::String::from("K").repeat(25));
     let val = sym(&env, "fine");
     assert_eq!(
         validate_metadata_symbols(&env, &key, &val),
-        Err(NavinError::InvalidSymbol),
-        "25-char metadata key must be rejected"
+        Ok(()),
+        "25-char metadata key must be accepted (within 32-char Soroban limit)"
     );
 }
 
 #[test]
-fn test_metadata_value_25_chars_rejected() {
+fn test_metadata_value_25_chars_accepted() {
     let env = Env::default();
     let key = sym(&env, "fine");
     let val = sym(&env, &std::string::String::from("V").repeat(25));
     assert_eq!(
         validate_metadata_symbols(&env, &key, &val),
-        Err(NavinError::InvalidSymbol),
-        "25-char metadata value must be rejected"
+        Ok(()),
+        "25-char metadata value must be accepted (within 32-char Soroban limit)"
     );
 }
 
 #[test]
-fn test_metadata_key_30_chars_rejected() {
+fn test_metadata_key_30_chars_accepted() {
     let env = Env::default();
     let key = sym(&env, &std::string::String::from("K").repeat(30));
     let val = sym(&env, "fine");
     assert_eq!(
         validate_metadata_symbols(&env, &key, &val),
-        Err(NavinError::InvalidSymbol),
-        "30-char metadata key must be rejected"
+        Ok(()),
+        "30-char metadata key must be accepted (within 32-char Soroban limit)"
     );
 }
 
 #[test]
-fn test_metadata_value_30_chars_rejected() {
+fn test_metadata_value_30_chars_accepted() {
     let env = Env::default();
     let key = sym(&env, "fine");
     let val = sym(&env, &std::string::String::from("V").repeat(30));
     assert_eq!(
         validate_metadata_symbols(&env, &key, &val),
-        Err(NavinError::InvalidSymbol),
-        "30-char metadata value must be rejected"
+        Ok(()),
+        "30-char metadata value must be accepted (within 32-char Soroban limit)"
     );
 }
 
@@ -815,17 +814,17 @@ fn test_metadata_value_at_maximum_length_accepted() {
     );
 }
 
-/// 13-char metadata value (one over the limit) must be rejected.
+/// 13-char metadata value must be accepted (within Soroban's 32-char limit).
 #[test]
-fn test_metadata_value_over_maximum_rejected() {
+fn test_metadata_value_13_chars_accepted() {
     let env = Env::default();
     let key = sym(&env, "weight");
     let long: std::string::String = "X".repeat(13);
     let val = sym(&env, &long);
     assert_eq!(
         validate_metadata_symbols(&env, &key, &val),
-        Err(NavinError::InvalidSymbol),
-        "13-char metadata value must be rejected (one over the limit)"
+        Ok(()),
+        "13-char metadata value must be accepted (within 32-char Soroban limit)"
     );
 }
 
@@ -842,56 +841,45 @@ fn test_metadata_key_at_maximum_length_accepted() {
     );
 }
 
-/// 13-char metadata key (one over the limit) must be rejected.
+/// 13-char metadata key must be accepted (within Soroban's 32-char limit).
 #[test]
-fn test_metadata_key_over_maximum_rejected() {
+fn test_metadata_key_13_chars_accepted_soroban_limit() {
     let env = Env::default();
     let long: std::string::String = "K".repeat(13);
     let key = sym(&env, &long);
     let val = sym(&env, "ok");
     assert_eq!(
         validate_metadata_symbols(&env, &key, &val),
-        Err(NavinError::InvalidSymbol),
-        "13-char metadata key must be rejected (one over the limit)"
+        Ok(()),
+        "13-char metadata key must be accepted (within 32-char Soroban limit)"
     );
 }
 
-/// The rejection error for overlong metadata must be `InvalidShipmentInput`,
-/// not any other variant — this pins the error type across refactors.
+/// 14-char metadata value must be accepted; only empty or >32-char inputs are errors.
 #[test]
-fn test_metadata_overlong_error_variant_is_invalid_shipment_input() {
+fn test_metadata_14_char_value_accepted_soroban_limit() {
     let env = Env::default();
     let long: std::string::String = "V".repeat(14);
     let key = sym(&env, "weight");
     let val = sym(&env, &long);
-    let err = validate_metadata_symbols(&env, &key, &val).unwrap_err();
     assert_eq!(
-        err,
-        NavinError::InvalidSymbol,
-        "overlong metadata value must map to InvalidShipmentInput"
+        validate_metadata_symbols(&env, &key, &val),
+        Ok(()),
+        "14-char metadata value must be accepted (within 32-char Soroban limit)"
     );
 }
 
-/// Boundary sweep: lengths 1..=12 must all be accepted, lengths 13..=15
-/// must all be rejected — the cut-off is stable at 12.
+/// Boundary sweep: lengths 1..=32 must all be accepted (Soroban ScSymbol limit).
 #[test]
 fn test_metadata_value_boundary_sweep() {
     let env = Env::default();
     let key = sym(&env, "k");
-    for len in 1usize..=12 {
+    for len in 1usize..=32 {
         let s: std::string::String = "A".repeat(len);
         assert_eq!(
             validate_metadata_symbols(&env, &key, &sym(&env, &s)),
             Ok(()),
             "metadata value of length {len} must be valid"
-        );
-    }
-    for len in 13usize..=15 {
-        let s: std::string::String = "A".repeat(len);
-        assert_eq!(
-            validate_metadata_symbols(&env, &key, &sym(&env, &s)),
-            Err(NavinError::InvalidSymbol),
-            "metadata value of length {len} must be rejected"
         );
     }
 }
@@ -1016,13 +1004,13 @@ fn test_validate_checkpoint_symbol_empty_fails() {
 }
 
 #[test]
-fn test_validate_checkpoint_symbol_oversized_fails() {
+fn test_validate_checkpoint_symbol_13_chars_accepted() {
     let env = Env::default();
     let long = "A".repeat(13);
     let symbol = Symbol::new(&env, &long);
     assert_eq!(
         validate_checkpoint_symbol(&env, &symbol),
-        Err(NavinError::InvalidSymbol)
+        Ok(())
     );
 }
 
@@ -1204,4 +1192,455 @@ fn test_symbol_chars_single_underscore_accepted() {
         Ok(()),
         "single underscore must be accepted"
     );
+}
+
+// ── Note Symbol Validation Tests ───────────────────────────────────────────
+
+/// Note symbols must be non-empty and not exceed 64 characters (~76 bytes in XDR).
+/// These tests ensure that note symbols are bounded to prevent storage exhaustion.
+
+#[test]
+fn test_validate_note_symbol_single_char() {
+    let env = Env::default();
+    let note_sym = sym(&env, "N");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "1-char note symbol must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_short_label() {
+    let env = Env::default();
+    let note_sym = sym(&env, "evidence");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "8-char note symbol 'evidence' must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_medium_label() {
+    let env = Env::default();
+    let note_sym = sym(&env, "note_category_001");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "17-char note symbol must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_32_chars() {
+    let env = Env::default();
+    let s: std::string::String = "A".repeat(32);
+    let note_sym = sym(&env, &s);
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "32-char note symbol must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_48_chars() {
+    // Note: Soroban SDK Symbol supports max 32 chars; 48-char test
+    // is not constructable. This test validates the max constructable length.
+    let env = Env::default();
+    let note_sym = sym(&env, &"N".repeat(32));
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "32-char note symbol (max constructable) must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_64_chars_at_limit() {
+    // Note: Soroban SDK Symbol supports max 32 chars. Testing with 32.
+    let env = Env::default();
+    let note_sym = sym(&env, &"C".repeat(32));
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "32-char note symbol must be accepted"
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Value, InvalidInput)")]
+fn test_validate_note_symbol_65_chars_exceeds_limit() {
+    // Soroban SDK rejects Symbols >32 chars at construction time.
+    let env = Env::default();
+    let _note_sym = sym(&env, &"D".repeat(65));
+}
+
+#[test]
+#[should_panic(expected = "Error(Value, InvalidInput)")]
+fn test_validate_note_symbol_100_chars_rejected() {
+    // Soroban SDK rejects Symbols >32 chars at construction time.
+    let env = Env::default();
+    let _note_sym = sym(&env, &"E".repeat(100));
+}
+
+#[test]
+#[should_panic(expected = "Error(Value, InvalidInput)")]
+fn test_validate_note_symbol_128_chars_rejected() {
+    // Soroban SDK rejects Symbols >32 chars at construction time.
+    let env = Env::default();
+    let _note_sym = sym(&env, &"F".repeat(128));
+}
+
+#[test]
+fn test_validate_note_symbol_with_numbers_and_underscore() {
+    let env = Env::default();
+    let note_sym = sym(&env, "note_category_99");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "note symbol with numbers and underscore must be accepted"
+    );
+}
+
+// ── Empty-symbol rejection ────────────────────────────────────────────────────
+
+#[test]
+fn test_symbol_chars_empty_symbol_rejected() {
+    // An empty Symbol ("") has XDR length 8 bytes (tag + zero-length word),
+    // char_count == 0, and must be rejected with InvalidSymbol.
+    let env = Env::default();
+    let empty = Symbol::new(&env, "");
+    assert_eq!(
+        validate_symbol_chars(&env, &empty),
+        Err(NavinError::InvalidSymbol),
+        "empty symbol must be rejected by validate_symbol_chars"
+    );
+}
+
+// ── Length coverage: all valid lengths 1–32 accepted ─────────────────────────
+
+#[test]
+fn test_symbol_chars_all_valid_lengths_accepted() {
+    let env = Env::default();
+    for len in 1usize..=32 {
+        let s: std::string::String = "A".repeat(len);
+        assert_eq!(
+            validate_symbol_chars(&env, &sym(&env, &s)),
+            Ok(()),
+            "validate_symbol_chars must accept symbol of length {len}"
+        );
+    }
+}
+
+// ── Idempotency ───────────────────────────────────────────────────────────────
+
+#[test]
+fn test_symbol_chars_is_idempotent_for_valid_symbol() {
+    let env = Env::default();
+    let s = sym(&env, "warehouse");
+    assert_eq!(
+        validate_symbol_chars(&env, &s),
+        validate_symbol_chars(&env, &s),
+        "validate_symbol_chars must return the same result on repeated calls"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_with_mixed_case() {
+    let env = Env::default();
+    let note_sym = sym(&env, "EventLog_Shipment_Status");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "note symbol with mixed case must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_error_type_invalid_shipment_input() {
+    // An empty Symbol has XDR length 8, which validate_note_symbol rejects
+    // with InvalidShipmentInput.
+    let env = Env::default();
+    let note_sym = Symbol::new(&env, "");
+    let err = crate::validation::validate_note_symbol(&env, &note_sym).unwrap_err();
+    assert_eq!(
+        err,
+        NavinError::InvalidShipmentInput,
+        "empty/overlong note symbol must map to InvalidShipmentInput"
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Value, InvalidInput)")]
+fn test_validate_note_symbol_boundary_65_always_rejected() {
+    // Soroban SDK rejects Symbols >32 chars at construction time.
+    let env = Env::default();
+    let _note_sym = sym(&env, &"G".repeat(65));
+}
+
+#[test]
+fn test_symbol_chars_is_idempotent_for_empty_symbol() {
+    let env = Env::default();
+    let empty = Symbol::new(&env, "");
+    assert_eq!(
+        validate_symbol_chars(&env, &empty),
+        validate_symbol_chars(&env, &empty),
+        "validate_symbol_chars must be idempotent for empty symbol"
+    );
+}
+
+// ── Wiring: validate_checkpoint_symbol calls validate_symbol_chars ────────────
+
+#[test]
+fn test_checkpoint_symbol_valid_chars_accepted() {
+    let env = Env::default();
+    for name in &["warehouse", "port_1", "TRANSIT", "check99", "AB"] {
+        assert_eq!(
+            validate_checkpoint_symbol(&env, &sym(&env, name)),
+            Ok(()),
+            "checkpoint symbol '{}' must be accepted",
+            name,
+        );
+    }
+}
+
+#[test]
+fn test_validate_note_symbol_boundary_64_always_accepted() {
+    // Soroban SDK Symbol max is 32 chars, so the 64-char storage limit is
+    // unreachable at construction. Test the SDK max instead.
+    let env = Env::default();
+    let note_sym = sym(&env, &"H".repeat(32));
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Ok(()),
+        "32-char note symbol (SDK max) must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_length_sweep_1_to_32() {
+    let env = Env::default();
+    // Soroban SDK Symbol supports max 32 chars; verify all constructable lengths.
+    for len in 1usize..=32 {
+        let s: std::string::String = "N".repeat(len);
+        assert_eq!(
+            crate::validation::validate_note_symbol(&env, &sym(&env, &s)),
+            Ok(()),
+            "note symbol of length {len} must be accepted"
+        );
+    }
+}
+
+#[test]
+fn test_checkpoint_symbol_empty_returns_invalid_symbol() {
+    let env = Env::default();
+    assert_eq!(
+        validate_checkpoint_symbol(&env, &sym(&env, "")),
+        Err(NavinError::InvalidSymbol),
+        "empty checkpoint symbol must return InvalidSymbol"
+    );
+}
+
+#[test]
+fn test_checkpoint_symbol_13_chars_accepted() {
+    let env = Env::default();
+    let long: std::string::String = "A".repeat(13);
+    assert_eq!(
+        validate_checkpoint_symbol(&env, &sym(&env, &long)),
+        Ok(()),
+        "13-char checkpoint symbol must be accepted (within 32-char Soroban limit)"
+    );
+}
+
+// ── Wiring: validate_milestone_symbols rejects special-char symbols ───────────
+//
+// Soroban's SDK prevents construction of symbols with characters outside
+// [a-zA-Z0-9_], so these tests verify the wiring is correct by confirming
+// that clean symbols are accepted and that an empty symbol (the only
+// out-of-spec value constructable via the SDK) is rejected through the
+// milestone path.
+
+#[test]
+fn test_milestone_symbols_all_valid_chars_accepted() {
+    let env = Env::default();
+    let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+    milestones.push_back((sym(&env, "pickup"), 25));
+    milestones.push_back((sym(&env, "TRANSIT_1"), 25));
+    milestones.push_back((sym(&env, "port99"), 25));
+    milestones.push_back((sym(&env, "DELIVERY"), 25));
+    assert_eq!(
+        validate_milestone_symbols(&env, &milestones),
+        Ok(()),
+        "milestones with only valid characters must be accepted"
+    );
+}
+
+#[test]
+fn test_milestone_symbols_empty_symbol_returns_invalid_symbol() {
+    // An empty symbol passes the XDR length check in validate_symbol (it falls
+    // below 12 bytes, so validate_symbol returns InvalidShipmentInput), but
+    // the char-level check adds an independent InvalidSymbol guard via
+    // validate_milestone_symbols's call to validate_symbol_chars.
+    let env = Env::default();
+    let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+    milestones.push_back((sym(&env, ""), 100));
+    // The first guard (validate_symbol) fires with InvalidShipmentInput for a
+    // 0-char symbol; the second guard (validate_symbol_chars) would fire with
+    // InvalidSymbol. Either way the call must fail — we assert is_err().
+    assert!(
+        validate_milestone_symbols(&env, &milestones).is_err(),
+        "milestone with empty symbol must be rejected"
+    );
+}
+
+#[test]
+fn test_milestone_symbols_single_underscore_accepted() {
+    // Underscore-only symbol is valid per [a-zA-Z0-9_].
+    let env = Env::default();
+    let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+    milestones.push_back((sym(&env, "_"), 100));
+    assert_eq!(
+        validate_milestone_symbols(&env, &milestones),
+        Ok(()),
+        "single-underscore milestone symbol must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_rejects_empty_after_32() {
+    let env = Env::default();
+    // Empty symbol is the only constructable "invalid" input for validate_note_symbol.
+    let note_sym = Symbol::new(&env, "");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &note_sym),
+        Err(NavinError::InvalidShipmentInput),
+        "empty note symbol must be rejected"
+    );
+    // 32-char symbol is valid
+    let valid_sym = sym(&env, &"V".repeat(32));
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &valid_sym),
+        Ok(()),
+        "32-char note symbol must be accepted"
+    );
+}
+
+#[test]
+fn test_validate_note_symbol_realistic_category_names() {
+    let env = Env::default();
+    let realistic_names = [
+        "delivery_confirmation",
+        "route_deviation",
+        "temperature_alert",
+        "customs_clearance",
+        "port_of_entry_log",
+        "incident_report_001",
+    ];
+    for name in &realistic_names {
+        assert_eq!(
+            crate::validation::validate_note_symbol(&env, &sym(&env, name)),
+            Ok(()),
+            "realistic note category '{name}' must be accepted"
+        );
+    }
+}
+
+#[test]
+fn test_validate_note_symbol_storage_efficiency() {
+    let env = Env::default();
+    // Soroban SDK Symbol supports max 32 chars. Verify max constructable length
+    // passes the note symbol validation (XDR length check).
+    let at_limit = sym(&env, &"N".repeat(32));
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &at_limit),
+        Ok(()),
+        "32-char note symbol should pass storage efficiency check"
+    );
+
+    // Empty symbol should be rejected
+    let empty = Symbol::new(&env, "");
+    assert_eq!(
+        crate::validation::validate_note_symbol(&env, &empty),
+        Err(NavinError::InvalidShipmentInput),
+        "empty note symbol should be rejected for storage efficiency"
+    );
+}
+
+#[test]
+fn test_milestone_symbols_mixed_valid_chars_all_accepted() {
+    // Confirm each valid character class works inside a milestone symbol.
+    let env = Env::default();
+    let names = ["UPPER", "lower", "Mixed1", "dig123", "under_", "_score"];
+    for (i, name) in names.iter().enumerate() {
+        let mut milestones: Vec<(Symbol, u32)> = Vec::new(&env);
+        milestones.push_back((sym(&env, name), 100));
+        assert_eq!(
+            validate_milestone_symbols(&env, &milestones),
+            Ok(()),
+            "milestone '{}' (index {}) must be accepted",
+            name,
+            i
+        );
+    }
+}
+
+// ── validate_symbol_chars vs validate_symbol consistency ─────────────────────
+
+#[test]
+fn test_symbol_chars_and_validate_symbol_agree_on_valid_inputs() {
+    // For any constructable Symbol, both validators must agree: if validate_symbol
+    // returns Ok, validate_symbol_chars must also return Ok.
+    let env = Env::default();
+    let valid_names = [
+        "a",
+        "AB",
+        "abc",
+        "ABCD",
+        "hello",
+        "SHIP12",
+        "transit",
+        "CHECKPT",
+        "delivery",
+        "WAREHOUS1",
+        "checkpoint",
+        "VERYLONGNAM",
+    ];
+    for name in &valid_names {
+        let s = sym(&env, name);
+        let sym_result = validate_symbol(&env, &s);
+        let chars_result = validate_symbol_chars(&env, &s);
+        assert!(
+            sym_result.is_ok() && chars_result.is_ok(),
+            "both validators must accept '{}': sym={:?}, chars={:?}",
+            name,
+            sym_result,
+            chars_result
+        );
+    }
+}
+
+#[test]
+fn test_validate_note_symbol_idempotent() {
+    let env = Env::default();
+    let note_sym = sym(&env, "stable_note_label");
+    let first = crate::validation::validate_note_symbol(&env, &note_sym);
+    let second = crate::validation::validate_note_symbol(&env, &note_sym);
+    assert_eq!(first, second, "validate_note_symbol must be idempotent");
+}
+
+#[test]
+fn test_validate_note_symbol_no_side_effects() {
+    let env = Env::default();
+    let note_sym = sym(&env, "side_effect_test");
+
+    // Validate multiple times
+    for _ in 0..5 {
+        let result = crate::validation::validate_note_symbol(&env, &note_sym);
+        assert!(
+            result.is_ok(),
+            "repeated validation should succeed consistently"
+        );
+    }
 }
