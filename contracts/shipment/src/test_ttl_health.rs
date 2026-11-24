@@ -305,3 +305,154 @@ fn test_ttl_health_output_matches_storage_state() {
         );
     });
 }
+
+// ── #1223: archive_shipment gated on terminal status + settled escrow ────────
+
+/// A shipment that reached a terminal status while still holding escrow must
+/// not be archivable: the archived payload would be unreachable for the
+/// release/refund settlement that still has to happen (#1223).
+#[test]
+fn test_archive_rejected_while_escrow_unsettled() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0x31u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &(env.ledger().timestamp() + 86_400),
+    );
+    client.deposit_escrow(&company, &shipment_id, &1_000);
+
+    // Drive to a terminal status WITHOUT settling escrow: update_status never
+    // moves tokens (only confirm_delivery / settlement paths do).
+    client.update_status(
+        &admin,
+        &shipment_id,
+        &crate::ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[0x32u8; 32]),
+    );
+    client.update_status(
+        &admin,
+        &shipment_id,
+        &crate::ShipmentStatus::AtCheckpoint,
+        &BytesN::from_array(&env, &[0x33u8; 32]),
+    );
+    client.update_status(
+        &admin,
+        &shipment_id,
+        &crate::ShipmentStatus::Delivered,
+        &BytesN::from_array(&env, &[0x34u8; 32]),
+    );
+
+    assert_eq!(
+        client.try_archive_shipment(&admin, &shipment_id),
+        Err(Ok(crate::NavinError::EscrowLocked)),
+        "archiving with unsettled escrow must fail with EscrowLocked"
+    );
+
+    // The shipment must remain reachable in persistent storage.
+    env.as_contract(&client.address, || {
+        assert!(crate::storage::has_persistent_shipment(&env, shipment_id));
+        assert!(!crate::storage::is_shipment_archived(&env, shipment_id));
+    });
+}
+
+/// Paused contracts reject archive like other state-changing entry points.
+#[test]
+fn test_archive_rejected_while_paused() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0x41u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &(env.ledger().timestamp() + 86_400),
+    );
+    let reason_hash = BytesN::from_array(&env, &[0x42u8; 32]);
+    client.cancel_shipment(&company, &shipment_id, &reason_hash);
+
+    client.pause(&admin);
+    assert_eq!(
+        client.try_archive_shipment(&admin, &shipment_id),
+        Err(Ok(crate::NavinError::ContractPaused))
+    );
+    client.unpause(&admin);
+
+    // Unpaused, the same archive now succeeds (terminal + escrow settled).
+    client.archive_shipment(&admin, &shipment_id);
+    env.as_contract(&client.address, || {
+        assert!(crate::storage::is_shipment_archived(&env, shipment_id));
+    });
+}
+
+/// Re-archiving an archived shipment reports ShipmentAlreadyCompleted rather
+/// than falling through to ShipmentNotFound (#1223 ordering).
+#[test]
+fn test_archive_twice_reports_already_completed() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0x51u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &(env.ledger().timestamp() + 86_400),
+    );
+    let reason_hash = BytesN::from_array(&env, &[0x52u8; 32]);
+    client.cancel_shipment(&company, &shipment_id, &reason_hash);
+
+    client.archive_shipment(&admin, &shipment_id);
+    assert_eq!(
+        client.try_archive_shipment(&admin, &shipment_id),
+        Err(Ok(crate::NavinError::ShipmentAlreadyCompleted))
+    );
+}
+
+/// Non-terminal shipments are still rejected with InvalidStatus, and the
+/// escrow check only applies after the status gate.
+#[test]
+fn test_archive_rejected_for_non_terminal_status() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(&env, &[0x61u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+        &(env.ledger().timestamp() + 86_400),
+    );
+    assert_eq!(
+        client.try_archive_shipment(&admin, &shipment_id),
+        Err(Ok(crate::NavinError::InvalidStatus))
+    );
+}

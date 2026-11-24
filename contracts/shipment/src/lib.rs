@@ -2766,25 +2766,34 @@ impl NavinShipment {
 
     /// Archive a shipment by moving it from persistent to temporary storage.
     /// This reduces state rent costs for completed shipments.
-    /// Only admin can archive, and shipment must be in a terminal state (Delivered or Cancelled).
+    /// Only admin can archive, and shipment must be in a terminal state
+    /// (Delivered, Cancelled or PartiallyRefunded) **with its escrow fully
+    /// settled** (`escrow_amount == 0`) — archiving a shipment that still
+    /// holds escrow would strand funds behind an archived record (#1223).
     /// TTL is extended on write and on subsequent reads to prevent silent eviction.
     pub fn archive_shipment(env: Env, admin: Address, shipment_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
         if storage::get_admin(&env) != admin {
             return Err(NavinError::Unauthorized);
         }
-        let shipment =
-            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
         // Only allow archiving terminal state shipments (must not be already archived)
         if storage::is_shipment_archived(&env, shipment_id) {
             return Err(NavinError::ShipmentAlreadyCompleted);
         }
+        let shipment =
+            storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
         if shipment.status != ShipmentStatus::Delivered
             && shipment.status != ShipmentStatus::Cancelled
             && shipment.status != ShipmentStatus::PartiallyRefunded
         {
             return Err(NavinError::InvalidStatus);
+        }
+        // Refuse to archive while escrow is unsettled: the archived payload
+        // would no longer be reachable for release/refund settlement.
+        if shipment.escrow_amount != 0 {
+            return Err(NavinError::EscrowLocked);
         }
         storage::archive_shipment(&env, shipment_id, &shipment);
         // Purge status hashes for terminal states (including PartiallyRefunded) — cleanup list per issue #783
