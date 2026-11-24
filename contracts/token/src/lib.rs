@@ -764,12 +764,18 @@ impl NavinToken {
             }
             filtered_recipients.push_back((to.clone(), amount));
             env.events().publish(
-                (Symbol::new(&env, event_topics::BATCH_LEG),),
+                (
+                    Symbol::new(&env, event_topics::BATCH_LEG),
+                    Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                ),
                 (from.clone(), to, amount),
             );
         }
         env.events().publish(
-            (Symbol::new(&env, event_topics::BATCH_TRANSFER),),
+            (
+                Symbol::new(&env, event_topics::BATCH_TRANSFER),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
             (from, filtered_recipients.clone(), filtered_recipients.len()),
         );
 
