@@ -515,3 +515,179 @@ fn test_multiple_shipments_independent_settlements() {
 
     assert_eq!(client.get_settlement_count(), 2);
 }
+
+// ── #1224: every escrow-moving path goes through the settlement pipeline ─────
+
+/// Shared setup: company/carrier registered, shipment created, escrow deposited.
+fn shipment_with_escrow(
+    env: &Env,
+    client: &crate::NavinShipmentClient,
+    admin: &Address,
+    escrow_amount: i128,
+) -> (Address, Address, u64) {
+    let company = Address::generate(env);
+    let carrier = Address::generate(env);
+    let receiver = Address::generate(env);
+
+    client.add_company(admin, &company);
+    client.add_carrier(admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &dummy_hash(env),
+        &soroban_sdk::Vec::new(env),
+        &(env.ledger().timestamp() + 86400),
+    );
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+    (company, carrier, shipment_id)
+}
+
+/// cancel_shipment must refund through the settlement pipeline: a completed
+/// Refund settlement record exists and the escrow key is cleaned up.
+#[test]
+fn test_cancel_shipment_creates_refund_settlement() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let (company, _carrier, shipment_id) = shipment_with_escrow(&env, &client, &admin, 1000);
+    assert_eq!(client.get_settlement_count(), 1);
+
+    let reason_hash = BytesN::from_array(&env, &[7u8; 32]);
+    client.cancel_shipment(&company, &shipment_id, &reason_hash);
+
+    // deposit + refund settlements, both completed
+    assert_eq!(client.get_settlement_count(), 2);
+    let refund = client.get_settlement(&2);
+    assert_eq!(refund.operation, SettlementOperation::Refund);
+    assert_eq!(refund.state, SettlementState::Completed);
+    assert_eq!(refund.amount, 1000);
+    assert_eq!(refund.to, company);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+    assert_eq!(shipment.escrow_amount, 0);
+
+    env.as_contract(&client.address, || {
+        assert!(
+            !crate::storage::has_escrow_entry(&env, shipment_id),
+            "escrow key must be removed after settlement"
+        );
+    });
+}
+
+/// check_deadline auto-expiry must also refund through the settlement pipeline.
+#[test]
+fn test_check_deadline_creates_refund_settlement() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let (_company, _carrier, shipment_id) = shipment_with_escrow(&env, &client, &admin, 500);
+
+    // Jump past deadline + default grace period (86400s).
+    use soroban_sdk::testutils::Ledger;
+    env.ledger().set_timestamp(env.ledger().timestamp() + 86400 + 86400 + 1);
+    client.check_deadline(&shipment_id);
+
+    assert_eq!(client.get_settlement_count(), 2);
+    let refund = client.get_settlement(&2);
+    assert_eq!(refund.operation, SettlementOperation::Refund);
+    assert_eq!(refund.state, SettlementState::Completed);
+    assert_eq!(refund.amount, 500);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+/// ForceRelease via multi-sig must release through the settlement pipeline.
+#[test]
+fn test_force_release_creates_release_settlement() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let (_company, carrier, shipment_id) = shipment_with_escrow(&env, &client, &admin, 700);
+
+    let admin2 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    let reason_hash = BytesN::from_array(&env, &[9u8; 32]);
+    let action = crate::types::AdminAction::ForceRelease(shipment_id, reason_hash.clone());
+    let proposal_id = client.propose_action(&admin, &action);
+    client.approve_action(&admin2, &proposal_id);
+
+    assert_eq!(client.get_settlement_count(), 2);
+    let release = client.get_settlement(&2);
+    assert_eq!(release.operation, SettlementOperation::Release);
+    assert_eq!(release.state, SettlementState::Completed);
+    assert_eq!(release.amount, 700);
+    assert_eq!(release.to, carrier);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Delivered);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+/// ForceRefund via multi-sig must refund through the settlement pipeline.
+#[test]
+fn test_force_refund_creates_refund_settlement() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let (company, _carrier, shipment_id) = shipment_with_escrow(&env, &client, &admin, 800);
+
+    let admin2 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    let reason_hash = BytesN::from_array(&env, &[10u8; 32]);
+    let action = crate::types::AdminAction::ForceRefund(shipment_id, reason_hash);
+    let proposal_id = client.propose_action(&admin, &action);
+    client.approve_action(&admin2, &proposal_id);
+
+    assert_eq!(client.get_settlement_count(), 2);
+    let refund = client.get_settlement(&2);
+    assert_eq!(refund.operation, SettlementOperation::Refund);
+    assert_eq!(refund.state, SettlementState::Completed);
+    assert_eq!(refund.amount, 800);
+    assert_eq!(refund.to, company);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+/// PartialRefund dispute resolution must produce two settlements (release +
+/// refund) for the split shares, all through the settlement pipeline.
+#[test]
+fn test_resolve_dispute_partial_refund_creates_split_settlements() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let (company, carrier, shipment_id) = shipment_with_escrow(&env, &client, &admin, 1001);
+
+    let dispute_reason = BytesN::from_array(&env, &[11u8; 32]);
+    client.raise_dispute(&company, &shipment_id, &dispute_reason);
+
+    let resolve_reason = BytesN::from_array(&env, &[12u8; 32]);
+    client.resolve_dispute(
+        &admin,
+        &shipment_id,
+        &crate::types::DisputeResolution::PartialRefund,
+        &resolve_reason,
+    );
+
+    // deposit + release(500) + refund(501)
+    assert_eq!(client.get_settlement_count(), 3);
+    let release = client.get_settlement(&2);
+    assert_eq!(release.operation, SettlementOperation::Release);
+    assert_eq!(release.state, SettlementState::Completed);
+    assert_eq!(release.amount, 500);
+    assert_eq!(release.to, carrier);
+    let refund = client.get_settlement(&3);
+    assert_eq!(refund.operation, SettlementOperation::Refund);
+    assert_eq!(refund.state, SettlementState::Completed);
+    assert_eq!(refund.amount, 501);
+    assert_eq!(refund.to, company);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::PartiallyRefunded);
+    assert_eq!(shipment.escrow_amount, 0);
+}
