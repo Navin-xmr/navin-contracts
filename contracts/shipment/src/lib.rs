@@ -580,11 +580,7 @@ fn effective_batch_query_limit(env: &Env) -> u32 {
 }
 
 fn finalize_if_settled(_env: &Env, shipment: &mut Shipment) {
-    if (shipment.status == ShipmentStatus::Delivered
-        || shipment.status == ShipmentStatus::Cancelled
-        || shipment.status == ShipmentStatus::PartiallyRefunded)
-        && shipment.escrow_amount == 0
-    {
+    if shipment.status.is_terminal() && shipment.escrow_amount == 0 {
         shipment.finalized = true;
     }
 }
