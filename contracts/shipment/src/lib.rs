@@ -315,7 +315,6 @@ fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(),
     Ok(())
 }
 
-
 fn open_dispute(
     env: &Env,
     shipment: &mut Shipment,
@@ -324,7 +323,7 @@ fn open_dispute(
 ) -> Result<(), NavinError> {
     crate::validate_shipment_transition(&shipment.status, &ShipmentStatus::Disputed)?;
 
-    let shipment_id = shipment.shipment_id;
+    let shipment_id = shipment.id;
     let old_status = shipment.status.clone();
     shipment.status = ShipmentStatus::Disputed;
     shipment.updated_at = env.ledger().timestamp();
