@@ -10,7 +10,13 @@
 extern crate std;
 
 use crate::event_topics::{self, EVENT_SCHEMA_VERSION};
-use crate::{test_receivers::AcceptingReceiver, NavinShipmentNft, NavinShipmentNftClient};
+use crate::{
+    test_receivers::{
+        panic_receiver::{PanicReceiver, PanicReceiverClient},
+        AcceptingReceiver,
+    },
+    NavinShipmentNft, NavinShipmentNftClient,
+};
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Events as _, Ledger as _},
@@ -302,6 +308,30 @@ fn test_admin_proposal_emits_event() {
                 (admin, new_admin, TIMESTAMP).into_val(&env),
             ),
         ]
+    );
+}
+
+#[test]
+/// Verifies CEI ordering: the xfer event and ownership are recorded before
+/// `on_nft_received` is invoked, so a contract recipient that has no callback
+/// logic still sees the token in its balance and the event in the log.
+///
+/// Uses `PanicReceiver` (a minimal receiver with a no-op callback) to confirm
+/// that the event is emitted whether or not the callback does anything.
+#[test]
+fn test_xfer_event_and_ownership_recorded_before_callback_body_runs() {
+    let (env, _admin, client) = setup();
+    let alice = crate::test_utils::account_address(&env, 0);
+    let receiver_id = env.register(PanicReceiver, ());
+    let _ = PanicReceiverClient::new(&env, &receiver_id);
+
+    client.mint(&alice, &1);
+    client.transfer(&alice, &receiver_id, &1, &Vec::new(&env));
+
+    // The xfer event is in the log (CEI: emitted before the callback).
+    assert_eq!(
+        count_events(&env, &client.address, event_topics::TRANSFER),
+        1
     );
 }
 

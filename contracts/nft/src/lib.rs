@@ -281,16 +281,11 @@ impl NavinShipmentNft {
         Self::remove_token_from_owner(env, from, token_id)?;
         Self::add_token_to_owner(env, to, token_id)?;
 
-        if Self::is_contract_address(to) {
-            // Best effort: receivers that implement `on_nft_received` get the
-            // transfer payload, receivers that do not are unaffected.
-            let _ = env.try_invoke_contract::<(), soroban_sdk::Error>(
-                to,
-                &Symbol::new(env, "on_nft_received"),
-                (from.clone(), token_id, data).into_val(env),
-            );
-        }
-
+        // Publish the event and extend TTLs before invoking the callback
+        // (checks-effects-interactions). A re-entrant receiver that
+        // immediately transfers the token onward will therefore publish its
+        // own xfer event *after* this one, which is the correct order:
+        // events appear in the order ownership actually changed.
         env.events().publish(
             (event_topics::TRANSFER, event_topics::EVENT_SCHEMA_VERSION),
             (token_id, from.clone(), to.clone(), env.ledger().timestamp()),
@@ -299,6 +294,19 @@ impl NavinShipmentNft {
         Self::extend_instance_ttl(env);
         Self::extend_persistent_ttl(env, from);
         Self::extend_persistent_ttl(env, to);
+
+        if Self::is_contract_address(to) {
+            // Best effort: receivers that implement `on_nft_received` get the
+            // transfer payload, receivers that do not are unaffected.
+            // A failing callback does not revert the transfer; ownership has
+            // already been recorded and the event published.
+            let _ = env.try_invoke_contract::<(), soroban_sdk::Error>(
+                to,
+                &Symbol::new(env, "on_nft_received"),
+                (from.clone(), token_id, data).into_val(env),
+            );
+        }
+
         Ok(())
     }
 
