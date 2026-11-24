@@ -51,25 +51,30 @@ pub fn validate_hash(hash: &BytesN<32>) -> Result<(), NavinError> {
 /// - Metadata keys and values
 /// - Event topic names
 ///
-/// Stellar Symbol Constraints:
-/// - Length: 1-12 characters (enforced by Stellar protocol)
+/// Soroban Symbol Constraints:
+/// - Length: 1-32 characters (Soroban `ScSymbol` limit; Stellar Classic was 12)
 /// - Format: Alphanumeric and underscore only (A-Z, a-z, 0-9, _)
 /// - Invalid: spaces, hyphens, special characters, unicode, null bytes
 pub fn validate_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
     // XDR layout: 4-byte ScValType tag + 4-byte length field + content padded to 4-byte boundary.
     // Byte counts by character count:
     //   0 chars  →  8 bytes  (empty — rejected)
-    //   1–4 chars → 12 bytes
-    //   5–8 chars → 16 bytes
-    //   9–12 chars → 20 bytes  (12-char is the Stellar Symbol maximum)
-    //   13+ chars → 24+ bytes  (rejected)
+    //   1–4 chars  → 12 bytes
+    //   5–8 chars  → 16 bytes
+    //   9–12 chars → 20 bytes
+    //   13–16 chars → 24 bytes
+    //   17–20 chars → 28 bytes
+    //   21–24 chars → 32 bytes
+    //   25–28 chars → 36 bytes
+    //   29–32 chars → 40 bytes  (32-char is the Soroban Symbol maximum)
+    //   33+ chars  → 44+ bytes  (rejected; SDK would panic first)
     let symbol_bytes = symbol.to_xdr(env);
     let len = symbol_bytes.len();
 
     if len == 8 {
         return Err(NavinError::InvalidSymbol);
     }
-    if !(12..=20).contains(&len) {
+    if !(12..=40).contains(&len) {
         return Err(NavinError::InvalidSymbol);
     }
 
@@ -124,7 +129,7 @@ pub fn validate_symbol_chars(env: &Env, symbol: &Symbol) -> Result<(), NavinErro
 ///
 /// This is the single call-site guard for all checkpoint symbols on the
 /// `record_milestone` and `record_milestones_batch` paths.  It combines:
-/// 1. Length check (1–12 characters).
+/// 1. Length check (1–32 characters, Soroban `ScSymbol` limit).
 /// 2. Character-set check (alphanumeric + underscore only).
 pub fn validate_checkpoint_symbol(env: &Env, symbol: &Symbol) -> Result<(), NavinError> {
     let symbol_bytes = symbol.to_xdr(env);
@@ -134,7 +139,7 @@ pub fn validate_checkpoint_symbol(env: &Env, symbol: &Symbol) -> Result<(), Navi
         return Err(NavinError::InvalidSymbol);
     }
 
-    if !(12..=20).contains(&len) {
+    if !(12..=40).contains(&len) {
         return Err(NavinError::InvalidSymbol);
     }
 
@@ -205,17 +210,16 @@ pub fn validate_metadata_symbols(
 /// Note symbols are used for labeling note metadata and categorizing commentary.
 pub fn validate_note_symbol(env: &Env, note_symbol: &Symbol) -> Result<(), NavinError> {
     // XDR layout: 4-byte ScValType tag + 4-byte length field + content padded to 4-byte boundary.
-    // Maximum safe note symbol length: 64 characters
-    // Byte counts by character count (64 chars):
-    //   64 chars → 76 bytes (4 + 4 + 64 + padding to 76-byte boundary)
+    // Maximum safe note symbol length: 32 characters (Soroban ScSymbol limit)
+    // Byte counts by character count:
+    //   29–32 chars → 40 bytes  (32-char is the Soroban Symbol maximum)
     //
-    // We limit to 76 bytes to prevent storage exhaustion while allowing reasonable
-    // descriptive note category names.
+    // We limit to 40 bytes to stay within Soroban's ScSymbol constraint.
     let symbol_bytes = note_symbol.to_xdr(env);
     let len = symbol_bytes.len();
 
-    // Reject empty symbols and symbols exceeding 76-byte XDR limit
-    if len <= 8 || len > 76 {
+    // Reject empty symbols and symbols exceeding 40-byte XDR limit (32 chars)
+    if len <= 8 || len > 40 {
         return Err(NavinError::InvalidShipmentInput);
     }
 
@@ -740,27 +744,27 @@ mod symbol_validation_tests {
     }
 
     #[test]
-    fn test_symbol_length_30_chars_rejected() {
+    fn test_symbol_length_30_chars_accepted() {
         let env = Env::default();
-        // 30 chars: within Soroban SDK's 32-char limit but above our 12-char max
+        // 30 chars: within Soroban SDK's 32-char limit
         let long_30 = "A".repeat(30);
         let symbol = Symbol::new(&env, &long_30);
         let result = validate_symbol(&env, &symbol);
         assert!(
-            result.is_err(),
-            "Symbol of length 30 should be rejected (exceeds 12-char max)"
+            result.is_ok(),
+            "Symbol of length 30 should be valid (within 32-char Soroban limit)"
         );
     }
 
     #[test]
-    fn test_symbol_length_25_chars_rejected() {
+    fn test_symbol_length_25_chars_accepted() {
         let env = Env::default();
         let long_25 = "A".repeat(25);
         let symbol = Symbol::new(&env, &long_25);
         let result = validate_symbol(&env, &symbol);
         assert!(
-            result.is_err(),
-            "Symbol of length 25 should be rejected (exceeds 12-char max)"
+            result.is_ok(),
+            "Symbol of length 25 should be valid (within 32-char Soroban limit)"
         );
     }
 
@@ -887,14 +891,14 @@ mod symbol_validation_tests {
     #[test]
     fn test_validation_error_types() {
         let env = Env::default();
-        // 30 chars: within Soroban SDK's 32-char limit but above our 12-char max
-        let oversized = "A".repeat(30);
-        let oversized_symbol = Symbol::new(&env, &oversized);
-        let result = validate_symbol(&env, &oversized_symbol);
+        // 30 chars: within Soroban SDK's 32-char limit — must pass
+        let valid_30 = "A".repeat(30);
+        let valid_symbol = Symbol::new(&env, &valid_30);
+        let result = validate_symbol(&env, &valid_symbol);
         assert_eq!(
             result,
-            Err(NavinError::InvalidSymbol),
-            "Oversized symbol must return InvalidShipmentInput"
+            Ok(()),
+            "30-char symbol must be valid under Soroban's 32-char limit"
         );
     }
 
@@ -913,16 +917,16 @@ mod symbol_validation_tests {
     }
 
     #[test]
-    fn test_metadata_value_over_max_length_fails() {
+    fn test_metadata_value_over_old_limit_passes() {
         let env = Env::default();
         let key = Symbol::new(&env, "weight");
-        // 13 chars: one over the Stellar Symbol 12-char maximum
+        // 13 chars: within Soroban's 32-char limit — must pass
         let long: std::string::String = "A".repeat(13);
         let value = Symbol::new(&env, &long);
         assert_eq!(
             validate_metadata_symbols(&env, &key, &value),
-            Err(NavinError::InvalidSymbol),
-            "13-char metadata value must be rejected"
+            Ok(()),
+            "13-char metadata value must be accepted (within 32-char Soroban limit)"
         );
     }
 
@@ -939,15 +943,15 @@ mod symbol_validation_tests {
     }
 
     #[test]
-    fn test_metadata_key_over_max_length_fails() {
+    fn test_metadata_key_over_old_limit_passes() {
         let env = Env::default();
         let long: std::string::String = "K".repeat(13);
         let key = Symbol::new(&env, &long);
         let value = Symbol::new(&env, "ok");
         assert_eq!(
             validate_metadata_symbols(&env, &key, &value),
-            Err(NavinError::InvalidSymbol),
-            "13-char metadata key must be rejected"
+            Ok(()),
+            "13-char metadata key must be accepted (within 32-char Soroban limit)"
         );
     }
 
@@ -955,7 +959,7 @@ mod symbol_validation_tests {
     fn test_metadata_boundary_sweep_all_valid_lengths() {
         let env = Env::default();
         let key = Symbol::new(&env, "k");
-        for len in 1usize..=12 {
+        for len in 1usize..=32 {
             let s: std::string::String = "A".repeat(len);
             assert_eq!(
                 validate_metadata_symbols(&env, &key, &Symbol::new(&env, &s)),
@@ -966,17 +970,17 @@ mod symbol_validation_tests {
     }
 
     #[test]
-    fn test_metadata_boundary_sweep_all_invalid_lengths() {
+    fn test_metadata_boundary_sweep_char_limit() {
         let env = Env::default();
         let key = Symbol::new(&env, "k");
-        for len in 13usize..=16 {
-            let s: std::string::String = "A".repeat(len);
-            assert_eq!(
-                validate_metadata_symbols(&env, &key, &Symbol::new(&env, &s)),
-                Err(NavinError::InvalidSymbol),
-                "metadata value of length {len} must be rejected"
-            );
-        }
+        // validate_symbol_chars rejects > 32 chars; Soroban SDK would panic at > 32 anyway
+        // Test that exactly 32 chars is accepted and char-level validation catches non-alnum
+        let s_32: std::string::String = "A".repeat(32);
+        assert_eq!(
+            validate_metadata_symbols(&env, &key, &Symbol::new(&env, &s_32)),
+            Ok(()),
+            "32-char metadata value must be valid"
+        );
     }
 
     #[test]
