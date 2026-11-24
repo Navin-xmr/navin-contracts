@@ -187,7 +187,9 @@ impl CircuitBreakerTracker {
     pub fn record_success(&mut self) {
         match self.state {
             CircuitBreakerState::Closed => {
-                // Already closed, nothing to do
+                // Only consecutive failures may open the breaker, so any
+                // success breaks the streak.
+                self.failure_count = 0;
             }
             CircuitBreakerState::Open => {
                 // Cannot succeed while open
@@ -736,6 +738,37 @@ mod tests {
         // Requests must still be allowed.
         let result = breaker.should_allow_request(&config, 1000);
         assert!(result.is_ok());
+    }
+
+    /// A success while Closed resets the streak, so failures separated by a
+    /// success never accumulate to the threshold (only consecutive ones count).
+    #[test]
+    fn test_success_between_failures_keeps_breaker_closed() {
+        let mut breaker = CircuitBreakerTracker::new();
+        let config = CircuitBreakerConfig::default();
+        assert_eq!(config.failure_threshold, 5);
+
+        for _ in 0..4 {
+            breaker.record_failure(&config, 1000);
+        }
+        assert_eq!(breaker.failure_count, 4);
+
+        breaker.record_success();
+        assert_eq!(breaker.failure_count, 0);
+
+        for _ in 0..4 {
+            breaker.record_failure(&config, 1000);
+        }
+        assert_eq!(
+            breaker.state,
+            CircuitBreakerState::Closed,
+            "4 failures, 1 success, 4 failures must not open a threshold-5 breaker"
+        );
+        assert_eq!(breaker.failure_count, 4);
+
+        // The fifth consecutive failure still opens it.
+        breaker.record_failure(&config, 1000);
+        assert_eq!(breaker.state, CircuitBreakerState::Open);
     }
 
     /// The failure that exactly hits the threshold opens the breaker.
