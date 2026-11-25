@@ -3354,6 +3354,47 @@ impl NavinShipment {
         }
 
         let old_status = shipment.status.clone();
+        
+        // Special handling for transition to Disputed status
+        if new_status == ShipmentStatus::Disputed {
+            // Use the centralized open_dispute helper which handles validation,
+            // persist, freeze reason, and all events
+            shipment.status = old_status.clone(); // Reset status before calling open_dispute
+            shipment.data_hash = data_hash.clone();
+            storage::decrement_status_count(&env, &old_status);
+            storage::increment_status_count(&env, &new_status);
+            finalize_if_settled(&env, &mut shipment);
+            
+            open_dispute(&env, shipment.clone(), &caller, &data_hash)?;
+            
+            storage::set_last_status_update(&env, shipment_id, env.ledger().timestamp());
+            storage::append_status_hash(&env, shipment_id, &new_status, &data_hash, &caller);
+            events::emit_status_updated(&env, shipment_id, &new_status, &data_hash, &caller);
+            events::emit_notification(
+                &env,
+                &shipment.sender,
+                NotificationType::StatusChanged,
+                shipment_id,
+                &data_hash,
+            );
+            events::emit_notification(
+                &env,
+                &shipment.receiver,
+                NotificationType::StatusChanged,
+                shipment_id,
+                &data_hash,
+            );
+            events::emit_notification(
+                &env,
+                &shipment.carrier,
+                NotificationType::StatusChanged,
+                shipment_id,
+                &data_hash,
+            );
+            return Ok(());
+        }
+        
+        // General status update path (non-Disputed)
         shipment.status = new_status.clone();
         shipment.data_hash = data_hash.clone();
         shipment.updated_at = env.ledger().timestamp();
@@ -3371,24 +3412,6 @@ impl NavinShipment {
 
         finalize_if_settled(&env, &mut shipment);
         persist_shipment(&env, &shipment)?;
-
-        if shipment.status == ShipmentStatus::Disputed {
-            // Align direct-to-Disputed transition with raise_dispute side-effects:
-            // Set escrow freeze reason, emit dispute_raised & escrow_frozen events, and notify all parties.
-            storage::increment_total_disputes(&env);
-            storage::set_escrow_freeze_reason(
-                &env,
-                shipment_id,
-                &crate::types::EscrowFreezeReason::DisputeRaised,
-            );
-            events::emit_dispute_raised(&env, shipment_id, &caller, &data_hash);
-            events::emit_escrow_frozen(
-                &env,
-                shipment_id,
-                crate::types::EscrowFreezeReason::DisputeRaised,
-                &caller,
-            );
-        }
 
         storage::set_last_status_update(&env, shipment_id, env.ledger().timestamp());
         extend_shipment_ttl(&env, shipment_id);
@@ -5220,6 +5243,89 @@ impl NavinShipment {
     /// // Receiver raises a dispute; escrow is frozen until admin resolves it.
     /// client.raise_dispute(&receiver, &shipment_id, &reason_hash);
     /// ```
+    ///
+    /// Helper function that opens a dispute on a shipment.
+    /// This encapsulates the common logic shared by raise_dispute, update_status,
+    /// and the auto-dispute branch in report_condition_breach.
+    ///
+    /// # Arguments
+    /// * `env` - Execution environment.
+    /// * `shipment` - The shipment to transition to Disputed status.
+    /// * `caller` - Address that triggered the dispute (for event emission).
+    /// * `reason_hash` - Hash of the dispute reason or breach data.
+    ///
+    /// # Returns
+    /// * `Result<(), NavinError>` - Ok if the dispute was successfully opened.
+    ///
+    /// # Errors
+    /// * `NavinError::InvalidStatus` - If the transition to Disputed is not valid.
+    fn open_dispute(
+        env: &Env,
+        mut shipment: Shipment,
+        caller: &Address,
+        reason_hash: &BytesN<32>,
+    ) -> Result<(), NavinError> {
+        let old_status = shipment.status.clone();
+        
+        // Validate the transition to Disputed status
+        validate_shipment_transition(&old_status, &ShipmentStatus::Disputed)?;
+        
+        shipment.status = ShipmentStatus::Disputed;
+        shipment.updated_at = env.ledger().timestamp();
+        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
+        
+        // Persist the shipment with validation
+        persist_shipment(env, &shipment)?;
+        
+        // Update status counters
+        storage::decrement_status_count(env, &old_status);
+        storage::increment_status_count(env, &ShipmentStatus::Disputed);
+        storage::increment_total_disputes(env);
+        
+        // Set escrow freeze reason
+        storage::set_escrow_freeze_reason(
+            env,
+            shipment.id,
+            &crate::types::EscrowFreezeReason::DisputeRaised,
+        );
+        
+        extend_shipment_ttl(env, shipment.id);
+        
+        // Emit events
+        events::emit_dispute_raised(env, shipment.id, caller, reason_hash);
+        events::emit_escrow_frozen(
+            env,
+            shipment.id,
+            crate::types::EscrowFreezeReason::DisputeRaised,
+            caller,
+        );
+        
+        // Notify all parties
+        events::emit_notification(
+            env,
+            &shipment.sender,
+            NotificationType::DisputeRaised,
+            shipment.id,
+            reason_hash,
+        );
+        events::emit_notification(
+            env,
+            &shipment.receiver,
+            NotificationType::DisputeRaised,
+            shipment.id,
+            reason_hash,
+        );
+        events::emit_notification(
+            env,
+            &shipment.carrier,
+            NotificationType::DisputeRaised,
+            shipment.id,
+            reason_hash,
+        );
+        
+        Ok(())
+    }
+
     pub fn raise_dispute(
         env: Env,
         caller: Address,
@@ -5253,54 +5359,8 @@ impl NavinShipment {
             return Err(NavinError::ShipmentAlreadyCompleted);
         }
 
-        let old_status = shipment.status.clone();
-        shipment.status = ShipmentStatus::Disputed;
-        shipment.updated_at = env.ledger().timestamp();
-        shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
-
-        persist_shipment(&env, &shipment)?;
-        storage::decrement_status_count(&env, &old_status);
-        storage::increment_status_count(&env, &ShipmentStatus::Disputed);
-        storage::increment_total_disputes(&env);
-        storage::set_escrow_freeze_reason(
-            &env,
-            shipment_id,
-            &crate::types::EscrowFreezeReason::DisputeRaised,
-        );
-
-        extend_shipment_ttl(&env, shipment_id);
-
-        events::emit_dispute_raised(&env, shipment_id, &caller, &reason_hash);
-        // Emit a structured freeze reason so indexers can classify the escrow block.
-        events::emit_escrow_frozen(
-            &env,
-            shipment_id,
-            crate::types::EscrowFreezeReason::DisputeRaised,
-            &caller,
-        );
-        events::emit_notification(
-            &env,
-            &shipment.sender,
-            NotificationType::DisputeRaised,
-            shipment_id,
-            &reason_hash,
-        );
-        events::emit_notification(
-            &env,
-            &shipment.receiver,
-            NotificationType::DisputeRaised,
-            shipment_id,
-            &reason_hash,
-        );
-        events::emit_notification(
-            &env,
-            &shipment.carrier,
-            NotificationType::DisputeRaised,
-            shipment_id,
-            &reason_hash,
-        );
-
-        Ok(())
+        // Use the centralized open_dispute helper
+        open_dispute(&env, shipment, &caller, &reason_hash)
     }
 
     /// Resolve a shipment dispute. Only the admin can call this.
@@ -5769,41 +5829,13 @@ impl NavinShipment {
             && shipment.status != ShipmentStatus::Cancelled
             && shipment.status != ShipmentStatus::Disputed
         {
-            let old_status = shipment.status.clone();
-            let mut s = shipment;
-            s.status = ShipmentStatus::Disputed;
-            s.updated_at = env.ledger().timestamp();
-            s.integration_nonce = s.integration_nonce.saturating_add(1);
-            let sender = s.sender.clone();
-            let receiver = s.receiver.clone();
-            storage::set_shipment(&env, &s);
-            storage::decrement_status_count(&env, &old_status);
-            storage::increment_status_count(&env, &ShipmentStatus::Disputed);
-            storage::increment_total_disputes(&env);
-            extend_shipment_ttl(&env, shipment_id);
-            // Use the breach data hash as the dispute reason so indexers can correlate
-            events::emit_dispute_raised(&env, shipment_id, &carrier, &data_hash);
-            events::emit_notification(
-                &env,
-                &sender,
-                NotificationType::DisputeRaised,
-                shipment_id,
-                &data_hash,
-            );
-            events::emit_notification(
-                &env,
-                &receiver,
-                NotificationType::DisputeRaised,
-                shipment_id,
-                &data_hash,
-            );
-            events::emit_notification(
-                &env,
-                &carrier,
-                NotificationType::DisputeRaised,
-                shipment_id,
-                &data_hash,
-            );
+            // Use the centralized open_dispute helper, which validates the transition,
+            // uses persist_shipment, sets the freeze reason, and emits all required events.
+            // If the transition is invalid (e.g., Delivered -> Disputed), open_dispute
+            // will return an error and the breach will be recorded but not trigger a dispute.
+            let _ = open_dispute(&env, shipment, &carrier, &data_hash);
+            // Silently ignore validation errors (e.g., invalid transition from Delivered)
+            // as per the original design: the breach is recorded regardless.
         }
 
         Ok(())

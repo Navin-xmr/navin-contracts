@@ -440,3 +440,108 @@ fn test_update_status_disputed_aligns_with_raise_dispute() {
         "update_status to Disputed must set escrow_freeze_reason to DisputeRaised"
     );
 }
+
+/// Critical breach with auto_dispute_breach enabled must set the freeze reason
+/// and emit escrow_frozen event (#1248).
+#[test]
+fn test_auto_dispute_sets_freeze_reason_and_emits_escrow_frozen() {
+    let (env, client, admin, token) = setup();
+    let (id, _company, _receiver, carrier) = create_test_shipment(&env, &client, &admin, &token);
+    enable_auto_dispute(&client, &admin);
+
+    let breach_hash = BytesN::from_array(&env, &[100u8; 32]);
+    client.report_condition_breach(
+        &carrier,
+        &id,
+        &BreachType::TamperDetected,
+        &Severity::Critical,
+        &breach_hash,
+    );
+
+    let shipment = client.get_shipment(&id);
+    assert_eq!(
+        shipment.status,
+        ShipmentStatus::Disputed,
+        "Critical breach with auto_dispute enabled must transition to Disputed"
+    );
+
+    let freeze_reason = client.get_escrow_freeze_reason(&id);
+    assert_eq!(
+        freeze_reason,
+        Some(crate::types::EscrowFreezeReason::DisputeRaised),
+        "Auto-dispute must set escrow_freeze_reason to DisputeRaised"
+    );
+
+    // Verify that escrow_frozen event was emitted by checking the event log
+    let events = env.events().all();
+    let escrow_frozen_found = events.iter().any(|event| {
+        event.topics.first().map_or(false, |topic| {
+            if let soroban_sdk::Val::Symbol(sym) = topic {
+                sym.to_string() == "escrow_frozen"
+            } else {
+                false
+            }
+        })
+    });
+    assert!(
+        escrow_frozen_found,
+        "Auto-dispute must emit escrow_frozen event"
+    );
+}
+
+/// Auto-dispute on a Delivered shipment must not change status because the
+/// state machine forbids Delivered -> Disputed transitions (#1248).
+#[test]
+fn test_auto_dispute_on_delivered_shipment_does_not_change_status() {
+    let (env, client, admin, token) = setup();
+    let (id, _company, _receiver, carrier) = create_test_shipment(&env, &client, &admin, &token);
+    enable_auto_dispute(&client, &admin);
+
+    // Advance the shipment to Delivered status
+    let transit_hash = BytesN::from_array(&env, &[1u8; 32]);
+    client.update_status(&carrier, &id, &ShipmentStatus::InTransit, &transit_hash);
+    
+    let delivery_hash = BytesN::from_array(&env, &[2u8; 32]);
+    client.update_status(&carrier, &id, &ShipmentStatus::Delivered, &delivery_hash);
+    
+    assert_eq!(
+        client.get_shipment(&id).status,
+        ShipmentStatus::Delivered,
+        "Shipment must be in Delivered status before the breach"
+    );
+
+    let disputes_before = client.get_analytics().total_disputes;
+
+    // Report a critical breach on the Delivered shipment
+    let breach_hash = BytesN::from_array(&env, &[101u8; 32]);
+    client.report_condition_breach(
+        &carrier,
+        &id,
+        &BreachType::TamperDetected,
+        &Severity::Critical,
+        &breach_hash,
+    );
+
+    // The status must remain Delivered because Delivered -> Disputed is not a valid transition
+    let shipment = client.get_shipment(&id);
+    assert_eq!(
+        shipment.status,
+        ShipmentStatus::Delivered,
+        "Auto-dispute must not change status from Delivered (invalid transition)"
+    );
+
+    // The dispute counter must not be incremented
+    assert_eq!(
+        client.get_analytics().total_disputes,
+        disputes_before,
+        "total_disputes must not increment when auto-dispute transition is invalid"
+    );
+
+    // The freeze reason must not be set
+    let freeze_reason = client.get_escrow_freeze_reason(&id);
+    assert_eq!(
+        freeze_reason,
+        None,
+        "escrow_freeze_reason must not be set when auto-dispute transition is invalid"
+    );
+}
