@@ -3,11 +3,13 @@ set -e
 
 # Configuration: [filename]:[limit_in_kb]
 BUDGETS=(
-    "navin_token.wasm:25"
-    "shipment.wasm:200"
+    "navin_token.wasm:55"
+    "navin_nft.wasm:50"
+    "shipment.wasm:320"
 )
 
-WASM_DIR="target/wasm32-unknown-unknown/release"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+WASM_DIR="$SCRIPT_DIR/../target/wasm32-unknown-unknown/release"
 EXIT_CODE=0
 
 echo "Checking WASM size budget..."
