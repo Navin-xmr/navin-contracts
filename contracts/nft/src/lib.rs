@@ -448,12 +448,17 @@ impl NavinShipmentNft {
     }
 
     /// Approve an operator to transfer this token. `None` means no expiration.
+    ///
+    /// Blocked while the contract is paused (`ContractPaused`), matching the
+    /// token contract's `approve`: approvals staged during an incident would
+    /// become exploitable the moment the contract is unpaused.
     pub fn approve(
         env: Env,
         operator: Address,
         token_id: u64,
         expiration_ledger: Option<u32>,
     ) -> Result<(), NftError> {
+        Self::require_not_paused(&env)?;
         let owner = Self::get_owner_inner(&env, token_id)?;
         owner.require_auth();
 
@@ -493,6 +498,10 @@ impl NavinShipmentNft {
     }
 
     /// Revoke the current operator approval for this token.
+    ///
+    /// Deliberately allowed while the contract is paused: revoking only removes
+    /// rights, so owners must be able to de-risk their tokens during an
+    /// incident.
     pub fn revoke_approval(env: Env, operator: Address, token_id: u64) -> Result<(), NftError> {
         let owner = Self::get_owner_inner(&env, token_id)?;
         owner.require_auth();
@@ -527,7 +536,10 @@ impl NavinShipmentNft {
 
     /// Owner approval to burn this token. Required for owners; the admin may
     /// burn without it.
+    ///
+    /// Blocked while the contract is paused (`ContractPaused`), like `approve`.
     pub fn approve_burn(env: Env, token_id: u64) -> Result<(), NftError> {
+        Self::require_not_paused(&env)?;
         let owner = Self::get_owner_inner(&env, token_id)?;
         owner.require_auth();
 
@@ -578,6 +590,10 @@ impl NavinShipmentNft {
     }
 
     /// Set the base URI used for every token without a dedicated metadata URI.
+    ///
+    /// Admin-only and allowed while the contract is paused, matching the token
+    /// contract's `set_metadata`: metadata grants no rights over any token, and
+    /// the admin may need to correct it during an incident.
     pub fn set_base_uri(env: Env, admin: Address, base_uri: String) -> Result<(), NftError> {
         admin.require_auth();
         if Self::get_admin_inner(&env)? != admin {
@@ -595,6 +611,8 @@ impl NavinShipmentNft {
     }
 
     /// Set the metadata URI of a single token; overrides the base URI.
+    ///
+    /// Admin-only and allowed while the contract is paused (see `set_base_uri`).
     pub fn set_token_uri(
         env: Env,
         admin: Address,
@@ -729,6 +747,12 @@ impl NavinShipmentNft {
             .ok_or(NftError::NoProposedAdmin)
     }
 
+    /// Pause the contract (admin only).
+    ///
+    /// While paused, `mint`, `mint_batch`, `transfer`, `transfer_from`, `burn`,
+    /// `burn_batch`, `approve` and `approve_burn` fail with `ContractPaused`.
+    /// `revoke_approval`, admin metadata writes (`set_base_uri`,
+    /// `set_token_uri`), admin management and all reads stay available.
     pub fn pause(env: Env, admin: Address) -> Result<(), NftError> {
         admin.require_auth();
         if Self::get_admin_inner(&env)? != admin {

@@ -1356,17 +1356,17 @@ fn test_suspend_role_on_already_suspended_user_returns_error() {
     client.add_operator(&admin, &operator);
 
     // First suspension should succeed
-    let first = client.try_suspend_role(&admin, &operator);
+    let first = client.try_suspend_role(&admin, &operator, &crate::Role::Operator);
     assert!(first.is_ok(), "First suspend_role must succeed");
 
     // Second suspension on the same already-suspended address — contract is
     // idempotent here; the key invariant is that state is NOT corrupted.
-    let second = client.try_suspend_role(&admin, &operator);
+    let second = client.try_suspend_role(&admin, &operator, &crate::Role::Operator);
     // Whether it succeeds or errors, state must stay consistent
     let _ = second; // accept either outcome
 
     // Verify the operator can still be reactivated — confirming no state corruption
-    let reactivate = client.try_reactivate_role(&admin, &operator);
+    let reactivate = client.try_reactivate_role(&admin, &operator, &crate::Role::Operator);
     assert!(
         reactivate.is_ok(),
         "reactivate_role must succeed after duplicate suspend, proving no state corruption"
@@ -1383,16 +1383,16 @@ fn test_suspend_role_idempotent_state_after_duplicate() {
     client.add_operator(&admin, &operator);
 
     // Suspend once (should succeed)
-    let _ = client.try_suspend_role(&admin, &operator);
+    let _ = client.try_suspend_role(&admin, &operator, &crate::Role::Operator);
 
     // Attempt duplicate (should fail gracefully)
-    let _ = client.try_suspend_role(&admin, &operator);
+    let _ = client.try_suspend_role(&admin, &operator, &crate::Role::Operator);
 
     // Verify the operator is still considered suspended (not corrupted)
     // We confirm by trying an operation that requires an active operator role.
     // Creating a shipment as operator would be blocked if operator is suspended.
     // Instead we just confirm reactivation path still works cleanly.
-    let reactivate = client.try_reactivate_role(&admin, &operator);
+    let reactivate = client.try_reactivate_role(&admin, &operator, &crate::Role::Operator);
     assert!(
         reactivate.is_ok(),
         "reactivate_role must succeed after duplicate suspend, role state must be consistent"
@@ -1412,12 +1412,12 @@ fn test_reactivate_role_on_active_user_returns_error() {
 
     // Attempt to reactivate an operator that is already active — the contract
     // is idempotent here; the key invariant is that state must stay consistent.
-    let result = client.try_reactivate_role(&admin, &operator);
+    let result = client.try_reactivate_role(&admin, &operator, &crate::Role::Operator);
     // Accept either Ok or Err — the important assertion is below
     let _ = result;
 
     // Verify state is not corrupted: we should still be able to suspend the operator
-    let suspend = client.try_suspend_role(&admin, &operator);
+    let suspend = client.try_suspend_role(&admin, &operator, &crate::Role::Operator);
     assert!(
         suspend.is_ok(),
         "operator role state must remain valid after reactivation attempt on active role"
@@ -1433,10 +1433,10 @@ fn test_reactivate_role_on_active_user_does_not_corrupt_state() {
     client.add_operator(&admin, &operator);
 
     // Attempt to reactivate an unsuspended operator (should fail gracefully)
-    let _ = client.try_reactivate_role(&admin, &operator);
+    let _ = client.try_reactivate_role(&admin, &operator, &crate::Role::Operator);
 
     // Operator must still be usable — suspend now should work
-    let suspend_result = client.try_suspend_role(&admin, &operator);
+    let suspend_result = client.try_suspend_role(&admin, &operator, &crate::Role::Operator);
     assert!(
         suspend_result.is_ok(),
         "suspend_role must still work after a failed reactivate_role attempt"

@@ -46,8 +46,6 @@ pub enum DataKey {
     ConfirmationHash(u64),
     /// Token contract address for payments.
     TokenContract,
-    /// NFT contract address for shipment tokenization (optional).
-    NftContract,
     /// Timestamp of the last status update for a shipment (used for rate limiting).
     LastStatusUpdate(u64),
     /// Whether the pre-deadline warning has already been emitted for a shipment.
@@ -197,6 +195,37 @@ pub enum StatusHashKey {
     /// Bounded status-hash log for one shipment.
     Log(u64),
 }
+
+/// Storage key for a shipment's partial-delivery proof log (issue #1268).
+///
+/// `DataKey::ConfirmationHash` holds a single hash, so every
+/// `confirm_partial_delivery` call used to overwrite the proof of the previous
+/// slice. Each slice now also appends its hash to this append-only log, so the
+/// proof behind every escrow release stays verifiable on-chain by index.
+///
+/// Kept out of [`DataKey`] for the same reason as [`DisputeKey`],
+/// [`SettlementKey`] and [`StatusHashKey`]. One key per shipment holds the whole
+/// log (bounded by [`MAX_PARTIAL_DELIVERY_PROOFS`]) so recording a slice costs
+/// one read, one write and one TTL bump.
+///
+/// # Examples
+/// ```text
+/// let key = DeliveryProofKey::PartialLog(shipment_id);
+/// ```
+#[contracttype(export = false)]
+pub enum DeliveryProofKey {
+    /// Every partial-delivery confirmation hash for one shipment, oldest first.
+    /// Index `i` is the `i`-th `confirm_partial_delivery` call.
+    PartialLog(u64),
+}
+
+/// Maximum number of partial-delivery proof hashes kept per shipment (issue #1268).
+///
+/// Each partial confirmation releases at least 1% of the total escrow and the
+/// cumulative release can never exceed 100%, so a shipment can never record
+/// more than 100 slices. The cap is still enforced when appending so the log
+/// stays bounded even if that invariant ever changes.
+pub const MAX_PARTIAL_DELIVERY_PROOFS: u32 = 100;
 
 /// Maximum number of status data-hash entries retained per shipment (issue #698).
 ///

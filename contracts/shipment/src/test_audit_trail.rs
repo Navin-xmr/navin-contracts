@@ -141,7 +141,7 @@ fn test_suspend_role_writes_audit_entry() {
     let carrier = Address::generate(&env);
     client.add_carrier(&admin, &carrier);
 
-    client.suspend_role(&admin, &carrier);
+    client.suspend_role(&admin, &carrier, &crate::types::Role::Carrier);
 
     let entries = client.query_audit_history_for_target(&carrier);
     assert_eq!(entries.len(), 2);
@@ -158,9 +158,9 @@ fn test_reactivate_role_writes_audit_entry() {
     let (env, client, admin) = setup_test_env();
     let carrier = Address::generate(&env);
     client.add_carrier(&admin, &carrier);
-    client.suspend_role(&admin, &carrier);
+    client.suspend_role(&admin, &carrier, &crate::types::Role::Carrier);
 
-    client.reactivate_role(&admin, &carrier);
+    client.reactivate_role(&admin, &carrier, &crate::types::Role::Carrier);
 
     let entries = client.query_audit_history_for_target(&carrier);
     assert_eq!(entries.len(), 3);
