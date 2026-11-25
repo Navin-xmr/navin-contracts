@@ -625,7 +625,7 @@ fn create_settlement(
     from: &Address,
     to: &Address,
 ) -> Result<u64, NavinError> {
-    let settlement_id = storage::increment_settlement_counter(env);
+    let settlement_id = storage::increment_settlement_counter(env)?;
     let settlement = SettlementRecord {
         settlement_id,
         shipment_id,
@@ -646,7 +646,7 @@ fn create_settlement(
 /// Mark a settlement as completed.
 fn complete_settlement(env: &Env, settlement_id: u64, shipment_id: u64) -> Result<(), NavinError> {
     let mut settlement =
-        storage::get_settlement(env, settlement_id).ok_or(NavinError::ShipmentNotFound)?; // Reusing error for simplicity
+        storage::get_settlement(env, settlement_id).ok_or(NavinError::SettlementNotFound)?;
     if matches!(
         &settlement.operation,
         SettlementOperation::Release | SettlementOperation::Refund
@@ -720,7 +720,7 @@ fn fail_settlement(
     error_code: u32,
 ) -> Result<(), NavinError> {
     let mut settlement =
-        storage::get_settlement(env, settlement_id).ok_or(NavinError::ShipmentNotFound)?; // Reusing error for simplicity
+        storage::get_settlement(env, settlement_id).ok_or(NavinError::SettlementNotFound)?;
     settlement.state = SettlementState::Failed;
     settlement.completed_at = Some(env.ledger().timestamp());
     settlement.error_code = Some(error_code);
@@ -3571,7 +3571,7 @@ impl NavinShipment {
     ///
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::ShipmentNotFound` - If settlement doesn't exist (reusing error).
+    /// * `NavinError::SettlementNotFound` - If settlement doesn't exist.
     ///
     /// # Examples
     /// ```rust
@@ -3579,7 +3579,7 @@ impl NavinShipment {
     /// ```
     pub fn get_settlement(env: Env, settlement_id: u64) -> Result<SettlementRecord, NavinError> {
         require_initialized(&env)?;
-        storage::get_settlement(&env, settlement_id).ok_or(NavinError::ShipmentNotFound)
+        storage::get_settlement(&env, settlement_id).ok_or(NavinError::SettlementNotFound)
     }
 
     /// Get the active settlement ID for a shipment.
@@ -4073,6 +4073,7 @@ impl NavinShipment {
         data_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
         require_active_carrier(&env, &carrier)?;
@@ -5523,6 +5524,7 @@ impl NavinShipment {
         handoff_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         current_carrier.require_auth();
         require_role(&env, &current_carrier, Role::Carrier)?;
         require_role(&env, &new_carrier, Role::Carrier)?;
@@ -5657,6 +5659,7 @@ impl NavinShipment {
         data_hash: BytesN<32>,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         carrier.require_auth();
         require_role(&env, &carrier, Role::Carrier)?;
         // A suspended carrier must not be able to report a breach: with
@@ -7171,6 +7174,7 @@ impl NavinShipment {
         window_seconds: u64,
     ) -> Result<(), NavinError> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         admin.require_auth();
         require_admin(&env, &admin)?;
 

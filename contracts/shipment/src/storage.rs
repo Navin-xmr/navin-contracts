@@ -1863,17 +1863,23 @@ pub fn set_settlement_counter(env: &Env, counter: u64) {
 /// * `env` - The execution environment.
 ///
 /// # Returns
-/// * `u64` - The incremented settlement count.
+/// * `Result<u64, NavinError>` - The incremented settlement count.
+///
+/// # Errors
+/// * `NavinError::CounterOverflow` - If the counter is already at `u64::MAX`.
+///   The stored counter is left unchanged so an existing settlement ID is
+///   never reused.
 ///
 /// # Examples
 /// ```rust
-/// // let next_id = storage::increment_settlement_counter(&env);
+/// // let next_id = storage::increment_settlement_counter(&env)?;
 /// ```
-pub fn increment_settlement_counter(env: &Env) -> u64 {
-    let cur = get_settlement_counter(env);
-    let next = cur.checked_add(1).unwrap_or(cur);
+pub fn increment_settlement_counter(env: &Env) -> Result<u64, NavinError> {
+    let next = get_settlement_counter(env)
+        .checked_add(1)
+        .ok_or(NavinError::CounterOverflow)?;
     set_settlement_counter(env, next);
-    next
+    Ok(next)
 }
 
 /// Get a settlement record by ID from persistent storage.
