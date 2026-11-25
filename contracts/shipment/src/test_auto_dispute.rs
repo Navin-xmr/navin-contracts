@@ -500,10 +500,10 @@ fn test_auto_dispute_on_delivered_shipment_does_not_change_status() {
     // Advance the shipment to Delivered status
     let transit_hash = BytesN::from_array(&env, &[1u8; 32]);
     client.update_status(&carrier, &id, &ShipmentStatus::InTransit, &transit_hash);
-    
+
     let delivery_hash = BytesN::from_array(&env, &[2u8; 32]);
     client.update_status(&carrier, &id, &ShipmentStatus::Delivered, &delivery_hash);
-    
+
     assert_eq!(
         client.get_shipment(&id).status,
         ShipmentStatus::Delivered,
@@ -540,8 +540,7 @@ fn test_auto_dispute_on_delivered_shipment_does_not_change_status() {
     // The freeze reason must not be set
     let freeze_reason = client.get_escrow_freeze_reason(&id);
     assert_eq!(
-        freeze_reason,
-        None,
+        freeze_reason, None,
         "escrow_freeze_reason must not be set when auto-dispute transition is invalid"
     );
 }

@@ -342,7 +342,11 @@ fn test_handoffs_do_not_consume_milestone_budget() {
         &data_hash,
     );
 
-    for (from, to) in [(&carrier_a, &carrier_b), (&carrier_b, &carrier_c), (&carrier_c, &carrier_a)] {
+    for (from, to) in [
+        (&carrier_a, &carrier_b),
+        (&carrier_b, &carrier_c),
+        (&carrier_c, &carrier_a),
+    ] {
         client.handoff_shipment(from, to, &shipment_id, &handoff_hash);
     }
 

@@ -50,9 +50,18 @@ fn test_all_getters_read_archived_shipment() {
         client.get_shipment_status(&shipment_id),
         ShipmentStatus::Cancelled
     );
-    assert_eq!(client.get_shipment_created_at(&shipment_id), before.created_at);
-    assert_eq!(client.get_shipment_updated_at(&shipment_id), before.updated_at);
-    assert_eq!(client.get_integration_nonce(&shipment_id), before.integration_nonce);
+    assert_eq!(
+        client.get_shipment_created_at(&shipment_id),
+        before.created_at
+    );
+    assert_eq!(
+        client.get_shipment_updated_at(&shipment_id),
+        before.updated_at
+    );
+    assert_eq!(
+        client.get_integration_nonce(&shipment_id),
+        before.integration_nonce
+    );
 
     // Other read-only views keyed by shipment ID behave the same way.
     assert_eq!(client.get_escrow_balance(&shipment_id), escrow_balance);

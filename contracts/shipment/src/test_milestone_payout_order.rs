@@ -493,7 +493,12 @@ fn test_record_milestones_batch_rejects_already_paid() {
     let (id, _company, carrier) = create_milestone_shipment(&env, &client, &admin);
 
     // Pay alpha first, through the single-milestone entrypoint.
-    client.record_milestone(&carrier, &id, &symbol_short!("alpha"), &data_hash(&env, 0x11));
+    client.record_milestone(
+        &carrier,
+        &id,
+        &symbol_short!("alpha"),
+        &data_hash(&env, 0x11),
+    );
     let before = client.get_shipment(&id);
     assert_eq!(before.milestones_completed.len(), 1);
 

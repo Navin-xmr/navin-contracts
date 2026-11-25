@@ -290,6 +290,18 @@ pub const PROPOSAL_DIGEST: &str = "proposal_digest";
 pub const CONFIG_UPDATED: &str = "config_updated";
 pub const QUOTA_SET: &str = "quota_set";
 
+/// Emitted when the shipment admin sets the base URI on the settlement-proof NFT.
+pub const NFT_BASE_URI_SET: &str = "nft_base_uri_set";
+
+/// Emitted when the shipment admin pauses the settlement-proof NFT contract.
+pub const NFT_PAUSED: &str = "nft_paused";
+
+/// Emitted when the shipment admin unpauses the settlement-proof NFT contract.
+pub const NFT_UNPAUSED: &str = "nft_unpaused";
+
+/// Emitted when the shipment admin initiates a transfer of NFT admin custody.
+pub const NFT_ADMIN_TRANSFERRED: &str = "nft_admin_transferred";
+
 /// Every event topic this contract emits. Tests iterate it so a new topic is
 /// checked against the Symbol length limit and `compute_idempotency_key`.
 #[cfg(test)]
@@ -358,6 +370,10 @@ pub(crate) const ALL_TOPICS: &[&str] = &[
     PROPOSAL_DIGEST,
     CONFIG_UPDATED,
     QUOTA_SET,
+    NFT_BASE_URI_SET,
+    NFT_PAUSED,
+    NFT_UNPAUSED,
+    NFT_ADMIN_TRANSFERRED,
 ];
 
 /// Topics whose hash domain is *not* the shipment default, paired with the
@@ -406,6 +422,10 @@ const NON_DEFAULT_HASH_DOMAINS: &[(&str, u8)] = &[
     (PROPOSAL_DIGEST, HASH_DOMAIN_ADMIN),
     (CONFIG_UPDATED, HASH_DOMAIN_ADMIN),
     (QUOTA_SET, HASH_DOMAIN_ADMIN),
+    (NFT_BASE_URI_SET, HASH_DOMAIN_ADMIN),
+    (NFT_PAUSED, HASH_DOMAIN_ADMIN),
+    (NFT_UNPAUSED, HASH_DOMAIN_ADMIN),
+    (NFT_ADMIN_TRANSFERRED, HASH_DOMAIN_ADMIN),
     // RBAC
     (ROLE_REVOKED, HASH_DOMAIN_RBAC),
     (ROLE_CHANGED, HASH_DOMAIN_RBAC),
@@ -524,6 +544,10 @@ mod tests {
             "proposal_digest",
             "config_updated",
             "quota_set",
+            "nft_base_uri_set",
+            "nft_paused",
+            "nft_unpaused",
+            "nft_admin_transferred",
         ];
         assert_eq!(
             ALL_TOPICS.len(),
@@ -531,7 +555,11 @@ mod tests {
             "ALL_TOPICS and the pinned values list must stay in sync"
         );
         for (topic, value) in ALL_TOPICS.iter().zip(expected) {
-            assert_eq!(topic, value, "Topic value changed: '{}' != '{}'", topic, value);
+            assert_eq!(
+                topic, value,
+                "Topic value changed: '{}' != '{}'",
+                topic, value
+            );
         }
     }
 

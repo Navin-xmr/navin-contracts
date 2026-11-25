@@ -111,3 +111,6 @@ jobs:
 
       - name: Build WASM targets
         run: make build
+
+      - name: Check WASM size budgets
+        run: ./scripts/check_wasm_size.sh

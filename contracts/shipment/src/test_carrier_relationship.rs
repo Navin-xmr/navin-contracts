@@ -1,4 +1,4 @@
-//! Tests for issue #295 — company/carrier relationship query APIs.
+//! Tests for the company/carrier relationship query APIs.
 //!
 //! Verifies `is_company_carrier_allowed` and `list_company_carriers` for
 //! correctness, suspension semantics, pagination, and bounds.
@@ -279,7 +279,7 @@ mod tests {
         assert_eq!(page2.next_cursor, Some(MAX_CARRIER_SCAN * 2));
     }
 
-    // ── is_carrier_whitelisted — unassigned role queries (issue #518) ───────────
+    // ── is_carrier_whitelisted — unassigned role queries ────────────────────────
 
     /// Query is_carrier_whitelisted for an unassigned carrier under a registered
     /// company. The function must return false gracefully without a storage panic.
@@ -355,7 +355,7 @@ mod tests {
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    // ISSUE #539 — duplicate carrier whitelist registration rejection
+    // Duplicate carrier whitelist registration rejection
     // ════════════════════════════════════════════════════════════════════════
 
     /// Baseline: a fresh `add_carrier_to_whitelist` succeeds and the
@@ -380,7 +380,8 @@ mod tests {
 
     /// Re-adding an already-whitelisted carrier must return the typed
     /// `CarrierAlreadyWhitelisted` error instead of silently succeeding.
-    /// This is the core acceptance criterion of #539.
+    /// Duplicate adds are rejected so off-chain monitors can distinguish
+    /// a no-op from a real failure without falling back on generic error codes.
     #[test]
     fn issue_539_duplicate_whitelist_add_returns_typed_error() {
         let (env, client, admin) = setup();
@@ -438,8 +439,8 @@ mod tests {
     }
 
     /// After remove + re-add the carrier must be addable again. The
-    /// duplicate-rejection rule must only fire on *current* membership,
-    /// not on historical presence.
+    /// duplicate-rejection rule fires only on *current* membership,
+    /// not historical presence.
     #[test]
     fn issue_539_can_readd_after_remove() {
         let (env, client, admin) = setup();
@@ -513,9 +514,9 @@ mod tests {
         );
     }
 
-    /// Issue #699 — remove_carrier_from_whitelist must reject attempts
-    /// to remove a carrier that is not currently whitelisted, preventing
-    /// spurious removal events that would confuse off-chain monitoring.
+    /// `remove_carrier_from_whitelist` must reject attempts to remove a carrier
+    /// that is not currently whitelisted, preventing spurious removal events that
+    /// would confuse off-chain monitoring.
     #[test]
     fn issue_699_remove_non_whitelisted_carrier_rejected() {
         let (env, client, admin) = setup();
@@ -540,8 +541,8 @@ mod tests {
         assert!(!client.is_carrier_whitelisted(&company, &carrier));
     }
 
-    /// Issue #699 — removing a carrier that was previously whitelisted
-    /// but already removed should also be rejected.
+    /// Removing a carrier that was previously whitelisted but already removed
+    /// must also be rejected; a second removal would emit a spurious event.
     #[test]
     fn issue_699_double_remove_rejected() {
         let (env, client, admin) = setup();
@@ -564,8 +565,8 @@ mod tests {
         );
     }
 
-    /// Issue #699 — normal removal of a whitelisted carrier should
-    /// still work correctly (ensuring the guard doesn't break valid usage).
+    /// Normal removal of a whitelisted carrier must still work correctly
+    /// (guards against the rejection logic blocking valid usage).
     #[test]
     fn issue_699_valid_removal_succeeds() {
         let (env, client, admin) = setup();

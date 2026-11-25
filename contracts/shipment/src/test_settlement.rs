@@ -732,3 +732,189 @@ mod settlement_proof {
         assert!(proof_recorded(&env, &client, id));
     }
 }
+
+/// Integration tests for the NFT admin pass-through entry points added to fix
+/// the permanently-unreachable admin functions on the settlement NFT.
+mod settlement_nft_admin {
+    use crate::test_helpers::*;
+    use crate::test_utils::dummy_hash;
+    use crate::types::ShipmentStatus;
+    use crate::NavinError;
+    use navin_nft::{NavinShipmentNft, NavinShipmentNftClient};
+    use soroban_sdk::{Address, Env, String, Vec};
+
+    fn setup_with_nft() -> (
+        Env,
+        NavinShipmentClient<'static>,
+        Address,
+        NavinShipmentNftClient<'static>,
+    ) {
+        let (env, client, admin, _token) = setup_initialized_shipment_env();
+        let nft = NavinShipmentNftClient::new(
+            &env,
+            &env.register(
+                NavinShipmentNft,
+                (
+                    client.address.clone(),
+                    soroban_sdk::symbol_short!("SettleNFT"),
+                    soroban_sdk::symbol_short!("SETTLE"),
+                ),
+            ),
+        );
+        client.configure_settlement_nft(
+            &admin,
+            &nft.address,
+            &soroban_sdk::symbol_short!("SettleNFT"),
+            &soroban_sdk::symbol_short!("SETTLE"),
+        );
+        (env, client, admin, nft)
+    }
+
+    // ── set_settlement_nft_base_uri ──────────────────────────────────────────
+
+    /// Shipment admin can set the base URI, after which `get_token_uri` on a
+    /// minted proof token no longer fails with `BaseUriNotSet`.
+    #[test]
+    fn admin_can_set_base_uri_and_proof_token_uri_resolves() {
+        let (env, client, admin, nft) = setup_with_nft();
+
+        // Mint a proof by going through a full deposit → deliver → release cycle.
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+        client.add_carrier_to_whitelist(&company, &carrier);
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &dummy_hash(&env),
+            &Vec::new(&env),
+            &(env.ledger().timestamp() + 86_400),
+        );
+        client.deposit_escrow(&company, &shipment_id, &1_000);
+        env.as_contract(&client.address, || {
+            let mut s = crate::storage::get_shipment(&env, shipment_id).unwrap();
+            s.status = ShipmentStatus::Delivered;
+            crate::storage::set_shipment(&env, &s);
+        });
+        client.release_escrow(&receiver, &shipment_id);
+
+        // The proof token now exists on the NFT contract.
+        assert_eq!(nft.total_supply(), 1);
+
+        // Before setting the base URI, `get_token_uri` returns `BaseUriNotSet`.
+        let err = nft.try_get_token_uri(&shipment_id).err();
+        assert!(
+            err.is_some(),
+            "get_token_uri must fail before base URI is set"
+        );
+
+        // Set the base URI via the shipment contract (the NFT admin).
+        let base = String::from_str(&env, "https://navin.example/proof/");
+        client.set_settlement_nft_base_uri(&admin, &base);
+
+        // Now `get_token_uri` resolves successfully.
+        let uri = nft.get_token_uri(&shipment_id);
+        assert!(uri.len() > 0, "URI must be non-empty after base URI is set");
+    }
+
+    /// Non-admin cannot call `set_settlement_nft_base_uri`.
+    #[test]
+    fn non_admin_cannot_set_base_uri() {
+        let (env, client, admin, _nft) = setup_with_nft();
+        let stranger = Address::generate(&env);
+        let _ = admin; // suppress unused warning
+        let base = String::from_str(&env, "https://navin.example/proof/");
+        let result = client.try_set_settlement_nft_base_uri(&stranger, &base);
+        assert_eq!(result, Err(Ok(NavinError::Unauthorized)));
+    }
+
+    /// `set_settlement_nft_base_uri` returns `InvalidConfig` when no NFT has
+    /// been configured.
+    #[test]
+    fn set_base_uri_returns_invalid_config_when_no_nft_configured() {
+        let (env, client, admin, _token) = setup_initialized_shipment_env();
+        let base = String::from_str(&env, "https://navin.example/proof/");
+        let result = client.try_set_settlement_nft_base_uri(&admin, &base);
+        assert_eq!(result, Err(Ok(NavinError::InvalidConfig)));
+    }
+
+    // ── pause_settlement_nft / unpause_settlement_nft ────────────────────────
+
+    /// Shipment admin can pause and then unpause the proof NFT.
+    #[test]
+    fn admin_can_pause_and_unpause_nft() {
+        let (env, client, admin, nft) = setup_with_nft();
+
+        assert!(!nft.is_paused(), "NFT must start unpaused");
+        client.pause_settlement_nft(&admin);
+        assert!(nft.is_paused(), "NFT must be paused after admin call");
+        client.unpause_settlement_nft(&admin);
+        assert!(!nft.is_paused(), "NFT must be unpaused after admin call");
+    }
+
+    /// Non-admin cannot pause the NFT.
+    #[test]
+    fn non_admin_cannot_pause_nft() {
+        let (env, client, _admin, _nft) = setup_with_nft();
+        let stranger = Address::generate(&env);
+        let result = client.try_pause_settlement_nft(&stranger);
+        assert_eq!(result, Err(Ok(NavinError::Unauthorized)));
+    }
+
+    /// Non-admin cannot unpause the NFT.
+    #[test]
+    fn non_admin_cannot_unpause_nft() {
+        let (env, client, admin, _nft) = setup_with_nft();
+        client.pause_settlement_nft(&admin);
+        let stranger = Address::generate(&env);
+        let result = client.try_unpause_settlement_nft(&stranger);
+        assert_eq!(result, Err(Ok(NavinError::Unauthorized)));
+    }
+
+    /// `pause_settlement_nft` returns `InvalidConfig` when no NFT is configured.
+    #[test]
+    fn pause_returns_invalid_config_when_no_nft_configured() {
+        let (env, client, admin, _token) = setup_initialized_shipment_env();
+        let result = client.try_pause_settlement_nft(&admin);
+        assert_eq!(result, Err(Ok(NavinError::InvalidConfig)));
+    }
+
+    // ── transfer_settlement_nft_admin ────────────────────────────────────────
+
+    /// Shipment admin can propose a transfer of NFT admin custody.
+    #[test]
+    fn admin_can_transfer_nft_admin_custody() {
+        let (env, client, admin, nft) = setup_with_nft();
+        let new_nft_admin = Address::generate(&env);
+
+        // Propose the transfer via the shipment contract.
+        client.transfer_settlement_nft_admin(&admin, &new_nft_admin);
+
+        // The NFT contract now has a pending proposed admin.
+        let proposed = nft.get_proposed_admin();
+        assert_eq!(proposed, new_nft_admin);
+    }
+
+    /// Non-admin cannot transfer NFT admin custody.
+    #[test]
+    fn non_admin_cannot_transfer_nft_admin() {
+        let (env, client, _admin, _nft) = setup_with_nft();
+        let stranger = Address::generate(&env);
+        let new_nft_admin = Address::generate(&env);
+        let result = client.try_transfer_settlement_nft_admin(&stranger, &new_nft_admin);
+        assert_eq!(result, Err(Ok(NavinError::Unauthorized)));
+    }
+
+    /// `transfer_settlement_nft_admin` returns `InvalidConfig` when no NFT is
+    /// configured.
+    #[test]
+    fn transfer_nft_admin_returns_invalid_config_when_no_nft() {
+        let (env, client, admin, _token) = setup_initialized_shipment_env();
+        let new_nft_admin = Address::generate(&env);
+        let result = client.try_transfer_settlement_nft_admin(&admin, &new_nft_admin);
+        assert_eq!(result, Err(Ok(NavinError::InvalidConfig)));
+    }
+}

@@ -84,7 +84,10 @@ fn pause_sets_paused_flag_and_unpause_clears_it() {
     client.pause(&admin);
     assert!(client.is_paused(), "contract must be paused after pause()");
     client.unpause(&admin);
-    assert!(!client.is_paused(), "contract must be unpaused after unpause()");
+    assert!(
+        !client.is_paused(),
+        "contract must be unpaused after unpause()"
+    );
 }
 
 #[test]

@@ -1311,9 +1311,7 @@ fn test_transfer_extends_instance_ttl() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
 
-    let ttl_after_init = env.as_contract(&client.address, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl_after_init = env.as_contract(&client.address, || env.storage().instance().get_ttl());
 
     // Persistent balances have a much shorter default TTL than the instance;
     // keep the sender's balance alive across the ledger jump below so the
@@ -1330,22 +1328,17 @@ fn test_transfer_extends_instance_ttl() {
     // the instance expire) so a regular operation has to refresh it.
     if ttl_after_init > crate::storage::INSTANCE_TTL_THRESHOLD {
         env.ledger().with_mut(|ledger| {
-            ledger.sequence_number +=
-                ttl_after_init - crate::storage::INSTANCE_TTL_THRESHOLD + 1;
+            ledger.sequence_number += ttl_after_init - crate::storage::INSTANCE_TTL_THRESHOLD + 1;
         });
     }
 
-    let ttl_before = env.as_contract(&client.address, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl_before = env.as_contract(&client.address, || env.storage().instance().get_ttl());
     assert!(ttl_before < crate::storage::INSTANCE_TTL_THRESHOLD);
 
     let recipient = Address::generate(&env);
     client.transfer(&admin, &recipient, &200);
 
-    let ttl_after = env.as_contract(&client.address, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl_after = env.as_contract(&client.address, || env.storage().instance().get_ttl());
     assert!(
         ttl_after >= crate::storage::INSTANCE_TTL_EXTEND_TO,
         "transfer must refresh the instance storage TTL"

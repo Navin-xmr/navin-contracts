@@ -139,9 +139,11 @@ impl CircuitBreakerPreset {
 /// hit an archived entry.
 fn extend_breaker_key_ttl(env: &Env, key: &DataKey) {
     let cfg = crate::config::get_config(env);
-    env.storage()
-        .persistent()
-        .extend_ttl(key, cfg.shipment_ttl_threshold, cfg.shipment_ttl_extension);
+    env.storage().persistent().extend_ttl(
+        key,
+        cfg.shipment_ttl_threshold,
+        cfg.shipment_ttl_extension,
+    );
 }
 
 /// Persist the admin-selected circuit breaker configuration.

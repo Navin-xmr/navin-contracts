@@ -1008,10 +1008,7 @@ fn test_validate_checkpoint_symbol_13_chars_accepted() {
     let env = Env::default();
     let long = "A".repeat(13);
     let symbol = Symbol::new(&env, &long);
-    assert_eq!(
-        validate_checkpoint_symbol(&env, &symbol),
-        Ok(())
-    );
+    assert_eq!(validate_checkpoint_symbol(&env, &symbol), Ok(()));
 }
 
 #[test]

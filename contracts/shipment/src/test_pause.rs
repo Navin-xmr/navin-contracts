@@ -547,7 +547,14 @@ mod tests {
     // ── Pause guards on carrier / quota entry points (issue #1242) ───────────
 
     /// Create a contract with one company, one carrier and one shipment.
-    fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address, Address, u64) {
+    fn setup_shipment_env() -> (
+        Env,
+        NavinShipmentClient<'static>,
+        Address,
+        Address,
+        Address,
+        u64,
+    ) {
         let (env, client, admin, token_contract) = setup_test_env();
         let company = Address::generate(&env);
         let carrier = Address::generate(&env);
@@ -646,7 +653,10 @@ mod tests {
         client.pause(&admin);
         let result = client.try_set_creation_quota(&admin, &5, &3600);
         assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
-        assert_eq!(client.get_contract_config().creation_quota_max, quota_before);
+        assert_eq!(
+            client.get_contract_config().creation_quota_max,
+            quota_before
+        );
 
         client.unpause(&admin);
         client.set_creation_quota(&admin, &5, &3600);
