@@ -424,3 +424,26 @@ pub fn create_test_shipment(
 
     (shipment_id, company, receiver, carrier)
 }
+
+/// Initialised contract with a two-admin, threshold-2 multi-sig (issue #1072).
+///
+/// Consolidates duplicate `setup_multisig` test helpers from `test_proposal_digest.rs`
+/// and `test_multisig_reinit_guard.rs`.
+///
+/// # Returns
+/// A tuple of `(env, client, admin, admin2)`.
+pub fn setup_multisig() -> (Env, crate::NavinShipmentClient<'static>, Address, Address) {
+    let (env, admin) = setup_env();
+    let contract_id = env.register(crate::NavinShipment, ());
+    let client = crate::NavinShipmentClient::new(&env, &contract_id);
+    let token_id = env.register(crate::test_helpers::MockToken, ());
+    client.initialize(&admin, &token_id);
+
+    let admin2 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    (env, client, admin, admin2)
+}

@@ -47,6 +47,7 @@ pub mod error_map;
 mod errors;
 mod event_topics;
 mod events;
+pub mod proposals;
 mod storage;
 #[cfg(test)]
 mod test_archived_getters;
@@ -344,7 +345,7 @@ fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(),
     Ok(())
 }
 
-fn persist_shipment(env: &Env, shipment: &Shipment) -> Result<(), NavinError> {
+pub(crate) fn persist_shipment(env: &Env, shipment: &Shipment) -> Result<(), NavinError> {
     validation::validate_shipment_invariants(shipment)?;
     storage::set_shipment(env, shipment);
     storage::set_escrow(env, shipment.id, shipment.escrow_amount);
@@ -611,7 +612,7 @@ fn effective_batch_query_limit(env: &Env) -> u32 {
     MAX_BATCH_QUERY_SIZE
 }
 
-fn finalize_if_settled(_env: &Env, shipment: &mut Shipment) {
+pub(crate) fn finalize_if_settled(_env: &Env, shipment: &mut Shipment) {
     if shipment.status.is_terminal() && shipment.escrow_amount == 0 {
         shipment.finalized = true;
     }
@@ -852,7 +853,7 @@ fn invoke_token_operation(
     }
 }
 
-fn invoke_token_transfer(
+pub(crate) fn invoke_token_transfer(
     env: &Env,
     token_contract: &Address,
     from: &Address,
@@ -896,7 +897,7 @@ fn invoke_token_mint(
     invoke_token_operation(env, token_contract, TokenOperation::Mint, args)
 }
 
-fn require_initialized(env: &Env) -> Result<(), NavinError> {
+pub(crate) fn require_initialized(env: &Env) -> Result<(), NavinError> {
     if !storage::is_initialized(env) {
         return Err(NavinError::NotInitialized);
     }
@@ -911,7 +912,7 @@ fn require_initialized(env: &Env) -> Result<(), NavinError> {
     Ok(())
 }
 
-fn require_not_paused(env: &Env) -> Result<(), NavinError> {
+pub(crate) fn require_not_paused(env: &Env) -> Result<(), NavinError> {
     if storage::is_paused(env) {
         return Err(NavinError::ContractPaused);
     }
@@ -6123,84 +6124,7 @@ impl NavinShipment {
         proposer: Address,
         action: crate::types::AdminAction,
     ) -> Result<u64, NavinError> {
-        Self::propose_action_inner(env, proposer, action, None)
-    }
-
-    /// Shared body of `propose_action` and `propose_action_with_salt`.
-    ///
-    /// When `salt` is `Some`, it must not have been used before; it is recorded
-    /// against the new proposal and folded into the proposal's digest.
-    fn propose_action_inner(
-        env: Env,
-        proposer: Address,
-        action: crate::types::AdminAction,
-        salt: Option<BytesN<32>>,
-    ) -> Result<u64, NavinError> {
-        require_initialized(&env)?;
-        require_not_paused(&env)?;
-        proposer.require_auth();
-
-        // Check if proposer is in admin list
-        if !storage::is_admin(&env, &proposer) {
-            return Err(NavinError::NotAnAdmin);
-        }
-
-        if let Some(salt) = &salt {
-            if storage::is_proposal_salt_used(&env, salt) {
-                return Err(NavinError::ProposalSaltReused);
-            }
-        }
-
-        // Validate action
-        if let crate::types::AdminAction::Upgrade(hash) = &action {
-            if hash.to_array() == [0u8; 32] {
-                return Err(NavinError::InvalidHash);
-            }
-        }
-
-        let proposal_id = storage::get_proposal_counter(&env)
-            .checked_add(1)
-            .ok_or(NavinError::CounterOverflow)?;
-
-        let now = env.ledger().timestamp();
-        let config = config::get_config(&env);
-        if config.proposal_expiry_seconds == 0 {
-            return Err(NavinError::InvalidConfig);
-        }
-        let expires_at = now + config.proposal_expiry_seconds;
-
-        let mut approvals = soroban_sdk::Vec::new(&env);
-        approvals.push_back(proposer.clone());
-
-        let proposal = crate::types::Proposal {
-            id: proposal_id,
-            proposer: proposer.clone(),
-            action: action.clone(),
-            approvals,
-            created_at: now,
-            expires_at,
-            executed: false,
-        };
-
-        storage::set_proposal(&env, &proposal);
-        storage::set_proposal_counter(&env, proposal_id);
-        if let Some(salt) = &salt {
-            storage::set_proposal_salt_used(&env, salt, proposal_id, expires_at);
-        }
-
-        // Compute and store the deterministic action digest (issue #297).
-        let digest_hash = compute_action_digest(&env, proposal_id, &action, salt.as_ref());
-        let digest_record = crate::types::ProposalActionDigest {
-            proposal_id,
-            digest: digest_hash.clone(),
-            computed_at: now,
-        };
-        storage::set_proposal_digest(&env, proposal_id, &digest_record);
-        storage::extend_proposal_ttl(&env, proposal_id, expires_at);
-
-        events::emit_proposal_digest(&env, proposal_id, digest_hash.clone(), now);
-
-        Ok(proposal_id)
+        proposals::propose_action_inner(&env, &proposer, &action, None)
     }
 
     pub fn add_shipment_dependency(
@@ -6275,7 +6199,7 @@ impl NavinShipment {
         // require_auth() here — the host rejects a second require_auth() for
         // the same identity within one invocation as "frame is already
         // authorized".
-        Self::propose_action_inner(env, proposer, action, Some(salt))
+        proposals::propose_action_inner(&env, &proposer, &action, Some(salt))
     }
 
     /// Approve a pending proposal. Only admins in the admin list can approve.
@@ -6302,50 +6226,7 @@ impl NavinShipment {
     /// // contract.approve_action(&env, &admin2, 1);
     /// ```
     pub fn approve_action(env: Env, approver: Address, proposal_id: u64) -> Result<(), NavinError> {
-        require_initialized(&env)?;
-        require_not_paused(&env)?;
-        approver.require_auth();
-
-        // Check if approver is in admin list
-        if !storage::is_admin(&env, &approver) {
-            return Err(NavinError::NotAnAdmin);
-        }
-
-        let mut proposal =
-            storage::get_proposal(&env, proposal_id).ok_or(NavinError::ProposalNotFound)?;
-
-        // Check if proposal has expired
-        let now = env.ledger().timestamp();
-        if now > proposal.expires_at {
-            return Err(NavinError::ProposalExpired);
-        }
-
-        // Check if already executed
-        if proposal.executed {
-            return Err(NavinError::ProposalAlreadyExecuted);
-        }
-
-        // Check if already approved by this admin
-        for existing_approver in proposal.approvals.iter() {
-            if existing_approver == approver {
-                return Err(NavinError::AlreadyApproved);
-            }
-        }
-
-        // Add approval
-        proposal.approvals.push_back(approver.clone());
-        storage::set_proposal(&env, &proposal);
-        storage::extend_proposal_ttl(&env, proposal_id, proposal.expires_at);
-
-        events::emit_proposal_approved(&env, proposal_id, &approver, proposal.approvals.len());
-
-        // Check if threshold is met and auto-execute
-        let threshold = storage::get_multisig_threshold(&env).unwrap_or(2);
-        if proposal.approvals.len() >= threshold {
-            Self::execute_proposal_internal(env.clone(), proposal_id)?;
-        }
-
-        Ok(())
+        proposals::approve_action_internal(&env, &approver, proposal_id)
     }
 
     /// Execute a proposal that has met the approval threshold.
@@ -6372,176 +6253,7 @@ impl NavinShipment {
     pub fn execute_proposal(env: Env, proposal_id: u64) -> Result<(), NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
-        Self::execute_proposal_internal(env, proposal_id)
-    }
-
-    /// Internal function to execute a proposal.
-    fn execute_proposal_internal(env: Env, proposal_id: u64) -> Result<(), NavinError> {
-        let mut proposal =
-            storage::get_proposal(&env, proposal_id).ok_or(NavinError::ProposalNotFound)?;
-
-        // Check if proposal has expired
-        let now = env.ledger().timestamp();
-        if now > proposal.expires_at {
-            return Err(NavinError::ProposalExpired);
-        }
-
-        // Check if already executed
-        if proposal.executed {
-            return Err(NavinError::ProposalAlreadyExecuted);
-        }
-
-        // Check if threshold is met
-        let threshold = storage::get_multisig_threshold(&env).unwrap_or(2);
-        if proposal.approvals.len() < threshold {
-            return Err(NavinError::InsufficientApprovals);
-        }
-
-        // Mark as executed
-        proposal.executed = true;
-        storage::set_proposal(&env, &proposal);
-
-        // Execute the action (clone action before matching to avoid move issues)
-        let action = proposal.action.clone();
-        match action {
-            crate::types::AdminAction::Upgrade(wasm_hash) => {
-                let new_version = storage::get_version(&env)
-                    .checked_add(1)
-                    .ok_or(NavinError::CounterOverflow)?;
-
-                storage::set_version(&env, new_version);
-                events::emit_contract_upgraded(&env, &proposal.proposer, &wasm_hash, new_version);
-                env.deployer().update_current_contract_wasm(wasm_hash);
-            }
-            crate::types::AdminAction::TransferAdmin(new_admin) => {
-                let old_admin = storage::get_admin(&env);
-                storage::set_admin(&env, &new_admin);
-                storage::set_company_role(&env, &new_admin);
-                events::emit_admin_transferred(&env, &old_admin, &new_admin);
-            }
-            crate::types::AdminAction::ForceRelease(shipment_id, reason_hash) => {
-                // Reason hash is mandatory and must be non-zero for audit trail.
-                validation::validate_hash(&reason_hash)?;
-
-                let mut shipment =
-                    storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
-
-                // Terminal shipments have already had their status/counters settled.
-                if shipment.status == ShipmentStatus::Delivered
-                    || shipment.status == ShipmentStatus::Cancelled
-                {
-                    return Err(NavinError::ShipmentAlreadyCompleted);
-                }
-
-                let escrow_amount = shipment.escrow_amount;
-                if escrow_amount > 0 {
-                    // Get token contract address
-                    if let Some(token_contract) = storage::get_token_contract(&env) {
-                        // Transfer tokens from this contract to carrier
-                        let contract_address = env.current_contract_address();
-                        invoke_token_transfer(
-                            &env,
-                            &token_contract,
-                            &contract_address,
-                            &shipment.carrier,
-                            escrow_amount,
-                        )?;
-                    }
-
-                    shipment.escrow_amount = 0;
-                    events::emit_escrow_released(
-                        &env,
-                        shipment_id,
-                        &shipment.carrier,
-                        escrow_amount,
-                    );
-                }
-
-                let old_status = shipment.status.clone();
-                shipment.status = ShipmentStatus::Delivered;
-                shipment.updated_at = env.ledger().timestamp();
-                shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
-
-                storage::decrement_status_count(&env, &old_status);
-                storage::increment_status_count(&env, &shipment.status);
-                storage::decrement_active_shipment_count(&env, &shipment.sender);
-
-                finalize_if_settled(&env, &mut shipment);
-                persist_shipment(&env, &shipment)?;
-
-                // Emit the dedicated force-release event with reason hash for audit trail
-                events::emit_force_released(
-                    &env,
-                    shipment_id,
-                    &proposal.proposer,
-                    &reason_hash,
-                    escrow_amount,
-                );
-            }
-            crate::types::AdminAction::ForceRefund(shipment_id, reason_hash) => {
-                // Reason hash is mandatory and must be non-zero for audit trail.
-                validation::validate_hash(&reason_hash)?;
-
-                let mut shipment =
-                    storage::get_shipment(&env, shipment_id).ok_or(NavinError::ShipmentNotFound)?;
-
-                // Terminal shipments have already had their status/counters settled.
-                if shipment.status == ShipmentStatus::Delivered
-                    || shipment.status == ShipmentStatus::Cancelled
-                {
-                    return Err(NavinError::ShipmentAlreadyCompleted);
-                }
-
-                let escrow_amount = shipment.escrow_amount;
-                if escrow_amount > 0 {
-                    // Get token contract address
-                    if let Some(token_contract) = storage::get_token_contract(&env) {
-                        // Transfer tokens from this contract to company
-                        let contract_address = env.current_contract_address();
-                        invoke_token_transfer(
-                            &env,
-                            &token_contract,
-                            &contract_address,
-                            &shipment.sender,
-                            escrow_amount,
-                        )?;
-                    }
-
-                    shipment.escrow_amount = 0;
-                    events::emit_escrow_refunded(
-                        &env,
-                        shipment_id,
-                        &shipment.sender,
-                        escrow_amount,
-                    );
-                }
-
-                let old_status = shipment.status.clone();
-                shipment.status = ShipmentStatus::Cancelled;
-                shipment.updated_at = env.ledger().timestamp();
-                shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
-
-                storage::decrement_status_count(&env, &old_status);
-                storage::increment_status_count(&env, &shipment.status);
-                storage::decrement_active_shipment_count(&env, &shipment.sender);
-
-                finalize_if_settled(&env, &mut shipment);
-                persist_shipment(&env, &shipment)?;
-
-                // Emit the dedicated force-refund event with reason hash for audit trail
-                events::emit_force_refunded(
-                    &env,
-                    shipment_id,
-                    &proposal.proposer,
-                    &reason_hash,
-                    escrow_amount,
-                );
-            }
-        }
-
-        events::emit_proposal_executed(&env, proposal_id, &proposal.action);
-
-        Ok(())
+        proposals::execute_proposal_internal(&env, proposal_id)
     }
 
     /// Get a proposal by ID.
@@ -7460,7 +7172,7 @@ impl NavinShipment {
         proposal_id: u64,
         action: crate::types::AdminAction,
     ) -> BytesN<32> {
-        compute_action_digest(&env, proposal_id, &action, None)
+        proposals::compute_action_digest(&env, proposal_id, &action, None)
     }
 
     /// Compute a deterministic SHA-256 hash of an ordered list of values.
@@ -7522,29 +7234,6 @@ impl NavinShipment {
 /// runtime-configurable allow-list of extra edges.
 fn is_allowed_migration(current: u32, target: u32) -> bool {
     target == current + 1
-}
-
-/// Compute the deterministic SHA-256 digest for a proposal action.
-///
-/// Canonical serialization: `sha256(proposal_id_be_u64 || action_xdr)`, with
-/// the 32 salt bytes appended for a salted proposal
-/// (`propose_action_with_salt`). Unsalted digests are unchanged.
-fn compute_action_digest(
-    env: &Env,
-    proposal_id: u64,
-    action: &crate::types::AdminAction,
-    salt: Option<&BytesN<32>>,
-) -> BytesN<32> {
-    let mut payload = soroban_sdk::Bytes::new(env);
-    payload.append(&soroban_sdk::Bytes::from_array(
-        env,
-        &proposal_id.to_be_bytes(),
-    ));
-    payload.append(&action.clone().to_xdr(env));
-    if let Some(salt) = salt {
-        payload.append(&soroban_sdk::Bytes::from_array(env, &salt.to_array()));
-    }
-    env.crypto().sha256(&payload).into()
 }
 
 /// Enforce the per-company creation quota window.

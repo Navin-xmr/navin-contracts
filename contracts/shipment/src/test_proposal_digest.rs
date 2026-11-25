@@ -1,4 +1,4 @@
-//! Tests for issue #297 — multi-sig proposal action hash and digest query.
+//! Tests for multi-sig proposal action hash and digest query.
 //!
 //! Verifies that:
 //! - A digest is stored when `propose_action` is called.
@@ -9,37 +9,11 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{test_utils, NavinError, NavinShipment, NavinShipmentClient};
+    use crate::test_utils::{self, setup_multisig};
+    use crate::NavinError;
     use soroban_sdk::testutils::storage::Persistent as _;
     use soroban_sdk::testutils::Ledger as _;
-    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Vec};
-
-    #[contract]
-    struct MockToken;
-    #[contractimpl]
-    impl MockToken {
-        pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
-        pub fn decimals(_env: Env) -> u32 {
-            7
-        }
-    }
-
-    fn setup_multisig() -> (Env, NavinShipmentClient<'static>, Address, Address) {
-        let (env, admin) = test_utils::setup_env();
-        let contract_id = env.register(NavinShipment, ());
-        let client = NavinShipmentClient::new(&env, &contract_id);
-        let token_id = env.register(MockToken, ());
-        client.initialize(&admin, &token_id);
-
-        // Set up multi-sig with two admins and threshold 2.
-        let admin2 = Address::generate(&env);
-        let mut admins = Vec::new(&env);
-        admins.push_back(admin.clone());
-        admins.push_back(admin2.clone());
-        client.init_multisig(&admin, &admins, &2);
-
-        (env, client, admin, admin2)
-    }
+    use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec};
 
     fn wasm_hash(env: &Env, seed: u8) -> BytesN<32> {
         BytesN::from_array(env, &[seed; 32])
@@ -189,7 +163,7 @@ mod tests {
         assert_ne!(digest_release, digest_refund);
     }
 
-    // ── [ISSUE #454] Proposal expiry workflow tests ─────────────────────────
+    // ── Proposal expiry workflow tests ────────────────────────────────────────
 
     /// Test: Create a proposal fixture with expiry, then verify it exists and is usable.
     /// This establishes the baseline before testing expiry behavior.
@@ -682,7 +656,7 @@ mod tests {
         );
     }
 
-    // ── [ISSUE #507] Zero-duration proposal expiry rejection tests ─────────────
+    // ── Zero-duration proposal expiry rejection tests ─────────────────────────
 
     /// Test: propose_action is rejected when proposal_expiry_seconds is zero.
     /// Bypasses update_config validation to directly set a zero-duration expiry
@@ -723,7 +697,7 @@ mod tests {
         assert!(result.is_ok(), "positive-duration expiry must be accepted");
     }
 
-    // ── [ISSUE #527] ProposalDigest execution validation checks ──────────────
+    // ── ProposalDigest execution validation checks ───────────────────────────
 
     /// Altering the target address in a TransferAdmin action after proposal creation
     /// produces a digest that does not match the stored digest.
@@ -1052,7 +1026,7 @@ mod tests {
         );
     }
 
-    // ── [ISSUE #XXX] Multi-sig threshold enforcement tests ─────────────────────
+    // ── Multi-sig threshold enforcement tests ────────────────────────────────
 
     /// Test: Proposal execution rejected with insufficient approvals (threshold 3, 1 approval).
     /// Verifies that attempts to execute with only 1 approval when 3 are required fail
@@ -1488,7 +1462,7 @@ mod tests {
         );
     }
 
-    // ── salted proposals (issue #1230) ───────────────────────────────────────
+    // ── Salted proposals ─────────────────────────────────────────────────────
 
     #[test]
     fn salted_digest_differs_from_unsalted_for_same_action() {
