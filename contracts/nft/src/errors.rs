@@ -29,8 +29,7 @@ pub enum NftError {
     NoProposedAdmin = 15,
     /// Neither a per-token metadata URI nor a base URI is configured.
     BaseUriNotSet = 16,
-    /// Batch input exceeds the maximum supported number of entries.
-    BatchTooLarge = 17,
-    /// The proposed admin is already the current admin.
-    SameAccount = 18,
+    /// A URI passed to `set_base_uri`/`set_token_uri` was empty or exceeded
+    /// `MAX_URI_LENGTH`.
+    InvalidUri = 17,
 }

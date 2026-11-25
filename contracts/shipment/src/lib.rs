@@ -2207,6 +2207,11 @@ impl NavinShipment {
             require_active_company(&env, &caller)?;
         }
 
+        // A suspended carrier must not be able to build a dispute record either.
+        if caller == shipment.carrier {
+            require_active_carrier(&env, &caller)?;
+        }
+
         // Evidence only makes sense while a dispute is actually open; once an
         // admin has resolved it the record is closed.
         if shipment.status != ShipmentStatus::Disputed {
@@ -4271,6 +4276,20 @@ impl NavinShipment {
 
             // Validate hash
             validation::validate_hash(data_hash)?;
+        }
+
+        // Reject already-paid checkpoints up front so the batch behaves like
+        // record_milestone (#1277): a duplicate must fail the whole batch
+        // atomically with MilestoneAlreadyPaid, not silently push a 0 payout
+        // while still consuming a unit of the milestone budget below.
+        for (checkpoint, _) in milestones.iter() {
+            let already_paid = shipment
+                .paid_milestones
+                .iter()
+                .any(|paid| paid == checkpoint);
+            if already_paid {
+                return Err(NavinError::MilestoneAlreadyPaid);
+            }
         }
 
         // Enforce milestone event payload size guard
