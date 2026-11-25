@@ -49,6 +49,49 @@ fn test_confirm_delivery_success_at_checkpoint() {
 }
 
 #[test]
+fn test_update_status_delivered_decrements_active_count_before_release() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[31u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &5_000);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[32u8; 32]),
+    );
+
+    crate::test_utils::advance_past_rate_limit(&env);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::ShipmentStatus::Delivered,
+        &BytesN::from_array(&env, &[33u8; 32]),
+    );
+
+    assert_eq!(client.get_active_shipment_count(&company), 0);
+    client.release_escrow(&receiver, &shipment_id);
+    assert_eq!(client.get_active_shipment_count(&company), 0);
+}
+
+#[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_confirm_delivery_wrong_receiver() {
     let (env, client, admin, token_contract) = setup_shipment_env();

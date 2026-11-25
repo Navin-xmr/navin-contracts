@@ -138,6 +138,16 @@ pub enum DataKey {
     ShipmentMetadata(u64),
 }
 
+/// Additional audit storage keys kept separate from [`DataKey`] because its
+/// contract type has reached the maximum variant count.
+#[contracttype(export = false)]
+pub enum AuditKey {
+    /// Next unique audit log entry ID.
+    NextEntryId,
+    /// Live audit entry ID stored at a compact index.
+    LiveEntryAt(u32),
+}
+
 /// Storage keys for dispute evidence.
 ///
 /// Kept separate from [`DataKey`] deliberately: `DataKey` already carries the

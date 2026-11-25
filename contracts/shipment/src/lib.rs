@@ -2093,10 +2093,12 @@ impl NavinShipment {
         target: Address,
     ) -> Result<Vec<audit::AuditLogEntry>, NavinError> {
         require_initialized(&env)?;
+        let start_id = audit::get_audit_entry_id_limit(&env)
+            .saturating_sub(audit::MAX_AUDIT_LOG_ENTRIES as u64);
         Ok(audit::query_audit_history_for_target(
             &env,
             &target,
-            0,
+            start_id,
             audit::MAX_AUDIT_LOG_ENTRIES as u64,
         ))
     }
@@ -2119,10 +2121,12 @@ impl NavinShipment {
         actor: Address,
     ) -> Result<Vec<audit::AuditLogEntry>, NavinError> {
         require_initialized(&env)?;
+        let start_id = audit::get_audit_entry_id_limit(&env)
+            .saturating_sub(audit::MAX_AUDIT_LOG_ENTRIES as u64);
         Ok(audit::query_audit_history_by_actor(
             &env,
             &actor,
-            0,
+            start_id,
             audit::MAX_AUDIT_LOG_ENTRIES as u64,
         ))
     }
@@ -2147,11 +2151,13 @@ impl NavinShipment {
         end_time: u64,
     ) -> Result<Vec<audit::AuditLogEntry>, NavinError> {
         require_initialized(&env)?;
+        let start_id = audit::get_audit_entry_id_limit(&env)
+            .saturating_sub(audit::MAX_AUDIT_LOG_ENTRIES as u64);
         Ok(audit::query_audit_history(
             &env,
             start_time,
             end_time,
-            0,
+            start_id,
             audit::MAX_AUDIT_LOG_ENTRIES as u64,
         ))
     }
@@ -2316,23 +2322,23 @@ impl NavinShipment {
         Ok(storage::get_evidence_count(&env, shipment_id))
     }
 
-    /// Prune audit-trail entries older than `before_timestamp`. Admin only.
+    /// Remove audit entries older than the provided timestamp.
     ///
-    /// The audit log is append-only and otherwise unbounded, so this is the
-    /// only way to reclaim storage from stale `AuditEntry` records on a live
-    /// contract.
+    /// Only the contract admin can clean up audit history. Removed entries
+    /// free capacity for future role and permission changes. Cleanup scans
+    /// only live entries, so its work remains bounded by the audit cap.
     ///
     /// # Arguments
     /// * `env` - Execution environment.
-    /// * `admin` - Admin address executing the cleanup.
-    /// * `before_timestamp` - Remove entries strictly before this timestamp.
+    /// * `admin` - Contract admin authorizing cleanup.
+    /// * `before_timestamp` - Remove entries with an earlier timestamp.
     ///
     /// # Returns
     /// * `Result<u32, NavinError>` - Number of entries removed.
     ///
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::Unauthorized` - If called by a non-admin.
+    /// * `NavinError::Unauthorized` - If caller is not the contract admin.
     pub fn cleanup_audit_logs(
         env: Env,
         admin: Address,
@@ -3328,6 +3334,13 @@ impl NavinShipment {
 
         storage::decrement_status_count(&env, &old_status);
         storage::increment_status_count(&env, &shipment.status);
+
+        if (new_status == ShipmentStatus::Delivered || new_status == ShipmentStatus::Cancelled)
+            && old_status != ShipmentStatus::Delivered
+            && old_status != ShipmentStatus::Cancelled
+        {
+            storage::decrement_active_shipment_count(&env, &shipment.sender);
+        }
 
         finalize_if_settled(&env, &mut shipment);
         persist_shipment(&env, &shipment)?;
@@ -5528,7 +5541,7 @@ impl NavinShipment {
     /// * `NavinError::InvalidHash` - If handoff_hash is all zeros.
     /// * `NavinError::Unauthorized` - If current_carrier is not the assigned carrier.
     /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
-    /// * `NavinError::ShipmentAlreadyCompleted` - If shipment is already completed.
+    /// * `NavinError::ShipmentAlreadyCompleted` - If shipment is Delivered, Disputed, or Cancelled.
     ///
     /// # Examples
     /// ```rust
@@ -5573,9 +5586,9 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
 
-        // Prevent handoff from completed shipments
+        // Prevent handoff from completed or disputed shipments
         match shipment.status {
-            ShipmentStatus::Delivered | ShipmentStatus::Cancelled => {
+            ShipmentStatus::Delivered | ShipmentStatus::Disputed | ShipmentStatus::Cancelled => {
                 return Err(NavinError::ShipmentAlreadyCompleted);
             }
             _ => {}
