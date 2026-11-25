@@ -1060,10 +1060,10 @@ pub fn emit_config_updated(env: &Env, admin: &Address, new_config: &crate::Contr
     );
 }
 
-pub fn emit_quota_set(env: &Env, company: &Address, count: u32, window_start: u64) {
+pub fn emit_quota_set(env: &Env, admin: &Address, max_per_window: u32, window_seconds: u64) {
     env.events().publish(
         (Symbol::new(env, crate::event_topics::QUOTA_SET),),
-        (company.clone(), count, window_start),
+        (admin.clone(), max_per_window, window_seconds),
     );
 }
 

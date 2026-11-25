@@ -490,7 +490,7 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             73,
             InvalidInput,
             NoRetry,
-            "Symbol could not be decoded: the declared content length exceeds              the decode buffer. Use an event type of 24 characters or fewer.",
+            "Symbol could not be decoded: its XDR declares more content than it              carries. Pass a valid Symbol of at most 32 characters.",
         ),
         NavinError::AuditLogLimitExceeded => (
             76,

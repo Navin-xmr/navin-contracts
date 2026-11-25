@@ -140,12 +140,11 @@ Build all workspace contracts for the WASM target:
 make build
 ```
 
-This builds `navin-token`, `navin-nft`, and `shipment`. The deploy and
-initialization scripts below operate on `navin-token` and `shipment` only.
+This builds `navin-token`, `navin-nft`, and `shipment`.
 
 ### 2. Deploy Contracts
 
-Deploy the token and shipment contracts to testnet:
+Deploy the contracts to testnet:
 
 ```bash
 ./scripts/deploy-testnet.sh
@@ -222,7 +221,7 @@ After deployment, verify the contracts are working:
      --network-passphrase "$STELLAR_NETWORK_PASSPHRASE" \
      -- \
      balance \
-     --id "$(stellar keys address $STELLAR_IDENTITY)"
+     --address "$(stellar keys address $STELLAR_IDENTITY)"
    ```
 
 2. **Check shipment contract admin**:
