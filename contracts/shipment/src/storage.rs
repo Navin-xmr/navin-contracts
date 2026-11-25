@@ -1,5 +1,5 @@
 use crate::{errors::NavinError, types::*};
-use soroban_sdk::{Address, BytesN, Env, Map, Symbol, Vec};
+use soroban_sdk::{panic_with_error, Address, BytesN, Env, Map, TryFromVal, Val, Vec};
 
 /// Check if the contract has been initialized (admin set).
 ///
@@ -1727,20 +1727,40 @@ pub fn get_event_count(env: &Env, shipment_id: u64) -> u32 {
 }
 
 /// Return the contract-wide event counter used by events without a shipment ID.
-pub fn get_global_event_count(env: &Env) -> u32 {
-    env.storage()
-        .instance()
-        .get(&DataKey::GlobalEventCount)
-        .unwrap_or(0)
+///
+/// The counter is stored as a `u64`. Deployments that predate the widening
+/// stored it as a `u32`; that legacy value is read transparently and is
+/// rewritten as a `u64` on the next increment.
+pub fn get_global_event_count(env: &Env) -> u64 {
+    let raw: Option<Val> = env.storage().instance().get(&DataKey::GlobalEventCount);
+    match raw {
+        None => 0,
+        Some(val) => u64::try_from_val(env, &val)
+            .or_else(|_| u32::try_from_val(env, &val).map(u64::from))
+            .unwrap_or_else(|_| panic_with_error!(env, NavinError::CounterOverflow)),
+    }
 }
 
 /// Increment and return the next contract-wide event counter.
-pub fn increment_global_event_count(env: &Env) -> u32 {
-    let next = get_global_event_count(env).saturating_add(1);
+///
+/// # Panics
+/// * `NavinError::CounterOverflow` - If the counter is already at `u64::MAX`.
+///   The counter never saturates, so two events can never share a counter
+///   value (and therefore an idempotency key).
+pub fn increment_global_event_count(env: &Env) -> u64 {
+    try_increment_global_event_count(env).unwrap_or_else(|err| panic_with_error!(env, err))
+}
+
+/// Checked variant of [`increment_global_event_count`] that returns
+/// `NavinError::CounterOverflow` instead of panicking.
+pub fn try_increment_global_event_count(env: &Env) -> Result<u64, NavinError> {
+    let next = get_global_event_count(env)
+        .checked_add(1)
+        .ok_or(NavinError::CounterOverflow)?;
     env.storage()
         .instance()
         .set(&DataKey::GlobalEventCount, &next);
-    next
+    Ok(next)
 }
 
 // ============= Per-Shipment Cleanup Helpers =============
@@ -2420,6 +2440,92 @@ mod tests {
                 .has(&DataKey::LastStatusUpdate(shipment_id)));
             assert_eq!(get_last_status_update(&env, shipment_id), Some(42));
         });
+    }
+
+    #[test]
+    fn global_event_count_reads_legacy_u32_value() {
+        let (env, contract_id) = with_contract_env();
+
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .instance()
+                .set(&DataKey::GlobalEventCount, &u32::MAX);
+
+            assert_eq!(get_global_event_count(&env), u64::from(u32::MAX));
+            // Crossing the old u32 limit no longer saturates.
+            assert_eq!(
+                increment_global_event_count(&env),
+                u64::from(u32::MAX) + 1
+            );
+            assert_eq!(get_global_event_count(&env), u64::from(u32::MAX) + 1);
+        });
+    }
+
+    #[test]
+    fn global_event_count_overflow_surfaces_counter_overflow() {
+        let (env, contract_id) = with_contract_env();
+
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .instance()
+                .set(&DataKey::GlobalEventCount, &(u64::MAX - 1));
+
+            assert_eq!(try_increment_global_event_count(&env), Ok(u64::MAX));
+            assert_eq!(
+                try_increment_global_event_count(&env),
+                Err(NavinError::CounterOverflow)
+            );
+            // A failed increment leaves the stored counter untouched.
+            assert_eq!(get_global_event_count(&env), u64::MAX);
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #11)")]
+    fn global_event_count_panics_instead_of_saturating() {
+        let (env, contract_id) = with_contract_env();
+
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .instance()
+                .set(&DataKey::GlobalEventCount, &u64::MAX);
+            increment_global_event_count(&env);
+        });
+    }
+
+    #[test]
+    fn global_event_idempotency_keys_stay_unique_past_u32_max() {
+        use soroban_sdk::testutils::Events as _;
+
+        let (env, contract_id) = with_contract_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .instance()
+                .set(&DataKey::GlobalEventCount, &(u32::MAX - 1));
+            for _ in 0..4 {
+                crate::events::emit_whitelist_added(&env, &company, &carrier);
+            }
+        });
+
+        let mut counters: Vec<u64> = Vec::new(&env);
+        let mut keys: Vec<BytesN<32>> = Vec::new(&env);
+        for (_, _, data) in env.events().all().iter() {
+            let (_, _, _, counter, key): (Address, Address, u32, u64, BytesN<32>) =
+                TryFromVal::try_from_val(&env, &data).unwrap();
+            assert!(!counters.contains(&counter), "duplicate event counter");
+            assert!(!keys.contains(&key), "duplicate idempotency key");
+            counters.push_back(counter);
+            keys.push_back(key);
+        }
+        assert_eq!(keys.len(), 4);
+        assert_eq!(
+            counters.get(3),
+            Some(u64::from(u32::MAX) + 2),
+            "counter must keep growing past u32::MAX"
+        );
     }
 }
 

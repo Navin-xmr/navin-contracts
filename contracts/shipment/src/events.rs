@@ -139,10 +139,18 @@ pub fn generate_idempotency_key(
     env.crypto().sha256(&payload).into()
 }
 
-fn next_global_event_metadata(env: &Env, topic: &str, domain: u8) -> (u32, BytesN<32>) {
+/// Allocate the next contract-wide event counter and derive its idempotency key.
+///
+/// The full `u64` counter occupies the `shipment_id` slot of the key payload,
+/// so keys stay unique for every counter value. The `event_counter` slot keeps
+/// the low 32 bits, which leaves keys for counters `<= u32::MAX` identical to
+/// the ones emitted before the counter was widened.
+///
+/// Panics with `NavinError::CounterOverflow` instead of reusing a counter.
+fn next_global_event_metadata(env: &Env, topic: &str, domain: u8) -> (u64, BytesN<32>) {
     let event_counter = crate::storage::increment_global_event_count(env);
     let idempotency_key =
-        generate_idempotency_key(env, domain, event_counter as u64, topic, event_counter);
+        generate_idempotency_key(env, domain, event_counter, topic, event_counter as u32);
     (event_counter, idempotency_key)
 }
 

@@ -288,6 +288,11 @@ impl NavinShipmentNft {
         Self::check_contract_recipient_opt_in(env, to, token_id)?;
 
         Self::clear_approval(env, from, token_id);
+        // Burn consent belongs to the owner who gave it; it must never carry
+        // over to the new owner.
+        env.storage()
+            .persistent()
+            .remove(&NftKey::BurnApproved(token_id));
         env.storage().persistent().set(&NftKey::Owner(token_id), to);
 
         Self::remove_token_from_owner(env, from, token_id)?;
@@ -529,6 +534,35 @@ impl NavinShipmentNft {
         env.storage()
             .persistent()
             .set(&NftKey::BurnApproved(token_id), &true);
+        env.events().publish(
+            (
+                event_topics::BURN_APPROVED,
+                event_topics::EVENT_SCHEMA_VERSION,
+            ),
+            (owner.clone(), token_id, env.ledger().timestamp()),
+        );
+        Self::extend_instance_ttl(&env);
+        Self::extend_persistent_ttl(&env, &owner);
+        Ok(())
+    }
+
+    /// Withdraw a previously given burn approval. Only the current owner may
+    /// revoke; a `burn_rv` event is emitted when an approval was removed.
+    pub fn revoke_burn_approval(env: Env, token_id: u64) -> Result<(), NftError> {
+        let owner = Self::get_owner_inner(&env, token_id)?;
+        owner.require_auth();
+
+        let key = NftKey::BurnApproved(token_id);
+        if env.storage().persistent().get(&key).unwrap_or(false) {
+            env.storage().persistent().remove(&key);
+            env.events().publish(
+                (
+                    event_topics::BURN_APPROVAL_REVOKED,
+                    event_topics::EVENT_SCHEMA_VERSION,
+                ),
+                (owner.clone(), token_id, env.ledger().timestamp()),
+            );
+        }
         Self::extend_instance_ttl(&env);
         Self::extend_persistent_ttl(&env, &owner);
         Ok(())

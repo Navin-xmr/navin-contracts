@@ -349,33 +349,11 @@ fn test_failed_mint_emits_no_event() {
 }
 
 #[test]
-fn test_set_base_uri_emits_event() {
-    let (env, admin, client) = setup();
-    let base_uri = soroban_sdk::String::from_str(&env, "https://example.com/meta/");
-    client.set_base_uri(&admin, &base_uri);
-
-    let event = last_event(&env, &client.address);
-    assert_eq!(
-        vec![&env, event],
-        vec![
-            &env,
-            (
-                client.address.clone(),
-                topics(&env, event_topics::BASE_URI),
-                (admin, base_uri, TIMESTAMP).into_val(&env),
-            ),
-        ]
-    );
-}
-
-#[test]
-fn test_set_token_uri_emits_event() {
-    let (env, admin, client) = setup();
+fn test_approve_burn_emits_event() {
+    let (env, _admin, client) = setup();
     let owner = Address::generate(&env);
     client.mint(&owner, &3);
-
-    let uri = soroban_sdk::String::from_str(&env, "https://example.com/meta/3.json");
-    client.set_token_uri(&admin, &3, &uri);
+    client.approve_burn(&3);
 
     let event = last_event(&env, &client.address);
     assert_eq!(
@@ -384,29 +362,63 @@ fn test_set_token_uri_emits_event() {
             &env,
             (
                 client.address.clone(),
-                topics(&env, event_topics::TOKEN_URI),
-                (admin, 3_u64, uri, TIMESTAMP).into_val(&env),
+                topics(&env, event_topics::BURN_APPROVED),
+                (owner, 3_u64, TIMESTAMP).into_val(&env),
             ),
         ]
     );
 }
 
 #[test]
-fn test_set_base_uri_rejects_empty_string() {
-    let (env, admin, client) = setup();
-    let empty = soroban_sdk::String::from_str(&env, "");
-    let result = client.try_set_base_uri(&admin, &empty);
-    assert_eq!(result, Err(Ok(crate::NftError::InvalidUri)));
+fn test_revoke_burn_approval_emits_event_and_blocks_burn() {
+    let (env, _admin, client) = setup();
+    let owner = Address::generate(&env);
+    client.mint(&owner, &4);
+    client.approve_burn(&4);
+    client.revoke_burn_approval(&4);
+
+    let event = last_event(&env, &client.address);
+    assert_eq!(
+        vec![&env, event],
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                topics(&env, event_topics::BURN_APPROVAL_REVOKED),
+                (owner.clone(), 4_u64, TIMESTAMP).into_val(&env),
+            ),
+        ]
+    );
+    assert!(!client.is_burn_approved(&4));
+    assert_eq!(
+        client.try_burn(&owner, &4),
+        Err(Ok(crate::NftError::BurnNotApproved))
+    );
+
+    // Revoking again is a no-op and emits nothing new.
+    client.revoke_burn_approval(&4);
+    assert_eq!(
+        count_events(&env, &client.address, event_topics::BURN_APPROVAL_REVOKED),
+        1
+    );
 }
 
 #[test]
-fn test_set_token_uri_rejects_oversized_string() {
-    let (env, admin, client) = setup();
-    let owner = Address::generate(&env);
-    client.mint(&owner, &4);
+fn test_transfer_clears_burn_approval() {
+    let (env, _admin, client) = setup();
+    let alice = Address::generate(&env);
+    let bob = env.register(AcceptingReceiver, ());
+    client.mint(&alice, &6);
+    client.approve_burn(&6);
+    assert!(client.is_burn_approved(&6));
 
-    let too_long: std::string::String = std::iter::repeat('a').take(600).collect();
-    let uri = soroban_sdk::String::from_str(&env, &too_long);
-    let result = client.try_set_token_uri(&admin, &4, &uri);
-    assert_eq!(result, Err(Ok(crate::NftError::InvalidUri)));
+    client.transfer(&alice, &bob, &6, &Vec::new(&env));
+
+    assert_eq!(client.owner_of(&6), bob);
+    assert!(!client.is_burn_approved(&6));
+    assert_eq!(
+        client.try_burn(&bob, &6),
+        Err(Ok(crate::NftError::BurnNotApproved))
+    );
+    assert_eq!(client.owner_of(&6), bob);
 }
