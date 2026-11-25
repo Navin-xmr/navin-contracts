@@ -456,8 +456,10 @@ fn internal_release_escrow(
 
         match transfer_result {
             Ok(()) => {
+                // Final only when this payout empties the escrow.
+                let final_settlement = actual_release == shipment.escrow_amount;
                 // Mark settlement as completed
-                complete_settlement(env, settlement_id, shipment.id)?;
+                complete_settlement(env, settlement_id, shipment.id, final_settlement)?;
 
                 shipment.escrow_amount =
                     checked_sub_escrow(shipment.escrow_amount, actual_release)?;
@@ -507,7 +509,8 @@ fn settle_escrow(
             escrow_amount,
         )?;
 
-        complete_settlement(env, settlement_id, shipment.id)?;
+        // Moves the whole escrow, so this is the final settlement.
+        complete_settlement(env, settlement_id, shipment.id, true)?;
 
         shipment.escrow_amount = 0;
 
@@ -609,11 +612,7 @@ fn effective_batch_query_limit(env: &Env) -> u32 {
 }
 
 fn finalize_if_settled(_env: &Env, shipment: &mut Shipment) {
-    if (shipment.status == ShipmentStatus::Delivered
-        || shipment.status == ShipmentStatus::Cancelled
-        || shipment.status == ShipmentStatus::PartiallyRefunded)
-        && shipment.escrow_amount == 0
-    {
+    if shipment.status.is_terminal() && shipment.escrow_amount == 0 {
         shipment.finalized = true;
     }
 }
@@ -646,14 +645,33 @@ fn create_settlement(
 }
 
 /// Mark a settlement as completed.
-fn complete_settlement(env: &Env, settlement_id: u64, shipment_id: u64) -> Result<(), NavinError> {
+///
+/// # Settlement proof rules
+/// * A settlement-proof NFT (when one is configured) is minted at most once
+///   per shipment, for the *final* settlement: the Release or Refund that
+///   leaves no escrow in the shipment (`final_settlement == true`).
+/// * Partial settlements never mint: a partial milestone release or the first
+///   leg of a split dispute payout would otherwise use up the single
+///   per-shipment proof before the shipment is actually settled.
+/// * Minting is best-effort. If the NFT contract is paused, upgraded or
+///   broken, `proof_mint_failed` is emitted and the settlement still completes,
+///   so escrow movement never depends on the NFT contract. There is no retry:
+///   a failed final proof is not re-minted by a later settlement.
+fn complete_settlement(
+    env: &Env,
+    settlement_id: u64,
+    shipment_id: u64,
+    final_settlement: bool,
+) -> Result<(), NavinError> {
     let mut settlement =
-        storage::get_settlement(env, settlement_id).ok_or(NavinError::SettlementNotFound)?;
-    if matches!(
-        &settlement.operation,
-        SettlementOperation::Release | SettlementOperation::Refund
-    ) {
-        mint_settlement_proof(env, &settlement)?;
+        storage::get_settlement(env, settlement_id).ok_or(NavinError::ShipmentNotFound)?; // Reusing error for simplicity
+    if final_settlement
+        && matches!(
+            &settlement.operation,
+            SettlementOperation::Release | SettlementOperation::Refund
+        )
+    {
+        mint_settlement_proof(env, &settlement);
     }
     settlement.state = SettlementState::Completed;
     settlement.completed_at = Some(env.ledger().timestamp());
@@ -662,15 +680,17 @@ fn complete_settlement(env: &Env, settlement_id: u64, shipment_id: u64) -> Resul
     Ok(())
 }
 
-fn mint_settlement_proof(env: &Env, settlement: &SettlementRecord) -> Result<(), NavinError> {
+/// Best-effort mint of the settlement-proof NFT; never fails the settlement.
+/// See [`complete_settlement`] for when this is called.
+fn mint_settlement_proof(env: &Env, settlement: &SettlementRecord) {
     let config = config::get_config(env);
     let Some(nft_contract) = config.settlement_nft_contract_id else {
-        return Ok(());
+        return;
     };
 
     let proof_key = SettlementProofKey::Minted(settlement.shipment_id);
     if env.storage().persistent().has(&proof_key) {
-        return Ok(());
+        return;
     }
 
     let mut args: Vec<soroban_sdk::Val> = Vec::new(env);
@@ -684,7 +704,15 @@ fn mint_settlement_proof(env: &Env, settlement: &SettlementRecord) -> Result<(),
         args,
     ) {
         Ok(Ok(token_id)) if token_id == settlement.shipment_id => {}
-        _ => return Err(NavinError::NftMintFailed),
+        _ => {
+            events::emit_proof_mint_failed(
+                env,
+                settlement.shipment_id,
+                settlement.settlement_id,
+                &settlement.to,
+            );
+            return;
+        }
     }
 
     env.storage().persistent().set(&proof_key, &true);
@@ -693,7 +721,6 @@ fn mint_settlement_proof(env: &Env, settlement: &SettlementRecord) -> Result<(),
         config.shipment_ttl_threshold,
         config.shipment_ttl_extension,
     );
-    Ok(())
 }
 
 fn authorize_nft_invocation(
@@ -3167,7 +3194,7 @@ impl NavinShipment {
 
             match transfer_result {
                 Ok(()) => {
-                    complete_settlement(&env, settlement_id, shipment_id)?;
+                    complete_settlement(&env, settlement_id, shipment_id, false)?;
 
                     let mut net_amount = amount;
                     if let Some(fee_config) = storage::get_fee_config(&env) {
@@ -5381,7 +5408,7 @@ impl NavinShipment {
                         &recipient,
                         escrow_amount,
                     )?;
-                    complete_settlement(&env, settlement_id, shipment_id)?;
+                    complete_settlement(&env, settlement_id, shipment_id, true)?;
                 }
                 DisputeResolution::RefundToCompany => {
                     let recipient = shipment.sender.clone();
@@ -5400,7 +5427,7 @@ impl NavinShipment {
                         &recipient,
                         escrow_amount,
                     )?;
-                    complete_settlement(&env, settlement_id, shipment_id)?;
+                    complete_settlement(&env, settlement_id, shipment_id, true)?;
                 }
                 DisputeResolution::PartialRefund => {
                     // Arbiter-provided partial flag: split escrow evenly between carrier and company.
@@ -5423,7 +5450,8 @@ impl NavinShipment {
                             &shipment.carrier,
                             carrier_share,
                         )?;
-                        complete_settlement(&env, settlement_id, shipment_id)?;
+                        // First leg of the split; the company leg is final.
+                        complete_settlement(&env, settlement_id, shipment_id, false)?;
                     }
                     if company_share > 0 {
                         let settlement_id = create_settlement(
@@ -5441,7 +5469,7 @@ impl NavinShipment {
                             &shipment.sender,
                             company_share,
                         )?;
-                        complete_settlement(&env, settlement_id, shipment_id)?;
+                        complete_settlement(&env, settlement_id, shipment_id, true)?;
                     }
                 }
             }
@@ -6063,6 +6091,19 @@ impl NavinShipment {
         proposer: Address,
         action: crate::types::AdminAction,
     ) -> Result<u64, NavinError> {
+        Self::propose_action_inner(env, proposer, action, None)
+    }
+
+    /// Shared body of `propose_action` and `propose_action_with_salt`.
+    ///
+    /// When `salt` is `Some`, it must not have been used before; it is recorded
+    /// against the new proposal and folded into the proposal's digest.
+    fn propose_action_inner(
+        env: Env,
+        proposer: Address,
+        action: crate::types::AdminAction,
+        salt: Option<BytesN<32>>,
+    ) -> Result<u64, NavinError> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
         proposer.require_auth();
@@ -6070,6 +6111,12 @@ impl NavinShipment {
         // Check if proposer is in admin list
         if !storage::is_admin(&env, &proposer) {
             return Err(NavinError::NotAnAdmin);
+        }
+
+        if let Some(salt) = &salt {
+            if storage::is_proposal_salt_used(&env, salt) {
+                return Err(NavinError::ProposalSaltReused);
+            }
         }
 
         // Validate action
@@ -6105,9 +6152,12 @@ impl NavinShipment {
 
         storage::set_proposal(&env, &proposal);
         storage::set_proposal_counter(&env, proposal_id);
+        if let Some(salt) = &salt {
+            storage::set_proposal_salt_used(&env, salt, proposal_id, expires_at);
+        }
 
         // Compute and store the deterministic action digest (issue #297).
-        let digest_hash = compute_action_digest(&env, proposal_id, &action);
+        let digest_hash = compute_action_digest(&env, proposal_id, &action, salt.as_ref());
         let digest_record = crate::types::ProposalActionDigest {
             proposal_id,
             digest: digest_hash.clone(),
@@ -6162,34 +6212,38 @@ impl NavinShipment {
         Ok(())
     }
 
-    /// Propose an action with a unique salt to prevent replay attacks.
+    /// Propose an action with a one-time salt.
     /// Same as `propose_action` but accepts an explicit salt value.
-    /// The salt is stored and checked — reuse of the same salt is rejected
-    /// with `ProposalSaltReused`.
+    ///
+    /// # Salt semantics
+    /// * The salt is an opaque 32-byte nonce chosen by the proposer. Each salt
+    ///   can back one proposal; reusing it is rejected with `ProposalSaltReused`.
+    /// * It is bound to the proposal's digest:
+    ///   `sha256(proposal_id_be_u64 || action_xdr || salt)`. A salted proposal
+    ///   therefore never shares a digest with an unsalted (or differently
+    ///   salted) proposal for the same action, and signers can verify the digest
+    ///   only if they know the salt.
+    /// * The used-salt marker is kept in persistent storage (salt -> proposal
+    ///   id), not instance storage, so salted proposals do not add to the cost
+    ///   of every contract call. Its TTL follows `proposal_expiry_seconds`: once
+    ///   the proposal can no longer be executed, the salt may be reused.
+    /// * A salt does not deduplicate actions: the same action proposed again
+    ///   with a fresh salt is a separate proposal with its own digest.
+    ///
+    /// # Errors
+    /// Same as `propose_action`, plus `NavinError::ProposalSaltReused` if the
+    /// salt is already in use.
     pub fn propose_action_with_salt(
         env: Env,
         proposer: Address,
         action: crate::types::AdminAction,
         salt: BytesN<32>,
     ) -> Result<u64, NavinError> {
-        require_initialized(&env)?;
-        require_not_paused(&env)?;
-
-        if !storage::is_admin(&env, &proposer) {
-            return Err(NavinError::NotAnAdmin);
-        }
-
-        if storage::is_proposal_salt_used(&env, &salt) {
-            return Err(NavinError::ProposalSaltReused);
-        }
-
-        storage::set_proposal_salt_used(&env, &salt);
-
-        // Delegate to the standard propose_action logic, which performs the
-        // proposer's require_auth(). Do not also require_auth() here — the
-        // host rejects a second require_auth() for the same identity within
-        // one invocation as "frame is already authorized".
-        Self::propose_action(env, proposer, action)
+        // The shared body performs the proposer's require_auth(). Do not also
+        // require_auth() here — the host rejects a second require_auth() for
+        // the same identity within one invocation as "frame is already
+        // authorized".
+        Self::propose_action_inner(env, proposer, action, Some(salt))
     }
 
     /// Approve a pending proposal. Only admins in the admin list can approve.
@@ -7374,7 +7428,7 @@ impl NavinShipment {
         proposal_id: u64,
         action: crate::types::AdminAction,
     ) -> BytesN<32> {
-        compute_action_digest(&env, proposal_id, &action)
+        compute_action_digest(&env, proposal_id, &action, None)
     }
 
     /// Compute a deterministic SHA-256 hash of an ordered list of values.
@@ -7440,11 +7494,14 @@ fn is_allowed_migration(current: u32, target: u32) -> bool {
 
 /// Compute the deterministic SHA-256 digest for a proposal action.
 ///
-/// Canonical serialization: `sha256(proposal_id_be_u64 || action_xdr)`
+/// Canonical serialization: `sha256(proposal_id_be_u64 || action_xdr)`, with
+/// the 32 salt bytes appended for a salted proposal
+/// (`propose_action_with_salt`). Unsalted digests are unchanged.
 fn compute_action_digest(
     env: &Env,
     proposal_id: u64,
     action: &crate::types::AdminAction,
+    salt: Option<&BytesN<32>>,
 ) -> BytesN<32> {
     let mut payload = soroban_sdk::Bytes::new(env);
     payload.append(&soroban_sdk::Bytes::from_array(
@@ -7452,6 +7509,9 @@ fn compute_action_digest(
         &proposal_id.to_be_bytes(),
     ));
     payload.append(&action.clone().to_xdr(env));
+    if let Some(salt) = salt {
+        payload.append(&soroban_sdk::Bytes::from_array(env, &salt.to_array()));
+    }
     env.crypto().sha256(&payload).into()
 }
 

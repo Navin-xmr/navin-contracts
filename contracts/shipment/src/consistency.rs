@@ -23,7 +23,7 @@
 //! shipments (matching the strategy used by `diagnostics::run_system_health_check`).
 //! Use `check_all_consistency_range` when a full audit over an arbitrary window is needed.
 
-use crate::{storage, types::ShipmentStatus};
+use crate::storage;
 use soroban_sdk::{contracttype, Address, Env, Vec};
 
 /// Default sample cap for consistency scans (budget safety on large sets,
@@ -84,16 +84,8 @@ pub fn check_shipment_invariants(env: &Env, shipment_id: u64) -> Vec<Consistency
 
     // Finalization: finalized shipments must be terminal with zero escrow.
     // Terminal set includes PartiallyRefunded (issue #783) — all three share escrow==0 finalization semantics.
-    if shipment.finalized {
-        let is_terminal = matches!(
-            shipment.status,
-            ShipmentStatus::Delivered
-                | ShipmentStatus::Cancelled
-                | ShipmentStatus::PartiallyRefunded
-        );
-        if !is_terminal || shipment.escrow_amount != 0 {
-            violations.push_back(ConsistencyViolation::InvalidFinalization(shipment_id));
-        }
+    if shipment.finalized && (!shipment.status.is_terminal() || shipment.escrow_amount != 0) {
+        violations.push_back(ConsistencyViolation::InvalidFinalization(shipment_id));
     }
 
     // Milestones: every paid entry must appear in the payment schedule.

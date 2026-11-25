@@ -945,6 +945,27 @@ pub fn emit_escrow_frozen(
     );
 }
 
+/// Emits a `proof_mint_failed` event when the settlement-proof NFT could not be
+/// minted for a final settlement. The settlement still completes.
+///
+/// Payload: `(shipment_id, settlement_id, recipient, timestamp)`.
+pub fn emit_proof_mint_failed(
+    env: &Env,
+    shipment_id: u64,
+    settlement_id: u64,
+    recipient: &Address,
+) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::PROOF_MINT_FAILED),),
+        (
+            shipment_id,
+            settlement_id,
+            recipient.clone(),
+            env.ledger().timestamp(),
+        ),
+    );
+}
+
 /// Emits a `platform_fee_collected` event when a fee is deducted from a deposit.
 ///
 /// See `docs/events.md` for the full payload layout.

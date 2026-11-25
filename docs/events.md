@@ -26,6 +26,7 @@
    - [escrow_deposited](#escrow_deposited)
    - [escrow_released](#escrow_released)
    - [escrow_refunded](#escrow_refunded)
+   - [proof_mint_failed](#proof_mint_failed)
 6. [Carrier Events](#carrier-events)
    - [carrier_handoff](#carrier_handoff)
    - [condition_breach](#condition_breach)
@@ -234,6 +235,7 @@ This enables safe parser upgrades and indexer deduplication during contract evol
 | `escrow_deposited`     | Escrow    | `deposit_escrow`                                                              |
 | `escrow_released`      | Escrow    | `confirm_delivery`, `cancel_shipment`, `resolve_dispute`, `multi_sig_execute` |
 | `escrow_refunded`      | Escrow    | `cancel_shipment`, `resolve_dispute`, `expire_shipment`, `multi_sig_execute`  |
+| `proof_mint_failed`    | Escrow    | Final settlement — see [proof_mint_failed](#proof_mint_failed)                |
 | `carrier_handoff`      | Carrier   | `carrier_handoff`                                                             |
 | `condition_breach`     | Carrier   | `report_condition_breach`                                                     |
 | `carrier_breach`       | Carrier   | `report_condition_breach`                                                     |
@@ -481,6 +483,24 @@ Emitted when escrowed funds are returned to the company (e.g., cancellation, exp
 
 **Backend action:** Update escrow ledger and notify company.
 **Frontend action:** Show refund status on shipment detail page.
+
+---
+
+### `proof_mint_failed`
+
+Emitted when the settlement-proof NFT could not be minted for a shipment's final settlement. The settlement itself still completes; see [Settlement proof NFT](SETTLEMENT_STATE_MACHINE.md#settlement-proof-nft).
+
+**Topic:** `"proof_mint_failed"`
+**Emitted by:** any final Release or Refund settlement (`release_escrow`, `refund_escrow`, `release_milestone_payment`, `resolve_dispute`) when a settlement NFT contract is configured
+
+| #   | Field           | Soroban Type | Description                                   |
+| --- | --------------- | ------------ | --------------------------------------------- |
+| 1   | `shipment_id`   | `u64`        | Shipment the proof was meant for              |
+| 2   | `settlement_id` | `u64`        | Final settlement that completed without a proof |
+| 3   | `recipient`     | `Address`    | Address the proof NFT would have been minted to |
+| 4   | `timestamp`     | `u64`        | Ledger timestamp                              |
+
+**Backend action:** Flag the shipment as missing its proof NFT and follow up off-chain.
 
 ---
 

@@ -820,3 +820,89 @@ fn test_orphaned_counters_use_live_dispute_key_evidence_count() {
         ));
     });
 }
+
+/// Create one shipment for the health-check status tests below.
+fn create_health_check_shipment(
+    env: &Env,
+    client: &NavinShipmentClient<'static>,
+    admin: &Address,
+) -> (Address, Address, u64) {
+    let company = Address::generate(env);
+    let carrier = Address::generate(env);
+    let receiver = Address::generate(env);
+    client.add_company(admin, &company);
+    client.add_carrier(admin, &carrier);
+    crate::test_utils::allow_carrier(client, &company, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &BytesN::from_array(env, &[0x21u8; 32]),
+        &Vec::new(env),
+        &(env.ledger().timestamp() + 3600),
+    );
+    (company, carrier, shipment_id)
+}
+
+/// `Disputed` is not terminal (it can still move to Cancelled, Delivered or
+/// PartiallyRefunded), so a disputed shipment must count as active.
+#[test]
+fn test_health_check_counts_disputed_shipment_as_active() {
+    let (env, client, admin, _token) = prepare_test();
+    let (company, carrier, shipment_id) = create_health_check_shipment(&env, &client, &admin);
+
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[0x22u8; 32]),
+    );
+    crate::test_utils::advance_ledger_time(&env, 3600);
+    client.raise_dispute(
+        &company,
+        &shipment_id,
+        &BytesN::from_array(&env, &[0x23u8; 32]),
+    );
+
+    let health = env.as_contract(&client.address, || {
+        crate::diagnostics::run_system_health_check(&env)
+    });
+    assert_eq!(
+        health.active_shipments_counted, 1,
+        "a disputed shipment is still active"
+    );
+    assert!(health.storage_inconsistencies.is_empty());
+}
+
+/// `PartiallyRefunded` is terminal and archivable, so an archived one must not
+/// be reported as a missing non-terminal shipment.
+#[test]
+fn test_health_check_does_not_flag_archived_partially_refunded() {
+    let (env, client, admin, _token) = prepare_test();
+    let (_company, _carrier, shipment_id) = create_health_check_shipment(&env, &client, &admin);
+
+    // Put the shipment in the state a completed partial refund leaves behind:
+    // PartiallyRefunded, finalized, zero escrow and no escrow entry.
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = ShipmentStatus::PartiallyRefunded;
+        shipment.finalized = true;
+        crate::storage::set_shipment(&env, &shipment);
+        crate::storage::remove_escrow_balance(&env, shipment_id);
+    });
+    client.archive_shipment(&admin, &shipment_id);
+
+    let health = env.as_contract(&client.address, || {
+        assert!(!crate::storage::has_persistent_shipment(&env, shipment_id));
+        crate::diagnostics::run_system_health_check(&env)
+    });
+    assert_eq!(
+        health.active_shipments_counted, 0,
+        "PartiallyRefunded is terminal"
+    );
+    assert!(
+        !health.storage_inconsistencies.contains(shipment_id),
+        "an archived PartiallyRefunded shipment must not be flagged"
+    );
+}

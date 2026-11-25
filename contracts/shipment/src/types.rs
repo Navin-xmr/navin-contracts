@@ -128,7 +128,8 @@ pub enum DataKey {
     /// Total count of recovery action records for a shipment.
     /// Discriminant reserved for storage compatibility.
     RecoveryRecordCount(u64),
-    /// Proposal salt used to prevent replay attacks — salt -> bool.
+    /// Proposal salt marked as used — salt -> id of the proposal it is bound to.
+    /// Persistent storage, TTL tied to that proposal's expiry.
     ProposalSalt(BytesN<32>),
     /// Prerequisite shipment IDs for a dependent — dependent_id -> Vec<u64>.
     ShipmentDependents(u64),
@@ -393,6 +394,18 @@ pub enum ShipmentStatus {
 }
 
 impl ShipmentStatus {
+    /// Whether this status is terminal: no transitions out, and the shipment
+    /// may be finalized and archived once its escrow is zero.
+    ///
+    /// Terminal statuses are `Delivered`, `Cancelled` and `PartiallyRefunded`.
+    /// `Disputed` is not terminal; it can still move to any of the three.
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            Self::Delivered | Self::Cancelled | Self::PartiallyRefunded
+        )
+    }
+
     /// Checks if a transition from the current status to a new status is valid.
     ///
     /// ### Status Transition Diagram
