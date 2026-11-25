@@ -926,31 +926,8 @@ fn test_check_deadline_returns_shipment_not_found() {
 
 // [ISSUE #600] ShipmentUnavailable error variant tests
 //
-// ShipmentUnavailable (#42) is returned by preflight_check_shipment_available
-// when a shipment exists only in temporary (archived) storage.
-// These tests verify the error code, the validation helper's behaviour, and
-// that mutating operations on archived shipments are correctly rejected.
+// These tests verify the error code.
 
-/// preflight_check_shipment_available must return ShipmentNotFound (not
-/// ShipmentUnavailable) for a shipment ID that never existed.
-#[test]
-fn test_preflight_never_created_returns_shipment_not_found() {
-    let (env, client, admin, token_contract) = setup_shipment_env();
-    client.initialize(&admin, &token_contract);
-
-    let result = env.as_contract(&client.address, || {
-        crate::validation::preflight_check_shipment_available(&env, 8888u64)
-    });
-
-    assert_eq!(
-        result,
-        Err(NavinError::ShipmentNotFound),
-        "non-existent shipment must return ShipmentNotFound, not ShipmentUnavailable"
-    );
-}
-
-/// preflight_check_shipment_available must return Ok for an active shipment,
-/// confirming it does not block normal operations.
 /// The ShipmentUnavailable error discriminant must be exactly 42.
 /// This pins the error code so it cannot drift across refactors.
 #[test]

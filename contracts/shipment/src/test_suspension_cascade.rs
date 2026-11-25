@@ -600,4 +600,75 @@ mod tests {
             "carrier reactivated via reactivate_role must be able to update status"
         );
     }
+
+    #[test]
+    fn test_suspend_carrier_rejects_non_carrier() {
+        let (env, client, admin) = setup();
+        let non_carrier = Address::generate(&env);
+        let res = client.try_suspend_carrier(&admin, &non_carrier);
+        assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
+        let audit = client.query_audit_history_for_target(&non_carrier);
+        assert_eq!(audit.len(), 0);
+    }
+
+    #[test]
+    fn test_reactivate_carrier_rejects_non_carrier() {
+        let (env, client, admin) = setup();
+        let non_carrier = Address::generate(&env);
+        let res = client.try_reactivate_carrier(&admin, &non_carrier);
+        assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
+        let audit = client.query_audit_history_for_target(&non_carrier);
+        assert_eq!(audit.len(), 0);
+    }
+
+    #[test]
+    fn test_reactivate_carrier_rejects_not_suspended() {
+        let (env, client, admin) = setup();
+        let carrier = Address::generate(&env);
+        client.add_carrier(&admin, &carrier);
+        let res = client.try_reactivate_carrier(&admin, &carrier);
+        assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
+        let audit = client.query_audit_history_for_target(&carrier);
+        // Only the add_carrier audit entry exists, no reactivation
+        assert_eq!(audit.len(), 1);
+    }
+
+    #[test]
+    fn test_reactivate_company_rejects_non_company() {
+        let (env, client, admin) = setup();
+        let non_company = Address::generate(&env);
+        let res = client.try_reactivate_company(&admin, &non_company);
+        assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
+        let audit = client.query_audit_history_for_target(&non_company);
+        assert_eq!(audit.len(), 0);
+    }
+
+    #[test]
+    fn test_reactivate_company_rejects_not_suspended() {
+        let (env, client, admin) = setup();
+        let company = Address::generate(&env);
+        client.add_company(&admin, &company);
+        let res = client.try_reactivate_company(&admin, &company);
+        assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
+        let audit = client.query_audit_history_for_target(&company);
+        // Only the add_company audit entry exists
+        assert_eq!(audit.len(), 1);
+    }
+
+    #[test]
+    fn test_reactivate_role_rejects_not_suspended() {
+        let (env, client, admin) = setup();
+        let carrier = Address::generate(&env);
+        client.add_carrier(&admin, &carrier);
+        let res = client.try_reactivate_role(&admin, &carrier);
+        assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
+    }
+
+    #[test]
+    fn test_reactivate_role_rejects_unassigned() {
+        let (env, client, admin) = setup();
+        let unassigned = Address::generate(&env);
+        let res = client.try_reactivate_role(&admin, &unassigned);
+        assert_eq!(res, Err(Ok(crate::NavinError::Unauthorized)));
+    }
 }
