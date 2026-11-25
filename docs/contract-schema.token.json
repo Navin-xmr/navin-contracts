@@ -1114,6 +1114,11 @@
           "doc": "Arithmetic overflow/underflow (checked_add/checked_sub failed).",
           "name": "Overflow",
           "value": 10
+        },
+        {
+          "doc": "Empty token name or symbol supplied to initialize().",
+          "name": "InvalidMetadata",
+          "value": 11
         }
       ]
     }
@@ -1127,37 +1132,37 @@
         {
           "doc": "",
           "name": "NotInitialized",
-          "value": 1
+          "value": 101
         },
         {
           "doc": "",
           "name": "Unauthorized",
-          "value": 2
+          "value": 102
         },
         {
           "doc": "",
           "name": "KeyNotAllowed",
-          "value": 3
+          "value": 103
         },
         {
           "doc": "",
           "name": "KeyNotFound",
-          "value": 4
+          "value": 104
         },
         {
           "doc": "",
           "name": "KeyAlreadyExists",
-          "value": 5
+          "value": 105
         },
         {
           "doc": "",
           "name": "InvalidKey",
-          "value": 6
+          "value": 106
         },
         {
           "doc": "",
           "name": "InvalidValue",
-          "value": 7
+          "value": 107
         }
       ]
     }

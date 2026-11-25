@@ -161,6 +161,19 @@ fn test_evidence_rejected_when_not_disputed() {
 }
 
 /// An address uninvolved in the shipment cannot attach evidence.
+/// A carrier suspended via `suspend_carrier` must not be able to add evidence.
+#[test]
+fn test_suspended_carrier_cannot_add_evidence() {
+    let (env, client, admin, token) = setup();
+    let (id, _company, _receiver, carrier) = disputed_shipment(&env, &client, &admin, &token);
+
+    client.suspend_carrier(&admin, &carrier);
+
+    let hash = BytesN::from_array(&env, &[9u8; 32]);
+    let result = client.try_add_dispute_evidence(&carrier, &id, &hash);
+    assert_eq!(result, Err(Ok(NavinError::CarrierSuspended)));
+}
+
 #[test]
 fn test_evidence_rejected_for_non_participant() {
     let (env, client, admin, token) = setup();
