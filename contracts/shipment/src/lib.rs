@@ -4119,6 +4119,13 @@ impl NavinShipment {
         // consume two units of the configured budget instead of one.
         events::emit_milestone_recorded(&env, shipment_id, &checkpoint, &data_hash, &carrier);
 
+        // Mark this checkpoint as recorded so `release_milestone_payment` can
+        // require a real checkpoint before a carrier may release its payment.
+        env.storage().persistent().set(
+            &DataKey::MilestoneCheckpointRecorded(shipment_id, checkpoint.clone()),
+            &true,
+        );
+
         // Check for milestone-based payments
         let mut mut_shipment = shipment;
         let mut found_index = None;
@@ -4392,7 +4399,14 @@ impl NavinShipment {
     }
 
     /// Explicitly release a partial escrow payment for a specific milestone.
-    /// Only Carrier or Admin can call this.
+    ///
+    /// Only the assigned carrier or the admin can call this. The shipment
+    /// must be `InTransit` or `Delivered` (payment release only makes sense
+    /// while escrow is active and un-frozen; it is rejected on `Created`,
+    /// `Disputed`, `Cancelled` and `PartiallyRefunded`). A carrier caller
+    /// additionally must have actually recorded this milestone's checkpoint
+    /// via `record_milestone` first; the admin may release without a
+    /// recorded checkpoint, as a manual override.
     ///
     /// # Arguments
     /// * `env` - Execution environment.
@@ -4418,8 +4432,34 @@ impl NavinShipment {
             return Err(NavinError::Unauthorized);
         }
 
+        // Only a shipment that is actively moving (or has arrived, with a
+        // settlement still pending) can have a milestone payment released.
+        // In particular this blocks Created (nothing happened yet) and
+        // Disputed (escrow is explicitly frozen for arbitration).
+        if !matches!(
+            shipment.status,
+            ShipmentStatus::InTransit | ShipmentStatus::Delivered
+        ) {
+            return Err(NavinError::InvalidStatus);
+        }
+
         if caller == shipment.carrier {
             require_active_carrier(&env, &caller)?;
+
+            // The carrier must have actually recorded this checkpoint via
+            // `record_milestone` before it can be paid out; the admin may
+            // override this requirement.
+            let recorded: bool = env
+                .storage()
+                .persistent()
+                .get(&DataKey::MilestoneCheckpointRecorded(
+                    shipment_id,
+                    milestone_name.clone(),
+                ))
+                .unwrap_or(false);
+            if !recorded {
+                return Err(NavinError::InvalidStatus);
+            }
         }
 
         // Check if milestone exists in payment_milestones
@@ -6316,6 +6356,18 @@ impl NavinShipment {
         // Validate the new configuration
         config::validate_config(&new_config).map_err(|_| NavinError::InvalidConfig)?;
 
+        // The threshold must leave room for the extension, and the extension
+        // can never exceed what the network allows an entry to live for,
+        // otherwise every TTL-bumping entrypoint (require_initialized,
+        // extend_shipment_ttl, archive_shipment, set_status_hash_log) would
+        // trap on `extend_ttl`.
+        if new_config.shipment_ttl_threshold > new_config.shipment_ttl_extension {
+            return Err(NavinError::InvalidConfig);
+        }
+        if new_config.shipment_ttl_extension > env.storage().max_ttl() {
+            return Err(NavinError::InvalidConfig);
+        }
+
         // Store the new configuration (validates checksum isn't zero)
         config::set_config(&env, &new_config)?;
 
@@ -6753,6 +6805,31 @@ impl NavinShipment {
         require_initialized(&env)?;
         require_not_paused(&env)?;
         circuit_breaker::manual_reset(&env, &admin)
+    }
+
+    /// Manually trip the circuit breaker open (admin-only).
+    ///
+    /// Real token-transfer failures cannot durably increment the breaker's
+    /// failure counter through the public entrypoints: Soroban rolls back
+    /// all storage writes of an invocation that returns `Err`, which is what
+    /// every settlement entrypoint does on a transfer failure. The breaker
+    /// is therefore admin-driven only. Operators who observe repeated
+    /// transfer failures (via monitoring or emitted events) should call this
+    /// to halt further settlement attempts, then `reset_circuit_breaker`
+    /// once the token contract issue is resolved.
+    pub fn trip_circuit_breaker(env: Env, admin: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        admin.require_auth();
+        let is_single_admin = env
+            .storage()
+            .instance()
+            .get::<_, Address>(&DataKey::Admin)
+            .is_some_and(|a| a == admin);
+        if !is_single_admin && !storage::is_admin(&env, &admin) {
+            return Err(NavinError::Unauthorized);
+        }
+        circuit_breaker::manual_trip(&env, &admin);
+        Ok(())
     }
 
     /// Query the current circuit breaker status without modifying state.

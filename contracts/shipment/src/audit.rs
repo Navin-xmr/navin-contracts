@@ -610,16 +610,26 @@ pub(crate) fn get_audit_entry_count(env: &Env) -> u32 {
 
 fn increment_audit_entry_count(env: &Env) {
     let count = get_audit_entry_count(env);
-    env.storage()
-        .persistent()
-        .set(&DataKey::AuditEntryCount, &count.saturating_add(1));
+    let key = DataKey::AuditEntryCount;
+    env.storage().persistent().set(&key, &count.saturating_add(1));
+    let config = crate::config::get_config(env);
+    env.storage().persistent().extend_ttl(
+        &key,
+        config.shipment_ttl_threshold,
+        config.shipment_ttl_extension,
+    );
 }
 
 pub(crate) fn store_audit_entry(env: &Env, entry: &AuditLogEntry) {
     let entry_id = entry.entry_id;
-    env.storage()
-        .persistent()
-        .set(&DataKey::AuditEntry(entry_id), entry);
+    let key = DataKey::AuditEntry(entry_id);
+    env.storage().persistent().set(&key, entry);
+    let config = crate::config::get_config(env);
+    env.storage().persistent().extend_ttl(
+        &key,
+        config.shipment_ttl_threshold,
+        config.shipment_ttl_extension,
+    );
     increment_audit_entry_count(env);
 }
 

@@ -475,6 +475,45 @@ fn test_circuit_breaker_opens_after_repeated_failures() {
     assert_eq!(err, NavinError::CircuitBreakerOpen);
 }
 
+/// Since real transfer failures through public entrypoints can never
+/// durably trip the breaker (Soroban rolls back the failure-count write
+/// along with the propagated error), the breaker must be admin-driven.
+/// This verifies the `trip_circuit_breaker` admin entrypoint opens the
+/// breaker without needing to inject `CircuitBreakerTracker` directly, and
+/// that it then blocks a subsequent `release_escrow` call.
+#[test]
+fn test_admin_can_manually_trip_circuit_breaker() {
+    let ctx = setup_fail();
+    let deadline = test_utils::future_deadline(&ctx.env, 7200);
+    let receiver = Address::generate(&ctx.env);
+    let id = ctx.client.create_shipment(
+        &ctx.company,
+        &receiver,
+        &ctx.carrier,
+        &dummy_hash(&ctx.env, 0x71),
+        &Vec::new(&ctx.env),
+        &deadline,
+    );
+    inject_escrow(&ctx, id, 100);
+    advance_to_delivered(&ctx, id);
+
+    ctx.client.trip_circuit_breaker(&ctx.admin);
+
+    let (state, _, _) = ctx.client.get_circuit_breaker_status();
+    assert_eq!(state, crate::circuit_breaker::CircuitBreakerState::Open);
+
+    let err = ctx
+        .client
+        .try_release_escrow(&receiver, &id)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, NavinError::CircuitBreakerOpen);
+
+    ctx.client.reset_circuit_breaker(&ctx.admin);
+    let (state, _, _) = ctx.client.get_circuit_breaker_status();
+    assert_eq!(state, crate::circuit_breaker::CircuitBreakerState::Closed);
+}
+
 #[test]
 fn test_force_cancel_with_escrow_and_failing_token_fails() {
     // Regular cancel_shipment does NOT call the token contract.
