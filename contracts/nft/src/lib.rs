@@ -89,6 +89,22 @@ impl NavinShipmentNft {
         }
     }
 
+    /// Extend TTL for all per-token persistent keys: Owner, MetadataUri, and BurnApproved.
+    /// Call this whenever a token is accessed or modified to prevent archival of long-held tokens.
+    fn extend_token_ttl(env: &Env, token_id: u64) {
+        for key in [
+            NftKey::Owner(token_id),
+            NftKey::MetadataUri(token_id),
+            NftKey::BurnApproved(token_id),
+        ] {
+            if env.storage().persistent().has(&key) {
+                env.storage()
+                    .persistent()
+                    .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTENSION);
+            }
+        }
+    }
+
     /// Initialize collection state atomically with deployment. The constructor
     /// permanently binds `admin` before the contract can be called.
     pub fn __constructor(
@@ -172,6 +188,7 @@ impl NavinShipmentNft {
         );
         Self::extend_instance_ttl(&env);
         Self::extend_persistent_ttl(&env, &to);
+        Self::extend_token_ttl(&env, token_id);
         Ok(token_id)
     }
 
@@ -210,6 +227,7 @@ impl NavinShipmentNft {
                 .set(&NftKey::Owner(token_id), &to);
             Self::add_token_to_owner(&env, &to, token_id)?;
             Self::extend_persistent_ttl(&env, &to);
+            Self::extend_token_ttl(&env, token_id);
             env.events().publish(
                 (event_topics::MINT, event_topics::EVENT_SCHEMA_VERSION),
                 (token_id, to, env.ledger().timestamp()),
@@ -311,6 +329,7 @@ impl NavinShipmentNft {
         Self::extend_instance_ttl(env);
         Self::extend_persistent_ttl(env, from);
         Self::extend_persistent_ttl(env, to);
+        Self::extend_token_ttl(env, token_id);
 
         if Self::is_contract_address(to) {
             // Best effort: receivers that implement `on_nft_received` get the
@@ -382,6 +401,7 @@ impl NavinShipmentNft {
             (token_id, caller, env.ledger().timestamp()),
         );
         Self::extend_instance_ttl(&env);
+        Self::extend_persistent_ttl(&env, &owner);
         Ok(())
     }
 
@@ -494,6 +514,7 @@ impl NavinShipmentNft {
         );
         Self::extend_instance_ttl(&env);
         Self::extend_persistent_ttl(&env, &owner);
+        Self::extend_token_ttl(&env, token_id);
         Ok(())
     }
 
@@ -555,6 +576,7 @@ impl NavinShipmentNft {
         );
         Self::extend_instance_ttl(&env);
         Self::extend_persistent_ttl(&env, &owner);
+        Self::extend_token_ttl(&env, token_id);
         Ok(())
     }
 
@@ -653,6 +675,7 @@ impl NavinShipmentNft {
     /// URI with the token ID appended.
     pub fn get_token_uri(env: Env, token_id: u64) -> Result<String, NftError> {
         Self::extend_instance_ttl(&env);
+        Self::extend_token_ttl(&env, token_id);
         Self::get_owner_inner(&env, token_id)?;
 
         if let Some(uri) = storage::get_metadata_uri(&env, token_id) {
@@ -791,6 +814,7 @@ impl NavinShipmentNft {
 
     pub fn owner_of(env: Env, token_id: u64) -> Result<Address, NftError> {
         Self::extend_instance_ttl(&env);
+        Self::extend_token_ttl(&env, token_id);
         Self::get_owner_inner(&env, token_id)
     }
 
