@@ -61,8 +61,8 @@ current exported methods are:
 - `reactivate_carrier(env, admin, carrier)`
 - `is_carrier_suspended(env, carrier)`
 - `revoke_role(env, admin, target)`
-- `suspend_role(env, admin, target)`
-- `reactivate_role(env, admin, target)`
+- `suspend_role(env, admin, target, role)`
+- `reactivate_role(env, admin, target, role)`
 - `suspend_company(env, admin, company)`
 - `reactivate_company(env, admin, company)`
 
@@ -103,6 +103,8 @@ current exported methods are:
 - `handoff_shipment(env, caller, shipment_id, new_carrier, handoff_hash)`
 - `report_condition_breach(env, caller, shipment_id, breach_hash, severity)`
 - `verify_delivery_proof(env, shipment_id, proof_hash)`
+- `verify_partial_delivery_proof(env, shipment_id, index, proof_hash)`
+- `get_partial_delivery_proof_count(env, shipment_id)`
 - `get_shipment_reference(env, shipment_id)`
 - `check_deadline(env, shipment_id)`
 

@@ -29,8 +29,7 @@ pub enum NftError {
     NoProposedAdmin = 15,
     /// Neither a per-token metadata URI nor a base URI is configured.
     BaseUriNotSet = 16,
-    /// Approval expiration ledger is in the past.
-    InvalidExpirationLedger = 17,
-    /// Cannot approve self as operator.
-    SelfApproval = 18,
+    /// A URI passed to `set_base_uri`/`set_token_uri` was empty or exceeded
+    /// `MAX_URI_LENGTH`.
+    InvalidUri = 17,
 }

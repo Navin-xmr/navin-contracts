@@ -1,5 +1,5 @@
 use crate::{errors::NavinError, types::*};
-use soroban_sdk::{Address, BytesN, Env, Map, Vec};
+use soroban_sdk::{panic_with_error, Address, BytesN, Env, Map, TryFromVal, Val, Vec};
 
 /// Check if the contract has been initialized (admin set).
 ///
@@ -612,11 +612,8 @@ pub fn archive_shipment(env: &Env, shipment_id: u64, shipment: &Shipment) {
     env.storage().temporary().set(&key, shipment);
     // Extend TTL immediately on write - critical to prevent silent eviction
     let config = crate::config::get_config(env);
-    env.storage().temporary().extend_ttl(
-        &key,
-        config.shipment_ttl_threshold,
-        config.shipment_ttl_extension,
-    );
+    let (threshold, extend_to) = clamp_ttl(env, config.shipment_ttl_threshold, config.shipment_ttl_extension);
+    env.storage().temporary().extend_ttl(&key, threshold, extend_to);
     // Remove from persistent storage
     env.storage()
         .persistent()
@@ -630,11 +627,8 @@ pub fn get_archived_shipment(env: &Env, shipment_id: u64) -> Option<Shipment> {
     let shipment: Option<Shipment> = env.storage().temporary().get(&key);
     if shipment.is_some() {
         let config = crate::config::get_config(env);
-        env.storage().temporary().extend_ttl(
-            &key,
-            config.shipment_ttl_threshold,
-            config.shipment_ttl_extension,
-        );
+        let (threshold, extend_to) = clamp_ttl(env, config.shipment_ttl_threshold, config.shipment_ttl_extension);
+        env.storage().temporary().extend_ttl(&key, threshold, extend_to);
     }
     shipment
 }
@@ -885,6 +879,46 @@ pub fn get_confirmation_hash(env: &Env, shipment_id: u64) -> Option<BytesN<32>> 
     env.storage().persistent().get(&key)
 }
 
+/// Read every partial-delivery proof hash recorded for a shipment, oldest first.
+///
+/// Returns an empty vector when the shipment has no partial confirmations.
+pub fn get_partial_delivery_proofs(env: &Env, shipment_id: u64) -> Vec<BytesN<32>> {
+    env.storage()
+        .persistent()
+        .get(&DeliveryProofKey::PartialLog(shipment_id))
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+/// Read the partial-delivery proof hash recorded at `index` (zero-based).
+pub fn get_partial_delivery_proof(
+    env: &Env,
+    shipment_id: u64,
+    index: u32,
+) -> Option<BytesN<32>> {
+    get_partial_delivery_proofs(env, shipment_id).get(index)
+}
+
+/// Append one partial-delivery proof hash to a shipment's append-only log.
+///
+/// Returns the zero-based index assigned to `hash`. Fails with
+/// `CounterOverflow` once [`MAX_PARTIAL_DELIVERY_PROOFS`] hashes are stored.
+pub fn append_partial_delivery_proof(
+    env: &Env,
+    shipment_id: u64,
+    hash: &BytesN<32>,
+) -> Result<u32, NavinError> {
+    let mut proofs = get_partial_delivery_proofs(env, shipment_id);
+    let index = proofs.len();
+    if index >= MAX_PARTIAL_DELIVERY_PROOFS {
+        return Err(NavinError::CounterOverflow);
+    }
+    proofs.push_back(hash.clone());
+    env.storage()
+        .persistent()
+        .set(&DeliveryProofKey::PartialLog(shipment_id), &proofs);
+    Ok(index)
+}
+
 /// Extend TTL for shipment data
 ///
 /// # Arguments
@@ -900,7 +934,18 @@ pub fn get_confirmation_hash(env: &Env, shipment_id: u64) -> Option<BytesN<32>> 
 /// ```rust
 /// // storage::extend_shipment_ttl(&env, 1, 1000, 500000);
 /// ```
+/// Clamp a TTL threshold/extend_to pair to the network's maximum entry TTL,
+/// matching `extend_proposal_ttl`'s `.min(env.storage().max_ttl())` guard, so
+/// a stored config can never make `extend_ttl` trap.
+pub fn clamp_ttl(env: &Env, threshold: u32, extend_to: u32) -> (u32, u32) {
+    let max_ttl = env.storage().max_ttl();
+    let extend_to = extend_to.min(max_ttl);
+    let threshold = threshold.min(extend_to);
+    (threshold, extend_to)
+}
+
 pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_to: u32) {
+    let (threshold, extend_to) = clamp_ttl(env, threshold, extend_to);
     let key = shipment_key(shipment_id);
     if env.storage().persistent().has(&key) {
         env.storage()
@@ -943,6 +988,13 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
         env.storage()
             .persistent()
             .extend_ttl(&dependents_key, threshold, extend_to);
+    }
+
+    let metadata_key = DataKey::ShipmentMetadata(shipment_id);
+    if env.storage().persistent().has(&metadata_key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&metadata_key, threshold, extend_to);
     }
 
     let persistent = env.storage().persistent();
@@ -992,6 +1044,13 @@ pub fn extend_shipment_ttl(env: &Env, shipment_id: u64, threshold: u32, extend_t
     // Keep the per-visit status-hash log alive as long as the shipment is;
     // verified hashes must not expire under a live shipment.
     extend_status_hash_ttl(env, shipment_id, threshold, extend_to);
+
+    // Same for the partial-delivery proof log: earlier slices released escrow
+    // and their proofs must stay checkable while the shipment is alive.
+    let partial_proofs_key = DeliveryProofKey::PartialLog(shipment_id);
+    if persistent.has(&partial_proofs_key) {
+        persistent.extend_ttl(&partial_proofs_key, threshold, extend_to);
+    }
 }
 
 /// Backwards-compatible wrapper used by existing contract code/tests.
@@ -1700,20 +1759,40 @@ pub fn get_event_count(env: &Env, shipment_id: u64) -> u32 {
 }
 
 /// Return the contract-wide event counter used by events without a shipment ID.
-pub fn get_global_event_count(env: &Env) -> u32 {
-    env.storage()
-        .instance()
-        .get(&DataKey::GlobalEventCount)
-        .unwrap_or(0)
+///
+/// The counter is stored as a `u64`. Deployments that predate the widening
+/// stored it as a `u32`; that legacy value is read transparently and is
+/// rewritten as a `u64` on the next increment.
+pub fn get_global_event_count(env: &Env) -> u64 {
+    let raw: Option<Val> = env.storage().instance().get(&DataKey::GlobalEventCount);
+    match raw {
+        None => 0,
+        Some(val) => u64::try_from_val(env, &val)
+            .or_else(|_| u32::try_from_val(env, &val).map(u64::from))
+            .unwrap_or_else(|_| panic_with_error!(env, NavinError::CounterOverflow)),
+    }
 }
 
 /// Increment and return the next contract-wide event counter.
-pub fn increment_global_event_count(env: &Env) -> u32 {
-    let next = get_global_event_count(env).saturating_add(1);
+///
+/// # Panics
+/// * `NavinError::CounterOverflow` - If the counter is already at `u64::MAX`.
+///   The counter never saturates, so two events can never share a counter
+///   value (and therefore an idempotency key).
+pub fn increment_global_event_count(env: &Env) -> u64 {
+    try_increment_global_event_count(env).unwrap_or_else(|err| panic_with_error!(env, err))
+}
+
+/// Checked variant of [`increment_global_event_count`] that returns
+/// `NavinError::CounterOverflow` instead of panicking.
+pub fn try_increment_global_event_count(env: &Env) -> Result<u64, NavinError> {
+    let next = get_global_event_count(env)
+        .checked_add(1)
+        .ok_or(NavinError::CounterOverflow)?;
     env.storage()
         .instance()
         .set(&DataKey::GlobalEventCount, &next);
-    next
+    Ok(next)
 }
 
 // ============= Per-Shipment Cleanup Helpers =============
@@ -1816,17 +1895,23 @@ pub fn set_settlement_counter(env: &Env, counter: u64) {
 /// * `env` - The execution environment.
 ///
 /// # Returns
-/// * `u64` - The incremented settlement count.
+/// * `Result<u64, NavinError>` - The incremented settlement count.
+///
+/// # Errors
+/// * `NavinError::CounterOverflow` - If the counter is already at `u64::MAX`.
+///   The stored counter is left unchanged so an existing settlement ID is
+///   never reused.
 ///
 /// # Examples
 /// ```rust
-/// // let next_id = storage::increment_settlement_counter(&env);
+/// // let next_id = storage::increment_settlement_counter(&env)?;
 /// ```
-pub fn increment_settlement_counter(env: &Env) -> u64 {
-    let cur = get_settlement_counter(env);
-    let next = cur.checked_add(1).unwrap_or(cur);
+pub fn increment_settlement_counter(env: &Env) -> Result<u64, NavinError> {
+    let next = get_settlement_counter(env)
+        .checked_add(1)
+        .ok_or(NavinError::CounterOverflow)?;
     set_settlement_counter(env, next);
-    next
+    Ok(next)
 }
 
 /// Get a settlement record by ID from persistent storage.
@@ -2095,13 +2180,10 @@ pub fn get_status_hash_log(env: &Env, shipment_id: u64) -> StatusHashLog {
 /// hashes readable from either store.
 fn set_status_hash_log(env: &Env, shipment_id: u64, log: &StatusHashLog) {
     let config = crate::config::get_config(env);
+    let (threshold, extend_to) = clamp_ttl(env, config.shipment_ttl_threshold, config.shipment_ttl_extension);
     let key = StatusHashKey::Log(shipment_id);
     env.storage().persistent().set(&key, log);
-    env.storage().persistent().extend_ttl(
-        &key,
-        config.shipment_ttl_threshold,
-        config.shipment_ttl_extension,
-    );
+    env.storage().persistent().extend_ttl(&key, threshold, extend_to);
 }
 
 /// Append one visit's data hash to a shipment's bounded status-hash log.
@@ -2239,7 +2321,8 @@ pub fn purge_status_hash_log(env: &Env, shipment_id: u64) {
 /// if present, preventing unbounded growth of `ConfirmationHash`, `LastStatusUpdate`,
 /// `DeadlineWarningEmitted`, `BreachEventCount`, `MilestoneEventCount`, `EventCount`,
 /// `ShipmentDependents`, `EscrowFreezeReasonByShipment`, and `ActiveSettlement` entries.
-/// The per-visit status-hash log is purged alongside them.
+/// The per-visit status-hash log and the partial-delivery proof log are purged
+/// alongside them.
 pub fn purge_status_hashes(env: &Env, shipment_id: u64) {
     // Resolve status from persistent or archived storage. `archive_shipment`
     // moves the shipment to temporary storage *before* calling this, so the
@@ -2290,11 +2373,18 @@ pub fn purge_status_hashes(env: &Env, shipment_id: u64) {
     env.storage()
         .persistent()
         .remove(&DataKey::ActiveSettlement(shipment_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::ShipmentMetadata(shipment_id));
     // Also ensure dependents helper is cleared (covers instance->persistent migration per diff in storage.rs)
     remove_shipment_dependents(env, shipment_id);
     // Drop the per-visit IoT status-hash log so archived shipments stop paying
     // rent for verification hashes they can no longer transition.
     purge_status_hash_log(env, shipment_id);
+    // The partial-delivery proof log is purged with `ConfirmationHash`.
+    env.storage()
+        .persistent()
+        .remove(&DeliveryProofKey::PartialLog(shipment_id));
 }
 
 #[cfg(test)]
@@ -2393,6 +2483,92 @@ mod tests {
                 .has(&DataKey::LastStatusUpdate(shipment_id)));
             assert_eq!(get_last_status_update(&env, shipment_id), Some(42));
         });
+    }
+
+    #[test]
+    fn global_event_count_reads_legacy_u32_value() {
+        let (env, contract_id) = with_contract_env();
+
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .instance()
+                .set(&DataKey::GlobalEventCount, &u32::MAX);
+
+            assert_eq!(get_global_event_count(&env), u64::from(u32::MAX));
+            // Crossing the old u32 limit no longer saturates.
+            assert_eq!(
+                increment_global_event_count(&env),
+                u64::from(u32::MAX) + 1
+            );
+            assert_eq!(get_global_event_count(&env), u64::from(u32::MAX) + 1);
+        });
+    }
+
+    #[test]
+    fn global_event_count_overflow_surfaces_counter_overflow() {
+        let (env, contract_id) = with_contract_env();
+
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .instance()
+                .set(&DataKey::GlobalEventCount, &(u64::MAX - 1));
+
+            assert_eq!(try_increment_global_event_count(&env), Ok(u64::MAX));
+            assert_eq!(
+                try_increment_global_event_count(&env),
+                Err(NavinError::CounterOverflow)
+            );
+            // A failed increment leaves the stored counter untouched.
+            assert_eq!(get_global_event_count(&env), u64::MAX);
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #11)")]
+    fn global_event_count_panics_instead_of_saturating() {
+        let (env, contract_id) = with_contract_env();
+
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .instance()
+                .set(&DataKey::GlobalEventCount, &u64::MAX);
+            increment_global_event_count(&env);
+        });
+    }
+
+    #[test]
+    fn global_event_idempotency_keys_stay_unique_past_u32_max() {
+        use soroban_sdk::testutils::Events as _;
+
+        let (env, contract_id) = with_contract_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .instance()
+                .set(&DataKey::GlobalEventCount, &(u32::MAX - 1));
+            for _ in 0..4 {
+                crate::events::emit_whitelist_added(&env, &company, &carrier);
+            }
+        });
+
+        let mut counters: Vec<u64> = Vec::new(&env);
+        let mut keys: Vec<BytesN<32>> = Vec::new(&env);
+        for (_, _, data) in env.events().all().iter() {
+            let (_, _, _, counter, key): (Address, Address, u32, u64, BytesN<32>) =
+                TryFromVal::try_from_val(&env, &data).unwrap();
+            assert!(!counters.contains(&counter), "duplicate event counter");
+            assert!(!keys.contains(&key), "duplicate idempotency key");
+            counters.push_back(counter);
+            keys.push_back(key);
+        }
+        assert_eq!(keys.len(), 4);
+        assert_eq!(
+            counters.get(3),
+            Some(u64::from(u32::MAX) + 2),
+            "counter must keep growing past u32::MAX"
+        );
     }
 }
 

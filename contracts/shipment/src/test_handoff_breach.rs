@@ -301,3 +301,68 @@ fn test_verify_delivery_proof_nonexistent_shipment() {
 // Issue #3: Rate limiting
 
 // RBAC and Access Control Tests
+
+/// Handoffs must not spend the `max_milestones_per_shipment` budget (issue #1285).
+#[test]
+fn test_handoffs_do_not_consume_milestone_budget() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier_a = Address::generate(&env);
+    let carrier_b = Address::generate(&env);
+    let carrier_c = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let handoff_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    for carrier in [&carrier_a, &carrier_b, &carrier_c] {
+        client.add_carrier(&admin, carrier);
+        client.add_carrier_to_whitelist(&company, carrier);
+    }
+
+    // A single real milestone fits in the budget; handoffs must not use it up.
+    let mut cfg = client.get_contract_config();
+    cfg.max_milestones_per_shipment = 1;
+    client.update_config(&admin, &cfg);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier_a,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    client.update_status(
+        &carrier_a,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &data_hash,
+    );
+
+    for (from, to) in [(&carrier_a, &carrier_b), (&carrier_b, &carrier_c), (&carrier_c, &carrier_a)] {
+        client.handoff_shipment(from, to, &shipment_id, &handoff_hash);
+    }
+
+    let milestone_count = env.as_contract(&client.address, || {
+        crate::storage::get_milestone_event_count(&env, shipment_id)
+    });
+    assert_eq!(
+        milestone_count, 0,
+        "handoff milestone events must not increment the milestone counter"
+    );
+
+    // The real checkpoint still fits in the configured budget.
+    client.record_milestone(
+        &carrier_a,
+        &shipment_id,
+        &soroban_sdk::symbol_short!("checkpt"),
+        &data_hash,
+    );
+    let milestone_count = env.as_contract(&client.address, || {
+        crate::storage::get_milestone_event_count(&env, shipment_id)
+    });
+    assert_eq!(milestone_count, 1);
+}

@@ -189,4 +189,8 @@ pub enum NavinError {
     /// The settlement NFT does not expose a valid `get_admin` or is not
     /// controlled by this shipment contract.
     NftConfigurationFailed = 78,
+    /// The requested settlement ID does not exist. Distinct from
+    /// `ShipmentNotFound` so integrators can tell a bad settlement ID from a
+    /// bad shipment ID.
+    SettlementNotFound = 79,
 }

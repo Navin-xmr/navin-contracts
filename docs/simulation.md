@@ -75,6 +75,22 @@ no fees are charged during simulation.
 | `SHIPMENT_ID` | `1` | Shipment ID used in method-specific simulations |
 | `RECEIVER_ADDR` | Same as identity | Receiver address for `create_shipment` |
 | `CARRIER_ADDR` | Same as identity | Carrier address for `create_shipment` |
+| `SHIPMENT_SCHEMA` | `docs/contract-schema.shipment.json` | Schema used to check flag names before invoking |
+
+### Exit status and failures
+
+Every simulation is checked:
+
+- Before calling the CLI, the script compares each `--flag` against the
+  method's parameters in [`contract-schema.shipment.json`](contract-schema.shipment.json)
+  (requires `jq`; the check is skipped with a note when `jq` or the schema is
+  missing). Unknown or missing parameters are reported as an argument error
+  and the call is not sent.
+- A failing `stellar contract invoke` is reported as `FAILED: <method>`.
+
+In `all` mode the script keeps going after a failure so you see every result,
+then prints a summary of the failed methods and **exits with status 1**. It
+exits `0` only when every simulation succeeds, so it can gate CI jobs.
 
 **Example — testnet with custom shipment ID:**
 ```bash
@@ -135,13 +151,13 @@ The same path is used internally when you run `stellar contract invoke` without
 
 ```
 ════════════════════════════════════════════════════════════════
-  SIMULATE: create_shipment(company, receiver, carrier, ...)
+  SIMULATE: create_shipment(sender, receiver, carrier, ...)
 ════════════════════════════════════════════════════════════════
 Simulating...
 
 Authorization required:
-  1. company (address: GC...)
-     └─ create_shipment(company: GC..., ...)
+  1. sender (address: GC...)
+     └─ create_shipment(sender: GC..., ...)
 
 Resources:
   CPU instructions : 1_234_567
@@ -151,7 +167,7 @@ Resources:
 
 Min recommended fee: 1234 stroops
 
-OK: Simulation success
+OK: create_shipment(sender, receiver, carrier, ...)
 ```
 
 ### Failed simulation
@@ -162,7 +178,8 @@ OK: Simulation success
 ════════════════════════════════════════════════════════════════
 Simulating...
 
-FAILED: Simulation failed: Error(Contract, #4) — ShipmentNotFound
+Simulation failed: Error(Contract, #4) — ShipmentNotFound
+FAILED: raise_dispute(caller, shipment_id=1, reason_hash)
 ```
 
 Error codes map directly to `NavinError` variants in
@@ -214,15 +231,23 @@ stellar contract invoke \
 | Method | Who can call | Key parameters |
 |---|---|---|
 | `initialize` | Deployer (once) | `admin`, `token_contract` |
-| `create_shipment` | Company | `receiver`, `carrier`, `data_hash`, `milestones`, `deadline` |
-| `update_status` | Carrier | `shipment_id`, `new_status`, `data_hash` |
-| `deposit_escrow` | Company | `shipment_id`, `amount` |
-| `release_escrow` | Carrier | `shipment_id`, `data_hash` |
-| `raise_dispute` | Sender / Receiver / Carrier | `shipment_id`, `reason_hash` |
-| `resolve_dispute` | Admin | `shipment_id`, `resolution`, `reason_hash` |
-| `report_condition_breach` | Carrier (assigned) | `shipment_id`, `breach_type`, `severity`, `data_hash` |
+| `create_shipment` | Company | `sender`, `receiver`, `carrier`, `data_hash`, `payment_milestones`, `deadline` |
+| `update_status` | Carrier | `caller`, `shipment_id`, `new_status`, `data_hash` |
+| `deposit_escrow` | Company | `from`, `shipment_id`, `amount` |
+| `release_escrow` | Carrier | `caller`, `shipment_id` |
+| `raise_dispute` | Sender / Receiver / Carrier | `caller`, `shipment_id`, `reason_hash` |
+| `resolve_dispute` | Admin | `admin`, `shipment_id`, `resolution`, `reason_hash` |
+| `report_condition_breach` | Carrier (assigned) | `carrier`, `shipment_id`, `breach_type`, `severity`, `data_hash` |
 | `get_contract_config` | Anyone | — |
-| `update_config` | Admin | `new_config` (see `ContractConfig`) |
+| `update_config` | Admin | `admin`, `new_config` (see `ContractConfig`) |
+
+Flag names must match the contract parameter names exactly (see
+[`contract-schema.shipment.json`](contract-schema.shipment.json)); the CLI
+rejects unknown flags before simulating.
+
+Unit enum variants (`ShipmentStatus`, `BreachType`, `Severity`, …) are passed
+as a bare JSON string, e.g. `--new_status '"InTransit"'` or
+`--severity '"Critical"'` — not `'{"InTransit":null}'`.
 
 For a full list of methods and their parameters, see the
 [Integration Guide](integration-guide.md).
@@ -243,6 +268,10 @@ The contract has not been initialised. Run `simulate.sh initialize` first.
 **Simulation returns `ShipmentNotFound (#4)`**
 The `SHIPMENT_ID` doesn't exist on the network you're targeting. Create a
 shipment first or set `SHIPMENT_ID` to a valid ID.
+
+**`FAILED: ... (argument error, not sent to the CLI)`**
+A flag name does not match the contract schema. The message lists the
+expected parameters; rename the flag to match.
 
 **`Error(Host, ...)`**
 This is a host-level error (e.g., insufficient auth, budget exceeded). Add

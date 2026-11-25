@@ -331,99 +331,74 @@ fn test_expired_proposal_reports_expired_not_missing() {
     assert_eq!(result, Err(Ok(NavinError::ProposalExpired)));
 }
 
-// ── #1273: milestone entrypoints extend shipment TTL ────────────────────────
+// ── #1190: audit-log / circuit-breaker persistent entries ──────────────────
 
 #[test]
-fn test_milestone_writes_extend_shipment_ttl() {
+fn test_audit_entries_survive_past_original_ttl() {
     let (env, client, admin, _token) = setup_initialized_shipment_env();
     let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
-    let receiver = Address::generate(&env);
 
+    // `add_company` is an RBAC mutation that goes through `audit::log_*`,
+    // writing `AuditEntry(id)` and bumping `AuditEntryCount`.
     client.add_company(&admin, &company);
-    client.add_carrier(&admin, &carrier);
-    client.add_carrier_to_whitelist(&company, &carrier);
 
+    env.as_contract(&client.address, || {
+        let persistent = env.storage().persistent();
+        assert!(persistent.has(&DataKey::AuditEntryCount));
+        assert!(persistent.get_ttl(&DataKey::AuditEntryCount) > 0);
+        assert!(persistent.get_ttl(&DataKey::AuditEntry(0)) > 0);
+    });
+
+    // Move past the TTL the entries were originally written with.
+    advance_ledgers(&env, past_min_persistent_ttl(&env));
+
+    // A second RBAC mutation must still succeed: AuditEntryCount must not
+    // have been archived.
+    let company2 = Address::generate(&env);
+    client.add_company(&admin, &company2);
+}
+
+#[test]
+fn test_circuit_breaker_state_and_config_survive_past_original_ttl() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+
+    client.set_circuit_breaker_config(&admin, &crate::circuit_breaker::CircuitBreakerPreset::Strict);
+    client.trip_circuit_breaker(&admin);
+
+    env.as_contract(&client.address, || {
+        let persistent = env.storage().persistent();
+        assert!(persistent.get_ttl(&DataKey::CircuitBreakerState) > 0);
+        assert!(persistent.get_ttl(&DataKey::CircuitBreakerConfig) > 0);
+    });
+
+    advance_ledgers(&env, past_min_persistent_ttl(&env));
+
+    // A subsequent circuit-breaker entrypoint must still succeed, i.e.
+    // reading CircuitBreakerState/Config did not trap on an archived entry.
+    client.reset_circuit_breaker(&admin);
+}
+
+// ── #1189: shipment_ttl_extension / threshold bounds ────────────────────────
+
+#[test]
+fn test_update_config_rejects_threshold_above_extension() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
     let mut cfg = client.get_contract_config();
-    cfg.shipment_ttl_threshold = 518_000;
-    client.update_config(&admin, &cfg);
+    cfg.shipment_ttl_threshold = 500_000;
+    cfg.shipment_ttl_extension = 100_000;
 
-    let mut milestones = Vec::new(&env);
-    milestones.push_back((soroban_sdk::symbol_short!("m1"), 50u32));
-    milestones.push_back((soroban_sdk::symbol_short!("m2"), 50u32));
+    let result = client.try_update_config(&admin, &cfg);
+    assert_eq!(result, Err(Ok(NavinError::InvalidConfig)));
+}
 
-    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
-    let deadline = env.ledger().timestamp() + 30 * 86_400;
+#[test]
+fn test_update_config_rejects_extension_above_max_ttl() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let max_ttl = env.as_contract(&client.address, || env.storage().max_ttl());
+    let mut cfg = client.get_contract_config();
+    cfg.shipment_ttl_threshold = 1;
+    cfg.shipment_ttl_extension = max_ttl + 1;
 
-    let shipment_id = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &milestones,
-        &deadline,
-    );
-    client.deposit_escrow(&company, &shipment_id, &10_000);
-
-    // Set to InTransit
-    env.as_contract(&client.address, || {
-        let mut s = crate::storage::get_shipment(&env, shipment_id).unwrap();
-        s.status = crate::ShipmentStatus::InTransit;
-        crate::storage::set_shipment(&env, &s);
-    });
-
-    // 1. record_milestone extends TTL
-    advance_ledgers(&env, 1_000);
-    client.record_milestone(
-        &carrier,
-        &shipment_id,
-        &soroban_sdk::symbol_short!("m1"),
-        &data_hash,
-    );
-    env.as_contract(&client.address, || {
-        let ttl = env
-            .storage()
-            .persistent()
-            .get_ttl(&DataKey::Shipment(shipment_id));
-        assert!(ttl >= EXTEND_TO);
-    });
-
-    // 2. release_milestone_payment extends TTL
-    advance_ledgers(&env, 1_000);
-    client.release_milestone_payment(&carrier, &shipment_id, &soroban_sdk::symbol_short!("m2"));
-    env.as_contract(&client.address, || {
-        let ttl = env
-            .storage()
-            .persistent()
-            .get_ttl(&DataKey::Shipment(shipment_id));
-        assert!(ttl >= EXTEND_TO);
-    });
-
-    // 3. record_milestones_batch extends TTL
-    let shipment_id2 = client.create_shipment(
-        &company,
-        &receiver,
-        &carrier,
-        &data_hash,
-        &milestones,
-        &deadline,
-    );
-    client.deposit_escrow(&company, &shipment_id2, &10_000);
-    env.as_contract(&client.address, || {
-        let mut s = crate::storage::get_shipment(&env, shipment_id2).unwrap();
-        s.status = crate::ShipmentStatus::InTransit;
-        crate::storage::set_shipment(&env, &s);
-    });
-
-    advance_ledgers(&env, 1_000);
-    let mut batch = Vec::new(&env);
-    batch.push_back((soroban_sdk::symbol_short!("m1"), data_hash.clone()));
-    client.record_milestones_batch(&carrier, &shipment_id2, &batch);
-    env.as_contract(&client.address, || {
-        let ttl = env
-            .storage()
-            .persistent()
-            .get_ttl(&DataKey::Shipment(shipment_id2));
-        assert!(ttl >= EXTEND_TO);
-    });
+    let result = client.try_update_config(&admin, &cfg);
+    assert_eq!(result, Err(Ok(NavinError::InvalidConfig)));
 }

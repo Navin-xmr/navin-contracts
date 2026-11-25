@@ -426,3 +426,133 @@ fn test_pause_by_non_admin_fails() {
         Err(Ok(crate::NftError::NotAdmin))
     );
 }
+
+fn authorize_pause(env: &Env, client: &NavinShipmentNftClient<'static>, admin: &Address) {
+    env.mock_auths(&[MockAuth {
+        address: admin,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "pause",
+            args: (admin.clone(),).into_val(env),
+            sub_invokes: &[],
+        },
+    }]);
+}
+
+fn authorize_approve(
+    env: &Env,
+    client: &NavinShipmentNftClient<'static>,
+    owner: &Address,
+    operator: &Address,
+    token_id: u64,
+    expiration: Option<u32>,
+) {
+    env.mock_auths(&[MockAuth {
+        address: owner,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "approve",
+            args: (operator.clone(), token_id, expiration).into_val(env),
+            sub_invokes: &[],
+        },
+    }]);
+}
+
+#[test]
+fn test_paused_blocks_approve() {
+    let (env, admin, client) = setup_strict();
+    let owner = env.register(AcceptingReceiver, ());
+    let operator = Address::generate(&env);
+
+    authorize_mint(&env, &client, &admin, &owner, 1);
+    client.mint(&owner, &1);
+    authorize_pause(&env, &client, &admin);
+    client.pause(&admin);
+
+    authorize_approve(&env, &client, &owner, &operator, 1, None);
+    assert_eq!(
+        client.try_approve(&operator, &1, &None),
+        Err(Ok(crate::NftError::ContractPaused))
+    );
+    assert_eq!(client.get_approved(&1), None);
+}
+
+#[test]
+fn test_paused_blocks_approve_burn() {
+    let (env, admin, client) = setup_strict();
+    let owner = env.register(AcceptingReceiver, ());
+
+    authorize_mint(&env, &client, &admin, &owner, 1);
+    client.mint(&owner, &1);
+    authorize_pause(&env, &client, &admin);
+    client.pause(&admin);
+
+    authorize_approve_burn(&env, &client, &owner, 1);
+    assert_eq!(
+        client.try_approve_burn(&1),
+        Err(Ok(crate::NftError::ContractPaused))
+    );
+    assert!(!client.is_burn_approved(&1));
+}
+
+#[test]
+fn test_paused_allows_revoke_approval() {
+    let (env, admin, client) = setup_strict();
+    let owner = env.register(AcceptingReceiver, ());
+    let operator = Address::generate(&env);
+
+    authorize_mint(&env, &client, &admin, &owner, 1);
+    client.mint(&owner, &1);
+    authorize_approve(&env, &client, &owner, &operator, 1, None);
+    client.approve(&operator, &1, &None);
+    authorize_pause(&env, &client, &admin);
+    client.pause(&admin);
+
+    env.mock_auths(&[MockAuth {
+        address: &owner,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "revoke_approval",
+            args: (operator.clone(), 1_u64).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    client.revoke_approval(&operator, &1);
+    assert_eq!(client.get_approved(&1), None);
+}
+
+#[test]
+fn test_paused_allows_admin_metadata_writes() {
+    let (env, admin, client) = setup_strict();
+    let owner = crate::test_utils::account_address(&env, 0);
+
+    authorize_mint(&env, &client, &admin, &owner, 1);
+    client.mint(&owner, &1);
+    authorize_pause(&env, &client, &admin);
+    client.pause(&admin);
+
+    let base_uri = soroban_sdk::String::from_str(&env, "https://navin.example/nft/");
+    env.mock_auths(&[MockAuth {
+        address: &admin,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "set_base_uri",
+            args: (admin.clone(), base_uri.clone()).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    client.set_base_uri(&admin, &base_uri);
+
+    let token_uri = soroban_sdk::String::from_str(&env, "ipfs://proof-1");
+    env.mock_auths(&[MockAuth {
+        address: &admin,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "set_token_uri",
+            args: (admin.clone(), 1_u64, token_uri.clone()).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    client.set_token_uri(&admin, &1, &token_uri);
+    assert_eq!(client.get_token_uri(&1), token_uri);
+}
