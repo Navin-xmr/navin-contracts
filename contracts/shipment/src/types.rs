@@ -136,6 +136,8 @@ pub enum DataKey {
     ShipmentDependents(u64),
     /// Archived shipment data in temporary storage (for terminal state shipments).
     ArchivedShipment(u64),
+    /// Per-shipment metadata key/value map, bounded by `ContractConfig::max_metadata_entries`.
+    ShipmentMetadata(u64),
 }
 
 /// Storage keys for dispute evidence.

@@ -10,7 +10,13 @@
 extern crate std;
 
 use crate::event_topics::{self, EVENT_SCHEMA_VERSION};
-use crate::{test_receivers::AcceptingReceiver, NavinShipmentNft, NavinShipmentNftClient};
+use crate::{
+    test_receivers::{
+        panic_receiver::{PanicReceiver, PanicReceiverClient},
+        AcceptingReceiver,
+    },
+    NavinShipmentNft, NavinShipmentNftClient,
+};
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Events as _, Ledger as _},
@@ -99,7 +105,7 @@ fn test_initialize_emits_versioned_event() {
 #[test]
 fn test_mint_emits_schema_versioned_topics() {
     let (env, _admin, client) = setup();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
     client.mint(&recipient, &7);
 
     let event = last_event(&env, &client.address);
@@ -114,7 +120,7 @@ fn test_mint_emits_schema_versioned_topics() {
 #[test]
 fn test_mint_emits_event() {
     let (env, _admin, client) = setup();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
     client.mint(&recipient, &42);
 
     let event = last_event(&env, &client.address);
@@ -135,7 +141,7 @@ fn test_mint_emits_event() {
 #[test]
 fn test_mint_batch_emits_batch_event_with_all_ids() {
     let (env, _admin, client) = setup();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
     let recipients = vec![&env, recipient.clone(), recipient.clone()];
     let token_ids = vec![&env, 7_u64, 42_u64];
     client.mint_batch(&recipients, &token_ids);
@@ -157,7 +163,7 @@ fn test_mint_batch_emits_batch_event_with_all_ids() {
 #[test]
 fn test_transfer_emits_event() {
     let (env, _admin, client) = setup();
-    let alice = Address::generate(&env);
+    let alice = crate::test_utils::account_address(&env, 0);
     let bob = env.register(AcceptingReceiver, ());
     client.mint(&alice, &1);
     client.transfer(&alice, &bob, &1, &Vec::new(&env));
@@ -183,7 +189,7 @@ fn test_transfer_emits_event() {
 #[test]
 fn test_burn_emits_event() {
     let (env, _admin, client) = setup();
-    let owner = Address::generate(&env);
+    let owner = crate::test_utils::account_address(&env, 0);
     client.mint(&owner, &5);
     client.approve_burn(&5);
     client.burn(&owner, &5);
@@ -206,7 +212,7 @@ fn test_burn_emits_event() {
 #[test]
 fn test_burn_by_admin_emits_event_with_admin_as_caller() {
     let (env, admin, client) = setup();
-    let owner = Address::generate(&env);
+    let owner = crate::test_utils::account_address(&env, 0);
     client.mint(&owner, &9);
     client.burn(&admin, &9);
 
@@ -227,7 +233,7 @@ fn test_burn_by_admin_emits_event_with_admin_as_caller() {
 #[test]
 fn test_burn_batch_emits_batch_event_with_all_ids() {
     let (env, admin, client) = setup();
-    let owner = Address::generate(&env);
+    let owner = crate::test_utils::account_address(&env, 0);
     let recipients = vec![&env, owner.clone(), owner];
     let token_ids = vec![&env, 7_u64, 42_u64];
     client.mint_batch(&recipients, &token_ids);
@@ -250,7 +256,7 @@ fn test_burn_batch_emits_batch_event_with_all_ids() {
 #[test]
 fn test_self_transfer_emits_noop_event() {
     let (env, _admin, client) = setup();
-    let alice = Address::generate(&env);
+    let alice = crate::test_utils::account_address(&env, 0);
     client.mint(&alice, &1);
     client.transfer(&alice, &alice, &1, &Vec::new(&env));
 
@@ -306,9 +312,30 @@ fn test_admin_proposal_emits_event() {
 }
 
 #[test]
+fn test_admin_cancellation_emits_event() {
+    let (env, admin, client) = setup();
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+    client.cancel_admin_transfer(&admin);
+
+    let event = last_event(&env, &client.address);
+    assert_eq!(
+        vec![&env, event],
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                topics(&env, event_topics::ADMIN_CANCELLED),
+                (admin, new_admin, TIMESTAMP).into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
 fn test_failed_mint_emits_no_event() {
     let (env, _admin, client) = setup();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
     client.mint(&recipient, &1);
     let before = count_events(&env, &client.address, event_topics::MINT);
 
@@ -319,4 +346,67 @@ fn test_failed_mint_emits_no_event() {
     let after = count_events(&env, &client.address, event_topics::MINT);
     assert!(after <= before);
     assert_eq!(client.total_supply(), 1);
+}
+
+#[test]
+fn test_set_base_uri_emits_event() {
+    let (env, admin, client) = setup();
+    let base_uri = soroban_sdk::String::from_str(&env, "https://example.com/meta/");
+    client.set_base_uri(&admin, &base_uri);
+
+    let event = last_event(&env, &client.address);
+    assert_eq!(
+        vec![&env, event],
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                topics(&env, event_topics::BASE_URI),
+                (admin, base_uri, TIMESTAMP).into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_set_token_uri_emits_event() {
+    let (env, admin, client) = setup();
+    let owner = Address::generate(&env);
+    client.mint(&owner, &3);
+
+    let uri = soroban_sdk::String::from_str(&env, "https://example.com/meta/3.json");
+    client.set_token_uri(&admin, &3, &uri);
+
+    let event = last_event(&env, &client.address);
+    assert_eq!(
+        vec![&env, event],
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                topics(&env, event_topics::TOKEN_URI),
+                (admin, 3_u64, uri, TIMESTAMP).into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_set_base_uri_rejects_empty_string() {
+    let (env, admin, client) = setup();
+    let empty = soroban_sdk::String::from_str(&env, "");
+    let result = client.try_set_base_uri(&admin, &empty);
+    assert_eq!(result, Err(Ok(crate::NftError::InvalidUri)));
+}
+
+#[test]
+fn test_set_token_uri_rejects_oversized_string() {
+    let (env, admin, client) = setup();
+    let owner = Address::generate(&env);
+    client.mint(&owner, &4);
+
+    let too_long: std::string::String = std::iter::repeat('a').take(600).collect();
+    let uri = soroban_sdk::String::from_str(&env, &too_long);
+    let result = client.try_set_token_uri(&admin, &4, &uri);
+    assert_eq!(result, Err(Ok(crate::NftError::InvalidUri)));
 }

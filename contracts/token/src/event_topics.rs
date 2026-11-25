@@ -99,6 +99,9 @@ pub const ADMIN_PROPOSED: &str = "admin_pro";
 /// Admin transfer accepted.
 pub const ADMIN_TRANSFERRED: &str = "admin_tr";
 
+/// Pending admin transfer cancelled.
+pub const ADMIN_CANCELLED: &str = "admin_can";
+
 // ── Batch ────────────────────────────────────────────────────────────────────
 
 /// Batch leg transfer.

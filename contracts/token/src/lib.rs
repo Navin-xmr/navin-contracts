@@ -18,6 +18,9 @@ pub use types::*;
 /// effectively never expires (issue #659).
 pub const MAX_EXPIRATION_LEDGER: u32 = u32::MAX;
 
+/// Maximum number of recipients accepted by `batch_transfer` (issue #1296).
+pub const MAX_BATCH_SIZE: u32 = 100;
+
 #[contract]
 pub struct NavinToken;
 
@@ -177,6 +180,20 @@ impl NavinToken {
             return Err(TokenError::InsufficientBalance);
         }
 
+        // Self-transfers are a harmless no-op: skip storage writes entirely
+        // so a debit-then-credit sequence can never double-credit the
+        // balance (see issue #1191).
+        if from == to {
+            env.events().publish(
+                (
+                    Symbol::new(&env, event_topics::TRANSFER),
+                    Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                ),
+                (from, to, amount),
+            );
+            return Ok(());
+        }
+
         // Update balances with checked arithmetic
         let new_from_balance = from_balance
             .checked_sub(amount)
@@ -239,14 +256,20 @@ impl NavinToken {
         let expiration_ledger = storage::get_allowance_raw(&env, &from, &spender)
             .map(|v| v.expiration_ledger)
             .unwrap_or(0);
-        storage::set_balance(&env, &from, from_balance - amount);
-        let recipient_balance = storage::get_balance(&env, &to);
-        let updated_recipient_balance = recipient_balance
-            .checked_add(amount)
-            .ok_or(TokenError::Overflow)?;
         let updated_allowance = allowance.checked_sub(amount).ok_or(TokenError::Overflow)?;
-        storage::set_balance(&env, &to, updated_recipient_balance);
         storage::set_allowance(&env, &from, &spender, updated_allowance, expiration_ledger);
+
+        // Self-transfers (from == to) must not change the balance: skip the
+        // debit/credit entirely instead of relying on read-after-write
+        // ordering (issue #1191).
+        if from != to {
+            storage::set_balance(&env, &from, from_balance - amount);
+            let recipient_balance = storage::get_balance(&env, &to);
+            let updated_recipient_balance = recipient_balance
+                .checked_add(amount)
+                .ok_or(TokenError::Overflow)?;
+            storage::set_balance(&env, &to, updated_recipient_balance);
+        }
 
         storage::extend_balance_ttl_for(&env, &[from.clone(), to.clone()], 1000, 500000);
         storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
@@ -439,6 +462,40 @@ impl NavinToken {
                 Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
             ),
             (current_admin, new_admin),
+        );
+
+        Ok(())
+    }
+
+    /// Return the pending admin nominee, if any (issue #1294).
+    pub fn get_pending_admin(env: Env) -> Result<Address, TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+        storage::get_pending_admin(&env).ok_or(TokenError::Unauthorized)
+    }
+
+    /// Cancel a pending admin transfer. Only the current admin can revoke it.
+    pub fn cancel_admin_transfer(env: Env, current_admin: Address) -> Result<(), TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+
+        current_admin.require_auth();
+
+        if storage::get_admin(&env) != current_admin {
+            return Err(TokenError::Unauthorized);
+        }
+
+        let pending_admin = storage::get_pending_admin(&env).ok_or(TokenError::Unauthorized)?;
+        storage::clear_pending_admin(&env);
+
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::ADMIN_CANCELLED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (current_admin, pending_admin),
         );
 
         Ok(())
@@ -755,6 +812,9 @@ impl NavinToken {
         if recipients.is_empty() {
             return Err(TokenError::InvalidAmount);
         }
+        if recipients.len() > MAX_BATCH_SIZE {
+            return Err(TokenError::BatchTooLarge);
+        }
 
         let mut total: i128 = 0;
         for (to, amount) in recipients.iter() {
@@ -812,12 +872,18 @@ impl NavinToken {
             filtered_recipients.push_back((to.clone(), amount));
             emit_sep41_transfer(&env, &from, &to, amount);
             env.events().publish(
-                (Symbol::new(&env, event_topics::BATCH_LEG),),
+                (
+                    Symbol::new(&env, event_topics::BATCH_LEG),
+                    Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                ),
                 (from.clone(), to, amount),
             );
         }
         env.events().publish(
-            (Symbol::new(&env, event_topics::BATCH_TRANSFER),),
+            (
+                Symbol::new(&env, event_topics::BATCH_TRANSFER),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
             (from, filtered_recipients.clone(), filtered_recipients.len()),
         );
 

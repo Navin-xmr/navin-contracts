@@ -5972,5 +5972,463 @@
         }
       ]
     }
+  },
+  {
+    "udt_union_v0": {
+      "doc": "Domain-specific error type for the Navin shipment contract.\n\nEach variant is assigned a unique u32 discriminant starting from 1\nso that the Soroban host can surface the code to clients without ambiguity.\n\nThis type is emitted by stellar contract bindings typescript as a numeric\nu32 code; this entry documents the mapping so frontends can display\nuser-friendly messages for each code without an on-chain RPC simulation.",
+      "name": "NavinError",
+      "cases": [
+        {
+          "doc": "Contract is already initialized.",
+          "name": "AlreadyInitialized",
+          "value": 1,
+          "fields": []
+        },
+        {
+          "doc": "Contract has not been initialized.",
+          "name": "NotInitialized",
+          "value": 2,
+          "fields": []
+        },
+        {
+          "doc": "Caller does not have the required permissions.",
+          "name": "Unauthorized",
+          "value": 3,
+          "fields": []
+        },
+        {
+          "doc": "Shipment ID doesn't exist.",
+          "name": "ShipmentNotFound",
+          "value": 4,
+          "fields": []
+        },
+        {
+          "doc": "Invalid state transition for the shipment.",
+          "name": "InvalidStatus",
+          "value": 5,
+          "fields": []
+        },
+        {
+          "doc": "Provided data hash does not match expectation.",
+          "name": "InvalidHash",
+          "value": 6,
+          "fields": []
+        },
+        {
+          "doc": "Escrow is locked and cannot be removed/modified.",
+          "name": "EscrowLocked",
+          "value": 7,
+          "fields": []
+        },
+        {
+          "doc": "Caller doesn't have sufficient funds for escrow deposit.",
+          "name": "InsufficientFunds",
+          "value": 8,
+          "fields": []
+        },
+        {
+          "doc": "Action cannot be performed on completed shipment (Delivered/Disputed).",
+          "name": "ShipmentAlreadyCompleted",
+          "value": 9,
+          "fields": []
+        },
+        {
+          "doc": "Invalid timestamp provided (e.g., ETA is in the past).",
+          "name": "InvalidTimestamp",
+          "value": 10,
+          "fields": []
+        },
+        {
+          "doc": "Counter value overflowed the maximum capacity.",
+          "name": "CounterOverflow",
+          "value": 11,
+          "fields": []
+        },
+        {
+          "doc": "Amount provided is invalid (zero or negative).",
+          "name": "InvalidAmount",
+          "value": 14,
+          "fields": []
+        },
+        {
+          "doc": "Escrow operation attempted while the reentrancy lock is already active.",
+          "name": "ReentrancyDetected",
+          "value": 15,
+          "fields": []
+        },
+        {
+          "doc": "Batch creation array exceeds maximum allowed item limit.",
+          "name": "BatchTooLarge",
+          "value": 16,
+          "fields": []
+        },
+        {
+          "doc": "Shipment input contained invalid parameters (e.g., receiver equals carrier).",
+          "name": "InvalidShipmentInput",
+          "value": 17,
+          "fields": []
+        },
+        {
+          "doc": "Milestone percentages do not sum to 100%.",
+          "name": "MilestoneSumInvalid",
+          "value": 18,
+          "fields": []
+        },
+        {
+          "doc": "Attempting to pay a milestone that was already paid.",
+          "name": "MilestoneAlreadyPaid",
+          "value": 19,
+          "fields": []
+        },
+        {
+          "doc": "Attempted to store more than the allowed maximum metadata entries (5).",
+          "name": "MetadataLimitExceeded",
+          "value": 20,
+          "fields": []
+        },
+        {
+          "doc": "Status update rejected because the minimum time interval has not elapsed.",
+          "name": "RateLimitExceeded",
+          "value": 21,
+          "fields": []
+        },
+        {
+          "doc": "Proposal ID doesn't exist.",
+          "name": "ProposalNotFound",
+          "value": 22,
+          "fields": []
+        },
+        {
+          "doc": "Proposal has already been executed.",
+          "name": "ProposalAlreadyExecuted",
+          "value": 23,
+          "fields": []
+        },
+        {
+          "doc": "Proposal has expired and can no longer be approved or executed.",
+          "name": "ProposalExpired",
+          "value": 24,
+          "fields": []
+        },
+        {
+          "doc": "Admin has already approved this proposal.",
+          "name": "AlreadyApproved",
+          "value": 25,
+          "fields": []
+        },
+        {
+          "doc": "Not enough approvals to execute the proposal.",
+          "name": "InsufficientApprovals",
+          "value": 26,
+          "fields": []
+        },
+        {
+          "doc": "Caller is not in the admin list.",
+          "name": "NotAnAdmin",
+          "value": 27,
+          "fields": []
+        },
+        {
+          "doc": "Invalid multi-sig configuration (e.g., threshold > admin count).",
+          "name": "InvalidMultiSigConfig",
+          "value": 28,
+          "fields": []
+        },
+        {
+          "doc": "Shipment deadline has not yet expired.",
+          "name": "NotExpired",
+          "value": 29,
+          "fields": []
+        },
+        {
+          "doc": "The company has reached its active shipment limit.",
+          "name": "ShipmentLimitReached",
+          "value": 30,
+          "fields": []
+        },
+        {
+          "doc": "Invalid configuration parameters provided.",
+          "name": "InvalidConfig",
+          "value": 31,
+          "fields": []
+        },
+        {
+          "doc": "Admin cannot revoke their own role; use transfer_admin instead.",
+          "name": "CannotSelfRevoke",
+          "value": 32,
+          "fields": []
+        },
+        {
+          "doc": "Carrier account is suspended.",
+          "name": "CarrierSuspended",
+          "value": 33,
+          "fields": []
+        },
+        {
+          "doc": "Force-cancel reason hash is missing.",
+          "name": "ForceCancelReasonHashMissing",
+          "value": 34,
+          "fields": []
+        },
+        {
+          "doc": "An arithmetic error occurred (overflow/underflow).",
+          "name": "ArithmeticError",
+          "value": 35,
+          "fields": []
+        },
+        {
+          "doc": "Dispute reason hash is missing.",
+          "name": "DisputeReasonHashMissing",
+          "value": 36,
+          "fields": []
+        },
+        {
+          "doc": "Company account is suspended.",
+          "name": "CompanySuspended",
+          "value": 37,
+          "fields": []
+        },
+        {
+          "doc": "Shipment is already finalized.",
+          "name": "ShipmentFinalized",
+          "value": 38,
+          "fields": []
+        },
+        {
+          "doc": "Token transfer operation failed.",
+          "name": "TokenTransferFailed",
+          "value": 39,
+          "fields": []
+        },
+        {
+          "doc": "Token mint operation failed.",
+          "name": "TokenMintFailed",
+          "value": 40,
+          "fields": []
+        },
+        {
+          "doc": "Duplicate action detected.",
+          "name": "DuplicateAction",
+          "value": 41,
+          "fields": []
+        },
+        {
+          "doc": "Shipment is currently unavailable.",
+          "name": "ShipmentUnavailable",
+          "value": 42,
+          "fields": []
+        },
+        {
+          "doc": "Contract is paused; state-changing operations are disabled.",
+          "name": "ContractPaused",
+          "value": 43,
+          "fields": []
+        },
+        {
+          "doc": "Status hash not found.",
+          "name": "StatusHashNotFound",
+          "value": 44,
+          "fields": []
+        },
+        {
+          "doc": "Provided data hash does not match the stored hash.",
+          "name": "DataHashMismatch",
+          "value": 45,
+          "fields": []
+        },
+        {
+          "doc": "Circuit breaker is open; operations halted.",
+          "name": "CircuitBreakerOpen",
+          "value": 46,
+          "fields": []
+        },
+        {
+          "doc": "Invalid migration edge.",
+          "name": "InvalidMigrationEdge",
+          "value": 47,
+          "fields": []
+        },
+        {
+          "doc": "Milestone limit exceeded.",
+          "name": "MilestoneLimitExceeded",
+          "value": 48,
+          "fields": []
+        },
+        {
+          "doc": "Note limit exceeded.",
+          "name": "NoteLimitExceeded",
+          "value": 49,
+          "fields": []
+        },
+        {
+          "doc": "Evidence limit exceeded.",
+          "name": "EvidenceLimitExceeded",
+          "value": 50,
+          "fields": []
+        },
+        {
+          "doc": "Breach limit exceeded.",
+          "name": "BreachLimitExceeded",
+          "value": 51,
+          "fields": []
+        },
+        {
+          "doc": "Invalid token decimal configuration.",
+          "name": "InvalidTokenDecimals",
+          "value": 52,
+          "fields": []
+        },
+        {
+          "doc": "Creation quota exceeded.",
+          "name": "CreationQuotaExceeded",
+          "value": 53,
+          "fields": []
+        },
+        {
+          "doc": "Shipment dependencies have not been met.",
+          "name": "DependenciesNotMet",
+          "value": 54,
+          "fields": []
+        },
+        {
+          "doc": "Circular dependency detected.",
+          "name": "CircularDependency",
+          "value": 55,
+          "fields": []
+        },
+        {
+          "doc": "Proposal salt has already been used.",
+          "name": "ProposalSaltReused",
+          "value": 56,
+          "fields": []
+        },
+        {
+          "doc": "Invalid shipment participants.",
+          "name": "InvalidShipmentParticipants",
+          "value": 57,
+          "fields": []
+        },
+        {
+          "doc": "Invalid shipment deadline.",
+          "name": "InvalidShipmentDeadline",
+          "value": 58,
+          "fields": []
+        },
+        {
+          "doc": "Invalid payment milestones.",
+          "name": "InvalidPaymentMilestones",
+          "value": 59,
+          "fields": []
+        },
+        {
+          "doc": "Duplicate payment milestone.",
+          "name": "DuplicatePaymentMilestone",
+          "value": 60,
+          "fields": []
+        },
+        {
+          "doc": "Invalid token address.",
+          "name": "InvalidTokenAddress",
+          "value": 61,
+          "fields": []
+        },
+        {
+          "doc": "Invalid payment milestone name.",
+          "name": "InvalidPaymentMilestoneName",
+          "value": 62,
+          "fields": []
+        },
+        {
+          "doc": "Metadata symbol collision.",
+          "name": "MetadataSymbolCollision",
+          "value": 63,
+          "fields": []
+        },
+        {
+          "doc": "External integration failed.",
+          "name": "ExternalIntegrationFailed",
+          "value": 64,
+          "fields": []
+        },
+        {
+          "doc": "Invalid symbol.",
+          "name": "InvalidSymbol",
+          "value": 65,
+          "fields": []
+        },
+        {
+          "doc": "Note not found.",
+          "name": "NoteNotFound",
+          "value": 66,
+          "fields": []
+        },
+        {
+          "doc": "Evidence not found.",
+          "name": "EvidenceNotFound",
+          "value": 67,
+          "fields": []
+        },
+        {
+          "doc": "Role is already assigned to this address.",
+          "name": "RoleAlreadyAssigned",
+          "value": 68,
+          "fields": []
+        },
+        {
+          "doc": "Carrier is not in the company's whitelist.",
+          "name": "CarrierNotWhitelisted",
+          "value": 69,
+          "fields": []
+        },
+        {
+          "doc": "Address is invalid (e.g., zero-address sentinel).",
+          "name": "InvalidAddress",
+          "value": 70,
+          "fields": []
+        },
+        {
+          "doc": "The target address does not hold the role being revoked.",
+          "name": "RoleMismatch",
+          "value": 72,
+          "fields": []
+        },
+        {
+          "doc": "A Symbol could not be decoded from its XDR encoding.",
+          "name": "InvalidSymbolEncoding",
+          "value": 73,
+          "fields": []
+        },
+        {
+          "doc": "init_multisig was called again while a proposal is still pending.",
+          "name": "MultiSigProposalPending",
+          "value": 74,
+          "fields": []
+        },
+        {
+          "doc": "Carrier is already in the company's whitelist.",
+          "name": "CarrierAlreadyWhitelisted",
+          "value": 75,
+          "fields": []
+        },
+        {
+          "doc": "Maximum allowed audit log entries has been reached.",
+          "name": "AuditLogLimitExceeded",
+          "value": 76,
+          "fields": []
+        },
+        {
+          "doc": "The configured NFT contract failed to mint a settlement proof.",
+          "name": "NftMintFailed",
+          "value": 77,
+          "fields": []
+        },
+        {
+          "doc": "The settlement NFT does not expose a valid get_admin or is not controlled by this shipment contract.",
+          "name": "NftConfigurationFailed",
+          "value": 78,
+          "fields": []
+        }
+      ]
+    }
   }
 ]

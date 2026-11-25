@@ -109,6 +109,31 @@ fn test_transfer() {
 }
 
 #[test]
+fn test_transfer_self_no_op() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    client.transfer(&admin, &admin, &500);
+
+    assert_eq!(client.balance(&admin), 1_000_000);
+    assert_eq!(client.total_supply(), 1_000_000);
+}
+
+#[test]
+fn test_transfer_from_self_no_op() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let spender = Address::generate(&env);
+    client.approve(&admin, &spender, &500, &u32::MAX);
+    client.transfer_from(&spender, &admin, &admin, &200);
+
+    assert_eq!(client.balance(&admin), 1_000_000);
+    assert_eq!(client.total_supply(), 1_000_000);
+    assert_eq!(client.allowance(&admin, &spender), 300);
+}
+
+#[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_transfer_insufficient_balance() {
     let (env, client, admin) = setup_token_env();
@@ -894,6 +919,41 @@ fn test_batch_transfer_empty_batch_rejected() {
 }
 
 #[test]
+fn test_batch_transfer_accepts_max_batch() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let recipient = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    for _ in 0..crate::MAX_BATCH_SIZE {
+        recipients.push_back((recipient.clone(), 1));
+    }
+
+    client.batch_transfer(&admin, &recipients);
+    assert_eq!(client.balance(&recipient), crate::MAX_BATCH_SIZE as i128);
+}
+
+#[test]
+fn test_batch_transfer_rejects_over_max_batch() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let recipient = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    for _ in 0..=crate::MAX_BATCH_SIZE {
+        recipients.push_back((recipient.clone(), 1));
+    }
+
+    assert_eq!(
+        client.try_batch_transfer(&admin, &recipients),
+        Err(Ok(crate::TokenError::BatchTooLarge)),
+        "MAX_BATCH_SIZE + 1 recipients must fail fast"
+    );
+    assert_eq!(client.balance(&recipient), 0);
+    assert_eq!(client.balance(&admin), 1_000_000);
+}
+
+#[test]
 fn test_batch_transfer_skips_self_transfer_leg() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -983,6 +1043,52 @@ fn test_transfer_admin_success() {
 
     client.accept_admin_transfer(&new_admin);
     assert_eq!(client.get_admin(), new_admin);
+}
+
+#[test]
+fn test_pending_admin_query_and_cancel() {
+    use crate::TokenError;
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    assert_eq!(
+        client.try_get_pending_admin(),
+        Err(Ok(TokenError::Unauthorized)),
+        "no nominee before a proposal"
+    );
+
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+    assert_eq!(client.get_pending_admin(), new_admin);
+
+    client.cancel_admin_transfer(&admin);
+    assert_eq!(
+        client.try_get_pending_admin(),
+        Err(Ok(TokenError::Unauthorized)),
+        "cancelled nominee must no longer be queryable"
+    );
+    assert_eq!(
+        client.try_accept_admin_transfer(&new_admin),
+        Err(Ok(TokenError::Unauthorized)),
+        "cancelled nominee must not be able to accept"
+    );
+    assert_eq!(client.get_admin(), admin);
+}
+
+#[test]
+fn test_cancel_admin_transfer_rejects_non_admin() {
+    use crate::TokenError;
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+
+    let non_admin = Address::generate(&env);
+    assert_eq!(
+        client.try_cancel_admin_transfer(&non_admin),
+        Err(Ok(TokenError::Unauthorized))
+    );
+    assert_eq!(client.get_pending_admin(), new_admin);
 }
 
 #[test]
