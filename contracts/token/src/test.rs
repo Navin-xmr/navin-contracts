@@ -6,7 +6,7 @@ extern crate std;
 use crate::{test_utils::setup_env, NavinToken, NavinTokenClient};
 use alloc::string::ToString;
 use soroban_sdk::{
-    testutils::{Address as _, Events as _, Ledger as _},
+    testutils::{storage::Instance, Address as _, Events as _, Ledger as _},
     Address, Env, String, Symbol, TryFromVal,
 };
 
@@ -1300,6 +1300,56 @@ fn test_allowed_metadata_key_ttl_expiration_sync() {
     assert!(is_allowed);
     assert_eq!(allowed_keys.len(), 1);
     assert_eq!(allowed_keys.get(0), Some(key));
+}
+
+// ============================================================================
+// Instance Storage TTL Tests (issue #1286)
+// ============================================================================
+
+#[test]
+fn test_transfer_extends_instance_ttl() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let ttl_after_init = env.as_contract(&client.address, || {
+        env.storage().instance().get_ttl()
+    });
+
+    // Persistent balances have a much shorter default TTL than the instance;
+    // keep the sender's balance alive across the ledger jump below so the
+    // transfer itself is not blocked by an archived balance entry.
+    env.as_contract(&client.address, || {
+        env.storage().persistent().extend_ttl(
+            &crate::storage::DataKey::Balance(admin.clone()),
+            crate::storage::INSTANCE_TTL_EXTEND_TO,
+            crate::storage::INSTANCE_TTL_EXTEND_TO,
+        );
+    });
+
+    // Bring the remaining TTL just below the bump threshold (without letting
+    // the instance expire) so a regular operation has to refresh it.
+    if ttl_after_init > crate::storage::INSTANCE_TTL_THRESHOLD {
+        env.ledger().with_mut(|ledger| {
+            ledger.sequence_number +=
+                ttl_after_init - crate::storage::INSTANCE_TTL_THRESHOLD + 1;
+        });
+    }
+
+    let ttl_before = env.as_contract(&client.address, || {
+        env.storage().instance().get_ttl()
+    });
+    assert!(ttl_before < crate::storage::INSTANCE_TTL_THRESHOLD);
+
+    let recipient = Address::generate(&env);
+    client.transfer(&admin, &recipient, &200);
+
+    let ttl_after = env.as_contract(&client.address, || {
+        env.storage().instance().get_ttl()
+    });
+    assert!(
+        ttl_after >= crate::storage::INSTANCE_TTL_EXTEND_TO,
+        "transfer must refresh the instance storage TTL"
+    );
 }
 
 #[test]

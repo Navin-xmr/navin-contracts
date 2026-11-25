@@ -319,6 +319,38 @@ pub fn emit_milestone_recorded(
     data_hash: &BytesN<32>,
     reporter: &Address,
 ) {
+    publish_milestone_recorded(env, shipment_id, checkpoint, data_hash, reporter);
+    crate::storage::increment_milestone_event_count(env, shipment_id);
+}
+
+/// Publish the same `milestone_recorded` payload as [`emit_milestone_recorded`]
+/// **without** consuming the shipment's milestone budget.
+///
+/// Carrier handoffs already emit their own `carrier_handoff` /
+/// `carrier_handoff_completed` events (issue #1285). Publishing a milestone
+/// event for the handoff is purely for off-chain observability; counting it
+/// would let repeated handoffs exhaust `max_milestones_per_shipment` and lock
+/// the carrier out of `record_milestone` and milestone payouts.
+///
+/// Do not use this for real checkpoints — those must use
+/// [`emit_milestone_recorded`] so the payload-size guard stays effective.
+pub fn emit_handoff_milestone_recorded(
+    env: &Env,
+    shipment_id: u64,
+    checkpoint: &Symbol,
+    data_hash: &BytesN<32>,
+    reporter: &Address,
+) {
+    publish_milestone_recorded(env, shipment_id, checkpoint, data_hash, reporter);
+}
+
+fn publish_milestone_recorded(
+    env: &Env,
+    shipment_id: u64,
+    checkpoint: &Symbol,
+    data_hash: &BytesN<32>,
+    reporter: &Address,
+) {
     env.events().publish(
         (Symbol::new(env, crate::event_topics::MILESTONE_RECORDED),),
         (
@@ -330,7 +362,6 @@ pub fn emit_milestone_recorded(
             checkpoint.clone(),
         ),
     );
-    crate::storage::increment_milestone_event_count(env, shipment_id);
 }
 
 /// Emits an `escrow_deposited` event when funds are locked for a shipment.
