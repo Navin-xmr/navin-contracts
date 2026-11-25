@@ -10,7 +10,7 @@
 extern crate std;
 
 use crate::{BreachType, NavinShipment, NavinShipmentClient, Severity, ShipmentStatus};
-use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, BytesN, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Symbol};
 
 // ── Minimal mock token ────────────────────────────────────────────────────────
 
@@ -45,7 +45,7 @@ fn enable_auto_dispute(client: &NavinShipmentClient, admin: &Address) {
 
 /// Create a shipment and return its ID. Carrier is registered as a carrier role.
 // Consolidated to test_utils::create_test_shipment (#1099)
-    use crate::test_utils::create_test_shipment;
+use crate::test_utils::create_test_shipment;
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

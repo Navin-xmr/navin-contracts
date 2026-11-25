@@ -410,6 +410,8 @@ pub fn create_test_shipment(
 
     client.add_company(admin, &company);
     client.add_carrier(admin, &carrier);
+    // `create_shipment` only accepts carriers whitelisted by the company.
+    client.add_carrier_to_whitelist(&company, &carrier);
 
     let shipment_id = client.create_shipment(
         &company,

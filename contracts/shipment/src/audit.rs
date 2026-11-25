@@ -445,7 +445,7 @@ pub fn query_audit_history(
     limit: u64,
 ) -> soroban_sdk::Vec<AuditLogEntry> {
     let mut results = soroban_sdk::Vec::new(env);
-    let total_entries = get_audit_entry_count(env) as u64;
+    let total_entries = get_audit_entry_id_limit(env);
 
     if start_id >= total_entries || limit == 0 {
         return results;
@@ -483,7 +483,7 @@ pub fn query_audit_history_for_target(
     limit: u64,
 ) -> soroban_sdk::Vec<AuditLogEntry> {
     let mut results = soroban_sdk::Vec::new(env);
-    let total_entries = get_audit_entry_count(env) as u64;
+    let total_entries = get_audit_entry_id_limit(env);
 
     if start_id >= total_entries || limit == 0 {
         return results;
@@ -521,7 +521,7 @@ pub fn query_audit_history_by_actor(
     limit: u64,
 ) -> soroban_sdk::Vec<AuditLogEntry> {
     let mut results = soroban_sdk::Vec::new(env);
-    let total_entries = get_audit_entry_count(env) as u64;
+    let total_entries = get_audit_entry_id_limit(env);
 
     if start_id >= total_entries || limit == 0 {
         return results;
@@ -571,17 +571,47 @@ pub fn cleanup_audit_logs(
         return Err(NavinError::Unauthorized);
     }
 
+    ensure_audit_index(env);
+    let mut live_count = get_audit_entry_count(env);
     let mut removed_count = 0u32;
-    let total_entries = get_audit_entry_count(env);
+    let mut index = 0u32;
 
-    for i in 0..total_entries {
-        if let Some(entry) = get_audit_entry(env, i as u64) {
-            if entry.timestamp < before_timestamp {
-                remove_audit_entry(env, i as u64);
-                removed_count = removed_count.saturating_add(1);
+    while index < live_count {
+        let entry_id = env
+            .storage()
+            .persistent()
+            .get::<_, u64>(&AuditKey::LiveEntryAt(index))
+            .ok_or(NavinError::CounterOverflow)?;
+        let entry = get_audit_entry(env, entry_id).ok_or(NavinError::CounterOverflow)?;
+
+        if entry.timestamp < before_timestamp {
+            remove_audit_entry(env, entry_id);
+
+            let last_index = live_count - 1;
+            if index != last_index {
+                let last_entry_id = env
+                    .storage()
+                    .persistent()
+                    .get::<_, u64>(&AuditKey::LiveEntryAt(last_index))
+                    .ok_or(NavinError::CounterOverflow)?;
+                env.storage()
+                    .persistent()
+                    .set(&AuditKey::LiveEntryAt(index), &last_entry_id);
             }
+            env.storage()
+                .persistent()
+                .remove(&AuditKey::LiveEntryAt(last_index));
+
+            live_count -= 1;
+            removed_count = removed_count.saturating_add(1);
+        } else {
+            index += 1;
         }
     }
+
+    env.storage()
+        .persistent()
+        .set(&DataKey::AuditEntryCount, &live_count);
 
     Ok(removed_count)
 }
@@ -594,11 +624,14 @@ pub fn cleanup_audit_logs(
 pub const MAX_AUDIT_LOG_ENTRIES: u32 = 1000;
 
 pub(crate) fn get_next_audit_entry_id(env: &Env) -> Result<u64, NavinError> {
+    ensure_audit_index(env);
     let count = get_audit_entry_count(env);
     if count >= MAX_AUDIT_LOG_ENTRIES {
         return Err(NavinError::AuditLogLimitExceeded);
     }
-    Ok(count as u64)
+    let next_id = get_audit_entry_id_limit(env);
+    next_id.checked_add(1).ok_or(NavinError::CounterOverflow)?;
+    Ok(next_id)
 }
 
 pub(crate) fn get_audit_entry_count(env: &Env) -> u32 {
@@ -608,11 +641,49 @@ pub(crate) fn get_audit_entry_count(env: &Env) -> u32 {
         .unwrap_or(0)
 }
 
-fn increment_audit_entry_count(env: &Env) {
+pub(crate) fn get_audit_entry_id_limit(env: &Env) -> u64 {
+    env.storage()
+        .persistent()
+        .get(&AuditKey::NextEntryId)
+        .unwrap_or_else(|| get_audit_entry_count(env) as u64)
+}
+
+fn increment_audit_entry_count(env: &Env, entry_id: u64) {
     let count = get_audit_entry_count(env);
     env.storage()
         .persistent()
+        .set(&AuditKey::LiveEntryAt(count), &entry_id);
+    env.storage()
+        .persistent()
         .set(&DataKey::AuditEntryCount, &count.saturating_add(1));
+    env.storage()
+        .persistent()
+        .set(&AuditKey::NextEntryId, &entry_id.saturating_add(1));
+}
+
+fn ensure_audit_index(env: &Env) {
+    let next_entry_id_key = AuditKey::NextEntryId;
+    if env.storage().persistent().has(&next_entry_id_key) {
+        return;
+    }
+
+    let next_entry_id = get_audit_entry_count(env) as u64;
+    let mut live_count = 0u32;
+    for entry_id in 0..next_entry_id {
+        if get_audit_entry(env, entry_id).is_some() {
+            env.storage()
+                .persistent()
+                .set(&AuditKey::LiveEntryAt(live_count), &entry_id);
+            live_count = live_count.saturating_add(1);
+        }
+    }
+
+    env.storage()
+        .persistent()
+        .set(&DataKey::AuditEntryCount, &live_count);
+    env.storage()
+        .persistent()
+        .set(&next_entry_id_key, &next_entry_id);
 }
 
 pub(crate) fn store_audit_entry(env: &Env, entry: &AuditLogEntry) {
@@ -620,7 +691,7 @@ pub(crate) fn store_audit_entry(env: &Env, entry: &AuditLogEntry) {
     env.storage()
         .persistent()
         .set(&DataKey::AuditEntry(entry_id), entry);
-    increment_audit_entry_count(env);
+    increment_audit_entry_count(env, entry_id);
 }
 
 fn get_audit_entry(env: &Env, entry_id: u64) -> Option<AuditLogEntry> {

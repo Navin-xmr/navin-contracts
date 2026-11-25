@@ -49,6 +49,49 @@ fn test_confirm_delivery_success_at_checkpoint() {
 }
 
 #[test]
+fn test_update_status_delivered_decrements_active_count_before_release() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[31u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &5_000);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::ShipmentStatus::InTransit,
+        &BytesN::from_array(&env, &[32u8; 32]),
+    );
+
+    crate::test_utils::advance_past_rate_limit(&env);
+    client.update_status(
+        &carrier,
+        &shipment_id,
+        &crate::ShipmentStatus::Delivered,
+        &BytesN::from_array(&env, &[33u8; 32]),
+    );
+
+    assert_eq!(client.get_active_shipment_count(&company), 0);
+    client.release_escrow(&receiver, &shipment_id);
+    assert_eq!(client.get_active_shipment_count(&company), 0);
+}
+
+#[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_confirm_delivery_wrong_receiver() {
     let (env, client, admin, token_contract) = setup_shipment_env();
@@ -217,6 +260,45 @@ fn test_resolve_dispute_unauthorized() {
         &crate::DisputeResolution::ReleaseToCarrier,
         &reason_hash,
     );
+}
+
+#[test]
+fn test_resolve_dispute_partial_refund() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[92u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    let escrow_amount: i128 = 5000;
+
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+    client.raise_dispute(&company, &shipment_id, &reason_hash);
+
+    client.resolve_dispute(
+        &admin,
+        &shipment_id,
+        &crate::DisputeResolution::PartialRefund,
+        &reason_hash,
+    );
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::ShipmentStatus::PartiallyRefunded);
+    assert_eq!(shipment.finalized, true);
+    assert_eq!(shipment.escrow_amount, 0);
 }
 
 // Milestone Event Tests
@@ -491,3 +573,53 @@ fn test_milestone_payment_invalid_sum_fails() {
 }
 
 // Contract Upgrade Tests
+
+// Partial-delivery proof log (issue #1268)
+
+#[test]
+fn test_every_partial_delivery_proof_stays_verifiable() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &10_000);
+
+    env.as_contract(&client.address, || {
+        let mut shipment = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        shipment.status = crate::ShipmentStatus::InTransit;
+        crate::storage::set_shipment(&env, &shipment);
+    });
+
+    let first_hash = BytesN::from_array(&env, &[11u8; 32]);
+    let second_hash = BytesN::from_array(&env, &[22u8; 32]);
+    client.confirm_partial_delivery(&receiver, &shipment_id, &first_hash, &30);
+    client.confirm_partial_delivery(&receiver, &shipment_id, &second_hash, &30);
+
+    assert_eq!(client.get_partial_delivery_proof_count(&shipment_id), 2);
+    assert!(client.verify_partial_delivery_proof(&shipment_id, &0, &first_hash));
+    assert!(client.verify_partial_delivery_proof(&shipment_id, &1, &second_hash));
+
+    // Indices are not interchangeable and out-of-range indices never verify.
+    assert!(!client.verify_partial_delivery_proof(&shipment_id, &0, &second_hash));
+    assert!(!client.verify_partial_delivery_proof(&shipment_id, &2, &second_hash));
+
+    // `verify_delivery_proof` still checks only the latest confirmation hash.
+    assert!(client.verify_delivery_proof(&shipment_id, &second_hash));
+    assert!(!client.verify_delivery_proof(&shipment_id, &first_hash));
+}

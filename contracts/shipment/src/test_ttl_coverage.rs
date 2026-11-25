@@ -10,7 +10,7 @@ use crate::test_helpers::*;
 use crate::types::{DataKey, SettlementKey};
 use crate::{storage, NavinError};
 use soroban_sdk::{
-    testutils::{storage::Persistent, Address as _, Ledger},
+    testutils::{storage::Persistent, Ledger},
     Address, BytesN, Env, Vec,
 };
 
@@ -181,14 +181,18 @@ fn test_extend_shipment_ttl_renews_settlement_records() {
     let shipment = client.get_shipment(&shipment_id);
 
     client.deposit_escrow(&shipment.sender, &shipment_id, &1_000);
+    client.refund_escrow(&shipment.sender, &shipment_id);
 
     let settlement_count = client.get_settlement_count();
-    assert!(settlement_count > 0);
+    assert_eq!(settlement_count, 2);
 
     env.as_contract(&client.address, || {
         let latest = storage::get_latest_settlement(&env, shipment_id)
             .expect("latest settlement must be recorded");
         assert_eq!(latest, settlement_count);
+        let persistent = env.storage().persistent();
+        assert!(persistent.get_ttl(&DataKey::Settlement(1)) >= EXTEND_TO);
+        assert!(persistent.get_ttl(&DataKey::Settlement(2)) >= EXTEND_TO);
     });
 
     client.extend_shipment_ttl(&shipment_id);
@@ -198,6 +202,9 @@ fn test_extend_shipment_ttl_renews_settlement_records() {
         let latest = storage::get_latest_settlement(&env, shipment_id).unwrap();
         assert!(persistent.get_ttl(&DataKey::Settlement(latest)) >= EXTEND_TO);
         assert!(persistent.get_ttl(&SettlementKey::Latest(shipment_id)) >= EXTEND_TO);
+        assert!(persistent.get_ttl(&SettlementKey::Ids(shipment_id)) >= EXTEND_TO);
+        assert!(persistent.get_ttl(&DataKey::Settlement(1)) >= EXTEND_TO);
+        assert!(persistent.get_ttl(&DataKey::Settlement(2)) >= EXTEND_TO);
         if let Some(active) = storage::get_active_settlement(&env, shipment_id) {
             assert!(persistent.get_ttl(&DataKey::ActiveSettlement(shipment_id)) >= EXTEND_TO);
             assert!(persistent.get_ttl(&DataKey::Settlement(active)) >= EXTEND_TO);
@@ -206,8 +213,10 @@ fn test_extend_shipment_ttl_renews_settlement_records() {
 
     advance_ledgers(&env, past_min_persistent_ttl(&env));
 
-    let settlement = client.get_settlement(&settlement_count);
-    assert_eq!(settlement.shipment_id, shipment_id);
+    for settlement_id in 1..=settlement_count {
+        let settlement = client.get_settlement(&settlement_id);
+        assert_eq!(settlement.shipment_id, shipment_id);
+    }
 }
 
 #[test]
@@ -320,4 +329,76 @@ fn test_expired_proposal_reports_expired_not_missing() {
 
     let result = client.try_approve_action(&admin2, &proposal_id);
     assert_eq!(result, Err(Ok(NavinError::ProposalExpired)));
+}
+
+// ── #1190: audit-log / circuit-breaker persistent entries ──────────────────
+
+#[test]
+fn test_audit_entries_survive_past_original_ttl() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let company = Address::generate(&env);
+
+    // `add_company` is an RBAC mutation that goes through `audit::log_*`,
+    // writing `AuditEntry(id)` and bumping `AuditEntryCount`.
+    client.add_company(&admin, &company);
+
+    env.as_contract(&client.address, || {
+        let persistent = env.storage().persistent();
+        assert!(persistent.has(&DataKey::AuditEntryCount));
+        assert!(persistent.get_ttl(&DataKey::AuditEntryCount) > 0);
+        assert!(persistent.get_ttl(&DataKey::AuditEntry(0)) > 0);
+    });
+
+    // Move past the TTL the entries were originally written with.
+    advance_ledgers(&env, past_min_persistent_ttl(&env));
+
+    // A second RBAC mutation must still succeed: AuditEntryCount must not
+    // have been archived.
+    let company2 = Address::generate(&env);
+    client.add_company(&admin, &company2);
+}
+
+#[test]
+fn test_circuit_breaker_state_and_config_survive_past_original_ttl() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+
+    client.set_circuit_breaker_config(&admin, &crate::circuit_breaker::CircuitBreakerPreset::Strict);
+    client.trip_circuit_breaker(&admin);
+
+    env.as_contract(&client.address, || {
+        let persistent = env.storage().persistent();
+        assert!(persistent.get_ttl(&DataKey::CircuitBreakerState) > 0);
+        assert!(persistent.get_ttl(&DataKey::CircuitBreakerConfig) > 0);
+    });
+
+    advance_ledgers(&env, past_min_persistent_ttl(&env));
+
+    // A subsequent circuit-breaker entrypoint must still succeed, i.e.
+    // reading CircuitBreakerState/Config did not trap on an archived entry.
+    client.reset_circuit_breaker(&admin);
+}
+
+// ── #1189: shipment_ttl_extension / threshold bounds ────────────────────────
+
+#[test]
+fn test_update_config_rejects_threshold_above_extension() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let mut cfg = client.get_contract_config();
+    cfg.shipment_ttl_threshold = 500_000;
+    cfg.shipment_ttl_extension = 100_000;
+
+    let result = client.try_update_config(&admin, &cfg);
+    assert_eq!(result, Err(Ok(NavinError::InvalidConfig)));
+}
+
+#[test]
+fn test_update_config_rejects_extension_above_max_ttl() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let max_ttl = env.as_contract(&client.address, || env.storage().max_ttl());
+    let mut cfg = client.get_contract_config();
+    cfg.shipment_ttl_threshold = 1;
+    cfg.shipment_ttl_extension = max_ttl + 1;
+
+    let result = client.try_update_config(&admin, &cfg);
+    assert_eq!(result, Err(Ok(NavinError::InvalidConfig)));
 }

@@ -52,12 +52,41 @@ pub const MINT: Symbol = symbol_short!("mint");
 /// Token burned. Payload: `(token_id, caller, timestamp)`.
 pub const BURN: Symbol = symbol_short!("burn");
 
+/// Owner approved burning a token. Payload: `(owner, token_id, timestamp)`.
+pub const BURN_APPROVED: Symbol = symbol_short!("burn_ok");
+
+/// Owner revoked a burn approval. Payload: `(owner, token_id, timestamp)`.
+pub const BURN_APPROVAL_REVOKED: Symbol = symbol_short!("burn_rv");
+
+/// Batch of tokens minted. Payload: `(token_ids, recipients, timestamp)`.
+pub const MINT_BATCH: Symbol = symbol_short!("mintbatch");
+
+/// Batch of tokens burned. Payload: `(token_ids, caller, timestamp)`.
+pub const BURN_BATCH: Symbol = symbol_short!("burnbatch");
+
 // ── Transfers ────────────────────────────────────────────────────────────────
 
 /// Token transferred. Payload: `(token_id, from, to, timestamp)`.
 pub const TRANSFER: Symbol = symbol_short!("xfer");
 
+/// Token operator approved. Payload: `(owner, operator, token_id, expiration_ledger, timestamp)`.
+pub const APPROVAL: Symbol = symbol_short!("approve");
+
+/// Token operator approval revoked. Payload: `(owner, operator, token_id, timestamp)`.
+pub const APPROVAL_REVOKED: Symbol = symbol_short!("revoked");
+
 // ── Admin ────────────────────────────────────────────────────────────────────
+
+/// Admin transfer proposed. Payload: `(admin, proposed_admin, timestamp)`.
+pub const ADMIN_PROPOSED: Symbol = symbol_short!("admp");
 
 /// Admin role transferred. Payload: `(old_admin, new_admin, timestamp)`.
 pub const ADMIN_TRANSFER: Symbol = symbol_short!("admin");
+
+// ── Metadata ─────────────────────────────────────────────────────────────────
+
+/// Collection base URI changed. Payload: `(admin, base_uri, timestamp)`.
+pub const BASE_URI: Symbol = symbol_short!("baseuri");
+
+/// Per-token metadata URI changed. Payload: `(admin, token_id, uri, timestamp)`.
+pub const TOKEN_URI: Symbol = symbol_short!("tokenuri");

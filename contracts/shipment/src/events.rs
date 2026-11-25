@@ -139,10 +139,18 @@ pub fn generate_idempotency_key(
     env.crypto().sha256(&payload).into()
 }
 
-fn next_global_event_metadata(env: &Env, topic: &str, domain: u8) -> (u32, BytesN<32>) {
+/// Allocate the next contract-wide event counter and derive its idempotency key.
+///
+/// The full `u64` counter occupies the `shipment_id` slot of the key payload,
+/// so keys stay unique for every counter value. The `event_counter` slot keeps
+/// the low 32 bits, which leaves keys for counters `<= u32::MAX` identical to
+/// the ones emitted before the counter was widened.
+///
+/// Panics with `NavinError::CounterOverflow` instead of reusing a counter.
+fn next_global_event_metadata(env: &Env, topic: &str, domain: u8) -> (u64, BytesN<32>) {
     let event_counter = crate::storage::increment_global_event_count(env);
     let idempotency_key =
-        generate_idempotency_key(env, domain, event_counter as u64, topic, event_counter);
+        generate_idempotency_key(env, domain, event_counter, topic, event_counter as u32);
     (event_counter, idempotency_key)
 }
 
@@ -269,15 +277,7 @@ pub fn emit_circuit_breaker_config_updated(
 
 /// Emits a `shipment_created` event when a new shipment is registered.
 ///
-/// # Event Payload
-///
-/// | Field       | Type          | Description                                     |
-/// |-------------|---------------|-------------------------------------------------|
-/// | shipment_id | `u64`         | Unique on-chain shipment identifier              |
-/// | status      | `ShipmentStatus` | Always `Created`                              |
-/// | data_hash   | `BytesN<32>`  | SHA-256 hash of the full off-chain shipment data |
-/// | timestamp   | `u64`         | Ledger timestamp at creation                     |
-/// | actor       | `Address`     | Company address that created the shipment        |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_shipment_created(env: &Env, shipment_id: u64, actor: &Address, data_hash: &BytesN<32>) {
     env.events().publish(
         (Symbol::new(env, crate::event_topics::SHIPMENT_CREATED),),
@@ -293,15 +293,7 @@ pub fn emit_shipment_created(env: &Env, shipment_id: u64, actor: &Address, data_
 
 /// Emits a `status_updated` event when a shipment transitions between lifecycle states.
 ///
-/// # Event Payload
-///
-/// | Field       | Type          | Description                                        |
-/// |-------------|---------------|----------------------------------------------------|
-/// | shipment_id | `u64`         | Shipment whose status changed                      |
-/// | status      | `ShipmentStatus` | New lifecycle state after transition            |
-/// | data_hash   | `BytesN<32>`  | SHA-256 hash of the updated off-chain payload       |
-/// | timestamp   | `u64`         | Ledger timestamp of the transition                  |
-/// | actor       | `Address`     | Address that triggered the status change            |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_status_updated(
     env: &Env,
     shipment_id: u64,
@@ -327,17 +319,40 @@ pub fn emit_status_updated(
 /// of the Hash-and-Emit pattern. The full milestone payload (GPS coordinates,
 /// temperature readings, photos) lives off-chain; only its hash is published.
 ///
-/// # Event Payload
-///
-/// | Field       | Type          | Description                                       |
-/// |-------------|---------------|---------------------------------------------------|
-/// | shipment_id | `u64`         | Shipment this milestone belongs to                 |
-/// | status      | `ShipmentStatus` | Current status (implied, not changed)           |
-/// | data_hash   | `BytesN<32>`  | SHA-256 hash of the full off-chain milestone data  |
-/// | timestamp   | `u64`         | Ledger timestamp of the milestone                  |
-/// | actor       | `Address`     | Carrier address that recorded the milestone        |
-/// | checkpoint  | `Symbol`      | Human-readable checkpoint name (e.g. "warehouse")  |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_milestone_recorded(
+    env: &Env,
+    shipment_id: u64,
+    checkpoint: &Symbol,
+    data_hash: &BytesN<32>,
+    reporter: &Address,
+) {
+    publish_milestone_recorded(env, shipment_id, checkpoint, data_hash, reporter);
+    crate::storage::increment_milestone_event_count(env, shipment_id);
+}
+
+/// Publish the same `milestone_recorded` payload as [`emit_milestone_recorded`]
+/// **without** consuming the shipment's milestone budget.
+///
+/// Carrier handoffs already emit their own `carrier_handoff` /
+/// `carrier_handoff_completed` events (issue #1285). Publishing a milestone
+/// event for the handoff is purely for off-chain observability; counting it
+/// would let repeated handoffs exhaust `max_milestones_per_shipment` and lock
+/// the carrier out of `record_milestone` and milestone payouts.
+///
+/// Do not use this for real checkpoints — those must use
+/// [`emit_milestone_recorded`] so the payload-size guard stays effective.
+pub fn emit_handoff_milestone_recorded(
+    env: &Env,
+    shipment_id: u64,
+    checkpoint: &Symbol,
+    data_hash: &BytesN<32>,
+    reporter: &Address,
+) {
+    publish_milestone_recorded(env, shipment_id, checkpoint, data_hash, reporter);
+}
+
+fn publish_milestone_recorded(
     env: &Env,
     shipment_id: u64,
     checkpoint: &Symbol,
@@ -355,21 +370,11 @@ pub fn emit_milestone_recorded(
             checkpoint.clone(),
         ),
     );
-    crate::storage::increment_milestone_event_count(env, shipment_id);
 }
 
 /// Emits an `escrow_deposited` event when funds are locked for a shipment.
 ///
-/// # Event Payload
-///
-/// | Field       | Type          | Description                                  |
-/// |-------------|---------------|----------------------------------------------|
-/// | shipment_id | `u64`         | Shipment the escrow is associated with        |
-/// | status      | `ShipmentStatus` | Current shipment status                   |
-/// | data_hash   | `BytesN<32>`  | SHA-256 of the payload (`payload_hash`)       |
-/// | timestamp   | `u64`         | Ledger timestamp of the deposit               |
-/// | actor       | `Address`     | Address that deposited the funds              |
-/// | amount      | `i128`        | Amount deposited (in stroops)                 |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount: i128) {
     let data_hash = payload_hash(
         env,
@@ -394,16 +399,7 @@ pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount
 
 /// Emits an `escrow_released` event when escrowed funds are paid out.
 ///
-/// # Event Payload
-///
-/// | Field       | Type          | Description                                  |
-/// |-------------|---------------|----------------------------------------------|
-/// | shipment_id | `u64`         | Shipment the escrow was held for              |
-/// | status      | `ShipmentStatus` | Current shipment status                   |
-/// | data_hash   | `BytesN<32>`  | SHA-256 of the payload (`payload_hash`)       |
-/// | timestamp   | `u64`         | Ledger timestamp of the release               |
-/// | actor       | `Address`     | Address receiving the released funds          |
-/// | amount      | `i128`        | Amount released (in stroops)                  |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i128) {
     let data_hash = payload_hash(
         env,
@@ -428,16 +424,7 @@ pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i
 
 /// Emits an `escrow_refunded` event when escrowed funds are returned to the company.
 ///
-/// # Event Payload
-///
-/// | Field       | Type          | Description                                  |
-/// |-------------|---------------|----------------------------------------------|
-/// | shipment_id | `u64`         | Shipment the escrow was held for              |
-/// | status      | `ShipmentStatus` | Current shipment status                   |
-/// | data_hash   | `BytesN<32>`  | SHA-256 of the payload (`payload_hash`)       |
-/// | timestamp   | `u64`         | Ledger timestamp of the refund                |
-/// | actor       | `Address`     | Company address receiving the refund          |
-/// | amount      | `i128`        | Amount refunded (in stroops)                  |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i128) {
     let data_hash = payload_hash(
         env,
@@ -462,17 +449,7 @@ pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i
 
 /// Emits a `milestone_payment_released` event when a partial escrow release occurs.
 ///
-/// # Event Payload
-///
-/// | Field       | Type          | Description                                  |
-/// |-------------|---------------|----------------------------------------------|
-/// | shipment_id | `u64`         | Shipment the milestone belongs to             |
-/// | status      | `ShipmentStatus` | Current shipment status                   |
-/// | data_hash   | `BytesN<32>`  | SHA-256 of the payload (`payload_hash`)       |
-/// | timestamp   | `u64`         | Ledger timestamp of the release               |
-/// | actor       | `Address`     | Carrier receiving the payment                 |
-/// | milestone   | `Symbol`      | Checkpoint that triggered the release         |
-/// | amount      | `i128`        | Amount released (in stroops)                  |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_milestone_payment_released(
     env: &Env,
     shipment_id: u64,
@@ -511,13 +488,7 @@ pub fn emit_milestone_payment_released(
 /// description (text, evidence, photos) is stored off-chain, and only its
 /// SHA-256 hash is published on the ledger for tamper-proof auditability.
 ///
-/// # Event Data
-///
-/// | Field       | Type         | Description                                      |
-/// |-------------|--------------|--------------------------------------------------|
-/// | shipment_id | `u64`        | Shipment under dispute                            |
-/// | raised_by   | `Address`    | Address that initiated the dispute                |
-/// | reason_hash | `BytesN<32>` | SHA-256 hash of the off-chain dispute evidence    |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_dispute_raised(
     env: &Env,
     shipment_id: u64,
@@ -532,15 +503,7 @@ pub fn emit_dispute_raised(
 
 /// Emits a `shipment_cancelled` event when a shipment is cancelled.
 ///
-/// # Event Payload
-///
-/// | Field       | Type          | Description                                   |
-/// |-------------|---------------|-----------------------------------------------|
-/// | shipment_id | `u64`         | Cancelled shipment identifier                  |
-/// | status      | `ShipmentStatus` | Always `Cancelled`                          |
-/// | data_hash   | `BytesN<32>`  | SHA-256 hash of the off-chain cancellation reason |
-/// | timestamp   | `u64`         | Ledger timestamp of the cancellation           |
-/// | actor       | `Address`     | Company or Admin that cancelled the shipment   |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_shipment_cancelled(
     env: &Env,
     shipment_id: u64,
@@ -561,13 +524,7 @@ pub fn emit_shipment_cancelled(
 
 /// Emits a `contract_upgraded` event when the contract WASM is upgraded.
 ///
-/// # Event Data
-///
-/// | Field         | Type         | Description                    |
-/// |---------------|--------------|--------------------------------|
-/// | admin         | `Address`    | Admin that triggered the upgrade |
-/// | new_wasm_hash | `BytesN<32>` | Hash of the new contract WASM   |
-/// | version       | `u32`        | Contract version after upgrade  |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_contract_upgraded(
     env: &Env,
     admin: &Address,
@@ -582,13 +539,7 @@ pub fn emit_contract_upgraded(
 
 /// Emits a `migration_reported` event summarizing the impact of an upgrade.
 ///
-/// # Event Data
-///
-/// | Field            | Type              | Description                                |
-/// |------------------|-------------------|--------------------------------------------|
-/// | current_version  | `u32`             | Version before migration                    |
-/// | target_version   | `u32`             | Version after migration                     |
-/// | affected_entries | `u64`             | Count of entries involved in the migration  |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_migration_report(env: &Env, report: &MigrationReport) {
     env.events().publish(
         (Symbol::new(env, crate::event_topics::MIGRATION_REPORTED),),
@@ -602,14 +553,7 @@ pub fn emit_migration_report(env: &Env, report: &MigrationReport) {
 
 /// Emits a `carrier_handoff` event when a shipment is transferred between carriers.
 ///
-/// # Event Data
-///
-/// | Field        | Type         | Description                                    |
-/// |--------------|--------------|------------------------------------------------|
-/// | shipment_id  | `u64`        | Shipment being handed off                      |
-/// | from_carrier | `Address`    | Current carrier handing off the shipment        |
-/// | to_carrier   | `Address`    | New carrier receiving the shipment             |
-/// | handoff_hash | `BytesN<32>` | SHA-256 hash of the off-chain handoff data     |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_carrier_handoff(
     env: &Env,
     shipment_id: u64,
@@ -632,15 +576,7 @@ pub fn emit_carrier_handoff(
 ///
 /// The full sensor payload remains off-chain; only the `data_hash` is emitted.
 ///
-/// # Event Data
-///
-/// | Field        | Type         | Description                                          |
-/// |--------------|--------------|------------------------------------------------------|
-/// | shipment_id  | `u64`        | Shipment where the breach occurred                   |
-/// | carrier      | `Address`    | Carrier that reported the breach                     |
-/// | breach_type  | `BreachType` | Category of the condition breach                     |
-/// | severity     | `Severity`   | Severity level for downstream analytics and alerting |
-/// | data_hash    | `BytesN<32>` | SHA-256 hash of the off-chain sensor data payload    |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_condition_breach(
     env: &Env,
     shipment_id: u64,
@@ -679,15 +615,7 @@ pub fn emit_admin_transferred(env: &Env, old_admin: &Address, new_admin: &Addres
 
 /// Emits a `shipment_expired` event when a shipment misses its deadline and is auto-cancelled.
 ///
-/// # Event Payload
-///
-/// | Field       | Type          | Description                                     |
-/// |-------------|---------------|-------------------------------------------------|
-/// | shipment_id | `u64`         | Cancelled shipment identifier                   |
-/// | status      | `ShipmentStatus` | Always `Cancelled`                           |
-/// | data_hash   | `BytesN<32>`  | SHA-256 of the payload (`payload_hash`)         |
-/// | timestamp   | `u64`         | Ledger timestamp of the expiry                  |
-/// | actor       | `Address`     | Admin/system address that triggered auto-cancel |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_shipment_expired(env: &Env, shipment_id: u64, admin: &Address) {
     let data_hash = payload_hash(
         env,
@@ -714,15 +642,7 @@ pub fn emit_shipment_expired(env: &Env, shipment_id: u64, admin: &Address) {
 /// The backend indexes this event to increment the carrier's on-time delivery
 /// count and compute punctuality metrics relative to the shipment deadline.
 ///
-/// # Event Payload
-///
-/// | Field       | Type          | Description                                      |
-/// |-------------|---------------|--------------------------------------------------|
-/// | shipment_id | `u64`         | Shipment that was delivered                       |
-/// | status      | `ShipmentStatus` | Always `Delivered`                            |
-/// | data_hash   | `BytesN<32>`  | Zero hash (delivery data is off-chain)            |
-/// | timestamp   | `u64`         | Ledger timestamp at the moment of delivery        |
-/// | actor       | `Address`     | Carrier that completed the delivery               |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_delivery_success(env: &Env, carrier: &Address, shipment_id: u64, delivery_time: u64) {
     let zero_hash: BytesN<32> = BytesN::from_array(env, &[0u8; 32]);
     env.events().publish(
@@ -742,14 +662,7 @@ pub fn emit_delivery_success(env: &Env, carrier: &Address, shipment_id: u64, del
 /// The backend indexes this event to increment the carrier's breach count and
 /// adjust the reliability score accordingly.
 ///
-/// # Event Data
-///
-/// | Field       | Type         | Description                                    |
-/// |-------------|--------------|------------------------------------------------|
-/// | carrier     | `Address`    | Carrier that reported (and caused) the breach   |
-/// | shipment_id | `u64`        | Shipment where the breach occurred              |
-/// | breach_type | `BreachType` | Category of the condition breach                |
-/// | severity    | `Severity`   | Severity level for analytics and alerting       |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_carrier_breach(
     env: &Env,
     carrier: &Address,
@@ -773,12 +686,7 @@ pub fn emit_carrier_breach(
 ///
 /// The backend indexes this event to penalise the carrier's reputation score.
 ///
-/// # Event Data
-///
-/// | Field       | Type      | Description                                     |
-/// |-------------|-----------|-------------------------------------------------|
-/// | carrier     | `Address` | Carrier that lost the dispute                    |
-/// | shipment_id | `u64`     | Shipment the dispute was raised on               |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_carrier_dispute_loss(env: &Env, carrier: &Address, shipment_id: u64) {
     env.events().publish(
         (Symbol::new(env, crate::event_topics::CARRIER_DISPUTE_LOSS),),
@@ -789,14 +697,7 @@ pub fn emit_carrier_dispute_loss(env: &Env, carrier: &Address, shipment_id: u64)
 /// Emits a `notification` event for backend indexing to trigger push notifications,
 /// emails, or in-app alerts.
 ///
-/// # Event Data
-///
-/// | Field             | Type               | Description                                    |
-/// |-------------------|--------------------|------------------------------------------------|
-/// | recipient         | `Address`          | Address to receive the notification             |
-/// | notification_type | `NotificationType` | Type of notification event                      |
-/// | shipment_id       | `u64`              | Related shipment ID                             |
-/// | data_hash         | `BytesN<32>`       | SHA-256 hash of notification payload            |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_notification(
     env: &Env,
     recipient: &Address,
@@ -858,13 +759,7 @@ pub fn emit_carrier_handoff_completed(
 
 /// Emits a `role_revoked` event when an admin revokes a role from an address.
 ///
-/// # Event Data
-///
-/// | Field   | Type      | Description                                |
-/// |---------|-----------|--------------------------------------------|
-/// | admin   | `Address` | Admin that performed the revocation         |
-/// | target  | `Address` | Address whose role was revoked              |
-/// | role    | `Role`    | The role that was revoked                   |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_role_revoked(env: &Env, admin: &Address, target: &Address, role: &crate::types::Role) {
     env.events().publish(
         (Symbol::new(env, crate::event_topics::ROLE_REVOKED),),
@@ -878,15 +773,7 @@ pub fn emit_role_revoked(env: &Env, admin: &Address, target: &Address, role: &cr
 /// and reactivation. It provides a complete history stream for compliance,
 /// analytics, and off-chain indexing.
 ///
-/// # Event Data (Payload Schema)
-///
-/// | Field       | Type                | Description                                    |
-/// |-------------|---------------------|------------------------------------------------|
-/// | action      | `RoleChangeAction`  | The type of change (Assigned/Revoked/Suspended/Reactivated) |
-/// | admin       | `Address`           | Admin who performed the action                 |
-/// | target      | `Address`           | Address whose role was changed                 |
-/// | role        | `Role`              | The role that was affected                     |
-/// | timestamp   | `u64`               | Ledger timestamp of the change                 |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_role_changed(
     env: &Env,
     action: &RoleChangeAction,
@@ -930,16 +817,7 @@ pub fn emit_carrier_milestone_rate(
 
 /// Emits a `force_cancelled` event when an admin or multi-sig forcibly cancels a shipment.
 ///
-/// # Event Payload
-///
-/// | Field            | Type          | Description                                              |
-/// |------------------|---------------|----------------------------------------------------------|
-/// | shipment_id      | `u64`         | Forcibly cancelled shipment identifier                   |
-/// | status           | `ShipmentStatus` | Always `Cancelled`                                    |
-/// | data_hash        | `BytesN<32>`  | SHA-256 hash of the mandatory off-chain reason document  |
-/// | timestamp        | `u64`         | Ledger timestamp of the force-cancel                     |
-/// | actor            | `Address`     | Admin or multi-sig address that triggered the cancel     |
-/// | escrow_refunded  | `i128`        | Amount refunded to the company (0 if no escrow held)     |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_force_cancelled(
     env: &Env,
     shipment_id: u64,
@@ -962,16 +840,7 @@ pub fn emit_force_cancelled(
 
 /// Emits a `force_released` event when an admin or multi-sig forcibly releases escrow for a shipment to carrier.
 ///
-/// # Event Payload
-///
-/// | Field           | Type          | Description                                              |
-/// |-----------------|---------------|----------------------------------------------------------|
-/// | shipment_id     | `u64`         | Shipment for which escrow is being released               |
-/// | status          | `ShipmentStatus` | Always `Delivered`                                     |
-/// | data_hash       | `BytesN<32>`  | SHA-256 hash of the mandatory off-chain reason document  |
-/// | timestamp       | `u64`         | Ledger timestamp of the force-release                     |
-/// | actor           | `Address`     | Admin address authorizing the force release               |
-/// | escrow_released | `i128`        | Amount released to the carrier                            |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_force_released(
     env: &Env,
     shipment_id: u64,
@@ -994,16 +863,7 @@ pub fn emit_force_released(
 
 /// Emits a `force_refunded` event when an admin or multi-sig forcibly refunds escrow for a shipment to company.
 ///
-/// # Event Payload
-///
-/// | Field           | Type          | Description                                              |
-/// |-----------------|---------------|----------------------------------------------------------|
-/// | shipment_id     | `u64`         | Shipment for which escrow is being refunded               |
-/// | status          | `ShipmentStatus` | Always `Cancelled`                                     |
-/// | data_hash       | `BytesN<32>`  | SHA-256 hash of the mandatory off-chain reason document  |
-/// | timestamp       | `u64`         | Ledger timestamp of the force-refund                      |
-/// | actor           | `Address`     | Admin address authorizing the force refund                |
-/// | escrow_refunded | `i128`        | Amount refunded to the company                            |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_force_refunded(
     env: &Env,
     shipment_id: u64,
@@ -1026,14 +886,7 @@ pub fn emit_force_refunded(
 
 /// Emits a `dispute_resolved` event when an admin settles a shipment dispute.
 ///
-/// # Event Data
-///
-/// | Field       | Type              | Description                                       |
-/// |-------------|-------------------|---------------------------------------------------|
-/// | shipment_id | `u64`             | Shipment that was disputed                         |
-/// | resolution  | `DisputeResolution` | The final settlement choice (Carrier or Company)  |
-/// | reason_hash | `BytesN<32>`      | SHA-256 hash of the off-chain settlement rationale |
-/// | admin       | `Address`         | Admin address that resolved the dispute            |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_dispute_resolved(
     env: &Env,
     shipment_id: u64,
@@ -1054,12 +907,7 @@ pub fn emit_dispute_resolved(
 
 /// Emits a `contract_paused` event when the contract is paused by an admin.
 ///
-/// # Event Data
-///
-/// | Field     | Type      | Description                                |
-/// |-----------|-----------|-------------------------------------------|
-/// | admin     | `Address` | Admin that paused the contract             |
-/// | timestamp | `u64`     | Ledger timestamp when pause occurred       |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_contract_paused(env: &Env, admin: &Address) {
     env.events().publish(
         (Symbol::new(env, crate::event_topics::CONTRACT_PAUSED),),
@@ -1069,12 +917,7 @@ pub fn emit_contract_paused(env: &Env, admin: &Address) {
 
 /// Emits a `contract_unpaused` event when the contract is unpaused by an admin.
 ///
-/// # Event Data
-///
-/// | Field     | Type      | Description                                |
-/// |-----------|-----------|-------------------------------------------|
-/// | admin     | `Address` | Admin that unpaused the contract           |
-/// | timestamp | `u64`     | Ledger timestamp when unpause occurred     |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_contract_unpaused(env: &Env, admin: &Address) {
     env.events().publish(
         (Symbol::new(env, crate::event_topics::CONTRACT_UNPAUSED),),
@@ -1084,14 +927,7 @@ pub fn emit_contract_unpaused(env: &Env, admin: &Address) {
 
 /// Emits an `escrow_frozen` event when escrow is blocked due to a dispute or safety control.
 ///
-/// # Event Data
-///
-/// | Field       | Type                | Description                                       |
-/// |-------------|---------------------|---------------------------------------------------|
-/// | shipment_id | `u64`               | Shipment whose escrow is now frozen                |
-/// | reason      | `EscrowFreezeReason`| Structured code explaining why escrow was frozen  |
-/// | caller      | `Address`           | Address that triggered the freeze (e.g. disputer) |
-/// | timestamp   | `u64`               | Ledger timestamp of the freeze                    |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_escrow_frozen(
     env: &Env,
     shipment_id: u64,
@@ -1109,18 +945,30 @@ pub fn emit_escrow_frozen(
     );
 }
 
+/// Emits a `proof_mint_failed` event when the settlement-proof NFT could not be
+/// minted for a final settlement. The settlement still completes.
+///
+/// Payload: `(shipment_id, settlement_id, recipient, timestamp)`.
+pub fn emit_proof_mint_failed(
+    env: &Env,
+    shipment_id: u64,
+    settlement_id: u64,
+    recipient: &Address,
+) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::PROOF_MINT_FAILED),),
+        (
+            shipment_id,
+            settlement_id,
+            recipient.clone(),
+            env.ledger().timestamp(),
+        ),
+    );
+}
+
 /// Emits a `platform_fee_collected` event when a fee is deducted from a deposit.
 ///
-/// # Event Payload
-///
-/// | Field       | Type          | Description                                  |
-/// |-------------|---------------|----------------------------------------------|
-/// | shipment_id | `u64`         | Shipment the fee is associated with           |
-/// | status      | `ShipmentStatus` | Current shipment status                   |
-/// | data_hash   | `BytesN<32>`  | SHA-256 of the payload (`payload_hash`)       |
-/// | timestamp   | `u64`         | Ledger timestamp of the fee collection        |
-/// | actor       | `Address`     | Treasury address receiving the fee            |
-/// | amount      | `i128`        | Fee amount collected (in stroops)             |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_platform_fee_collected(env: &Env, shipment_id: u64, treasury: &Address, amount: i128) {
     let data_hash = payload_hash(
         env,
@@ -1194,15 +1042,7 @@ pub fn emit_carrier_reactivated(env: &Env, admin: &Address, carrier: &Address) {
 
 /// Emits a `delivery_confirmed` event when a receiver confirms delivery.
 ///
-/// # Event Payload
-///
-/// | Field       | Type          | Description                                  |
-/// |-------------|---------------|----------------------------------------------|
-/// | shipment_id | `u64`         | Shipment that was delivered                   |
-/// | status      | `ShipmentStatus` | Always `Delivered`                        |
-/// | data_hash   | `BytesN<32>`  | SHA-256 hash of the delivery confirmation     |
-/// | timestamp   | `u64`         | Ledger timestamp of the confirmation          |
-/// | actor       | `Address`     | Receiver address that confirmed delivery      |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_delivery_confirmed(
     env: &Env,
     shipment_id: u64,
@@ -1223,15 +1063,7 @@ pub fn emit_delivery_confirmed(
 
 /// Emits a `geofence_event` when a carrier crosses a geofence boundary.
 ///
-/// # Event Payload
-///
-/// | Field       | Type          | Description                                  |
-/// |-------------|---------------|----------------------------------------------|
-/// | shipment_id | `u64`         | Shipment the geofence event belongs to        |
-/// | zone_type   | `GeofenceEvent` | Type of geofence boundary crossed           |
-/// | data_hash   | `BytesN<32>`  | SHA-256 hash of the off-chain location data   |
-/// | timestamp   | `u64`         | Ledger timestamp of the geofence event        |
-/// | actor       | `Address`     | Carrier that triggered the geofence event     |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_geofence_event(
     env: &Env,
     shipment_id: u64,
@@ -1253,16 +1085,7 @@ pub fn emit_geofence_event(
 
 /// Emits an `eta_updated` event when the estimated arrival time changes.
 ///
-/// # Event Payload
-///
-/// | Field       | Type          | Description                                  |
-/// |-------------|---------------|----------------------------------------------|
-/// | shipment_id | `u64`         | Shipment the ETA update belongs to            |
-/// | status      | `ShipmentStatus` | Current shipment status                   |
-/// | data_hash   | `BytesN<32>`  | SHA-256 hash of the off-chain ETA data        |
-/// | timestamp   | `u64`         | Ledger timestamp of the ETA update            |
-/// | actor       | `Address`     | Carrier that updated the ETA                  |
-/// | new_eta     | `u64`         | New estimated time of arrival                 |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_eta_updated(
     env: &Env,
     shipment_id: u64,
@@ -1297,10 +1120,10 @@ pub fn emit_config_updated(env: &Env, admin: &Address, new_config: &crate::Contr
     );
 }
 
-pub fn emit_quota_set(env: &Env, company: &Address, count: u32, window_start: u64) {
+pub fn emit_quota_set(env: &Env, admin: &Address, max_per_window: u32, window_seconds: u64) {
     env.events().publish(
         (Symbol::new(env, crate::event_topics::QUOTA_SET),),
-        (company.clone(), count, window_start),
+        (admin.clone(), max_per_window, window_seconds),
     );
 }
 
@@ -1311,14 +1134,7 @@ pub fn emit_quota_set(env: &Env, company: &Address, count: u32, window_start: u6
 /// its SHA-256 hash is published on the ledger, so the submission is
 /// timestamped and tamper-evident without putting the payload on-chain.
 ///
-/// # Event Data
-///
-/// | Field         | Type         | Description                                   |
-/// |---------------|--------------|-----------------------------------------------|
-/// | shipment_id   | `u64`        | Shipment whose dispute the evidence belongs to |
-/// | submitted_by  | `Address`    | Address that submitted the evidence            |
-/// | index         | `u32`        | Zero-based index of the evidence entry         |
-/// | evidence_hash | `BytesN<32>` | SHA-256 hash of the off-chain evidence document |
+/// See `docs/events.md` for the full payload layout.
 pub fn emit_evidence_added(
     env: &Env,
     shipment_id: u64,

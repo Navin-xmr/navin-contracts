@@ -4,7 +4,6 @@ extern crate std;
 
 use super::test_helpers::*;
 
-
 #[test]
 fn test_get_circuit_breaker_status_closed_by_default() {
     let (_env, client, admin, token_contract) = setup_shipment_env();
@@ -641,4 +640,3 @@ fn test_single_execution_succeeds_and_applies_action() {
 // ForceRelease proposal: single execution releases escrow correctly.
 // Verifies that the `ProposalAlreadyExecuted` guard works for non-Upgrade actions.
 // ForceRelease reason_hash validation and audit trail tests
-

@@ -5,7 +5,7 @@ integrators and contract clients for `NavinShipment`.
 
 ## Ordering Rules
 
-- Use the exact argument order from each `pub fn` in `src/lib.rs`.
+- Use the exact argument order from each `pub fn` in `../contracts/shipment/src/lib.rs`.
 - Treat ordering as part of the public interface contract.
 - For authenticated entrypoints, signatures are bound to ordered argument tuples.
 - For token interoperability, `transfer` is always invoked as
@@ -61,8 +61,8 @@ current exported methods are:
 - `reactivate_carrier(env, admin, carrier)`
 - `is_carrier_suspended(env, carrier)`
 - `revoke_role(env, admin, target)`
-- `suspend_role(env, admin, target)`
-- `reactivate_role(env, admin, target)`
+- `suspend_role(env, admin, target, role)`
+- `reactivate_role(env, admin, target, role)`
 - `suspend_company(env, admin, company)`
 - `reactivate_company(env, admin, company)`
 
@@ -103,6 +103,8 @@ current exported methods are:
 - `handoff_shipment(env, caller, shipment_id, new_carrier, handoff_hash)`
 - `report_condition_breach(env, caller, shipment_id, breach_hash, severity)`
 - `verify_delivery_proof(env, shipment_id, proof_hash)`
+- `verify_partial_delivery_proof(env, shipment_id, index, proof_hash)`
+- `get_partial_delivery_proof_count(env, shipment_id)`
 - `get_shipment_reference(env, shipment_id)`
 - `check_deadline(env, shipment_id)`
 
@@ -127,7 +129,7 @@ current exported methods are:
 
 ## Regression Coverage
 
-`src/test_signature_argument_ordering.rs` enforces:
+`../contracts/shipment/src/test_signature_argument_ordering.rs` enforces:
 
 - canonical auth payload tuple ordering for representative integrator calls;
 - canonical token boundary ordering for `transfer(from, to, amount)` during

@@ -544,6 +544,115 @@ mod tests {
         client.report_geofence_event(&carrier, &shipment_id, &GeofenceEvent::ZoneEntry, &hash);
     }
 
+    // ── Pause guards on carrier / quota entry points (issue #1242) ───────────
+
+    /// Create a contract with one company, one carrier and one shipment.
+    fn setup_shipment_env() -> (Env, NavinShipmentClient<'static>, Address, Address, Address, u64) {
+        let (env, client, admin, token_contract) = setup_test_env();
+        let company = Address::generate(&env);
+        let carrier = Address::generate(&env);
+        let receiver = Address::generate(&env);
+
+        client.initialize(&admin, &token_contract);
+        client.add_company(&admin, &company);
+        client.add_carrier(&admin, &carrier);
+
+        let hash = BytesN::from_array(&env, &[1u8; 32]);
+        crate::test_utils::allow_carrier(&client, &company, &carrier);
+        let shipment_id = client.create_shipment(
+            &company,
+            &receiver,
+            &carrier,
+            &hash,
+            &Vec::new(&env),
+            &future_deadline(&env, 86400),
+        );
+
+        (env, client, admin, company, carrier, shipment_id)
+    }
+
+    #[test]
+    fn test_update_eta_fails_when_paused() {
+        let (env, client, admin, _company, carrier, shipment_id) = setup_shipment_env();
+        let hash = BytesN::from_array(&env, &[2u8; 32]);
+        let eta = env.ledger().timestamp() + 3600;
+
+        client.pause(&admin);
+        let result = client.try_update_eta(&carrier, &shipment_id, &eta, &hash);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+
+        client.unpause(&admin);
+        client.update_eta(&carrier, &shipment_id, &eta, &hash);
+    }
+
+    #[test]
+    fn test_handoff_shipment_fails_when_paused() {
+        let (env, client, admin, company, carrier, shipment_id) = setup_shipment_env();
+        let new_carrier = Address::generate(&env);
+        client.add_carrier(&admin, &new_carrier);
+        crate::test_utils::allow_carrier(&client, &company, &new_carrier);
+        let hash = BytesN::from_array(&env, &[3u8; 32]);
+
+        client.pause(&admin);
+        let result = client.try_handoff_shipment(&carrier, &new_carrier, &shipment_id, &hash);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+        assert_eq!(
+            client.get_shipment(&shipment_id).carrier,
+            carrier,
+            "paused handoff must not reassign the carrier"
+        );
+
+        client.unpause(&admin);
+        client.handoff_shipment(&carrier, &new_carrier, &shipment_id, &hash);
+        assert_eq!(client.get_shipment(&shipment_id).carrier, new_carrier);
+    }
+
+    #[test]
+    fn test_report_condition_breach_fails_when_paused() {
+        let (env, client, admin, _company, carrier, shipment_id) = setup_shipment_env();
+        let hash = BytesN::from_array(&env, &[4u8; 32]);
+        let status_before = client.get_shipment(&shipment_id).status;
+
+        client.pause(&admin);
+        let result = client.try_report_condition_breach(
+            &carrier,
+            &shipment_id,
+            &BreachType::TemperatureHigh,
+            &Severity::Low,
+            &hash,
+        );
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+        assert_eq!(
+            client.get_shipment(&shipment_id).status,
+            status_before,
+            "paused breach report must not change shipment status"
+        );
+
+        client.unpause(&admin);
+        client.report_condition_breach(
+            &carrier,
+            &shipment_id,
+            &BreachType::TemperatureHigh,
+            &Severity::Low,
+            &hash,
+        );
+    }
+
+    #[test]
+    fn test_set_creation_quota_fails_when_paused() {
+        let (_env, client, admin) = setup_config_env();
+        let quota_before = client.get_contract_config().creation_quota_max;
+
+        client.pause(&admin);
+        let result = client.try_set_creation_quota(&admin, &5, &3600);
+        assert_eq!(result, Err(Ok(crate::NavinError::ContractPaused)));
+        assert_eq!(client.get_contract_config().creation_quota_max, quota_before);
+
+        client.unpause(&admin);
+        client.set_creation_quota(&admin, &5, &3600);
+        assert_eq!(client.get_contract_config().creation_quota_max, 5);
+    }
+
     // ── Circuit breaker transition matrix tests (issue #19) ───────────────────────
 
     /// Test valid Closed to Open transition when failure threshold is reached.

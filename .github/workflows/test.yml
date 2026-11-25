@@ -2,9 +2,9 @@ name: Navin Smart Contracts CI
 
 on:
   push:
-    branches: ["prod"]
+    branches: ["main", "prod"]
   pull_request:
-    branches: ["prod"]
+    branches: ["main", "prod"]
   workflow_dispatch:
 
 jobs:
@@ -40,6 +40,22 @@ jobs:
       - name: Run tests
         run: cargo test
 
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
   coverage:
     name: Test Coverage
     runs-on: ubuntu-latest
@@ -66,6 +82,19 @@ jobs:
           path: |
             target/llvm-cov/lcov.info
             target/llvm-cov/html
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck --source-path=scripts -x scripts/*.sh
 
   wasm-build:
     name: Build WASM Contracts

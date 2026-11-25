@@ -43,9 +43,7 @@ pub fn run_system_health_check_range(env: &Env, start_id: u64, limit: u64) -> Sy
 
             match shipment_opt {
                 Some(shipment) => {
-                    let is_terminal = shipment.status == ShipmentStatus::Delivered
-                        || shipment.status == ShipmentStatus::Cancelled
-                        || shipment.status == ShipmentStatus::Disputed;
+                    let is_terminal = shipment.status.is_terminal();
 
                     if !is_terminal {
                         active_shipments_counted += 1;

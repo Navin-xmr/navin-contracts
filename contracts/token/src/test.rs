@@ -6,7 +6,7 @@ extern crate std;
 use crate::{test_utils::setup_env, NavinToken, NavinTokenClient};
 use alloc::string::ToString;
 use soroban_sdk::{
-    testutils::{Address as _, Events as _, Ledger as _},
+    testutils::{storage::Instance, Address as _, Events as _, Ledger as _},
     Address, Env, String, Symbol, TryFromVal,
 };
 
@@ -24,6 +24,22 @@ fn initialize_token(client: &NavinTokenClient, env: &Env, admin: &Address, total
     client.initialize(admin, &name, &symbol, &total_supply);
 }
 
+// Finds an unversioned SEP-41 event by its first topic.
+fn find_sep41_event(
+    env: &Env,
+    name: &str,
+) -> Option<(soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val)> {
+    env.events()
+        .all()
+        .iter()
+        .find(|(_cid, topics, _data)| {
+            topics.len() > 1
+                && Symbol::try_from_val(env, &topics.get(0).unwrap()).ok()
+                    == Some(Symbol::new(env, name))
+        })
+        .map(|(_cid, topics, data)| (topics, data))
+}
+
 // ============================================================================
 // Basic Token Tests
 // ============================================================================
@@ -38,6 +54,15 @@ fn test_initialize() {
     assert_eq!(client.symbol(), String::from_str(&env, "NVN"));
     assert_eq!(client.total_supply(), 1_000_000);
     assert_eq!(client.balance(&admin), 1_000_000);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #11)")]
+fn test_initialize_empty_metadata_returns_invalid_metadata() {
+    let (env, client, admin) = setup_token_env();
+    let empty = String::from_str(&env, "");
+    let symbol = String::from_str(&env, "NVN");
+    client.initialize(&admin, &empty, &symbol, &1000);
 }
 
 #[test]
@@ -81,6 +106,31 @@ fn test_transfer() {
 
     assert_eq!(client.balance(&admin), 999_800);
     assert_eq!(client.balance(&recipient), 200);
+}
+
+#[test]
+fn test_transfer_self_no_op() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    client.transfer(&admin, &admin, &500);
+
+    assert_eq!(client.balance(&admin), 1_000_000);
+    assert_eq!(client.total_supply(), 1_000_000);
+}
+
+#[test]
+fn test_transfer_from_self_no_op() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let spender = Address::generate(&env);
+    client.approve(&admin, &spender, &500, &u32::MAX);
+    client.transfer_from(&spender, &admin, &admin, &200);
+
+    assert_eq!(client.balance(&admin), 1_000_000);
+    assert_eq!(client.total_supply(), 1_000_000);
+    assert_eq!(client.allowance(&admin, &spender), 300);
 }
 
 #[test]
@@ -141,7 +191,7 @@ fn test_add_allowed_metadata_key_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #2)")]
+#[should_panic(expected = "Error(Contract, #102)")]
 fn test_add_allowed_metadata_key_unauthorized() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -152,7 +202,7 @@ fn test_add_allowed_metadata_key_unauthorized() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #5)")]
+#[should_panic(expected = "Error(Contract, #105)")]
 fn test_add_allowed_metadata_key_already_exists() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -178,7 +228,7 @@ fn test_remove_allowed_metadata_key_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #4)")]
+#[should_panic(expected = "Error(Contract, #104)")]
 fn test_remove_allowed_metadata_key_not_found() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -188,7 +238,7 @@ fn test_remove_allowed_metadata_key_not_found() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #2)")]
+#[should_panic(expected = "Error(Contract, #102)")]
 fn test_remove_allowed_metadata_key_unauthorized() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -220,7 +270,7 @@ fn test_set_metadata_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #3)")]
+#[should_panic(expected = "Error(Contract, #103)")]
 fn test_set_metadata_key_not_allowed() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -233,7 +283,7 @@ fn test_set_metadata_key_not_allowed() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #2)")]
+#[should_panic(expected = "Error(Contract, #102)")]
 fn test_set_metadata_unauthorized() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -274,7 +324,7 @@ fn test_remove_metadata_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #4)")]
+#[should_panic(expected = "Error(Contract, #104)")]
 fn test_remove_metadata_not_found() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -284,7 +334,7 @@ fn test_remove_metadata_not_found() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #2)")]
+#[should_panic(expected = "Error(Contract, #102)")]
 fn test_remove_metadata_unauthorized() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -869,6 +919,41 @@ fn test_batch_transfer_empty_batch_rejected() {
 }
 
 #[test]
+fn test_batch_transfer_accepts_max_batch() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let recipient = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    for _ in 0..crate::MAX_BATCH_SIZE {
+        recipients.push_back((recipient.clone(), 1));
+    }
+
+    client.batch_transfer(&admin, &recipients);
+    assert_eq!(client.balance(&recipient), crate::MAX_BATCH_SIZE as i128);
+}
+
+#[test]
+fn test_batch_transfer_rejects_over_max_batch() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let recipient = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    for _ in 0..=crate::MAX_BATCH_SIZE {
+        recipients.push_back((recipient.clone(), 1));
+    }
+
+    assert_eq!(
+        client.try_batch_transfer(&admin, &recipients),
+        Err(Ok(crate::TokenError::BatchTooLarge)),
+        "MAX_BATCH_SIZE + 1 recipients must fail fast"
+    );
+    assert_eq!(client.balance(&recipient), 0);
+    assert_eq!(client.balance(&admin), 1_000_000);
+}
+
+#[test]
 fn test_batch_transfer_skips_self_transfer_leg() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -958,6 +1043,52 @@ fn test_transfer_admin_success() {
 
     client.accept_admin_transfer(&new_admin);
     assert_eq!(client.get_admin(), new_admin);
+}
+
+#[test]
+fn test_pending_admin_query_and_cancel() {
+    use crate::TokenError;
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    assert_eq!(
+        client.try_get_pending_admin(),
+        Err(Ok(TokenError::Unauthorized)),
+        "no nominee before a proposal"
+    );
+
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+    assert_eq!(client.get_pending_admin(), new_admin);
+
+    client.cancel_admin_transfer(&admin);
+    assert_eq!(
+        client.try_get_pending_admin(),
+        Err(Ok(TokenError::Unauthorized)),
+        "cancelled nominee must no longer be queryable"
+    );
+    assert_eq!(
+        client.try_accept_admin_transfer(&new_admin),
+        Err(Ok(TokenError::Unauthorized)),
+        "cancelled nominee must not be able to accept"
+    );
+    assert_eq!(client.get_admin(), admin);
+}
+
+#[test]
+fn test_cancel_admin_transfer_rejects_non_admin() {
+    use crate::TokenError;
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+
+    let non_admin = Address::generate(&env);
+    assert_eq!(
+        client.try_cancel_admin_transfer(&non_admin),
+        Err(Ok(TokenError::Unauthorized))
+    );
+    assert_eq!(client.get_pending_admin(), new_admin);
 }
 
 #[test]
@@ -1171,6 +1302,56 @@ fn test_allowed_metadata_key_ttl_expiration_sync() {
     assert_eq!(allowed_keys.get(0), Some(key));
 }
 
+// ============================================================================
+// Instance Storage TTL Tests (issue #1286)
+// ============================================================================
+
+#[test]
+fn test_transfer_extends_instance_ttl() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let ttl_after_init = env.as_contract(&client.address, || {
+        env.storage().instance().get_ttl()
+    });
+
+    // Persistent balances have a much shorter default TTL than the instance;
+    // keep the sender's balance alive across the ledger jump below so the
+    // transfer itself is not blocked by an archived balance entry.
+    env.as_contract(&client.address, || {
+        env.storage().persistent().extend_ttl(
+            &crate::storage::DataKey::Balance(admin.clone()),
+            crate::storage::INSTANCE_TTL_EXTEND_TO,
+            crate::storage::INSTANCE_TTL_EXTEND_TO,
+        );
+    });
+
+    // Bring the remaining TTL just below the bump threshold (without letting
+    // the instance expire) so a regular operation has to refresh it.
+    if ttl_after_init > crate::storage::INSTANCE_TTL_THRESHOLD {
+        env.ledger().with_mut(|ledger| {
+            ledger.sequence_number +=
+                ttl_after_init - crate::storage::INSTANCE_TTL_THRESHOLD + 1;
+        });
+    }
+
+    let ttl_before = env.as_contract(&client.address, || {
+        env.storage().instance().get_ttl()
+    });
+    assert!(ttl_before < crate::storage::INSTANCE_TTL_THRESHOLD);
+
+    let recipient = Address::generate(&env);
+    client.transfer(&admin, &recipient, &200);
+
+    let ttl_after = env.as_contract(&client.address, || {
+        env.storage().instance().get_ttl()
+    });
+    assert!(
+        ttl_after >= crate::storage::INSTANCE_TTL_EXTEND_TO,
+        "transfer must refresh the instance storage TTL"
+    );
+}
+
 #[test]
 fn event_fixtures_schema_version_topics_all_events() {
     let (env, client, admin) = setup_token_env();
@@ -1218,4 +1399,76 @@ fn event_fixtures_schema_version_topics_all_events() {
         Symbol::try_from_val(&env, &admin_tr_event.1.get(1).unwrap()).unwrap(),
         Symbol::new(&env, "v1")
     );
+}
+
+#[test]
+fn sep41_events_have_address_topics_and_amount_data() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1000);
+    env.mock_all_auths();
+
+    // Initialization mints the supply to the admin.
+    let (topics, data) = find_sep41_event(&env, "mint").expect("mint event");
+    assert_eq!(topics.len(), 2);
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(1).unwrap()).unwrap(),
+        admin
+    );
+    assert_eq!(i128::try_from_val(&env, &data).unwrap(), 1000);
+
+    let to = Address::generate(&env);
+    let spender = Address::generate(&env);
+    client.approve(&admin, &spender, &100, &u32::MAX);
+    let (topics, data) = find_sep41_event(&env, "approve").expect("approve event");
+    assert_eq!(topics.len(), 3);
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(1).unwrap()).unwrap(),
+        admin
+    );
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(2).unwrap()).unwrap(),
+        spender
+    );
+    let (amount, expiration): (i128, u32) = TryFromVal::try_from_val(&env, &data).unwrap();
+    assert_eq!((amount, expiration), (100, u32::MAX));
+
+    client.transfer(&admin, &to, &10);
+    let (topics, data) = find_sep41_event(&env, "transfer").expect("transfer event");
+    assert_eq!(topics.len(), 3);
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(1).unwrap()).unwrap(),
+        admin
+    );
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(2).unwrap()).unwrap(),
+        to
+    );
+    assert_eq!(i128::try_from_val(&env, &data).unwrap(), 10);
+
+    client.transfer_from(&spender, &admin, &to, &5);
+    // transfer_from also emits a standard transfer event for (from, to).
+    let transfers = env.events().all();
+    let mut found = false;
+    for (_cid, topics, data) in transfers.iter() {
+        if Symbol::try_from_val(&env, &topics.get(0).unwrap()).ok()
+            != Some(Symbol::new(&env, "transfer"))
+        {
+            continue;
+        }
+        let from = Address::try_from_val(&env, &topics.get(1).unwrap()).unwrap();
+        let recipient = Address::try_from_val(&env, &topics.get(2).unwrap()).unwrap();
+        if from == admin && recipient == to && i128::try_from_val(&env, &data).unwrap() == 5 {
+            found = true;
+        }
+    }
+    assert!(found, "transfer_from must emit a SEP-41 transfer event");
+
+    client.burn_from(&spender, &admin, &7);
+    let (topics, data) = find_sep41_event(&env, "burn").expect("burn event");
+    assert_eq!(topics.len(), 2);
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(1).unwrap()).unwrap(),
+        admin
+    );
+    assert_eq!(i128::try_from_val(&env, &data).unwrap(), 7);
 }

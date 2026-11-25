@@ -490,13 +490,31 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             73,
             InvalidInput,
             NoRetry,
-            "Symbol could not be decoded: the declared content length exceeds              the decode buffer. Use an event type of 24 characters or fewer.",
+            "Symbol could not be decoded: its XDR declares more content than it              carries. Pass a valid Symbol of at most 32 characters.",
         ),
         NavinError::AuditLogLimitExceeded => (
             76,
             LimitExceeded,
             NoRetry,
             "Maximum allowed audit log entries has been reached.",
+        ),
+        NavinError::NftMintFailed => (
+            77,
+            Transient,
+            RetryAfterDelay,
+            "Configured NFT contract failed to mint the settlement proof.",
+        ),
+        NavinError::NftConfigurationFailed => (
+            78,
+            InvalidState,
+            NoRetry,
+            "NFT contract could not be initialized or authorized for settlement proofs.",
+        ),
+        NavinError::SettlementNotFound => (
+            79,
+            NotFound,
+            NoRetry,
+            "Settlement ID does not exist.",
         ),
     };
 
@@ -583,6 +601,9 @@ fn message_for(error: NavinError) -> Symbol {
         NavinError::InvalidSymbolEncoding => symbol_short!("sym_enc"),
         NavinError::MultiSigProposalPending => symbol_short!("ms_pend"),
         NavinError::AuditLogLimitExceeded => symbol_short!("audit_lim"),
+        NavinError::NftMintFailed => symbol_short!("nft_mint"),
+        NavinError::NftConfigurationFailed => symbol_short!("nft_cfg"),
+        NavinError::SettlementNotFound => symbol_short!("settle"),
     }
 }
 
@@ -666,6 +687,9 @@ pub fn get_error_info(code: u32) -> ContractErrorInfo {
         74 => error_info(NavinError::MultiSigProposalPending),
         75 => error_info(NavinError::CarrierAlreadyWhitelisted),
         76 => error_info(NavinError::AuditLogLimitExceeded),
+        77 => error_info(NavinError::NftMintFailed),
+        78 => error_info(NavinError::NftConfigurationFailed),
+        79 => error_info(NavinError::SettlementNotFound),
         _ => ContractErrorInfo {
             code,
             category: ErrorCategory::InvalidInput,
@@ -837,8 +861,10 @@ mod tests {
 
     #[test]
     fn test_issue_889_unknown_code_contrast() {
-        let info = get_error_info(77);
-        assert_eq!(info.code, 77);
+        // 77 used to be unmapped; it now resolves to `NftMintFailed`, so an
+        // unmapped code keeps exercising the fallback.
+        let info = get_error_info(999_999);
+        assert_eq!(info.code, 999_999);
         assert_eq!(info.category, ErrorCategory::InvalidInput);
         assert_eq!(info.retry, RetryGuidance::NoRetry);
         assert_eq!(info.message, symbol_short!("unknown"));
@@ -922,6 +948,9 @@ mod tests {
             NavinError::InvalidSymbolEncoding,
             NavinError::MultiSigProposalPending,
             NavinError::AuditLogLimitExceeded,
+            NavinError::NftMintFailed,
+            NavinError::NftConfigurationFailed,
+            NavinError::SettlementNotFound,
         ];
 
         for error in errors {

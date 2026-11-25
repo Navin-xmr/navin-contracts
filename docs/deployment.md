@@ -89,36 +89,40 @@ The token contract begins with the admin holding the entire `total_supply` balan
 
 ---
 
-## NFT Contract Initialization
+## NFT Contract Deployment
 
 ### NFT Contract Setup
 
-The NFT contract (`navin-nft` / `contracts/nft`) manages shipment digital assets. It can be deployed and initialized independently with no ordering dependency relative to shipment or token deployment.
+The NFT contract (`navin-nft` / `contracts/nft`) manages shipment digital assets. Its collection metadata and admin are supplied atomically as constructor arguments at deployment; there is no separate `initialize` invocation.
 
-**Initialize Parameters:**
+**Constructor Parameters:**
 
-- `admin` — Account that owns the NFT contract and manages minting/pausing operations
+- `admin` — Address that owns the NFT contract and manages minting/pausing operations. For settlement proofs, use the deployed shipment contract address.
 - `name` — NFT collection name (e.g., "Navin Shipment NFT")
 - `symbol` — NFT collection ticker symbol (e.g., "NAVNFT")
 
-**Example initialization command:**
+**Example deployment command:**
 
 ```bash
-stellar contract invoke \
-  --id "$NFT_CONTRACT_ID" \
+stellar contract deploy \
+  --wasm target/wasm32-unknown-unknown/release/navin_nft.wasm \
   --source-account "$STELLAR_IDENTITY" \
   --rpc-url "$STELLAR_RPC_URL" \
   --network-passphrase "$STELLAR_NETWORK_PASSPHRASE" \
   -- \
-  initialize \
-  --admin "$(stellar keys address $STELLAR_IDENTITY)" \
+  --admin "$NFT_ADMIN_ADDRESS" \
   --name "Navin Shipment NFT" \
   --symbol "NAVNFT"
 ```
 
+For a settlement-proof NFT, deploy the shipment contract first and set
+`NFT_ADMIN_ADDRESS` to its contract address. Then register the NFT with
+`configure_settlement_nft`; that call verifies `get_admin()` and does not
+initialize or modify the NFT.
+
 ### NFT Admin Operations
 
-After initialization, the admin can perform the following operations:
+After deployment, the admin can perform the following operations:
 
 1. **Mint Shipment NFTs** — Mint a new shipment NFT via `mint(admin, to, token_id)`
 2. **Transfer Admin Rights** — Pass control to another address via `transfer_admin(current_admin, new_admin)`
@@ -136,12 +140,11 @@ Build all workspace contracts for the WASM target:
 make build
 ```
 
-This builds `navin-token`, `navin-nft`, and `shipment`. The deploy and
-initialization scripts below operate on `navin-token` and `shipment` only.
+This builds `navin-token`, `navin-nft`, and `shipment`.
 
 ### 2. Deploy Contracts
 
-Deploy the token and shipment contracts to testnet:
+Deploy the contracts to testnet:
 
 ```bash
 ./scripts/deploy-testnet.sh
@@ -161,9 +164,9 @@ Deploying contracts to Stellar testnet...
 Identity: navin-testnet
 RPC URL: https://soroban-testnet.stellar.org:443
 Deploying token contract...
-Token contract deployed: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+Token contract deployed: <TOKEN_CONTRACT_ID>
 Deploying shipment contract...
-Shipment contract deployed: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+Shipment contract deployed: <SHIPMENT_CONTRACT_ID>
 
 Deployment complete!
 Contract addresses saved to .env.testnet
@@ -189,9 +192,9 @@ Expected output:
 
 ```
 Initializing contracts on Stellar testnet...
-Token contract: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-Shipment contract: CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-Admin address: GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+Token contract: <TOKEN_CONTRACT_ID>
+Shipment contract: <SHIPMENT_CONTRACT_ID>
+Admin address: <ADMIN_ADDRESS>
 
 Initializing token contract...
 Token contract initialized successfully
@@ -218,7 +221,7 @@ After deployment, verify the contracts are working:
      --network-passphrase "$STELLAR_NETWORK_PASSPHRASE" \
      -- \
      balance \
-     --id "$(stellar keys address $STELLAR_IDENTITY)"
+     --address "$(stellar keys address $STELLAR_IDENTITY)"
    ```
 
 2. **Check shipment contract admin**:

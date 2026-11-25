@@ -2,6 +2,14 @@
 
 Complete guide for integrating the Navin shipment tracking smart contract with your Express.js backend using the Stellar JavaScript/TypeScript SDK.
 
+> **Scope note:** this guide covers the production backend integration path
+> (JS/TS, Stellar SDK, Express.js). For short Rust snippets that call the
+> contract directly through `NavinShipmentClient` (e.g. in tests or local
+> scripts), see [`docs/client-examples.md`](client-examples.md) instead —
+> it covers the same contract calls (`create_shipment`, `deposit_escrow`,
+> etc.) but for the Rust/Soroban test-client stack, not the JS/TS backend
+> stack documented here.
+
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
@@ -13,6 +21,9 @@ Complete guide for integrating the Navin shipment tracking smart contract with y
 7. [Event Listening](#event-listening)
 8. [Transaction Verification](#transaction-verification)
 9. [Complete Examples](#complete-examples)
+10. [Best Practices](#best-practices)
+11. [Error Code Mapping](#error-code-mapping)
+12. [Testing](#testing)
 
 ## Contract Schema (ABI)
 
@@ -94,9 +105,9 @@ This ensures the schema file stays in sync with the contract code on every PR. I
 
 ## Event Payload Schemas
 
-Use `docs/event_schemas.md` as the central JSON-schema-like reference for emitted event payloads and field ordering.
+Use [`docs/events.md`](events.md) as the central reference for emitted event payloads, field ordering, type mappings, and the `schema_version`/`event_counter`/`idempotency_key` versioning policy. `docs/event_schemas.md` now just links there.
 
-For quick contract client call examples, see [Client Examples](docs/client-examples.md).
+For quick contract client call examples, see [Client Examples](client-examples.md).
 
 Indexer conformance fixtures are validated by tests in:
 
@@ -385,6 +396,31 @@ return scValToNative(result.returnValue);
 }
 
 ````
+
+## Settlement Proof NFTs
+
+The shipment contract can mint a proof-of-delivery / settlement NFT on
+delivery or dispute resolution once it is configured as the NFT contract's
+admin. See `docs/deployment.md` for the full deployment sequence; the short
+version:
+
+1. Deploy the `navin-nft` contract with the **shipment contract's address**
+   as the constructor `admin` argument (not an EOA).
+2. Call `configure_settlement_nft(admin, nft_contract, name, nft_symbol)` on
+   the shipment contract. `name`/`nft_symbol` are accepted for interface
+   compatibility but ignored — collection metadata is fixed at NFT
+   deployment.
+
+`configure_settlement_nft` verifies `nft_contract.get_admin() ==
+<this shipment contract>` and fails closed otherwise:
+
+- `NftConfigurationFailed` (error code 78) — the target contract doesn't
+  expose `get_admin`, or its admin is not this shipment contract. This is
+  the expected result if the NFT was deployed with a regular account as
+  admin instead of the shipment contract.
+- `NftMintFailed` (error code 77) — returned from delivery/dispute
+  settlement flows when the configured NFT contract rejects a mint call
+  (e.g. token ID already minted).
 
 ## Immutable Provenance Queries
 
@@ -1008,9 +1044,9 @@ export const ShipmentModel = mongoose.model("Shipment", shipmentSchema);
 ```bash
 # .env
 NODE_ENV=development
-STELLAR_SECRET_KEY=SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-SHIPMENT_CONTRACT_ID=CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-TOKEN_CONTRACT_ID=CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+STELLAR_SECRET_KEY=<STELLAR_SECRET_KEY>
+SHIPMENT_CONTRACT_ID=<SHIPMENT_CONTRACT_ID>
+TOKEN_CONTRACT_ID=<TOKEN_CONTRACT_ID>
 MONGODB_URI=mongodb://localhost:27017/navin
 ```
 
@@ -1158,9 +1194,9 @@ describe("Shipment Integration", () => {
 
   it("should create shipment and verify transaction", async () => {
     const shipmentData = {
-      sender: "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-      receiver: "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-      carrier: "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      sender: "GAAAAFAKESENDERADDRESS000000000000000000000000000000000",
+      receiver: "GAAAAFAKERECEIVERADDRESS00000000000000000000000000000000",
+      carrier: "GAAAAFAKECARRIERADDRESS000000000000000000000000000000000",
       offChainData: {
         description: "Test shipment",
         weight: 10.5,

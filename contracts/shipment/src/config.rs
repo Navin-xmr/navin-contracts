@@ -1,52 +1,19 @@
 //! # Configuration Module
 //!
-//! Centralizes all tuneable contract parameters to enable post-deployment
-//! configuration updates without requiring WASM upgrades.
+//! Tuneable contract parameters stored in instance storage, adjustable
+//! post-deployment without requiring WASM upgrades.
 //!
-//! ## Design Philosophy
-//!
-//! Instead of hard-coding operational parameters (TTL thresholds, rate limits,
-//! batch sizes), this module stores them in instance storage, allowing the
-//! admin to adjust them dynamically as network conditions or business
-//! requirements evolve.
-//!
-//! ## Configuration Parameters
-//!
-//! | Parameter                      | Default | Description                                      |
-//! |--------------------------------|---------|--------------------------------------------------|
-//! | shipment_ttl_threshold         | 17,280  | Min ledgers before TTL extension (~1 day)        |
-//! | shipment_ttl_extension         | 518,400 | Ledgers to extend TTL by (~30 days)              |
-//! | min_status_update_interval     | 60      | Min seconds between status updates               |
-//! | batch_operation_limit          | 10      | Max items per batch operation                    |
-//! | max_metadata_entries           | 5       | Max metadata key-value pairs per shipment        |
-//! | default_shipment_limit         | 100     | Default active shipments per company             |
-//! | multisig_min_admins            | 2       | Min admins for multi-sig                         |
-//! | multisig_max_admins            | 10      | Max admins for multi-sig                         |
-//! | proposal_expiry_seconds        | 604,800 | Proposal expiry time (7 days)                    |
-//! | deadline_grace_seconds         | 0       | Grace window after deadline before expiry fires  |
-//! | idempotency_window_seconds     | 300     | Seconds to retain action hashes for dedup (5 min)|
-//! | auto_dispute_breach            | false   | Auto-open dispute on critical condition breach   |
-//! | max_milestones_per_shipment    | 255     | Max milestone events per shipment                |
-//! | max_notes_per_shipment         | 255     | Max note events per shipment                     |
-//! | max_evidence_per_dispute       | 255     | Max evidence hashes per dispute                  |
-//! | max_breaches_per_shipment      | 255     | Max condition breach events per shipment         |
-//! | creation_quota_max             | 0       | Max shipments creatable per quota window (0=off) |
-//! | creation_quota_window_seconds  | 3,600   | Duration of the creation quota window (1 hour)   |
+//! Field-level docs on [`ContractConfig`] list defaults; see
+//! [`compute_config_checksum`] for the checksum drift-detection rationale.
 
 use crate::errors::NavinError;
 use crate::types::DataKey;
-use soroban_sdk::{contracttype, BytesN, Env};
+use soroban_sdk::{contracttype, xdr::ToXdr, Address, BytesN, Env};
 
 /// Contract configuration parameters stored in instance storage.
 ///
 /// All fields use sensible defaults that can be overridden by the admin
 /// post-deployment via the `update_config` function.
-///
-/// # Examples
-/// ```rust
-/// let config = ContractConfig::default();
-/// assert_eq!(config.shipment_ttl_threshold, 17_280);
-/// ```
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub struct ContractConfig {
@@ -150,16 +117,17 @@ pub struct ContractConfig {
     /// When enabled, requires nft_contract_address to be set.
     /// Default: false (disabled).
     pub auto_mint_nft: bool,
+
+    /// NFT contract used to mint proof NFTs after successful release/refund settlements.
+    /// Configure it with `configure_settlement_nft` after deploying the NFT
+    /// with this shipment contract as its constructor-supplied admin. `None`
+    /// disables settlement proof minting.
+    /// Default: None (disabled).
+    pub settlement_nft_contract_id: Option<Address>,
 }
 
 impl Default for ContractConfig {
     /// Returns the default configuration with production-ready values.
-    ///
-    /// # Examples
-    /// ```rust
-    /// let config = ContractConfig::default();
-    /// assert_eq!(config.batch_operation_limit, 10);
-    /// ```
     fn default() -> Self {
         Self {
             shipment_ttl_threshold: 17_280,      // ~1 day
@@ -181,6 +149,7 @@ impl Default for ContractConfig {
             creation_quota_max: 0,               // disabled by default
             creation_quota_window_seconds: 3600, // 1 hour window
             auto_mint_nft: false,                // disabled by default
+            settlement_nft_contract_id: None,
         }
     }
 }
@@ -188,18 +157,6 @@ impl Default for ContractConfig {
 /// Retrieve the contract configuration from instance storage.
 ///
 /// If no configuration has been set, returns the default configuration.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-///
-/// # Returns
-/// * `ContractConfig` - The current configuration.
-///
-/// # Examples
-/// ```rust
-/// let config = config::get_config(&env);
-/// assert!(config.shipment_ttl_threshold > 0);
-/// ```
 pub fn get_config(env: &Env) -> ContractConfig {
     env.storage()
         .instance()
@@ -212,21 +169,6 @@ pub fn get_config(env: &Env) -> ContractConfig {
 /// This function is called during initialization and when the admin
 /// updates the configuration via `update_config`. It automatically computes
 /// and stores the config checksum for drift detection.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `config` - The configuration to store.
-///
-/// # Returns
-/// * `Result<(), NavinError>` - Ok on success, Err(NavinError::InvalidConfig) if the
-///   computed checksum is a zero-filled hash (indicating empty or invalid input).
-///
-/// # Examples
-/// ```rust
-/// let mut config = ContractConfig::default();
-/// config.batch_operation_limit = 20;
-/// config::set_config(&env, &config).map_err(|_| ...)?;
-/// ```
 pub fn set_config(env: &Env, config: &ContractConfig) -> Result<(), NavinError> {
     env.storage()
         .instance()
@@ -247,12 +189,6 @@ pub fn set_config(env: &Env, config: &ContractConfig) -> Result<(), NavinError> 
 
 /// Validate configuration parameters to ensure they are within acceptable ranges.
 ///
-/// # Arguments
-/// * `config` - The configuration to validate.
-///
-/// # Returns
-/// * `Result<(), &'static str>` - Ok if valid, Err with message if invalid.
-///
 /// # Validation Rules
 /// - `shipment_ttl_threshold` must be > 0 and <= 1,000,000
 /// - `shipment_ttl_extension` must be > 0 and <= 10,000,000
@@ -266,12 +202,6 @@ pub fn set_config(env: &Env, config: &ContractConfig) -> Result<(), NavinError> 
 /// - `idempotency_window_seconds` must be >= 30 and <= 86,400 (1 day)
 /// - `creation_quota_max` must be <= 10,000 (0 = disabled)
 /// - `creation_quota_window_seconds` must be >= 60 and <= 86,400 (1 day)
-///
-/// # Examples
-/// ```rust
-/// let config = ContractConfig::default();
-/// assert!(config::validate_config(&config).is_ok());
-/// ```
 pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
     // Validate TTL parameters
     if config.shipment_ttl_threshold == 0 || config.shipment_ttl_threshold > 1_000_000 {
@@ -382,33 +312,20 @@ pub fn validate_config(config: &ContractConfig) -> Result<(), &'static str> {
 /// 17. creation_quota_max (u32, 4 bytes, big-endian)
 /// 18. creation_quota_window_seconds (u64, 8 bytes, big-endian)
 /// 19. auto_mint_nft (bool, 1 byte: 1 = true, 0 = false)
+/// 20. settlement_nft_contract_id (presence byte + SHA-256 of address XDR, 33 bytes)
 ///
-/// Total: 90 bytes serialized, hashed to a 32-byte SHA-256 digest.
+/// Total: 123 bytes serialized, hashed to a 32-byte SHA-256 digest.
 ///
 /// Every field is serialized exactly once, in `ContractConfig` declaration
 /// order, so adding a field without extending the buffer here is caught by
 /// the `debug_assert` in `compute_config_checksum`.
-///
-/// # Arguments
-/// * `config` - The configuration to checksum.
-///
-/// # Returns
-/// * `BytesN<32>` - The SHA-256 hash of the serialized config.
-///
-/// # Examples
-/// ```rust
-/// let config = ContractConfig::default();
-/// let checksum1 = config::compute_config_checksum(&config);
-/// let checksum2 = config::compute_config_checksum(&config);
-/// assert_eq!(checksum1, checksum2); // Deterministic
-/// ```
 pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32> {
     // Serialize every ContractConfig field exactly once, in declaration
     // order, big-endian. The buffer size is the exact serialized length;
     // `debug_assert` catches any drift between the two at test time instead
     // of panicking inside a contract call at runtime.
     //
-    // Layout (90 bytes):
+    // Layout (123 bytes):
     //   u32 shipment_ttl_threshold        4
     //   u32 shipment_ttl_extension        4
     //   u64 min_status_update_interval    8
@@ -428,7 +345,8 @@ pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32>
     //   u32 creation_quota_max            4
     //   u64 creation_quota_window_seconds 8
     //   bool auto_mint_nft                1
-    let mut bytes: [u8; 90] = [0; 90];
+    //   Option<Address> settlement_nft_contract_id 33
+    let mut bytes: [u8; 123] = [0; 123];
     let mut offset = 0;
 
     macro_rules! put_u32 {
@@ -469,6 +387,15 @@ pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32>
     put_u32!(config.creation_quota_max);
     put_u64!(config.creation_quota_window_seconds);
     put_bool!(config.auto_mint_nft);
+    if let Some(nft_contract) = &config.settlement_nft_contract_id {
+        bytes[offset] = 1;
+        offset += 1;
+        let address_hash = env.crypto().sha256(&nft_contract.to_xdr(env));
+        bytes[offset..offset + 32].copy_from_slice(&address_hash.to_array());
+        offset += 32;
+    } else {
+        offset += 33;
+    }
 
     debug_assert_eq!(
         offset,
@@ -483,41 +410,12 @@ pub fn compute_config_checksum(config: &ContractConfig, env: &Env) -> BytesN<32>
     BytesN::from_array(env, &hash.to_array())
 }
 
-/// Retrieve the stored config checksum from instance storage.
-///
-/// If no checksum has been computed and stored, returns None.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-///
-/// # Returns
-/// * `Option<BytesN<32>>` - The stored checksum, or None if not set.
-///
-/// # Examples
-/// ```rust
-/// let checksum = config::get_config_checksum(&env);
-/// ```
+/// Returns the stored config checksum, or `None` if not set.
 pub fn get_config_checksum(env: &Env) -> Option<BytesN<32>> {
     env.storage().instance().get(&DataKey::ConfigChecksum)
 }
 
-/// Store the config checksum in instance storage.
-///
-/// This is called whenever the config is updated to maintain a current
-/// checksum that indexers can query to detect drift.
-///
-/// # Arguments
-/// * `env` - The execution environment.
-/// * `checksum` - The checksum to store.
-///
-/// # Returns
-/// No return value.
-///
-/// # Examples
-/// ```rust
-/// let checksum = config::compute_config_checksum(&config);
-/// config::set_config_checksum(&env, &checksum);
-/// ```
+/// Stores the config checksum so indexers can detect drift.
 pub fn set_config_checksum(env: &Env, checksum: &BytesN<32>) {
     env.storage()
         .instance()
@@ -527,6 +425,7 @@ pub fn set_config_checksum(env: &Env, checksum: &BytesN<32>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_default_config_is_valid() {
@@ -805,6 +704,15 @@ mod tests {
     }
 
     #[test]
+    fn test_checksum_changes_with_settlement_nft_contract() {
+        let env = Env::default();
+        let mut config = ContractConfig::default();
+        let original = compute_config_checksum(&config, &env);
+        config.settlement_nft_contract_id = Some(soroban_sdk::Address::generate(&env));
+        assert_ne!(original, compute_config_checksum(&config, &env));
+    }
+
+    #[test]
     fn test_checksum_changes_on_field_modification() {
         // Modifying any field must change the checksum
         let env = Env::default();
@@ -1003,6 +911,7 @@ mod tests {
             creation_quota_max: 0,
             creation_quota_window_seconds: 3600,
             auto_mint_nft: false,
+            settlement_nft_contract_id: None,
         };
 
         let checksums = [
@@ -1093,6 +1002,7 @@ mod tests {
             creation_quota_max: 0,
             creation_quota_window_seconds: 3600,
             auto_mint_nft: false,
+            settlement_nft_contract_id: None,
         };
 
         let config_max = ContractConfig {
@@ -1115,6 +1025,7 @@ mod tests {
             creation_quota_max: 100,
             creation_quota_window_seconds: 86_400,
             auto_mint_nft: false,
+            settlement_nft_contract_id: None,
         };
 
         let checksum_min = compute_config_checksum(&config_min, &env);

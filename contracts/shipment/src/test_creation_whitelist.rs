@@ -4,7 +4,6 @@ extern crate std;
 
 use super::test_helpers::*;
 
-
 #[test]
 fn test_add_carrier_to_whitelist() {
     let (env, client, admin, token_contract) = setup_shipment_env();

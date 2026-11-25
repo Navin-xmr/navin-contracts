@@ -1,8 +1,8 @@
 # Storage Layout — NavinShipment Contract
 
-> **Audit Date:** 2026-02-26  
 > **Contract:** `NavinShipment`  
-> **File Audited:** `contracts/shipment/src/storage.rs`
+> **File Audited:** `contracts/shipment/src/storage.rs`  
+> **Source of truth for key enumeration:** [`docs/storage-key-registry.md`](storage-key-registry.md) (tracks `contracts/shipment/src/types.rs`); this document does not carry its own audit date — refer to the registry's "Last Updated" field and to `types.rs`/`storage.rs` directly for the current state.
 
 ---
 
@@ -18,44 +18,27 @@ Stellar Soroban provides three storage tiers with distinct cost and durability p
 
 ---
 
-## Full Storage Key Layout
+## Storage Tier Classification
 
-### Instance Storage Keys
+For the full, authoritative list of `DataKey` variants grouped by purpose
+(governance, roles, shipment/escrow state, counters, proposals, etc.), see
+[`docs/storage-key-registry.md`](storage-key-registry.md) — that document
+is the single source of truth for key enumeration and is kept in sync with
+`contracts/shipment/src/types.rs`.
 
-| Key | Type | Tier (Current) | Tier (Recommended) | Rationale |
-|-----|------|---------------|-------------------|-----------|
-| `Admin` | `Address` | Instance | ✅ Instance | Single global config value, lives with contract |
-| `ProposedAdmin` | `Address` | Instance | ✅ Instance | Short-lived config; cleared after acceptance |
-| `Version` | `u32` | Instance | ✅ Instance | Global contract metadata |
-| `ShipmentCount` | `u64` | Instance | ✅ Instance | Global counter, always needed |
-| `TokenContract` | `Address` | Instance | ✅ Instance | Immutable config after init |
-| `AdminList` | `Vec<Address>` | Instance | ✅ Instance | Global multisig config |
-| `MultiSigThreshold` | `u32` | Instance | ✅ Instance | Global multisig config |
-| `ProposalCounter` | `u64` | Instance | ✅ Instance | Global counter |
-| `ShipmentLimit` | `u32` | Instance | ✅ Instance | Global config value |
-| `CarrierWhitelist(company, carrier)` | `bool` | Instance | ⚠️ **Persistent** | See note 1 |
-| `UserRole(address, role)` | `bool` | Instance | ⚠️ **Persistent** | See note 2 |
-| `TotalEscrowVolume` | `i128` | Instance | ✅ Instance | Global analytics counter |
-| `TotalDisputes` | `u64` | Instance | ✅ Instance | Global analytics counter |
-| `StatusCount(status)` | `u64` | Instance | ✅ Instance | Global analytics counter |
-| `ActiveShipmentCount(company)` | `u32` | Instance | ⚠️ **Persistent** | See note 3 |
+This document instead focuses on *which storage tier* (instance, persistent,
+temporary) each key currently uses, whether that is the right tier, and why.
+Only keys whose current-vs-recommended tier is a point of discussion are
+tabulated below; see [Keys That Are Correctly Classified](#keys-that-are-correctly-classified-no-change-needed)
+for the rest.
 
-### Persistent Storage Keys
-
-| Key | Type | Tier (Current) | Tier (Recommended) | Rationale |
-|-----|------|---------------|-------------------|-----------|
-| `Shipment(id)` | `Shipment` | Persistent | ✅ Persistent | Core shipment data must survive TTL |
-| `Escrow(id)` | `i128` | Persistent | ✅ Persistent | Financial data, must not expire mid-shipment |
-| `ConfirmationHash(id)` | `BytesN<32>` | Persistent | ✅ Persistent | Proof of delivery, must be permanently auditable |
-| `LastStatusUpdate(id)` | `u64` | Persistent | ⚠️ **Temporary** | See note 4 |
-| `Proposal(id)` | `Proposal` | Persistent | ✅ Persistent | Governance proposals need durability |
-| `EventCount(id)` | `u32` | Persistent | ⚠️ **Temporary** | See note 5 |
-
-### Temporary Storage Keys
-
-| Key | Type | Tier (Current) | Tier (Recommended) | Rationale |
-|-----|------|---------------|-------------------|-----------|
-| `ArchivedShipment(id)` | `Shipment` | Temporary | ✅ Temporary | Post-lifecycle data, cheap ephemeral access |
+| Key | Tier (Current) | Tier (Recommended) | Rationale |
+|-----|---------------|-------------------|-----------|
+| `CarrierWhitelist(company, carrier)` | Instance | ⚠️ **Persistent** | See note 1 |
+| `UserRole(address, role)` | Instance | ⚠️ **Persistent** | See note 2 |
+| `ActiveShipmentCount(company)` | Instance | ⚠️ **Persistent** | See note 3 |
+| `LastStatusUpdate(id)` | Persistent | ⚠️ **Temporary** | See note 4 |
+| `EventCount(id)` | Persistent | ⚠️ **Temporary** | See note 5 |
 
 ---
 
@@ -80,7 +63,7 @@ This query does not mutate storage and is safe to run in pre-restore triage work
 
 ## Issues Found & Recommendations
 
-### ⚠️ Note 1 — `CarrierWhitelist` should move to Persistent
+### Warning: Note 1 — `CarrierWhitelist` should move to Persistent
 
 **Current:** `instance()`  
 **Recommended:** `persistent()`  
@@ -89,7 +72,7 @@ This query does not mutate storage and is safe to run in pre-restore triage work
 
 ---
 
-### ⚠️ Note 2 — `UserRole` should move to Persistent
+### Warning: Note 2 — `UserRole` should move to Persistent
 
 **Current:** `instance()`  
 **Recommended:** `persistent()`  
@@ -98,7 +81,7 @@ This query does not mutate storage and is safe to run in pre-restore triage work
 
 ---
 
-### ⚠️ Note 3 — `ActiveShipmentCount` should move to Persistent
+### Warning: Note 3 — `ActiveShipmentCount` should move to Persistent
 
 **Current:** `instance()`  
 **Recommended:** `persistent()`  
@@ -107,7 +90,7 @@ This query does not mutate storage and is safe to run in pre-restore triage work
 
 ---
 
-### ⚠️ Note 4 — `LastStatusUpdate` should move to Temporary
+### Warning: Note 4 — `LastStatusUpdate` should move to Temporary
 
 **Current:** `persistent()`  
 **Recommended:** `temporary()`  
@@ -116,7 +99,7 @@ This query does not mutate storage and is safe to run in pre-restore triage work
 
 ---
 
-### ⚠️ Note 5 — `EventCount` should move to Temporary
+### Warning: Note 5 — `EventCount` should move to Temporary
 
 **Current:** `persistent()`  
 **Recommended:** `temporary()`  
@@ -125,7 +108,7 @@ This query does not mutate storage and is safe to run in pre-restore triage work
 
 ---
 
-### 🐛 Bug Found — Double Set in `set_confirmation_hash`
+### Bug Found — Double Set in `set_confirmation_hash`
 
 ```rust
 pub fn set_confirmation_hash(env: &Env, shipment_id: u64, hash: &BytesN<32>) {
@@ -155,9 +138,9 @@ The key is set twice identically. The second call is a wasted operation. Remove 
 ## TTL Extension Coverage
 
 The `extend_shipment_ttl` function currently extends TTL for:
-- `Shipment(id)` ✅
-- `Escrow(id)` ✅  
-- `ConfirmationHash(id)` ✅
+- `Shipment(id)` OK
+- `Escrow(id)` OK  
+- `ConfirmationHash(id)` OK
 
 After migration, it should **also** cover:
 - `LastStatusUpdate(id)` — if kept in persistent (but recommended to move to temporary)
@@ -168,6 +151,10 @@ After moving `LastStatusUpdate` and `EventCount` to temporary, no changes to `ex
 ---
 
 ## Keys That Are Correctly Classified (No Change Needed)
+
+The keys below (see [`docs/storage-key-registry.md`](storage-key-registry.md)
+for their full `DataKey` definitions) already use the appropriate tier and
+need no migration:
 
 | Key | Tier | Reason |
 |-----|------|--------|
@@ -186,7 +173,13 @@ After moving `LastStatusUpdate` and `EventCount` to temporary, no changes to `ex
 | `Escrow(id)` | Persistent | Financial data, must not expire |
 | `ConfirmationHash(id)` | Persistent | Delivery proof, permanent audit trail |
 | `Proposal(id)` | Persistent | Governance data needs durability |
+| `ProposalSalt(salt)` | Persistent | One entry per salted proposal, so it must not grow instance storage; TTL follows the proposal expiry |
 | `ArchivedShipment(id)` | Temporary | Post-lifecycle, ephemeral is correct |
+
+This table lists tier assignments, not the full registry of `DataKey`
+variants; many other keys (e.g. `ContractConfig`, `FeeConfig`,
+`CompanyShipmentLimit(Address)`) exist and are enumerated only in the
+registry.
 
 ---
 

@@ -4,7 +4,6 @@ extern crate std;
 
 use super::test_helpers::*;
 
-
 #[test]
 fn test_revoke_role_company() {
     let (env, client, admin, token_contract) = setup_shipment_env();
@@ -162,7 +161,7 @@ fn test_suspend_role_success() {
     client.add_company(&admin, &company);
 
     // Suspend the role
-    client.suspend_role(&admin, &company);
+    client.suspend_role(&admin, &company, &crate::types::Role::Company);
 
     // Verify role_changed event was emitted with Suspended action
     let events = env.events().all();
@@ -188,10 +187,10 @@ fn test_reactivate_role_success() {
 
     let company = Address::generate(&env);
     client.add_company(&admin, &company);
-    client.suspend_role(&admin, &company);
+    client.suspend_role(&admin, &company, &crate::types::Role::Company);
 
     // Reactivate the role
-    client.reactivate_role(&admin, &company);
+    client.reactivate_role(&admin, &company, &crate::types::Role::Company);
 
     // Verify role_changed event was emitted with Reactivated action
     let events = env.events().all();
@@ -227,7 +226,7 @@ fn test_suspended_role_cannot_perform_actions() {
     client.add_carrier(&admin, &carrier);
 
     // Suspend the company role
-    client.suspend_role(&admin, &company);
+    client.suspend_role(&admin, &company, &crate::types::Role::Company);
 
     // Suspended company cannot create shipment - should panic with Unauthorized
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

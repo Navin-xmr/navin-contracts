@@ -141,7 +141,7 @@ fn test_suspend_role_writes_audit_entry() {
     let carrier = Address::generate(&env);
     client.add_carrier(&admin, &carrier);
 
-    client.suspend_role(&admin, &carrier);
+    client.suspend_role(&admin, &carrier, &crate::types::Role::Carrier);
 
     let entries = client.query_audit_history_for_target(&carrier);
     assert_eq!(entries.len(), 2);
@@ -158,9 +158,9 @@ fn test_reactivate_role_writes_audit_entry() {
     let (env, client, admin) = setup_test_env();
     let carrier = Address::generate(&env);
     client.add_carrier(&admin, &carrier);
-    client.suspend_role(&admin, &carrier);
+    client.suspend_role(&admin, &carrier, &crate::types::Role::Carrier);
 
-    client.reactivate_role(&admin, &carrier);
+    client.reactivate_role(&admin, &carrier, &crate::types::Role::Carrier);
 
     let entries = client.query_audit_history_for_target(&carrier);
     assert_eq!(entries.len(), 3);
@@ -399,4 +399,37 @@ fn test_cleanup_audit_logs_noop_when_nothing_is_old_enough() {
     let removed = client.cleanup_audit_logs(&admin, &1);
     assert_eq!(removed, 0);
     assert_eq!(client.query_audit_history(&0, &u64::MAX).len(), 1);
+}
+
+#[test]
+fn test_cleanup_audit_logs_frees_capacity_without_reusing_ids() {
+    let (env, client, admin) = setup_test_env();
+    let filler_target = Address::generate(&env);
+    env.cost_estimate().budget().reset_unlimited();
+
+    env.as_contract(&client.address, || {
+        for _ in 0..MAX_AUDIT_LOG_ENTRIES {
+            log_role_assigned(&env, &admin, &filler_target, &crate::types::Role::Company).unwrap();
+        }
+    });
+    let next_entry_id = env.as_contract(&client.address, || get_audit_entry_id_limit(&env));
+
+    let carrier = Address::generate(&env);
+    assert_eq!(
+        client.try_add_carrier(&admin, &carrier),
+        Err(Ok(NavinError::AuditLogLimitExceeded))
+    );
+
+    let before_timestamp = env.ledger().timestamp() + 1;
+    assert_eq!(
+        client.cleanup_audit_logs(&admin, &before_timestamp),
+        MAX_AUDIT_LOG_ENTRIES
+    );
+    client.add_carrier(&admin, &carrier);
+
+    let newest_entry = env.as_contract(&client.address, || {
+        query_audit_history_for_target(&env, &carrier, next_entry_id, 1)
+    });
+    assert_eq!(newest_entry.len(), 1);
+    assert_eq!(newest_entry.get(0).unwrap().entry_id, next_entry_id);
 }

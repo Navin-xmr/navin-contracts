@@ -4,7 +4,6 @@ extern crate std;
 
 use super::test_helpers::*;
 
-
 #[test]
 fn test_only_admin_can_assign_roles() {
     let (env, client, admin, token_contract) = setup_shipment_env();
