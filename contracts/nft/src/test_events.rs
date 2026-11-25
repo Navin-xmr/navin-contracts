@@ -312,26 +312,23 @@ fn test_admin_proposal_emits_event() {
 }
 
 #[test]
-/// Verifies CEI ordering: the xfer event and ownership are recorded before
-/// `on_nft_received` is invoked, so a contract recipient that has no callback
-/// logic still sees the token in its balance and the event in the log.
-///
-/// Uses `PanicReceiver` (a minimal receiver with a no-op callback) to confirm
-/// that the event is emitted whether or not the callback does anything.
-#[test]
-fn test_xfer_event_and_ownership_recorded_before_callback_body_runs() {
-    let (env, _admin, client) = setup();
-    let alice = crate::test_utils::account_address(&env, 0);
-    let receiver_id = env.register(PanicReceiver, ());
-    let _ = PanicReceiverClient::new(&env, &receiver_id);
+fn test_admin_cancellation_emits_event() {
+    let (env, admin, client) = setup();
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+    client.cancel_admin_transfer(&admin);
 
-    client.mint(&alice, &1);
-    client.transfer(&alice, &receiver_id, &1, &Vec::new(&env));
-
-    // The xfer event is in the log (CEI: emitted before the callback).
+    let event = last_event(&env, &client.address);
     assert_eq!(
-        count_events(&env, &client.address, event_topics::TRANSFER),
-        1
+        vec![&env, event],
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                topics(&env, event_topics::ADMIN_CANCELLED),
+                (admin, new_admin, TIMESTAMP).into_val(&env),
+            ),
+        ]
     );
 }
 

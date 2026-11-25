@@ -18,6 +18,9 @@ pub use types::*;
 /// effectively never expires (issue #659).
 pub const MAX_EXPIRATION_LEDGER: u32 = u32::MAX;
 
+/// Maximum number of recipients accepted by `batch_transfer` (issue #1296).
+pub const MAX_BATCH_SIZE: u32 = 100;
+
 #[contract]
 pub struct NavinToken;
 
@@ -401,6 +404,40 @@ impl NavinToken {
         Ok(())
     }
 
+    /// Return the pending admin nominee, if any (issue #1294).
+    pub fn get_pending_admin(env: Env) -> Result<Address, TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+        storage::get_pending_admin(&env).ok_or(TokenError::Unauthorized)
+    }
+
+    /// Cancel a pending admin transfer. Only the current admin can revoke it.
+    pub fn cancel_admin_transfer(env: Env, current_admin: Address) -> Result<(), TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+
+        current_admin.require_auth();
+
+        if storage::get_admin(&env) != current_admin {
+            return Err(TokenError::Unauthorized);
+        }
+
+        let pending_admin = storage::get_pending_admin(&env).ok_or(TokenError::Unauthorized)?;
+        storage::clear_pending_admin(&env);
+
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::ADMIN_CANCELLED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (current_admin, pending_admin),
+        );
+
+        Ok(())
+    }
+
     /// Accept a previously proposed admin transfer. The accepting address must
     /// be the one previously nominated by the current admin.
     pub fn accept_admin_transfer(env: Env, new_admin: Address) -> Result<(), TokenError> {
@@ -707,6 +744,9 @@ impl NavinToken {
 
         if recipients.is_empty() {
             return Err(TokenError::InvalidAmount);
+        }
+        if recipients.len() > MAX_BATCH_SIZE {
+            return Err(TokenError::BatchTooLarge);
         }
 
         let mut total: i128 = 0;

@@ -231,6 +231,10 @@ pub use validation::*;
 
 const MAX_BATCH_QUERY_SIZE: u32 = 50;
 
+/// Maximum number of caller-supplied candidates inspected by
+/// `list_company_carriers` in a single call (issue #1293).
+const MAX_CARRIER_SCAN: u32 = 100;
+
 /// Refresh the contract-wide instance storage TTL.
 ///
 /// The admin set and the contract config live in instance storage, so an
@@ -286,6 +290,14 @@ fn status_hash_record(
     require_shipment_exists(env, shipment_id)?;
     storage::find_status_hash(env, shipment_id, status, visit_index)
         .ok_or(NavinError::StatusHashNotFound)
+}
+
+/// Resolve the recorded proof-of-delivery confirmation hash.
+///
+/// Shared by `verify_delivery_proof` and `assert_delivery_hash` so both agree
+/// on what counts as an undelivered shipment (missing confirmation hash).
+fn confirmation_hash(env: &Env, shipment_id: u64) -> Result<BytesN<32>, NavinError> {
+    storage::get_confirmation_hash(env, shipment_id).ok_or(NavinError::StatusHashNotFound)
 }
 
 fn validate_milestones(env: &Env, milestones: &Vec<(Symbol, u32)>) -> Result<(), NavinError> {
@@ -5615,8 +5627,10 @@ impl NavinShipment {
 
     /// Verify a proof-of-delivery hash against the stored confirmation hash.
     ///
-    /// Returns `true` if `proof_hash` matches the hash stored during delivery confirmation,
-    /// `false` if delivered but hashes differ, and errors if the shipment does not exist.
+    /// Returns `true` if `proof_hash` matches the hash stored during delivery confirmation
+    /// and `false` if the shipment was delivered but the hashes differ. Returns
+    /// `Err(StatusHashNotFound)` when no confirmation hash has been stored, so an
+    /// undelivered shipment is distinguishable from a mismatched proof.
     ///
     /// # Arguments
     /// * `env` - Execution environment.
@@ -5630,6 +5644,7 @@ impl NavinShipment {
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::InvalidHash` - If proof_hash is all zeros.
     /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
+    /// * `NavinError::StatusHashNotFound` - If no confirmation hash was recorded.
     ///
     /// # Examples
     /// ```rust
@@ -5650,8 +5665,7 @@ impl NavinShipment {
             return Err(NavinError::ShipmentNotFound);
         }
 
-        let stored = storage::get_confirmation_hash(&env, shipment_id);
-        Ok(stored == Some(proof_hash))
+        Ok(confirmation_hash(&env, shipment_id)? == proof_hash)
     }
 
     /// Propose a new admin for the contract. Only the current admin can call this.
@@ -6862,7 +6876,9 @@ impl NavinShipment {
     ///
     /// Iterates over a caller-supplied `candidates` list and returns only those
     /// that are whitelisted. The caller provides the candidate set (e.g. from an
-    /// off-chain index); this keeps the query deterministic and bounded.
+    /// off-chain index); this keeps the query deterministic. Each call inspects
+    /// at most `MAX_CARRIER_SCAN` candidates and returns a `next_cursor` when
+    /// more remain, so the work per call is bounded.
     ///
     /// # Arguments
     /// * `env` - Execution environment.
@@ -6876,7 +6892,8 @@ impl NavinShipment {
     ///
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
-    /// * `NavinError::InvalidConfig` - If `page_size` is 0 or > 50.
+    /// * `NavinError::InvalidConfig` - If `page_size` is 0 or > 50, or if
+    ///   `cursor` is outside the candidate list.
     pub fn list_company_carriers(
         env: Env,
         company: Address,
@@ -6891,27 +6908,28 @@ impl NavinShipment {
         }
 
         let total = candidates.len();
+        if cursor >= total {
+            return Err(NavinError::InvalidConfig);
+        }
+
         let mut result = Vec::new(&env);
         let mut scanned: u32 = 0;
-        let mut next_cursor: Option<u32> = None;
         let mut idx = cursor;
 
-        while idx < total {
+        while idx < total && scanned < MAX_CARRIER_SCAN {
             let candidate = candidates.get(idx).unwrap();
             scanned = scanned.saturating_add(1);
+            idx = idx.saturating_add(1);
 
             if storage::is_carrier_whitelisted(&env, &company, &candidate) {
                 result.push_back(candidate);
                 if result.len() == page_size {
-                    let next = idx.saturating_add(1);
-                    if next < total {
-                        next_cursor = Some(next);
-                    }
                     break;
                 }
             }
-            idx = idx.saturating_add(1);
         }
+
+        let next_cursor = if idx < total { Some(idx) } else { None };
 
         Ok(CarrierRelationshipPage {
             carriers: result,
@@ -7096,8 +7114,7 @@ impl NavinShipment {
             return Err(NavinError::ShipmentNotFound);
         }
 
-        let stored = storage::get_confirmation_hash(&env, shipment_id)
-            .ok_or(NavinError::StatusHashNotFound)?;
+        let stored = confirmation_hash(&env, shipment_id)?;
 
         if stored != proof_hash {
             return Err(NavinError::DataHashMismatch);

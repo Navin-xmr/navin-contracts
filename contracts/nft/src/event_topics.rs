@@ -77,10 +77,5 @@ pub const ADMIN_PROPOSED: Symbol = symbol_short!("admp");
 /// Admin role transferred. Payload: `(old_admin, new_admin, timestamp)`.
 pub const ADMIN_TRANSFER: Symbol = symbol_short!("admin");
 
-// ── Pause ────────────────────────────────────────────────────────────────────
-
-/// Contract paused. Payload: `(admin, timestamp)`.
-pub const PAUSED: Symbol = symbol_short!("paused");
-
-/// Contract unpaused. Payload: `(admin, timestamp)`.
-pub const UNPAUSED: Symbol = symbol_short!("unpaused");
+/// Pending admin transfer cancelled. Payload: `(admin, proposed_admin, timestamp)`.
+pub const ADMIN_CANCELLED: Symbol = symbol_short!("admcan");
