@@ -18,18 +18,20 @@ pub enum TokenError {
     ContractPaused = 9,
     /// Arithmetic overflow/underflow (checked_add/checked_sub failed).
     Overflow = 10,
-    /// Batch input exceeds the maximum supported number of entries.
-    BatchTooLarge = 11,
+    /// Empty token name or symbol supplied to initialize().
+    InvalidMetadata = 11,
 }
 
 #[contracterror]
 #[derive(Clone, Debug, Eq, PartialEq)]
+// Disjoint from TokenError: Error(Contract, #N) must have exactly one meaning
+// across every token entry point.
 pub enum MetadataError {
-    NotInitialized = 1,
-    Unauthorized = 2,
-    KeyNotAllowed = 3,
-    KeyNotFound = 4,
-    KeyAlreadyExists = 5,
-    InvalidKey = 6,
-    InvalidValue = 7,
+    NotInitialized = 101,
+    Unauthorized = 102,
+    KeyNotAllowed = 103,
+    KeyNotFound = 104,
+    KeyAlreadyExists = 105,
+    InvalidKey = 106,
+    InvalidValue = 107,
 }

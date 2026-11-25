@@ -24,6 +24,22 @@ fn initialize_token(client: &NavinTokenClient, env: &Env, admin: &Address, total
     client.initialize(admin, &name, &symbol, &total_supply);
 }
 
+// Finds an unversioned SEP-41 event by its first topic.
+fn find_sep41_event(
+    env: &Env,
+    name: &str,
+) -> Option<(soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val)> {
+    env.events()
+        .all()
+        .iter()
+        .find(|(_cid, topics, _data)| {
+            topics.len() > 1
+                && Symbol::try_from_val(env, &topics.get(0).unwrap()).ok()
+                    == Some(Symbol::new(env, name))
+        })
+        .map(|(_cid, topics, data)| (topics, data))
+}
+
 // ============================================================================
 // Basic Token Tests
 // ============================================================================
@@ -38,6 +54,15 @@ fn test_initialize() {
     assert_eq!(client.symbol(), String::from_str(&env, "NVN"));
     assert_eq!(client.total_supply(), 1_000_000);
     assert_eq!(client.balance(&admin), 1_000_000);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #11)")]
+fn test_initialize_empty_metadata_returns_invalid_metadata() {
+    let (env, client, admin) = setup_token_env();
+    let empty = String::from_str(&env, "");
+    let symbol = String::from_str(&env, "NVN");
+    client.initialize(&admin, &empty, &symbol, &1000);
 }
 
 #[test]
@@ -166,7 +191,7 @@ fn test_add_allowed_metadata_key_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #2)")]
+#[should_panic(expected = "Error(Contract, #102)")]
 fn test_add_allowed_metadata_key_unauthorized() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -177,7 +202,7 @@ fn test_add_allowed_metadata_key_unauthorized() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #5)")]
+#[should_panic(expected = "Error(Contract, #105)")]
 fn test_add_allowed_metadata_key_already_exists() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -203,7 +228,7 @@ fn test_remove_allowed_metadata_key_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #4)")]
+#[should_panic(expected = "Error(Contract, #104)")]
 fn test_remove_allowed_metadata_key_not_found() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -213,7 +238,7 @@ fn test_remove_allowed_metadata_key_not_found() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #2)")]
+#[should_panic(expected = "Error(Contract, #102)")]
 fn test_remove_allowed_metadata_key_unauthorized() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -245,7 +270,7 @@ fn test_set_metadata_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #3)")]
+#[should_panic(expected = "Error(Contract, #103)")]
 fn test_set_metadata_key_not_allowed() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -258,7 +283,7 @@ fn test_set_metadata_key_not_allowed() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #2)")]
+#[should_panic(expected = "Error(Contract, #102)")]
 fn test_set_metadata_unauthorized() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -299,7 +324,7 @@ fn test_remove_metadata_success() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #4)")]
+#[should_panic(expected = "Error(Contract, #104)")]
 fn test_remove_metadata_not_found() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -309,7 +334,7 @@ fn test_remove_metadata_not_found() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #2)")]
+#[should_panic(expected = "Error(Contract, #102)")]
 fn test_remove_metadata_unauthorized() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -1326,98 +1351,74 @@ fn event_fixtures_schema_version_topics_all_events() {
     );
 }
 
-// ============================================================================
-// Schema-version topic coverage (#1282)
-// ============================================================================
-
-/// Asserts that every event emitted so far by the token contract uses the
-/// two-element `(name, "v1")` topic tuple described in `event_topics.rs`.
-fn assert_all_events_versioned(env: &Env) -> std::vec::Vec<Symbol> {
-    let version = Symbol::new(env, crate::event_topics::EVENT_SCHEMA_VERSION_STR);
-    let mut names = std::vec::Vec::new();
-    for (_cid, topics, _data) in env.events().all().iter() {
-        assert_eq!(topics.len(), 2, "token events carry (name, version) topics");
-        let name = Symbol::try_from_val(env, &topics.get(0).unwrap()).unwrap();
-        let ver = Symbol::try_from_val(env, &topics.get(1).unwrap()).unwrap();
-        assert_eq!(ver, version, "second topic must be the schema version");
-        names.push(name);
-    }
-    names
-}
-
 #[test]
-fn test_batch_events_carry_schema_version_topic() {
+fn sep41_events_have_address_topics_and_amount_data() {
     let (env, client, admin) = setup_token_env();
-    initialize_token(&client, &env, &admin, 1_000_000);
+    initialize_token(&client, &env, &admin, 1000);
+    env.mock_all_auths();
 
-    let mut recipients = soroban_sdk::Vec::new(&env);
-    recipients.push_back((Address::generate(&env), 10));
-    recipients.push_back((Address::generate(&env), 20));
-    client.batch_transfer(&admin, &recipients);
+    // Initialization mints the supply to the admin.
+    let (topics, data) = find_sep41_event(&env, "mint").expect("mint event");
+    assert_eq!(topics.len(), 2);
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(1).unwrap()).unwrap(),
+        admin
+    );
+    assert_eq!(i128::try_from_val(&env, &data).unwrap(), 1000);
 
-    let names = assert_all_events_versioned(&env);
-    let leg = Symbol::new(&env, "batch_leg");
-    let summary = Symbol::new(&env, "batch_tr");
-    assert_eq!(names.iter().filter(|n| **n == leg).count(), 2);
-    assert_eq!(names.iter().filter(|n| **n == summary).count(), 1);
-}
-
-#[test]
-fn test_batch_self_leg_skipped_events_still_versioned() {
-    let (env, client, admin) = setup_token_env();
-    initialize_token(&client, &env, &admin, 1_000_000);
-
-    let mut recipients = soroban_sdk::Vec::new(&env);
-    recipients.push_back((admin.clone(), 5));
-    recipients.push_back((Address::generate(&env), 7));
-    client.batch_transfer(&admin, &recipients);
-
-    let names = assert_all_events_versioned(&env);
-    let leg = Symbol::new(&env, "batch_leg");
-    assert_eq!(names.iter().filter(|n| **n == leg).count(), 1);
-}
-
-#[test]
-fn test_every_token_event_carries_schema_version_topic() {
-    let (env, client, admin) = setup_token_env();
-    initialize_token(&client, &env, &admin, 1_000_000);
-    let mut seen = assert_all_events_versioned(&env);
-
+    let to = Address::generate(&env);
     let spender = Address::generate(&env);
-    let other = Address::generate(&env);
-    let expiry = crate::MAX_EXPIRATION_LEDGER;
+    client.approve(&admin, &spender, &100, &u32::MAX);
+    let (topics, data) = find_sep41_event(&env, "approve").expect("approve event");
+    assert_eq!(topics.len(), 3);
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(1).unwrap()).unwrap(),
+        admin
+    );
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(2).unwrap()).unwrap(),
+        spender
+    );
+    let (amount, expiration): (i128, u32) = TryFromVal::try_from_val(&env, &data).unwrap();
+    assert_eq!((amount, expiration), (100, u32::MAX));
 
-    client.transfer(&admin, &other, &100);
-    seen.extend(assert_all_events_versioned(&env));
-    client.approve(&admin, &spender, &300, &expiry);
-    seen.extend(assert_all_events_versioned(&env));
-    client.increase_allowance(&admin, &spender, &50);
-    seen.extend(assert_all_events_versioned(&env));
-    client.decrease_allowance(&admin, &spender, &25);
-    seen.extend(assert_all_events_versioned(&env));
-    client.transfer_from(&spender, &admin, &other, &40);
-    seen.extend(assert_all_events_versioned(&env));
-    client.burn_from(&spender, &admin, &10);
-    seen.extend(assert_all_events_versioned(&env));
-    client.mint(&admin, &other, &500);
-    seen.extend(assert_all_events_versioned(&env));
-    client.burn(&other, &20);
-    seen.extend(assert_all_events_versioned(&env));
+    client.transfer(&admin, &to, &10);
+    let (topics, data) = find_sep41_event(&env, "transfer").expect("transfer event");
+    assert_eq!(topics.len(), 3);
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(1).unwrap()).unwrap(),
+        admin
+    );
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(2).unwrap()).unwrap(),
+        to
+    );
+    assert_eq!(i128::try_from_val(&env, &data).unwrap(), 10);
 
-    let mut recipients = soroban_sdk::Vec::new(&env);
-    recipients.push_back((other.clone(), 1));
-    client.batch_transfer(&admin, &recipients);
-    seen.extend(assert_all_events_versioned(&env));
-
-    client.pause(&admin);
-    seen.extend(assert_all_events_versioned(&env));
-    client.unpause(&admin);
-    seen.extend(assert_all_events_versioned(&env));
-
-    for name in ["batch_leg", "batch_tr", "transfer", "approve", "mint", "burn"] {
-        assert!(
-            seen.contains(&Symbol::new(&env, name)),
-            "expected a versioned `{name}` event"
-        );
+    client.transfer_from(&spender, &admin, &to, &5);
+    // transfer_from also emits a standard transfer event for (from, to).
+    let transfers = env.events().all();
+    let mut found = false;
+    for (_cid, topics, data) in transfers.iter() {
+        if Symbol::try_from_val(&env, &topics.get(0).unwrap()).ok()
+            != Some(Symbol::new(&env, "transfer"))
+        {
+            continue;
+        }
+        let from = Address::try_from_val(&env, &topics.get(1).unwrap()).unwrap();
+        let recipient = Address::try_from_val(&env, &topics.get(2).unwrap()).unwrap();
+        if from == admin && recipient == to && i128::try_from_val(&env, &data).unwrap() == 5 {
+            found = true;
+        }
     }
+    assert!(found, "transfer_from must emit a SEP-41 transfer event");
+
+    client.burn_from(&spender, &admin, &7);
+    let (topics, data) = find_sep41_event(&env, "burn").expect("burn event");
+    assert_eq!(topics.len(), 2);
+    assert_eq!(
+        Address::try_from_val(&env, &topics.get(1).unwrap()).unwrap(),
+        admin
+    );
+    assert_eq!(i128::try_from_val(&env, &data).unwrap(), 7);
 }
