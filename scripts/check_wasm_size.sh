@@ -2,12 +2,20 @@
 set -e
 
 # Configuration: [filename]:[limit_in_kb]
+#
+# shipment.wasm  200 KB — enforced since #196; matches CONTRIBUTING.md.
+# navin_nft.wasm 100 KB — headroom above current size; raise only with justification.
+# navin_token.wasm 25 KB — token contract is intentionally small.
 BUDGETS=(
     "navin_token.wasm:25"
     "shipment.wasm:200"
+    "navin_nft.wasm:100"
 )
 
-WASM_DIR="target/wasm32-unknown-unknown/release"
+# Resolve the WASM output directory relative to this script so the check
+# works regardless of the caller's working directory.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+WASM_DIR="$SCRIPT_DIR/../target/wasm32-unknown-unknown/release"
 EXIT_CODE=0
 
 echo "Checking WASM size budget..."
@@ -24,7 +32,7 @@ for entry in "${BUDGETS[@]}"; do
         continue
     fi
 
-    # Get size in bytes
+    # Get size in bytes — handle both macOS (stat -f) and Linux (stat -c).
     SIZE_BYTES=$(stat -f%z "$FILEPATH" 2>/dev/null || stat -c%s "$FILEPATH")
     SIZE_KB=$((SIZE_BYTES / 1024))
 

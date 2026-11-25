@@ -7,7 +7,7 @@ extern crate alloc;
 use soroban_sdk::auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation};
 use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short, xdr::ToXdr, Address, BytesN, Env, IntoVal,
-    Map, Symbol, Vec,
+    Map, String, Symbol, Vec,
 };
 
 // `audit`, `consistency`, `diagnostics` and `error_map` stay `pub` (issue
@@ -106,8 +106,6 @@ enum SettlementProofKey {
 #[cfg(test)]
 mod test_admin_pause_guards;
 #[cfg(test)]
-mod test_storage_key_registry;
-#[cfg(test)]
 mod test_auth_matrix;
 #[cfg(test)]
 mod test_carrier_relationship;
@@ -133,6 +131,8 @@ mod test_settlement;
 mod test_settlement_machine;
 #[cfg(test)]
 mod test_signature_argument_ordering;
+#[cfg(test)]
+mod test_storage_key_registry;
 #[cfg(test)]
 mod test_symbol_validation;
 #[cfg(test)]
@@ -1172,8 +1172,7 @@ impl NavinShipment {
     /// * `Result<u32, NavinError>` - The current nonce.
     pub fn get_integration_nonce(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
         require_initialized(&env)?;
-        let shipment =
-            get_shipment_for_read(&env, shipment_id)?;
+        let shipment = get_shipment_for_read(&env, shipment_id)?;
         Ok(shipment.integration_nonce)
     }
 
@@ -2966,8 +2965,7 @@ impl NavinShipment {
         if storage::get_admin(&env) != admin {
             return Err(NavinError::Unauthorized);
         }
-        let shipment =
-            get_shipment_for_read(&env, shipment_id)?;
+        let shipment = get_shipment_for_read(&env, shipment_id)?;
         // Only allow archiving terminal state shipments (must not be already archived)
         if storage::is_shipment_archived(&env, shipment_id) {
             return Err(NavinError::ShipmentAlreadyCompleted);
@@ -2999,8 +2997,7 @@ impl NavinShipment {
     /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
     pub fn get_shipment_creator(env: Env, shipment_id: u64) -> Result<Address, NavinError> {
         require_initialized(&env)?;
-        let shipment =
-            get_shipment_for_read(&env, shipment_id)?;
+        let shipment = get_shipment_for_read(&env, shipment_id)?;
         Ok(shipment.sender)
     }
 
@@ -3018,8 +3015,7 @@ impl NavinShipment {
     /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
     pub fn get_shipment_receiver(env: Env, shipment_id: u64) -> Result<Address, NavinError> {
         require_initialized(&env)?;
-        let shipment =
-            get_shipment_for_read(&env, shipment_id)?;
+        let shipment = get_shipment_for_read(&env, shipment_id)?;
         Ok(shipment.receiver)
     }
 
@@ -3034,8 +3030,7 @@ impl NavinShipment {
     /// * `Result<u64, NavinError>` - Ledger timestamp of creation.
     pub fn get_shipment_created_at(env: Env, shipment_id: u64) -> Result<u64, NavinError> {
         require_initialized(&env)?;
-        let shipment =
-            get_shipment_for_read(&env, shipment_id)?;
+        let shipment = get_shipment_for_read(&env, shipment_id)?;
         Ok(shipment.created_at)
     }
 
@@ -3047,8 +3042,7 @@ impl NavinShipment {
     /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
     pub fn get_shipment_sender(env: Env, shipment_id: u64) -> Result<Address, NavinError> {
         require_initialized(&env)?;
-        let shipment =
-            get_shipment_for_read(&env, shipment_id)?;
+        let shipment = get_shipment_for_read(&env, shipment_id)?;
         Ok(shipment.sender)
     }
 
@@ -3062,8 +3056,7 @@ impl NavinShipment {
     /// * `Result<u64, NavinError>` - Ledger timestamp of the last update.
     pub fn get_shipment_updated_at(env: Env, shipment_id: u64) -> Result<u64, NavinError> {
         require_initialized(&env)?;
-        let shipment =
-            get_shipment_for_read(&env, shipment_id)?;
+        let shipment = get_shipment_for_read(&env, shipment_id)?;
         Ok(shipment.updated_at)
     }
 
@@ -3074,8 +3067,7 @@ impl NavinShipment {
     /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
     pub fn get_shipment_carrier(env: Env, shipment_id: u64) -> Result<Address, NavinError> {
         require_initialized(&env)?;
-        let shipment =
-            get_shipment_for_read(&env, shipment_id)?;
+        let shipment = get_shipment_for_read(&env, shipment_id)?;
         Ok(shipment.carrier)
     }
 
@@ -3354,7 +3346,7 @@ impl NavinShipment {
         }
 
         let old_status = shipment.status.clone();
-        
+
         // Special handling for transition to Disputed status
         if new_status == ShipmentStatus::Disputed {
             // Use the centralized open_dispute helper which handles validation,
@@ -3364,9 +3356,9 @@ impl NavinShipment {
             storage::decrement_status_count(&env, &old_status);
             storage::increment_status_count(&env, &new_status);
             finalize_if_settled(&env, &mut shipment);
-            
+
             open_dispute(&env, shipment.clone(), &caller, &data_hash)?;
-            
+
             storage::set_last_status_update(&env, shipment_id, env.ledger().timestamp());
             storage::append_status_hash(&env, shipment_id, &new_status, &data_hash, &caller);
             events::emit_status_updated(&env, shipment_id, &new_status, &data_hash, &caller);
@@ -3393,7 +3385,7 @@ impl NavinShipment {
             );
             return Ok(());
         }
-        
+
         // General status update path (non-Disputed)
         shipment.status = new_status.clone();
         shipment.data_hash = data_hash.clone();
@@ -5266,31 +5258,31 @@ impl NavinShipment {
         reason_hash: &BytesN<32>,
     ) -> Result<(), NavinError> {
         let old_status = shipment.status.clone();
-        
+
         // Validate the transition to Disputed status
         validate_shipment_transition(&old_status, &ShipmentStatus::Disputed)?;
-        
+
         shipment.status = ShipmentStatus::Disputed;
         shipment.updated_at = env.ledger().timestamp();
         shipment.integration_nonce = shipment.integration_nonce.saturating_add(1);
-        
+
         // Persist the shipment with validation
         persist_shipment(env, &shipment)?;
-        
+
         // Update status counters
         storage::decrement_status_count(env, &old_status);
         storage::increment_status_count(env, &ShipmentStatus::Disputed);
         storage::increment_total_disputes(env);
-        
+
         // Set escrow freeze reason
         storage::set_escrow_freeze_reason(
             env,
             shipment.id,
             &crate::types::EscrowFreezeReason::DisputeRaised,
         );
-        
+
         extend_shipment_ttl(env, shipment.id);
-        
+
         // Emit events
         events::emit_dispute_raised(env, shipment.id, caller, reason_hash);
         events::emit_escrow_frozen(
@@ -5299,7 +5291,7 @@ impl NavinShipment {
             crate::types::EscrowFreezeReason::DisputeRaised,
             caller,
         );
-        
+
         // Notify all parties
         events::emit_notification(
             env,
@@ -5322,7 +5314,7 @@ impl NavinShipment {
             shipment.id,
             reason_hash,
         );
-        
+
         Ok(())
     }
 
@@ -5940,10 +5932,7 @@ impl NavinShipment {
     /// # Errors
     /// * `NavinError::NotInitialized` - If contract is not initialized.
     /// * `NavinError::ShipmentNotFound` - If shipment does not exist.
-    pub fn get_partial_delivery_proof_count(
-        env: Env,
-        shipment_id: u64,
-    ) -> Result<u32, NavinError> {
+    pub fn get_partial_delivery_proof_count(env: Env, shipment_id: u64) -> Result<u32, NavinError> {
         require_initialized(&env)?;
 
         if storage::get_shipment(&env, shipment_id).is_none() {
@@ -6691,6 +6680,190 @@ impl NavinShipment {
         new_config.settlement_nft_contract_id = Some(nft_contract);
         config::set_config(&env, &new_config)?;
         events::emit_config_updated(&env, &admin, &new_config);
+        Ok(())
+    }
+
+    /// Set the base URI on the configured settlement-proof NFT contract.
+    ///
+    /// Only the shipment admin may call this. The base URI is set on the NFT
+    /// by forwarding an authorised `set_base_uri` call. Without this entry
+    /// point `get_token_uri` on the NFT would always fail with `BaseUriNotSet`
+    /// because the shipment contract — the NFT admin — is the only account
+    /// that can call `set_base_uri`.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ContractPaused` - If the contract is paused.
+    /// * `NavinError::Unauthorized` - If the caller is not the admin.
+    /// * `NavinError::InvalidConfig` - If no NFT contract is configured.
+    /// * `NavinError::NftConfigurationFailed` - If the cross-contract call fails.
+    pub fn set_settlement_nft_base_uri(
+        env: Env,
+        admin: Address,
+        base_uri: String,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        admin.require_auth();
+        require_admin(&env, &admin)?;
+
+        let nft_contract = config::get_config(&env)
+            .settlement_nft_contract_id
+            .ok_or(NavinError::InvalidConfig)?;
+
+        let mut args: Vec<soroban_sdk::Val> = Vec::new(&env);
+        args.push_back(env.current_contract_address().into_val(&env));
+        args.push_back(base_uri.clone().into_val(&env));
+        authorize_nft_invocation(
+            &env,
+            &nft_contract,
+            Symbol::new(&env, "set_base_uri"),
+            &args,
+        );
+
+        match env.try_invoke_contract::<(), soroban_sdk::Error>(
+            &nft_contract,
+            &Symbol::new(&env, "set_base_uri"),
+            args,
+        ) {
+            Ok(Ok(())) => {}
+            _ => return Err(NavinError::NftConfigurationFailed),
+        }
+
+        // Emit using the raw bytes representation of the URI string.
+        let uri_bytes = base_uri.to_xdr(&env);
+        events::emit_nft_base_uri_set(&env, &admin, &nft_contract, &uri_bytes);
+        Ok(())
+    }
+
+    /// Pause the configured settlement-proof NFT contract.
+    ///
+    /// Only the shipment admin may call this. Without this entry point an
+    /// incident affecting the NFT (e.g. a metadata exploit) cannot be
+    /// mitigated because the shipment contract holds the NFT admin role and
+    /// is the only account authorised to call `pause`.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ContractPaused` - If the shipment contract is paused.
+    /// * `NavinError::Unauthorized` - If the caller is not the admin.
+    /// * `NavinError::InvalidConfig` - If no NFT contract is configured.
+    /// * `NavinError::NftConfigurationFailed` - If the cross-contract call fails.
+    pub fn pause_settlement_nft(env: Env, admin: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        admin.require_auth();
+        require_admin(&env, &admin)?;
+
+        let nft_contract = config::get_config(&env)
+            .settlement_nft_contract_id
+            .ok_or(NavinError::InvalidConfig)?;
+
+        let mut args: Vec<soroban_sdk::Val> = Vec::new(&env);
+        args.push_back(env.current_contract_address().into_val(&env));
+        authorize_nft_invocation(&env, &nft_contract, Symbol::new(&env, "pause"), &args);
+
+        match env.try_invoke_contract::<(), soroban_sdk::Error>(
+            &nft_contract,
+            &Symbol::new(&env, "pause"),
+            args,
+        ) {
+            Ok(Ok(())) => {}
+            _ => return Err(NavinError::NftConfigurationFailed),
+        }
+
+        events::emit_nft_paused(&env, &admin, &nft_contract);
+        Ok(())
+    }
+
+    /// Unpause the configured settlement-proof NFT contract.
+    ///
+    /// Only the shipment admin may call this. Mirrors `pause_settlement_nft`.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ContractPaused` - If the shipment contract is paused.
+    /// * `NavinError::Unauthorized` - If the caller is not the admin.
+    /// * `NavinError::InvalidConfig` - If no NFT contract is configured.
+    /// * `NavinError::NftConfigurationFailed` - If the cross-contract call fails.
+    pub fn unpause_settlement_nft(env: Env, admin: Address) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        admin.require_auth();
+        require_admin(&env, &admin)?;
+
+        let nft_contract = config::get_config(&env)
+            .settlement_nft_contract_id
+            .ok_or(NavinError::InvalidConfig)?;
+
+        let mut args: Vec<soroban_sdk::Val> = Vec::new(&env);
+        args.push_back(env.current_contract_address().into_val(&env));
+        authorize_nft_invocation(&env, &nft_contract, Symbol::new(&env, "unpause"), &args);
+
+        match env.try_invoke_contract::<(), soroban_sdk::Error>(
+            &nft_contract,
+            &Symbol::new(&env, "unpause"),
+            args,
+        ) {
+            Ok(Ok(())) => {}
+            _ => return Err(NavinError::NftConfigurationFailed),
+        }
+
+        events::emit_nft_unpaused(&env, &admin, &nft_contract);
+        Ok(())
+    }
+
+    /// Propose a transfer of the settlement-proof NFT admin role to a new address.
+    ///
+    /// Only the shipment admin may call this. Without this entry point, NFT
+    /// admin custody is permanently locked to the shipment contract because
+    /// `transfer_admin` on the NFT requires the current admin's signature and
+    /// the shipment contract is the only account that qualifies.
+    ///
+    /// This calls `transfer_admin` on the NFT, which puts a pending proposal
+    /// in the NFT contract. The `new_nft_admin` must then call
+    /// `accept_admin_transfer` on the NFT to complete the handover.
+    ///
+    /// # Errors
+    /// * `NavinError::NotInitialized` - If contract is not initialized.
+    /// * `NavinError::ContractPaused` - If the shipment contract is paused.
+    /// * `NavinError::Unauthorized` - If the caller is not the admin.
+    /// * `NavinError::InvalidConfig` - If no NFT contract is configured.
+    /// * `NavinError::NftConfigurationFailed` - If the cross-contract call fails.
+    pub fn transfer_settlement_nft_admin(
+        env: Env,
+        admin: Address,
+        new_nft_admin: Address,
+    ) -> Result<(), NavinError> {
+        require_initialized(&env)?;
+        require_not_paused(&env)?;
+        admin.require_auth();
+        require_admin(&env, &admin)?;
+
+        let nft_contract = config::get_config(&env)
+            .settlement_nft_contract_id
+            .ok_or(NavinError::InvalidConfig)?;
+
+        let mut args: Vec<soroban_sdk::Val> = Vec::new(&env);
+        args.push_back(env.current_contract_address().into_val(&env));
+        args.push_back(new_nft_admin.clone().into_val(&env));
+        authorize_nft_invocation(
+            &env,
+            &nft_contract,
+            Symbol::new(&env, "transfer_admin"),
+            &args,
+        );
+
+        match env.try_invoke_contract::<(), soroban_sdk::Error>(
+            &nft_contract,
+            &Symbol::new(&env, "transfer_admin"),
+            args,
+        ) {
+            Ok(Ok(())) => {}
+            _ => return Err(NavinError::NftConfigurationFailed),
+        }
+
+        events::emit_nft_admin_transferred(&env, &admin, &nft_contract, &new_nft_admin);
         Ok(())
     }
 

@@ -135,12 +135,7 @@ fn test_no_two_key_enums_encode_the_same_key() {
             assert!(
                 !same_key,
                 "{}::{}{} and {}::{}{} encode to the same storage key",
-                a.enum_name,
-                a.name,
-                a.payload,
-                b.enum_name,
-                b.name,
-                b.payload
+                a.enum_name, a.name, a.payload, b.enum_name, b.name, b.payload
             );
         }
     }

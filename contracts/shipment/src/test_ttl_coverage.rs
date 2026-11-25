@@ -362,7 +362,10 @@ fn test_audit_entries_survive_past_original_ttl() {
 fn test_circuit_breaker_state_and_config_survive_past_original_ttl() {
     let (env, client, admin, _token) = setup_initialized_shipment_env();
 
-    client.set_circuit_breaker_config(&admin, &crate::circuit_breaker::CircuitBreakerPreset::Strict);
+    client.set_circuit_breaker_config(
+        &admin,
+        &crate::circuit_breaker::CircuitBreakerPreset::Strict,
+    );
     client.trip_circuit_breaker(&admin);
 
     env.as_contract(&client.address, || {

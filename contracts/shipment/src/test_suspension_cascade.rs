@@ -621,7 +621,11 @@ mod tests {
         client.suspend_role(&admin, &dual, &Role::Carrier);
         assert!(client.is_carrier_suspended(&dual));
         env.as_contract(&client.address, || {
-            assert!(!crate::storage::is_role_suspended(&env, &dual, &Role::Company));
+            assert!(!crate::storage::is_role_suspended(
+                &env,
+                &dual,
+                &Role::Company
+            ));
         });
 
         // The Company role is untouched: `dual` can still create shipments.

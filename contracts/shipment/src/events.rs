@@ -1159,3 +1159,66 @@ pub fn emit_shipment_archived(env: &Env, shipment_id: u64, timestamp: u64) {
         (shipment_id, timestamp),
     );
 }
+
+/// Emitted when the shipment admin sets the base URI on the settlement-proof NFT.
+///
+/// Payload: `(admin, nft_contract, base_uri, timestamp)`.
+pub fn emit_nft_base_uri_set(env: &Env, admin: &Address, nft_contract: &Address, base_uri: &Bytes) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::NFT_BASE_URI_SET),),
+        (
+            admin.clone(),
+            nft_contract.clone(),
+            base_uri.clone(),
+            env.ledger().timestamp(),
+        ),
+    );
+}
+
+/// Emitted when the shipment admin pauses the settlement-proof NFT.
+///
+/// Payload: `(admin, nft_contract, timestamp)`.
+pub fn emit_nft_paused(env: &Env, admin: &Address, nft_contract: &Address) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::NFT_PAUSED),),
+        (
+            admin.clone(),
+            nft_contract.clone(),
+            env.ledger().timestamp(),
+        ),
+    );
+}
+
+/// Emitted when the shipment admin unpauses the settlement-proof NFT.
+///
+/// Payload: `(admin, nft_contract, timestamp)`.
+pub fn emit_nft_unpaused(env: &Env, admin: &Address, nft_contract: &Address) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::NFT_UNPAUSED),),
+        (
+            admin.clone(),
+            nft_contract.clone(),
+            env.ledger().timestamp(),
+        ),
+    );
+}
+
+/// Emitted when the shipment admin initiates an NFT admin custody transfer.
+///
+/// Payload: `(admin, nft_contract, new_nft_admin, timestamp)`.
+pub fn emit_nft_admin_transferred(
+    env: &Env,
+    admin: &Address,
+    nft_contract: &Address,
+    new_nft_admin: &Address,
+) {
+    env.events().publish(
+        (Symbol::new(env, crate::event_topics::NFT_ADMIN_TRANSFERRED),),
+        (
+            admin.clone(),
+            nft_contract.clone(),
+            new_nft_admin.clone(),
+            env.ledger().timestamp(),
+        ),
+    );
+}
