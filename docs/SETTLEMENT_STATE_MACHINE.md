@@ -94,6 +94,7 @@ None → Pending → Completed
 ### Core Functions
 
 #### `create_settlement`
+
 Creates a new settlement record and marks it as active for the shipment.
 
 ```rust
@@ -108,7 +109,7 @@ fn create_settlement(
 ```
 
 **Behavior:**
-- Checks if there's already an active Pending settlement (returns `SettlementInProgress` error)
+
 - Increments settlement counter to generate unique ID
 - Creates settlement record in Pending state
 - Stores settlement in persistent storage
@@ -116,6 +117,7 @@ fn create_settlement(
 - Returns settlement ID
 
 #### `complete_settlement`
+
 Marks a settlement as completed after successful token transfer.
 
 ```rust
@@ -127,11 +129,15 @@ fn complete_settlement(
 ```
 
 **Behavior:**
+
+- For Release and Refund operations: mints a settlement-proof NFT via the configured NFT contract (idempotent, uses `SettlementProofKey::Minted` to prevent duplicate mints). Fails with error code 77 (`NftMintFailed`) if minting fails.
 - Updates settlement state to Completed
 - Records completion timestamp
 - Clears active settlement marker for the shipment
+- Returns `ShipmentNotFound` (error 4) if the settlement record does not exist
 
 #### `fail_settlement`
+
 Marks a settlement as failed with an error code.
 
 ```rust
@@ -144,10 +150,12 @@ fn fail_settlement(
 ```
 
 **Behavior:**
+
 - Updates settlement state to Failed
 - Records completion timestamp
 - Stores error code
 - **Does NOT clear active settlement** (allows retry/investigation)
+- Returns `ShipmentNotFound` (error 4) if the settlement record does not exist
 
 ### Integration Points
 
@@ -242,6 +250,7 @@ match transfer_result {
 ### Query Functions
 
 #### `get_settlement`
+
 Retrieve a settlement record by ID.
 
 ```rust
@@ -249,6 +258,7 @@ pub fn get_settlement(env: Env, settlement_id: u64) -> Result<SettlementRecord, 
 ```
 
 #### `get_active_settlement`
+
 Get the active settlement ID for a shipment.
 
 ```rust
@@ -256,6 +266,7 @@ pub fn get_active_settlement(env: Env, shipment_id: u64) -> Result<Option<u64>, 
 ```
 
 #### `get_settlement_count`
+
 Get the total number of settlements created.
 
 ```rust
@@ -264,37 +275,14 @@ pub fn get_settlement_count(env: Env) -> u64
 
 ### Management Functions
 
-#### `cancel_active_settlement`
-Explicitly cancel a failed active settlement to unblock the shipment.
-
-```rust
-pub fn cancel_active_settlement(
-    env: Env,
-    caller: Address,
-    shipment_id: u64,
-) -> Result<(), NavinError>
-```
-
-**Authorization:**
-- Sender (company)
-- Receiver
-- Admin
-
-**Requirements:**
-- Active settlement must exist
-- Active settlement must be in Failed state
-
-**Behavior:**
-- Clears active settlement marker
-- Emits `settlement_cancelled` event
-- Allows new settlement operations to proceed
+**Note:** Management functions for cancelling settlements are not currently implemented.
 
 ## Error Handling
 
 ### Error Codes
 
-- `SettlementInProgress` (47): A settlement operation is already in progress for this shipment
-- `SettlementNotFailed` (48): The active settlement is not in a failed state and cannot be cancelled
+- `NftMintFailed` (77): The configured NFT contract failed to mint a settlement proof during `complete_settlement`
+- `ShipmentNotFound` (4): Settlement record does not exist in `complete_settlement` or `fail_settlement`
 
 ### Failure Scenarios and Soroban Transaction Semantics
 
@@ -326,11 +314,13 @@ pub fn cancel_active_settlement(
 #### Implications
 
 The current implementation provides:
+
 - **Concurrency control**: Prevents multiple simultaneous settlement operations
 - **Atomic operations**: Either the entire operation succeeds or nothing changes
 - **Consistent state**: Shipment state always matches escrow state
 
 However, it does NOT provide:
+
 - **Failed operation tracking**: Failed settlements are not persisted
 - **Retry history**: No record of failed attempts
 - **Failure investigation**: Cannot query failed settlements
@@ -340,6 +330,7 @@ However, it does NOT provide:
 If persistent failure tracking is required, the implementation would need to:
 
 1. **Not propagate token transfer errors**:
+
    ```rust
    match transfer_result {
        Ok(()) => {
@@ -356,6 +347,7 @@ If persistent failure tracking is required, the implementation would need to:
    ```
 
 2. **Return settlement state instead of Result**:
+
    ```rust
    pub fn deposit_escrow(...) -> Result<SettlementRecord, NavinError>
    ```
@@ -372,6 +364,7 @@ This would allow callers to check if the operation succeeded by examining the re
 The current implementation prioritizes **atomic operations and consistent state** over **failure tracking**. This is appropriate for a financial contract where partial state updates could lead to fund loss or inconsistencies.
 
 Failed operations are handled by:
+
 - Rolling back the entire transaction
 - Returning clear error codes to the caller
 - Allowing immediate retry (no failed settlement blocking)
@@ -427,9 +420,11 @@ The implementation includes comprehensive tests covering:
    - `test_refund_escrow_settlement_failure`
 
 3. **State Machine**
-   - `test_settlement_in_progress_error`
-   - `test_cancel_active_settlement`
-   - `test_cancel_active_settlement_unauthorized`
+   - `test_settlement_state_transitions_validation`
+   - `test_settlement_timestamps`
+   - `test_settlement_addresses`
+   - `test_settlement_counter_increments`
+   - `test_settlement_ids_unique_and_sequential`
 
 4. **Metadata & Queries**
    - `test_settlement_record_metadata`
@@ -448,6 +443,7 @@ setup_initialized_shipment_env_with_failing_token()
 ### Settlement Record Fields
 
 All settlement records include:
+
 - Unique settlement ID
 - Associated shipment ID
 - Operation type (Deposit/Release/Refund/MilestonePayment)
@@ -466,37 +462,35 @@ All settlement records include:
 
 ### Event Emission
 
-The implementation emits a `settlement_cancelled` event when a failed settlement is explicitly cancelled:
-
-```rust
-env.events().publish(
-    (Symbol::new(&env, "settlement_cancelled"),),
-    (shipment_id, active_id, caller),
-);
-```
+No settlement-specific events are currently emitted by the state machine.
 
 ## Benefits
 
 ### 1. Explicit State Tracking
+
 - Clear visibility into payment operation status
 - No ambiguity about whether a transfer is in progress
 
 ### 2. Failure Handling
+
 - Failed settlements remain visible for investigation
 - Error codes provide diagnostic information
 - Explicit cancellation prevents accidental retries
 
 ### 3. Concurrency Control
+
 - Only one active settlement per shipment
 - Prevents race conditions in payment operations
 - Ensures data consistency
 
 ### 4. Audit Trail
+
 - Complete history of all payment operations
 - Timestamps for initiation and completion
 - Source and destination addresses recorded
 
 ### 5. Retry Support
+
 - Failed settlements can be investigated
 - Explicit cancellation enables retry
 - State machine prevents duplicate operations
@@ -533,23 +527,27 @@ env.events().publish(
 ## Acceptance Criteria Verification
 
 **[Met]** Settlement state enum + storage
+
 - `SettlementState` enum defined with None/Pending/Completed/Failed states
 - Storage keys and functions implemented for settlement records
 - Active settlement tracking per shipment
 
 **[Met]** Transition states through transfer lifecycle
+
 - `create_settlement`: None → Pending
 - `complete_settlement`: Pending → Completed
 - `fail_settlement`: Pending → Failed
 - Integrated into all payment operations
 
 **[Met]** Tests for success/failure transitions
+
 - Success path tests for deposit, release, refund
 - Failure path tests for deposit and refund
 - State machine tests for concurrent operations
 - Metadata and query tests
 
 **[Met]** Failures leave clear state for retries/investigation
+
 - Failed settlements remain active
 - Error codes stored in settlement records
 - Explicit cancellation required to unblock

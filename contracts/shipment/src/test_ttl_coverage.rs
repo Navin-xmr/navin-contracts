@@ -330,3 +330,100 @@ fn test_expired_proposal_reports_expired_not_missing() {
     let result = client.try_approve_action(&admin2, &proposal_id);
     assert_eq!(result, Err(Ok(NavinError::ProposalExpired)));
 }
+
+// ── #1273: milestone entrypoints extend shipment TTL ────────────────────────
+
+#[test]
+fn test_milestone_writes_extend_shipment_ttl() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let mut cfg = client.get_contract_config();
+    cfg.shipment_ttl_threshold = 518_000;
+    client.update_config(&admin, &cfg);
+
+    let mut milestones = Vec::new(&env);
+    milestones.push_back((soroban_sdk::symbol_short!("m1"), 50u32));
+    milestones.push_back((soroban_sdk::symbol_short!("m2"), 50u32));
+
+    let data_hash = BytesN::from_array(&env, &[7u8; 32]);
+    let deadline = env.ledger().timestamp() + 30 * 86_400;
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id, &10_000);
+
+    // Set to InTransit
+    env.as_contract(&client.address, || {
+        let mut s = crate::storage::get_shipment(&env, shipment_id).unwrap();
+        s.status = crate::ShipmentStatus::InTransit;
+        crate::storage::set_shipment(&env, &s);
+    });
+
+    // 1. record_milestone extends TTL
+    advance_ledgers(&env, 1_000);
+    client.record_milestone(
+        &carrier,
+        &shipment_id,
+        &soroban_sdk::symbol_short!("m1"),
+        &data_hash,
+    );
+    env.as_contract(&client.address, || {
+        let ttl = env
+            .storage()
+            .persistent()
+            .get_ttl(&DataKey::Shipment(shipment_id));
+        assert!(ttl >= EXTEND_TO);
+    });
+
+    // 2. release_milestone_payment extends TTL
+    advance_ledgers(&env, 1_000);
+    client.release_milestone_payment(&carrier, &shipment_id, &soroban_sdk::symbol_short!("m2"));
+    env.as_contract(&client.address, || {
+        let ttl = env
+            .storage()
+            .persistent()
+            .get_ttl(&DataKey::Shipment(shipment_id));
+        assert!(ttl >= EXTEND_TO);
+    });
+
+    // 3. record_milestones_batch extends TTL
+    let shipment_id2 = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &milestones,
+        &deadline,
+    );
+    client.deposit_escrow(&company, &shipment_id2, &10_000);
+    env.as_contract(&client.address, || {
+        let mut s = crate::storage::get_shipment(&env, shipment_id2).unwrap();
+        s.status = crate::ShipmentStatus::InTransit;
+        crate::storage::set_shipment(&env, &s);
+    });
+
+    advance_ledgers(&env, 1_000);
+    let mut batch = Vec::new(&env);
+    batch.push_back((soroban_sdk::symbol_short!("m1"), data_hash.clone()));
+    client.record_milestones_batch(&carrier, &shipment_id2, &batch);
+    env.as_contract(&client.address, || {
+        let ttl = env
+            .storage()
+            .persistent()
+            .get_ttl(&DataKey::Shipment(shipment_id2));
+        assert!(ttl >= EXTEND_TO);
+    });
+}
