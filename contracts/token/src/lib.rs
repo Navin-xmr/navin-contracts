@@ -18,6 +18,9 @@ pub use types::*;
 /// effectively never expires (issue #659).
 pub const MAX_EXPIRATION_LEDGER: u32 = u32::MAX;
 
+/// Maximum number of recipients accepted by `batch_transfer` (issue #1296).
+pub const MAX_BATCH_SIZE: u32 = 100;
+
 #[contract]
 pub struct NavinToken;
 
@@ -29,6 +32,43 @@ fn require_not_paused(env: &Env) -> Result<(), TokenError> {
         return Err(TokenError::ContractPaused);
     }
     Ok(())
+}
+
+// SEP-41-shaped events: topics are ["transfer"/"approve"/"mint"/"burn",
+// address topics...] and the data is the amount (plus expiration_ledger for
+// approve). These are emitted in addition to the legacy v1 events so that
+// generic Stellar indexers can reconstruct balances without knowing the
+// Navin-specific schema.
+fn emit_sep41_transfer(env: &Env, from: &Address, to: &Address, amount: i128) {
+    env.events().publish(
+        (
+            Symbol::new(env, event_topics::TRANSFER),
+            from.clone(),
+            to.clone(),
+        ),
+        amount,
+    );
+}
+
+fn emit_sep41_approve(env: &Env, from: &Address, spender: &Address, amount: i128, expiration: u32) {
+    env.events().publish(
+        (
+            Symbol::new(env, event_topics::APPROVE),
+            from.clone(),
+            spender.clone(),
+        ),
+        (amount, expiration),
+    );
+}
+
+fn emit_sep41_mint(env: &Env, to: &Address, amount: i128) {
+    env.events()
+        .publish((Symbol::new(env, event_topics::MINT), to.clone()), amount);
+}
+
+fn emit_sep41_burn(env: &Env, from: &Address, amount: i128) {
+    env.events()
+        .publish((Symbol::new(env, event_topics::BURN), from.clone()), amount);
 }
 
 #[contractimpl]
@@ -46,7 +86,7 @@ impl NavinToken {
         }
 
         if name.is_empty() || symbol.is_empty() {
-            return Err(TokenError::InvalidAmount);
+            return Err(TokenError::InvalidMetadata);
         }
 
         if total_supply <= 0 {
@@ -59,6 +99,7 @@ impl NavinToken {
         storage::set_total_supply(&env, total_supply);
         storage::set_balance(&env, &admin, total_supply);
 
+        emit_sep41_mint(&env, &admin, total_supply);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::INIT),
@@ -66,6 +107,8 @@ impl NavinToken {
             ),
             (admin.clone(), total_supply),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -139,6 +182,20 @@ impl NavinToken {
             return Err(TokenError::InsufficientBalance);
         }
 
+        // Self-transfers are a harmless no-op: skip storage writes entirely
+        // so a debit-then-credit sequence can never double-credit the
+        // balance (see issue #1191).
+        if from == to {
+            env.events().publish(
+                (
+                    Symbol::new(&env, event_topics::TRANSFER),
+                    Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                ),
+                (from, to, amount),
+            );
+            return Ok(());
+        }
+
         // Update balances with checked arithmetic
         let new_from_balance = from_balance
             .checked_sub(amount)
@@ -151,6 +208,7 @@ impl NavinToken {
         // Extend TTL for affected balances
         storage::extend_balance_ttl_for(&env, &[from.clone(), to.clone()], 1000, 500000);
 
+        emit_sep41_transfer(&env, &from, &to, amount);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::TRANSFER),
@@ -158,6 +216,8 @@ impl NavinToken {
             ),
             (from, to, amount),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -200,18 +260,25 @@ impl NavinToken {
         let expiration_ledger = storage::get_allowance_raw(&env, &from, &spender)
             .map(|v| v.expiration_ledger)
             .unwrap_or(0);
-        storage::set_balance(&env, &from, from_balance - amount);
-        let recipient_balance = storage::get_balance(&env, &to);
-        let updated_recipient_balance = recipient_balance
-            .checked_add(amount)
-            .ok_or(TokenError::Overflow)?;
         let updated_allowance = allowance.checked_sub(amount).ok_or(TokenError::Overflow)?;
-        storage::set_balance(&env, &to, updated_recipient_balance);
         storage::set_allowance(&env, &from, &spender, updated_allowance, expiration_ledger);
+
+        // Self-transfers (from == to) must not change the balance: skip the
+        // debit/credit entirely instead of relying on read-after-write
+        // ordering (issue #1191).
+        if from != to {
+            storage::set_balance(&env, &from, from_balance - amount);
+            let recipient_balance = storage::get_balance(&env, &to);
+            let updated_recipient_balance = recipient_balance
+                .checked_add(amount)
+                .ok_or(TokenError::Overflow)?;
+            storage::set_balance(&env, &to, updated_recipient_balance);
+        }
 
         storage::extend_balance_ttl_for(&env, &[from.clone(), to.clone()], 1000, 500000);
         storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
 
+        emit_sep41_transfer(&env, &from, &to, amount);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::TRANSFER_FROM),
@@ -219,6 +286,8 @@ impl NavinToken {
             ),
             (from, to, spender, amount),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -260,6 +329,7 @@ impl NavinToken {
         // (issue #659).
         storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
 
+        emit_sep41_approve(&env, &from, &spender, amount, expiration_ledger);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::APPROVE),
@@ -267,6 +337,8 @@ impl NavinToken {
             ),
             (from, spender, amount, expiration_ledger),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -311,6 +383,7 @@ impl NavinToken {
         storage::set_allowance(&env, &owner, &spender, new_allowance, expiration_ledger);
         storage::extend_allowance_ttl(&env, &owner, &spender, 1000, 500000);
 
+        emit_sep41_approve(&env, &owner, &spender, new_allowance, expiration_ledger);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::ALLOWANCE_INCREASED),
@@ -318,6 +391,8 @@ impl NavinToken {
             ),
             (owner, spender, delta, new_allowance),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -356,6 +431,7 @@ impl NavinToken {
         storage::set_allowance(&env, &owner, &spender, new_allowance, expiration_ledger);
         storage::extend_allowance_ttl(&env, &owner, &spender, 1000, 500000);
 
+        emit_sep41_approve(&env, &owner, &spender, new_allowance, expiration_ledger);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::ALLOWANCE_DECREASED),
@@ -363,6 +439,8 @@ impl NavinToken {
             ),
             (owner, spender, delta, new_allowance),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -398,6 +476,42 @@ impl NavinToken {
             (current_admin, new_admin),
         );
 
+        storage::extend_instance_ttl(&env);
+
+        Ok(())
+    }
+
+    /// Return the pending admin nominee, if any (issue #1294).
+    pub fn get_pending_admin(env: Env) -> Result<Address, TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+        storage::get_pending_admin(&env).ok_or(TokenError::Unauthorized)
+    }
+
+    /// Cancel a pending admin transfer. Only the current admin can revoke it.
+    pub fn cancel_admin_transfer(env: Env, current_admin: Address) -> Result<(), TokenError> {
+        if !storage::is_initialized(&env) {
+            return Err(TokenError::NotInitialized);
+        }
+
+        current_admin.require_auth();
+
+        if storage::get_admin(&env) != current_admin {
+            return Err(TokenError::Unauthorized);
+        }
+
+        let pending_admin = storage::get_pending_admin(&env).ok_or(TokenError::Unauthorized)?;
+        storage::clear_pending_admin(&env);
+
+        env.events().publish(
+            (
+                Symbol::new(&env, event_topics::ADMIN_CANCELLED),
+                Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+            ),
+            (current_admin, pending_admin),
+        );
+
         Ok(())
     }
 
@@ -426,6 +540,8 @@ impl NavinToken {
             ),
             (old_admin, new_admin),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -459,6 +575,7 @@ impl NavinToken {
         // Extend TTL for the recipient's balance
         storage::extend_balance_ttl(&env, &to, 1000, 500000);
 
+        emit_sep41_mint(&env, &to, amount);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::MINT),
@@ -466,6 +583,8 @@ impl NavinToken {
             ),
             (to, amount),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -513,6 +632,7 @@ impl NavinToken {
         // Extend TTL for the source's balance
         storage::extend_balance_ttl(&env, &from, 1000, 500000);
 
+        emit_sep41_burn(&env, &from, amount);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::ADMIN_BURN),
@@ -520,6 +640,8 @@ impl NavinToken {
             ),
             (from, amount),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -554,6 +676,7 @@ impl NavinToken {
         storage::set_balance(&env, &from, new_from_balance);
         storage::extend_balance_ttl(&env, &from, 1000, 500000);
 
+        emit_sep41_burn(&env, &from, amount);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::BURN),
@@ -561,6 +684,8 @@ impl NavinToken {
             ),
             (from, amount),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -612,6 +737,7 @@ impl NavinToken {
         storage::extend_balance_ttl(&env, &from, 1000, 500000);
         storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);
 
+        emit_sep41_burn(&env, &from, amount);
         env.events().publish(
             (
                 Symbol::new(&env, event_topics::BURN_FROM),
@@ -619,6 +745,8 @@ impl NavinToken {
             ),
             (from, spender, amount),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -646,6 +774,8 @@ impl NavinToken {
             (admin,),
         );
 
+        storage::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -670,6 +800,8 @@ impl NavinToken {
             ),
             (admin,),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -707,6 +839,9 @@ impl NavinToken {
 
         if recipients.is_empty() {
             return Err(TokenError::InvalidAmount);
+        }
+        if recipients.len() > MAX_BATCH_SIZE {
+            return Err(TokenError::BatchTooLarge);
         }
 
         let mut total: i128 = 0;
@@ -763,6 +898,7 @@ impl NavinToken {
                 continue;
             }
             filtered_recipients.push_back((to.clone(), amount));
+            emit_sep41_transfer(&env, &from, &to, amount);
             env.events().publish(
                 (
                     Symbol::new(&env, event_topics::BATCH_LEG),
@@ -778,6 +914,8 @@ impl NavinToken {
             ),
             (from, filtered_recipients.clone(), filtered_recipients.len()),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -834,6 +972,8 @@ impl NavinToken {
             (admin, key),
         );
 
+        storage::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -877,6 +1017,8 @@ impl NavinToken {
             ),
             (admin, key),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -964,6 +1106,8 @@ impl NavinToken {
             (admin, key, value),
         );
 
+        storage::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -1021,6 +1165,8 @@ impl NavinToken {
             ),
             (admin, key),
         );
+
+        storage::extend_instance_ttl(&env);
 
         Ok(())
     }

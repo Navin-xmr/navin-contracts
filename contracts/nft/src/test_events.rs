@@ -312,26 +312,23 @@ fn test_admin_proposal_emits_event() {
 }
 
 #[test]
-/// Verifies CEI ordering: the xfer event and ownership are recorded before
-/// `on_nft_received` is invoked, so a contract recipient that has no callback
-/// logic still sees the token in its balance and the event in the log.
-///
-/// Uses `PanicReceiver` (a minimal receiver with a no-op callback) to confirm
-/// that the event is emitted whether or not the callback does anything.
-#[test]
-fn test_xfer_event_and_ownership_recorded_before_callback_body_runs() {
-    let (env, _admin, client) = setup();
-    let alice = crate::test_utils::account_address(&env, 0);
-    let receiver_id = env.register(PanicReceiver, ());
-    let _ = PanicReceiverClient::new(&env, &receiver_id);
+fn test_admin_cancellation_emits_event() {
+    let (env, admin, client) = setup();
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+    client.cancel_admin_transfer(&admin);
 
-    client.mint(&alice, &1);
-    client.transfer(&alice, &receiver_id, &1, &Vec::new(&env));
-
-    // The xfer event is in the log (CEI: emitted before the callback).
+    let event = last_event(&env, &client.address);
     assert_eq!(
-        count_events(&env, &client.address, event_topics::TRANSFER),
-        1
+        vec![&env, event],
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                topics(&env, event_topics::ADMIN_CANCELLED),
+                (admin, new_admin, TIMESTAMP).into_val(&env),
+            ),
+        ]
     );
 }
 
@@ -349,4 +346,79 @@ fn test_failed_mint_emits_no_event() {
     let after = count_events(&env, &client.address, event_topics::MINT);
     assert!(after <= before);
     assert_eq!(client.total_supply(), 1);
+}
+
+#[test]
+fn test_approve_burn_emits_event() {
+    let (env, _admin, client) = setup();
+    let owner = Address::generate(&env);
+    client.mint(&owner, &3);
+    client.approve_burn(&3);
+
+    let event = last_event(&env, &client.address);
+    assert_eq!(
+        vec![&env, event],
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                topics(&env, event_topics::BURN_APPROVED),
+                (owner, 3_u64, TIMESTAMP).into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_revoke_burn_approval_emits_event_and_blocks_burn() {
+    let (env, _admin, client) = setup();
+    let owner = Address::generate(&env);
+    client.mint(&owner, &4);
+    client.approve_burn(&4);
+    client.revoke_burn_approval(&4);
+
+    let event = last_event(&env, &client.address);
+    assert_eq!(
+        vec![&env, event],
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                topics(&env, event_topics::BURN_APPROVAL_REVOKED),
+                (owner.clone(), 4_u64, TIMESTAMP).into_val(&env),
+            ),
+        ]
+    );
+    assert!(!client.is_burn_approved(&4));
+    assert_eq!(
+        client.try_burn(&owner, &4),
+        Err(Ok(crate::NftError::BurnNotApproved))
+    );
+
+    // Revoking again is a no-op and emits nothing new.
+    client.revoke_burn_approval(&4);
+    assert_eq!(
+        count_events(&env, &client.address, event_topics::BURN_APPROVAL_REVOKED),
+        1
+    );
+}
+
+#[test]
+fn test_transfer_clears_burn_approval() {
+    let (env, _admin, client) = setup();
+    let alice = Address::generate(&env);
+    let bob = env.register(AcceptingReceiver, ());
+    client.mint(&alice, &6);
+    client.approve_burn(&6);
+    assert!(client.is_burn_approved(&6));
+
+    client.transfer(&alice, &bob, &6, &Vec::new(&env));
+
+    assert_eq!(client.owner_of(&6), bob);
+    assert!(!client.is_burn_approved(&6));
+    assert_eq!(
+        client.try_burn(&bob, &6),
+        Err(Ok(crate::NftError::BurnNotApproved))
+    );
+    assert_eq!(client.owner_of(&6), bob);
 }

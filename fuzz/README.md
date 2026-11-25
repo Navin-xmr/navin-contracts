@@ -33,6 +33,13 @@ random inputs; only `fuzz/fuzz_targets/` holds real cargo-fuzz targets.
   (`add_company`, `add_carrier`, `revoke_role`, `get_role`) with an
   attacker-controlled action sequence, asserting a non-admin caller can
   never grant itself a role regardless of prior state.
+- `nft_ownership` — fuzzes random sequences of NFT `mint`, `mint_batch`,
+  `transfer`, `transfer_from`, `approve`, `revoke_approval`, `burn`, and
+  `burn_batch` over a small set of holders and token ids, asserting after
+  every step that `total_supply` matches the owned ids, that each owner's
+  `balance_of` matches its `tokens_of_owner` list (whose entries all report
+  that owner via `owner_of`), and that approvals are cleared on transfer
+  and burn.
 
 ## Why this is not a workspace member
 
@@ -76,6 +83,7 @@ cargo install cargo-fuzz
 cd fuzz
 cargo +nightly fuzz run escrow_arithmetic -- -max_total_time=60
 cargo +nightly fuzz run rbac_authorization -- -max_total_time=60
+cargo +nightly fuzz run nft_ownership -- -max_total_time=60
 ```
 
 Crashing inputs are written to `fuzz/artifacts/<target>/`.

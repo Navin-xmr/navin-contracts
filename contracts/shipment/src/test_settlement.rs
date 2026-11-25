@@ -51,6 +51,16 @@ fn test_configure_settlement_nft_rejects_non_nft_address() {
     assert_eq!(result, Err(Ok(NavinError::NftConfigurationFailed)));
 }
 
+/// An unknown settlement ID must return `SettlementNotFound`, not
+/// `ShipmentNotFound`, so integrators can tell the two apart.
+#[test]
+fn test_get_settlement_unknown_id_returns_settlement_not_found() {
+    let (_env, client, _admin, _token_contract) = setup_initialized_shipment_env();
+
+    let result = client.try_get_settlement(&999);
+    assert_eq!(result, Err(Ok(NavinError::SettlementNotFound)));
+}
+
 /// Test that deposit_escrow creates a settlement record in Pending state
 /// and transitions to Completed on success.
 #[test]

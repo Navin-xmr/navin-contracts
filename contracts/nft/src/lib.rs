@@ -56,6 +56,11 @@ const TTL_THRESHOLD: u32 = 17_280;
 /// Ledgers to extend by once the threshold is hit (~30 days).
 const TTL_EXTENSION: u32 = 518_400;
 
+/// Maximum byte length accepted for a base URI or per-token metadata URI.
+/// Keeps the instance/persistent storage entries bounded instead of growing
+/// unboundedly with every `set_base_uri`/`set_token_uri` call.
+const MAX_URI_LENGTH: u32 = 512;
+
 // ── Contract ────────────────────────────────────────────────────────────────
 
 #[contract]
@@ -178,8 +183,11 @@ impl NavinShipmentNft {
     ) -> Result<(), NftError> {
         Self::require_not_paused(&env)?;
         Self::require_admin(&env)?;
-        if recipients.len() != token_ids.len() {
+        if recipients.is_empty() || recipients.len() != token_ids.len() {
             return Err(NftError::InvalidBatchLength);
+        }
+        if recipients.len() > MAX_BATCH_SIZE {
+            return Err(NftError::BatchTooLarge);
         }
 
         let mut total_supply: u64 = env
@@ -280,6 +288,11 @@ impl NavinShipmentNft {
         Self::check_contract_recipient_opt_in(env, to, token_id)?;
 
         Self::clear_approval(env, from, token_id);
+        // Burn consent belongs to the owner who gave it; it must never carry
+        // over to the new owner.
+        env.storage()
+            .persistent()
+            .remove(&NftKey::BurnApproved(token_id));
         env.storage().persistent().set(&NftKey::Owner(token_id), to);
 
         Self::remove_token_from_owner(env, from, token_id)?;
@@ -379,6 +392,13 @@ impl NavinShipmentNft {
         caller.require_auth();
         let admin = Self::get_admin_inner(&env)?;
         let is_admin = caller == admin;
+
+        if token_ids.is_empty() {
+            return Err(NftError::InvalidBatchLength);
+        }
+        if token_ids.len() > MAX_BATCH_SIZE {
+            return Err(NftError::BatchTooLarge);
+        }
 
         for token_id in token_ids.iter() {
             let owner = Self::get_owner_inner(&env, token_id)?;
@@ -526,6 +546,35 @@ impl NavinShipmentNft {
         env.storage()
             .persistent()
             .set(&NftKey::BurnApproved(token_id), &true);
+        env.events().publish(
+            (
+                event_topics::BURN_APPROVED,
+                event_topics::EVENT_SCHEMA_VERSION,
+            ),
+            (owner.clone(), token_id, env.ledger().timestamp()),
+        );
+        Self::extend_instance_ttl(&env);
+        Self::extend_persistent_ttl(&env, &owner);
+        Ok(())
+    }
+
+    /// Withdraw a previously given burn approval. Only the current owner may
+    /// revoke; a `burn_rv` event is emitted when an approval was removed.
+    pub fn revoke_burn_approval(env: Env, token_id: u64) -> Result<(), NftError> {
+        let owner = Self::get_owner_inner(&env, token_id)?;
+        owner.require_auth();
+
+        let key = NftKey::BurnApproved(token_id);
+        if env.storage().persistent().get(&key).unwrap_or(false) {
+            env.storage().persistent().remove(&key);
+            env.events().publish(
+                (
+                    event_topics::BURN_APPROVAL_REVOKED,
+                    event_topics::EVENT_SCHEMA_VERSION,
+                ),
+                (owner.clone(), token_id, env.ledger().timestamp()),
+            );
+        }
         Self::extend_instance_ttl(&env);
         Self::extend_persistent_ttl(&env, &owner);
         Ok(())
@@ -550,8 +599,13 @@ impl NavinShipmentNft {
         if Self::get_admin_inner(&env)? != admin {
             return Err(NftError::NotAdmin);
         }
+        Self::validate_uri(&base_uri)?;
 
         storage::set_base_uri(&env, &base_uri);
+        env.events().publish(
+            (event_topics::BASE_URI, event_topics::EVENT_SCHEMA_VERSION),
+            (admin, base_uri, env.ledger().timestamp()),
+        );
         Self::extend_instance_ttl(&env);
         Ok(())
     }
@@ -570,6 +624,7 @@ impl NavinShipmentNft {
             return Err(NftError::NotAdmin);
         }
         Self::get_owner_inner(&env, token_id)?;
+        Self::validate_uri(&uri)?;
 
         storage::set_metadata_uri(&env, token_id, &uri);
         env.storage().persistent().extend_ttl(
@@ -577,7 +632,20 @@ impl NavinShipmentNft {
             TTL_THRESHOLD,
             TTL_EXTENSION,
         );
+        env.events().publish(
+            (event_topics::TOKEN_URI, event_topics::EVENT_SCHEMA_VERSION),
+            (admin, token_id, uri, env.ledger().timestamp()),
+        );
         Self::extend_instance_ttl(&env);
+        Ok(())
+    }
+
+    /// Reject empty or over-long URIs before they are persisted.
+    fn validate_uri(uri: &String) -> Result<(), NftError> {
+        let len = uri.len();
+        if len == 0 || len as u32 > MAX_URI_LENGTH {
+            return Err(NftError::InvalidUri);
+        }
         Ok(())
     }
 
@@ -602,6 +670,9 @@ impl NavinShipmentNft {
         if Self::get_admin_inner(&env)? != admin {
             return Err(NftError::NotAdmin);
         }
+        if new_admin == admin {
+            return Err(NftError::SameAccount);
+        }
 
         env.storage()
             .instance()
@@ -612,6 +683,30 @@ impl NavinShipmentNft {
                 event_topics::EVENT_SCHEMA_VERSION,
             ),
             (admin, new_admin, env.ledger().timestamp()),
+        );
+        Self::extend_instance_ttl(&env);
+        Ok(())
+    }
+
+    /// Cancel a pending admin transfer. Only the current admin can revoke it.
+    pub fn cancel_admin_transfer(env: Env, admin: Address) -> Result<(), NftError> {
+        admin.require_auth();
+        if Self::get_admin_inner(&env)? != admin {
+            return Err(NftError::NotAdmin);
+        }
+
+        let proposed_admin: Address = env
+            .storage()
+            .instance()
+            .get(&NftKey::ProposedAdmin)
+            .ok_or(NftError::NoProposedAdmin)?;
+        env.storage().instance().remove(&NftKey::ProposedAdmin);
+        env.events().publish(
+            (
+                event_topics::ADMIN_CANCELLED,
+                event_topics::EVENT_SCHEMA_VERSION,
+            ),
+            (admin, proposed_admin, env.ledger().timestamp()),
         );
         Self::extend_instance_ttl(&env);
         Ok(())
@@ -1014,6 +1109,57 @@ mod tests {
     }
 
     #[test]
+    fn test_admin_transfer_rejects_self_nomination() {
+        let (_env, admin, client) = setup();
+        assert_eq!(
+            client.try_transfer_admin(&admin, &admin),
+            Err(Ok(NftError::SameAccount))
+        );
+        assert_eq!(
+            client.try_get_proposed_admin(),
+            Err(Ok(NftError::NoProposedAdmin))
+        );
+    }
+
+    #[test]
+    fn test_cancel_admin_transfer_revokes_proposal() {
+        let (env, admin, client) = setup();
+        let new_admin = Address::generate(&env);
+
+        client.transfer_admin(&admin, &new_admin);
+        assert_eq!(client.get_proposed_admin(), new_admin);
+
+        client.cancel_admin_transfer(&admin);
+        assert_eq!(
+            client.try_get_proposed_admin(),
+            Err(Ok(NftError::NoProposedAdmin))
+        );
+        assert_eq!(client.get_admin(), admin);
+    }
+
+    #[test]
+    fn test_cancel_admin_transfer_rejects_non_admin_and_missing_proposal() {
+        let (env, admin, client) = setup();
+        let non_admin = Address::generate(&env);
+        assert_eq!(
+            client.try_cancel_admin_transfer(&non_admin),
+            Err(Ok(NftError::NotAdmin))
+        );
+        assert_eq!(
+            client.try_cancel_admin_transfer(&admin),
+            Err(Ok(NftError::NoProposedAdmin))
+        );
+
+        let new_admin = Address::generate(&env);
+        client.transfer_admin(&admin, &new_admin);
+        assert_eq!(
+            client.try_cancel_admin_transfer(&non_admin),
+            Err(Ok(NftError::NotAdmin))
+        );
+        assert_eq!(client.get_proposed_admin(), new_admin);
+    }
+
+    #[test]
     fn test_long_metadata_is_preserved() {
         let env = Env::default();
         let admin = Address::generate(&env);
@@ -1110,6 +1256,92 @@ mod tests {
             Err(Ok(NftError::InvalidBatchLength))
         );
         assert_eq!(client.total_supply(), 0);
+    }
+
+    #[test]
+    fn test_mint_batch_rejects_empty_batch() {
+        let (env, _admin, client) = setup();
+        assert_eq!(
+            client.try_mint_batch(&Vec::new(&env), &Vec::new(&env)),
+            Err(Ok(NftError::InvalidBatchLength))
+        );
+        assert_eq!(client.total_supply(), 0);
+    }
+
+    #[test]
+    fn test_mint_batch_accepts_max_batch() {
+        let (env, _admin, client) = setup();
+        let recipient = Address::generate(&env);
+        let mut recipients = Vec::new(&env);
+        let mut token_ids = Vec::new(&env);
+        for token_id in 1..=MAX_BATCH_SIZE as u64 {
+            recipients.push_back(recipient.clone());
+            token_ids.push_back(token_id);
+        }
+
+        client.mint_batch(&recipients, &token_ids);
+        assert_eq!(client.total_supply(), MAX_BATCH_SIZE as u64);
+        assert_eq!(client.balance_of(&recipient), MAX_BATCH_SIZE as u64);
+    }
+
+    #[test]
+    fn test_mint_batch_rejects_over_max_batch() {
+        let (env, _admin, client) = setup();
+        let recipient = Address::generate(&env);
+        let mut recipients = Vec::new(&env);
+        let mut token_ids = Vec::new(&env);
+        for token_id in 1..=MAX_BATCH_SIZE as u64 + 1 {
+            recipients.push_back(recipient.clone());
+            token_ids.push_back(token_id);
+        }
+
+        assert_eq!(
+            client.try_mint_batch(&recipients, &token_ids),
+            Err(Ok(NftError::BatchTooLarge)),
+            "MAX_BATCH_SIZE + 1 tokens must fail fast"
+        );
+        assert_eq!(client.total_supply(), 0);
+    }
+
+    #[test]
+    fn test_burn_batch_rejects_empty_batch() {
+        let (env, admin, client) = setup();
+        assert_eq!(
+            client.try_burn_batch(&admin, &Vec::new(&env)),
+            Err(Ok(NftError::InvalidBatchLength))
+        );
+    }
+
+    #[test]
+    fn test_burn_batch_accepts_max_batch() {
+        let (env, admin, client) = setup();
+        let owner = Address::generate(&env);
+        let mut recipients = Vec::new(&env);
+        let mut token_ids = Vec::new(&env);
+        for token_id in 1..=MAX_BATCH_SIZE as u64 {
+            recipients.push_back(owner.clone());
+            token_ids.push_back(token_id);
+        }
+        client.mint_batch(&recipients, &token_ids);
+
+        client.burn_batch(&admin, &token_ids);
+        assert_eq!(client.total_supply(), 0);
+        assert_eq!(client.balance_of(&owner), 0);
+    }
+
+    #[test]
+    fn test_burn_batch_rejects_over_max_batch() {
+        let (env, admin, client) = setup();
+        let mut token_ids = Vec::new(&env);
+        for token_id in 1..=MAX_BATCH_SIZE as u64 + 1 {
+            token_ids.push_back(token_id);
+        }
+
+        assert_eq!(
+            client.try_burn_batch(&admin, &token_ids),
+            Err(Ok(NftError::BatchTooLarge)),
+            "MAX_BATCH_SIZE + 1 tokens must fail fast"
+        );
     }
 
     #[test]

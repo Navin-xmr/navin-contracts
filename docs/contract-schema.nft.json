@@ -1,0 +1,447 @@
+[
+  {
+    "function_v0": {
+      "doc": "Constructor: initialize the NFT collection with an admin, name and symbol.",
+      "name": "__constructor",
+      "inputs": [
+        { "doc": "", "name": "admin", "type": "address" },
+        { "doc": "", "name": "name", "type": "symbol" },
+        { "doc": "", "name": "symbol", "type": "symbol" }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": { "tuple": { "value_types": [] } },
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Mint a single token with an explicit token_id to `to` (admin only).",
+      "name": "mint",
+      "inputs": [
+        { "doc": "", "name": "to", "type": "address" },
+        { "doc": "", "name": "token_id", "type": "u64" }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "u64",
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Batch mint: mint each token_id in `token_ids` to the matching address in `recipients`.",
+      "name": "mint_batch",
+      "inputs": [
+        { "doc": "", "name": "recipients", "type": { "vec": { "element_type": "address" } } },
+        { "doc": "", "name": "token_ids", "type": { "vec": { "element_type": "u64" } } }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": { "tuple": { "value_types": [] } },
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Transfer a token from `from` to `to`; calls the receiver hook when `to` is a contract.",
+      "name": "transfer",
+      "inputs": [
+        { "doc": "", "name": "from", "type": "address" },
+        { "doc": "", "name": "to", "type": "address" },
+        { "doc": "", "name": "token_id", "type": "u64" },
+        { "doc": "", "name": "data", "type": { "vec": { "element_type": "val" } } }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": { "tuple": { "value_types": [] } },
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Transfer a token on behalf of its owner via an approved operator.",
+      "name": "transfer_from",
+      "inputs": [
+        { "doc": "", "name": "operator", "type": "address" },
+        { "doc": "", "name": "from", "type": "address" },
+        { "doc": "", "name": "to", "type": "address" },
+        { "doc": "", "name": "token_id", "type": "u64" }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": { "tuple": { "value_types": [] } },
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Burn a token; caller must be the owner or an approved burner.",
+      "name": "burn",
+      "inputs": [
+        { "doc": "", "name": "caller", "type": "address" },
+        { "doc": "", "name": "token_id", "type": "u64" }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": { "tuple": { "value_types": [] } },
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Burn multiple tokens in one call.",
+      "name": "burn_batch",
+      "inputs": [
+        { "doc": "", "name": "caller", "type": "address" },
+        { "doc": "", "name": "token_ids", "type": { "vec": { "element_type": "u64" } } }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": { "tuple": { "value_types": [] } },
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Approve an operator to transfer or burn a specific token.",
+      "name": "approve",
+      "inputs": [
+        { "doc": "", "name": "operator", "type": "address" },
+        { "doc": "", "name": "token_id", "type": "u64" }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": { "tuple": { "value_types": [] } },
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Revoke a previously approved operator for a token.",
+      "name": "revoke_approval",
+      "inputs": [
+        { "doc": "", "name": "operator", "type": "address" },
+        { "doc": "", "name": "token_id", "type": "u64" }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": { "tuple": { "value_types": [] } },
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Read the operator approved for a token, if any.",
+      "name": "get_approved",
+      "inputs": [
+        { "doc": "", "name": "token_id", "type": "u64" }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": { "option": { "value_type": "address" } },
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Mark a token as approved for burning by anyone with burn rights.",
+      "name": "approve_burn",
+      "inputs": [
+        { "doc": "", "name": "token_id", "type": "u64" }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": { "tuple": { "value_types": [] } },
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Check whether a token has been marked approved for burning.",
+      "name": "is_burn_approved",
+      "inputs": [
+        { "doc": "", "name": "token_id", "type": "u64" }
+      ],
+      "outputs": [
+        { "val": "bool" }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Set the collection-wide base URI used to resolve token metadata (admin only).",
+      "name": "set_base_uri",
+      "inputs": [
+        { "doc": "", "name": "admin", "type": "address" },
+        { "doc": "", "name": "base_uri", "type": "string" }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": { "tuple": { "value_types": [] } },
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Set a per-token URI override, taking precedence over the base URI (admin only).",
+      "name": "set_token_uri",
+      "inputs": [
+        { "doc": "", "name": "admin", "type": "address" },
+        { "doc": "", "name": "token_id", "type": "u64" },
+        { "doc": "", "name": "uri", "type": "string" }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": { "tuple": { "value_types": [] } },
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Resolve the effective URI for a token (per-token override or base URI).",
+      "name": "get_token_uri",
+      "inputs": [
+        { "doc": "", "name": "token_id", "type": "u64" }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "string",
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Propose a new admin; must be accepted via accept_admin_transfer.",
+      "name": "transfer_admin",
+      "inputs": [
+        { "doc": "", "name": "admin", "type": "address" },
+        { "doc": "", "name": "new_admin", "type": "address" }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": { "tuple": { "value_types": [] } },
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Accept a pending admin transfer, completing the two-step handover.",
+      "name": "accept_admin_transfer",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": { "tuple": { "value_types": [] } },
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Read the currently proposed admin, if a transfer is pending.",
+      "name": "get_proposed_admin",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "address",
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Pause the contract, blocking mutating entrypoints (admin only).",
+      "name": "pause",
+      "inputs": [
+        { "doc": "", "name": "admin", "type": "address" }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": { "tuple": { "value_types": [] } },
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Unpause the contract (admin only).",
+      "name": "unpause",
+      "inputs": [
+        { "doc": "", "name": "admin", "type": "address" }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": { "tuple": { "value_types": [] } },
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Read the current owner of a token.",
+      "name": "owner_of",
+      "inputs": [
+        { "doc": "", "name": "token_id", "type": "u64" }
+      ],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "address",
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Read the number of tokens owned by an address.",
+      "name": "balance_of",
+      "inputs": [
+        { "doc": "", "name": "owner", "type": "address" }
+      ],
+      "outputs": [
+        { "val": "u64" }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "List the token ids owned by an address.",
+      "name": "tokens_of_owner",
+      "inputs": [
+        { "doc": "", "name": "owner", "type": "address" }
+      ],
+      "outputs": [
+        { "val": { "vec": { "element_type": "u64" } } }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Read the total number of tokens minted.",
+      "name": "total_supply",
+      "inputs": [],
+      "outputs": [
+        { "val": "u64" }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Read the collection name.",
+      "name": "name",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "symbol",
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Read the collection symbol.",
+      "name": "nft_symbol",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "symbol",
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "function_v0": {
+      "doc": "Read the current admin address.",
+      "name": "get_admin",
+      "inputs": [],
+      "outputs": [
+        {
+          "result": {
+            "ok_type": "address",
+            "error_type": { "udt": { "name": "NftError" } }
+          }
+        }
+      ]
+    }
+  }
+]

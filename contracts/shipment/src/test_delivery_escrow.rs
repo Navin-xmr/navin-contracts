@@ -219,6 +219,45 @@ fn test_resolve_dispute_unauthorized() {
     );
 }
 
+#[test]
+fn test_resolve_dispute_partial_refund() {
+    let (env, client, admin, token_contract) = setup_shipment_env();
+    let company = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let reason_hash = BytesN::from_array(&env, &[92u8; 32]);
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client.initialize(&admin, &token_contract);
+    client.add_company(&admin, &company);
+
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &soroban_sdk::Vec::new(&env),
+        &deadline,
+    );
+    let escrow_amount: i128 = 5000;
+
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+    client.raise_dispute(&company, &shipment_id, &reason_hash);
+
+    client.resolve_dispute(
+        &admin,
+        &shipment_id,
+        &crate::DisputeResolution::PartialRefund,
+        &reason_hash,
+    );
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, crate::ShipmentStatus::PartiallyRefunded);
+    assert_eq!(shipment.finalized, true);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
 // Milestone Event Tests
 
 #[test]
