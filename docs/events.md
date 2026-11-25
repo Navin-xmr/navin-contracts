@@ -26,24 +26,68 @@
    - [escrow_deposited](#escrow_deposited)
    - [escrow_released](#escrow_released)
    - [escrow_refunded](#escrow_refunded)
+   - [milestone_payment_released](#milestone_payment_released)
+   - [platform_fee_collected](#platform_fee_collected)
+   - [escrow_frozen](#escrow_frozen)
 6. [Carrier Events](#carrier-events)
    - [carrier_handoff](#carrier_handoff)
    - [condition_breach](#condition_breach)
    - [carrier_breach](#carrier_breach)
    - [carrier_dispute_loss](#carrier_dispute_loss)
+   - [carrier_late_delivery](#carrier_late_delivery)
+   - [carrier_on_time_delivery](#carrier_on_time_delivery)
+   - [carrier_handoff_completed](#carrier_handoff_completed)
+   - [carrier_milestone_rate](#carrier_milestone_rate)
+   - [carrier_suspended](#carrier_suspended)
+   - [carrier_reactivated](#carrier_reactivated)
+   - [delivery_confirmed](#delivery_confirmed)
+   - [geofence_event](#geofence_event)
+   - [eta_updated](#eta_updated)
 7. [Dispute Events](#dispute-events)
    - [dispute_raised](#dispute_raised)
+   - [dispute_resolved](#dispute_resolved)
+   - [evidence_added](#evidence_added)
 8. [Admin Events](#admin-events)
    - [admin_proposed](#admin_proposed)
    - [admin_transferred](#admin_transferred)
    - [contract_upgraded](#contract_upgraded)
+   - [migration_reported](#migration_reported)
+   - [contract_paused](#contract_paused)
+   - [contract_unpaused](#contract_unpaused)
+   - [force_cancelled](#force_cancelled)
+   - [force_released](#force_released)
+   - [force_refunded](#force_refunded)
+   - [fee_config_updated](#fee_config_updated)
+   - [proposal_digest](#proposal_digest)
+   - [config_updated](#config_updated)
+   - [quota_set](#quota_set)
    - [init](#init)
    - [set_limit](#set_limit)
    - [set_cmp_limit](#set_cmp_limit)
-9. [Notification Events](#notification-events)
+9. [RBAC and Audit Events](#rbac-and-audit-events)
+   - [role_revoked](#role_revoked)
+   - [role_changed](#role_changed)
+   - [add_wl](#add_wl)
+   - [rm_wl](#rm_wl)
+   - [audit_role_assigned](#audit_role_assigned)
+   - [audit_role_revoked](#audit_role_revoked)
+   - [audit_role_suspended](#audit_role_suspended)
+   - [audit_role_reactivated](#audit_role_reactivated)
+   - [audit_admin_transferred](#audit_admin_transferred)
+   - [audit_carrier_whitelisted](#audit_carrier_whitelisted)
+   - [audit_carrier_unwhitelisted](#audit_carrier_unwhitelisted)
+   - [audit_company_suspended](#audit_company_suspended)
+   - [audit_company_reactivated](#audit_company_reactivated)
+   - [audit_carrier_suspended](#audit_carrier_suspended)
+   - [audit_carrier_reactivated](#audit_carrier_reactivated)
+10. [Multisig Events](#multisig-events)
+    - [ms_init](#ms_init)
+    - [approve](#approve-multisig)
+    - [executed](#executed)
+11. [Notification Events](#notification-events)
    - [notification](#notification)
-10. [Lifecycle Sequence Diagram](#lifecycle-sequence-diagram)
-11. [TypeScript Type Definitions](#typescript-type-definitions)
+12. [Lifecycle Sequence Diagram](#lifecycle-sequence-diagram)
+13. [TypeScript Type Definitions](#typescript-type-definitions)
 
 ### Token Contract
 
@@ -178,9 +222,51 @@ This enables safe parser upgrades and indexer deduplication during contract evol
 | `admin_proposed`       | Admin     | `propose_admin`                                                               |
 | `admin_transferred`    | Admin     | `accept_admin`, `multi_sig_execute`                                           |
 | `contract_upgraded`    | Admin     | `upgrade_contract`, `multi_sig_execute`                                       |
+| `migration_reported`   | Admin     | `upgrade`                                                                      |
+| `contract_paused`      | Admin     | `pause`                                                                         |
+| `contract_unpaused`    | Admin     | `unpause`                                                                       |
+| `force_cancelled`      | Admin     | `force_cancel_shipment`                                                         |
+| `force_released`       | Admin     | `execute_proposal`                                                              |
+| `force_refunded`       | Admin     | `execute_proposal`                                                              |
+| `fee_config_updated`   | Admin     | `set_platform_fee`                                                              |
+| `proposal_digest`      | Admin     | `propose_action`                                                                |
+| `config_updated`       | Admin     | `update_config`, `set_circuit_breaker_config`                                  |
+| `quota_set`            | Admin     | `set_creation_quota`                                                            |
 | `init`                 | Admin     | `initialize`                                                                  |
 | `set_limit`            | Admin     | `set_shipment_limit`                                                          |
 | `set_cmp_limit`        | Admin     | `set_company_shipment_limit`                                                  |
+| `milestone_payment_released` | Escrow | `record_milestone`, `record_milestones_batch`, `release_milestone_payment` |
+| `platform_fee_collected` | Escrow  | `deposit_escrow`                                                               |
+| `escrow_frozen`        | Escrow    | `update_status`, `raise_dispute`                                               |
+| `dispute_resolved`     | Dispute   | `resolve_dispute`                                                              |
+| `evidence_added`       | Dispute   | `add_dispute_evidence`                                                         |
+| `carrier_late_delivery` | Carrier  | `confirm_delivery`, `confirm_partial_delivery`                                |
+| `carrier_on_time_delivery` | Carrier | `confirm_delivery`, `confirm_partial_delivery`                               |
+| `carrier_handoff_completed` | Carrier | `handoff_shipment`                                                            |
+| `carrier_milestone_rate` | Carrier  | `confirm_delivery`, `confirm_partial_delivery`                                |
+| `carrier_suspended`    | Carrier   | `suspend_carrier`                                                              |
+| `carrier_reactivated`  | Carrier   | `reactivate_carrier`                                                           |
+| `delivery_confirmed`  | Carrier   | `confirm_delivery`, `confirm_partial_delivery`                                |
+| `geofence_event`       | Carrier   | `report_geofence_event`                                                        |
+| `eta_updated`          | Carrier   | `update_eta`                                                                   |
+| `role_revoked`         | RBAC      | `revoke_role`                                                                  |
+| `role_changed`         | RBAC      | `add_company`, `add_carrier`, `add_guardian`, `add_operator`, `revoke_role`, `suspend_role`, `reactivate_role`, `suspend_company`, `reactivate_company` |
+| `add_wl`               | RBAC      | `add_carrier_to_whitelist`                                                     |
+| `rm_wl`                | RBAC      | `remove_carrier_from_whitelist`                                                |
+| `audit_role_assigned`  | Audit     | `add_company`, `add_carrier`, `add_guardian`, `add_operator`                  |
+| `audit_role_revoked`   | Audit     | `revoke_role`                                                                  |
+| `audit_role_suspended` | Audit     | `suspend_role`                                                                 |
+| `audit_role_reactivated` | Audit   | `reactivate_role`                                                              |
+| `audit_admin_transferred` | Audit  | `accept_admin_transfer`                                                       |
+| `audit_carrier_whitelisted` | Audit | `add_carrier_to_whitelist`                                                    |
+| `audit_carrier_unwhitelisted` | Audit | `remove_carrier_from_whitelist`                                               |
+| `audit_company_suspended` | Audit  | `suspend_company`                                                              |
+| `audit_company_reactivated` | Audit | `reactivate_company`                                                          |
+| `audit_carrier_suspended` | Audit   | `suspend_carrier`                                                              |
+| `audit_carrier_reactivated` | Audit | `reactivate_carrier`                                                          |
+| `ms_init`              | Multisig  | `init_multisig`                                                                |
+| `approve`              | Multisig  | `approve_action`                                                               |
+| `executed`             | Multisig  | `execute_proposal`                                                             |
 | `notification`         | System    | Multiple — see [notification](#notification)                                  |
 
 ---
@@ -635,6 +721,468 @@ A system-level fan-out event emitted alongside most lifecycle events. The backen
 
 ---
 
+## Additional Shipment Events
+
+The following topic sections complement the lifecycle reference above. Payload fields are
+listed in the exact order published by the contract; each event uses the single-symbol tuple
+shown in its topic.
+
+### `milestone_payment_released`
+
+**Topic tuple:** `(Symbol("milestone_payment_released"),)`
+**Emitted by:** `record_milestone`, `record_milestones_batch`, `release_milestone_payment`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `shipment_id` | `u64` | Shipment whose milestone triggered payment |
+| 2 | `status` | `ShipmentStatus` | Always `InTransit` |
+| 3 | `data_hash` | `BytesN<32>` | Hash of the shipment, recipient, amount, and milestone |
+| 4 | `timestamp` | `u64` | Ledger timestamp of the release |
+| 5 | `actor` | `Address` | Carrier receiving the payment |
+| 6 | `milestone` | `Symbol` | Payment milestone name |
+| 7 | `amount` | `i128` | Amount released in stroops |
+
+### `platform_fee_collected`
+
+**Topic tuple:** `(Symbol("platform_fee_collected"),)`
+**Emitted by:** `deposit_escrow`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `shipment_id` | `u64` | Shipment associated with the fee |
+| 2 | `status` | `ShipmentStatus` | Always `Created` |
+| 3 | `data_hash` | `BytesN<32>` | Hash of shipment, treasury, and fee amount |
+| 4 | `timestamp` | `u64` | Ledger timestamp of collection |
+| 5 | `actor` | `Address` | Treasury receiving the fee |
+| 6 | `amount` | `i128` | Fee collected in stroops |
+
+### `escrow_frozen`
+
+**Topic tuple:** `(Symbol("escrow_frozen"),)`
+**Emitted by:** `update_status`, `raise_dispute`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `shipment_id` | `u64` | Shipment whose escrow was frozen |
+| 2 | `reason` | `EscrowFreezeReason` | Structured freeze reason |
+| 3 | `caller` | `Address` | Address that triggered the freeze |
+| 4 | `timestamp` | `u64` | Ledger timestamp of the freeze |
+
+### `dispute_resolved`
+
+**Topic tuple:** `(Symbol("dispute_resolved"),)`
+**Emitted by:** `resolve_dispute`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `shipment_id` | `u64` | Resolved shipment |
+| 2 | `resolution` | `DisputeResolution` | `ReleaseToCarrier`, `RefundToCompany`, or `PartialRefund` |
+| 3 | `reason_hash` | `BytesN<32>` | Hash of the off-chain settlement rationale |
+| 4 | `admin` | `Address` | Admin that resolved the dispute |
+
+### `evidence_added`
+
+**Topic tuple:** `(Symbol("evidence_added"),)`
+**Emitted by:** `add_dispute_evidence`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `shipment_id` | `u64` | Shipment whose dispute received evidence |
+| 2 | `submitted_by` | `Address` | Address that submitted the evidence |
+| 3 | `index` | `u32` | Zero-based evidence index |
+| 4 | `evidence_hash` | `BytesN<32>` | Hash of the off-chain evidence document |
+
+### `carrier_late_delivery`
+
+**Topic tuple:** `(Symbol("carrier_late_delivery"),)`
+**Emitted by:** `confirm_delivery`, `confirm_partial_delivery`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `carrier` | `Address` | Carrier that delivered late |
+| 2 | `shipment_id` | `u64` | Delivered shipment |
+| 3 | `deadline` | `u64` | Shipment deadline |
+| 4 | `actual_delivery_time` | `u64` | Actual delivery timestamp |
+
+### `carrier_on_time_delivery`
+
+**Topic tuple:** `(Symbol("carrier_on_time_delivery"),)`
+**Emitted by:** `confirm_delivery`, `confirm_partial_delivery`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `carrier` | `Address` | Carrier that delivered on time |
+| 2 | `shipment_id` | `u64` | Delivered shipment |
+
+### `carrier_handoff_completed`
+
+**Topic tuple:** `(Symbol("carrier_handoff_completed"),)`
+**Emitted by:** `handoff_shipment`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `from_carrier` | `Address` | Carrier handing off the shipment |
+| 2 | `to_carrier` | `Address` | Carrier receiving the shipment |
+| 3 | `shipment_id` | `u64` | Shipment handed off |
+
+### `carrier_milestone_rate`
+
+**Topic tuple:** `(Symbol("carrier_milestone_rate"),)`
+**Emitted by:** `confirm_delivery`, `confirm_partial_delivery`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `carrier` | `Address` | Carrier whose milestone rate is reported |
+| 2 | `shipment_id` | `u64` | Shipment being measured |
+| 3 | `milestones_hit` | `u32` | Number of milestones completed |
+| 4 | `total_milestones` | `u32` | Total configured milestones |
+
+### `carrier_suspended`
+
+**Topic tuple:** `(Symbol("carrier_suspended"),)`
+**Emitted by:** `suspend_carrier`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `admin` | `Address` | Admin or operator suspending the carrier |
+| 2 | `carrier` | `Address` | Suspended carrier |
+
+### `carrier_reactivated`
+
+**Topic tuple:** `(Symbol("carrier_reactivated"),)`
+**Emitted by:** `reactivate_carrier`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `admin` | `Address` | Admin or operator reactivating the carrier |
+| 2 | `carrier` | `Address` | Reactivated carrier |
+
+### `delivery_confirmed`
+
+**Topic tuple:** `(Symbol("delivery_confirmed"),)`
+**Emitted by:** `confirm_delivery`, `confirm_partial_delivery`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `shipment_id` | `u64` | Delivered shipment |
+| 2 | `status` | `ShipmentStatus` | Always `Delivered` |
+| 3 | `data_hash` | `BytesN<32>` | Hash of the delivery confirmation |
+| 4 | `timestamp` | `u64` | Ledger timestamp of confirmation |
+| 5 | `actor` | `Address` | Receiver confirming delivery |
+
+### `geofence_event`
+
+**Topic tuple:** `(Symbol("geofence_event"),)`
+**Emitted by:** `report_geofence_event`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `shipment_id` | `u64` | Shipment associated with the geofence event |
+| 2 | `zone_type` | `GeofenceEvent` | `ZoneEntry`, `ZoneExit`, or `RouteDeviation` |
+| 3 | `data_hash` | `BytesN<32>` | Hash of the off-chain location data |
+| 4 | `timestamp` | `u64` | Ledger timestamp of the event |
+| 5 | `actor` | `Address` | Carrier reporting the event |
+
+### `eta_updated`
+
+**Topic tuple:** `(Symbol("eta_updated"),)`
+**Emitted by:** `update_eta`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `shipment_id` | `u64` | Shipment whose ETA changed |
+| 2 | `status` | `ShipmentStatus` | Always `InTransit` |
+| 3 | `data_hash` | `BytesN<32>` | Hash of the off-chain ETA data |
+| 4 | `timestamp` | `u64` | Ledger timestamp of the update |
+| 5 | `actor` | `Address` | Carrier updating the ETA |
+| 6 | `new_eta` | `u64` | New estimated arrival timestamp |
+
+### `migration_reported`
+
+**Topic tuple:** `(Symbol("migration_reported"),)`
+**Emitted by:** `upgrade`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `current_version` | `u32` | Contract version before migration |
+| 2 | `target_version` | `u32` | Contract version after migration |
+| 3 | `affected_shipments` | `u64` | Number of shipment entries affected or estimated |
+
+### `contract_paused`
+
+**Topic tuple:** `(Symbol("contract_paused"),)`
+**Emitted by:** `pause`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `admin` | `Address` | Admin that paused the contract |
+| 2 | `timestamp` | `u64` | Ledger timestamp when pause occurred |
+
+### `contract_unpaused`
+
+**Topic tuple:** `(Symbol("contract_unpaused"),)`
+**Emitted by:** `unpause`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `admin` | `Address` | Admin that unpaused the contract |
+| 2 | `timestamp` | `u64` | Ledger timestamp when unpause occurred |
+
+### `force_cancelled`
+
+**Topic tuple:** `(Symbol("force_cancelled"),)`
+**Emitted by:** `force_cancel_shipment`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `shipment_id` | `u64` | Forcibly cancelled shipment |
+| 2 | `status` | `ShipmentStatus` | Always `Cancelled` |
+| 3 | `data_hash` | `BytesN<32>` | Hash of the mandatory off-chain reason document |
+| 4 | `timestamp` | `u64` | Ledger timestamp of the force-cancel |
+| 5 | `actor` | `Address` | Admin or multisig proposer |
+| 6 | `escrow_refunded` | `i128` | Amount refunded in stroops |
+
+### `force_released`
+
+**Topic tuple:** `(Symbol("force_released"),)`
+**Emitted by:** `execute_proposal`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `shipment_id` | `u64` | Shipment whose escrow was released |
+| 2 | `status` | `ShipmentStatus` | Always `Delivered` |
+| 3 | `data_hash` | `BytesN<32>` | Hash of the mandatory off-chain reason document |
+| 4 | `timestamp` | `u64` | Ledger timestamp of the force-release |
+| 5 | `actor` | `Address` | Admin authorizing the release |
+| 6 | `escrow_released` | `i128` | Amount released in stroops |
+
+### `force_refunded`
+
+**Topic tuple:** `(Symbol("force_refunded"),)`
+**Emitted by:** `execute_proposal`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `shipment_id` | `u64` | Shipment whose escrow was refunded |
+| 2 | `status` | `ShipmentStatus` | Always `Cancelled` |
+| 3 | `data_hash` | `BytesN<32>` | Hash of the mandatory off-chain reason document |
+| 4 | `timestamp` | `u64` | Ledger timestamp of the force-refund |
+| 5 | `actor` | `Address` | Admin authorizing the refund |
+| 6 | `escrow_refunded` | `i128` | Amount refunded in stroops |
+
+### `fee_config_updated`
+
+**Topic tuple:** `(Symbol("fee_config_updated"),)`
+**Emitted by:** `set_platform_fee`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `admin` | `Address` | Admin changing the fee configuration |
+| 2 | `fee_bps` | `u32` | New fee rate in basis points |
+| 3 | `treasury` | `Address` | Address receiving platform fees |
+
+### `proposal_digest`
+
+**Topic tuple:** `(Symbol("proposal_digest"),)`
+**Emitted by:** `propose_action`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `proposal_id` | `u64` | Proposal identifier |
+| 2 | `digest` | `BytesN<32>` | Canonical proposal digest |
+| 3 | `computed_at` | `u64` | Ledger timestamp when the digest was computed |
+
+### `config_updated`
+
+**Topic tuple:** `(Symbol("config_updated"),)`
+**Emitted by:** `update_config`, `set_circuit_breaker_config`
+
+`update_config` publishes these fields in order:
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `admin` | `Address` | Admin changing the contract configuration |
+| 2 | `new_config` | `ContractConfig` | Complete replacement contract configuration |
+
+`set_circuit_breaker_config` publishes a separate payload shape:
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `config_type` | `Symbol` | Always `"circuit_breaker"` |
+| 2 | `failure_threshold` | `u32` | Failures before opening the breaker |
+| 3 | `recovery_timeout` | `u64` | Recovery timeout in seconds |
+| 4 | `half_open_max_requests` | `u32` | Requests allowed while half-open |
+| 5 | `schema_version` | `u32` | Event schema version (`2`) |
+| 6 | `event_counter` | `u32` | Monotonic global event counter |
+| 7 | `idempotency_key` | `BytesN<32>` | Deterministic event idempotency key |
+
+### `quota_set`
+
+**Topic tuple:** `(Symbol("quota_set"),)`
+**Emitted by:** `set_creation_quota`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `company` | `Address` | Company whose quota is configured |
+| 2 | `count` | `u32` | Maximum creations allowed in the window |
+| 3 | `window_start` | `u64` | Configured window duration in seconds |
+
+### `role_revoked`
+
+**Topic tuple:** `(Symbol("role_revoked"),)`
+**Emitted by:** `revoke_role`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `admin` | `Address` | Admin performing the revocation |
+| 2 | `target` | `Address` | Address whose role was revoked |
+| 3 | `role` | `Role` | Revoked role |
+
+### `role_changed`
+
+**Topic tuple:** `(Symbol("role_changed"),)`
+**Emitted by:** `add_company`, `add_carrier`, `add_guardian`, `add_operator`, `revoke_role`, `suspend_role`, `reactivate_role`, `suspend_company`, `reactivate_company`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `action` | `RoleChangeAction` | `Assigned`, `Revoked`, `Suspended`, or `Reactivated` |
+| 2 | `admin` | `Address` | Address performing the role change |
+| 3 | `target` | `Address` | Address whose role changed |
+| 4 | `role` | `Role` | Affected role |
+| 5 | `timestamp` | `u64` | Ledger timestamp of the change |
+
+### `add_wl`
+
+**Topic tuple:** `(Symbol("add_wl"),)`
+**Emitted by:** `add_carrier_to_whitelist`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `company` | `Address` | Company adding a carrier |
+| 2 | `carrier` | `Address` | Carrier added to the whitelist |
+| 3 | `schema_version` | `u32` | Event schema version (`2`) |
+| 4 | `event_counter` | `u32` | Monotonic global event counter |
+| 5 | `idempotency_key` | `BytesN<32>` | Deterministic event idempotency key |
+
+### `rm_wl`
+
+**Topic tuple:** `(Symbol("rm_wl"),)`
+**Emitted by:** `remove_carrier_from_whitelist`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `company` | `Address` | Company removing a carrier |
+| 2 | `carrier` | `Address` | Carrier removed from the whitelist |
+| 3 | `schema_version` | `u32` | Event schema version (`2`) |
+| 4 | `event_counter` | `u32` | Monotonic global event counter |
+| 5 | `idempotency_key` | `BytesN<32>` | Deterministic event idempotency key |
+
+### `audit_role_assigned`
+
+**Topic tuple:** `(Symbol("audit_role_assigned"),)`
+**Emitted by:** `add_company`, `add_carrier`, `add_guardian`, `add_operator`
+
+### `audit_role_revoked`
+
+**Topic tuple:** `(Symbol("audit_role_revoked"),)`
+**Emitted by:** `revoke_role`
+
+### `audit_role_suspended`
+
+**Topic tuple:** `(Symbol("audit_role_suspended"),)`
+**Emitted by:** `suspend_role`
+
+### `audit_role_reactivated`
+
+**Topic tuple:** `(Symbol("audit_role_reactivated"),)`
+**Emitted by:** `reactivate_role`
+
+### `audit_admin_transferred`
+
+**Topic tuple:** `(Symbol("audit_admin_transferred"),)`
+**Emitted by:** `accept_admin_transfer`
+
+### `audit_carrier_whitelisted`
+
+**Topic tuple:** `(Symbol("audit_carrier_whitelisted"),)`
+**Emitted by:** `add_carrier_to_whitelist`
+
+### `audit_carrier_unwhitelisted`
+
+**Topic tuple:** `(Symbol("audit_carrier_unwhitelisted"),)`
+**Emitted by:** `remove_carrier_from_whitelist`
+
+### `audit_company_suspended`
+
+**Topic tuple:** `(Symbol("audit_company_suspended"),)`
+**Emitted by:** `suspend_company`
+
+### `audit_company_reactivated`
+
+**Topic tuple:** `(Symbol("audit_company_reactivated"),)`
+**Emitted by:** `reactivate_company`
+
+### `audit_carrier_suspended`
+
+**Topic tuple:** `(Symbol("audit_carrier_suspended"),)`
+**Emitted by:** `suspend_carrier`
+
+### `audit_carrier_reactivated`
+
+**Topic tuple:** `(Symbol("audit_carrier_reactivated"),)`
+**Emitted by:** `reactivate_carrier`
+
+All eleven audit topics below use the same payload order: `entry_id: u64`,
+`actor: Address`, `target: Address`, `timestamp: u64`. The topic name identifies the
+audit action; there is no separate action field in the payload.
+
+The common payload tuple is `(entry_id, actor, target, timestamp)`.
+
+### `ms_init`
+
+**Topic tuple:** `(Symbol("ms_init"),)`
+**Emitted by:** `init_multisig`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `admin_count` | `u32` | Number of configured multisig admins |
+| 2 | `threshold` | `u32` | Approvals required to execute a proposal |
+| 3 | `schema_version` | `u32` | Event schema version (`2`) |
+| 4 | `event_counter` | `u32` | Monotonic global event counter |
+| 5 | `idempotency_key` | `BytesN<32>` | Deterministic event idempotency key |
+
+### `approve` (multisig)
+
+The shipment contract's multisig approval topic is also named `approve`; it is distinct
+from the token contract's allowance-approval event below.
+
+**Topic tuple:** `(Symbol("approve"),)`
+**Emitted by:** `approve_action`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `proposal_id` | `u64` | Proposal receiving approval |
+| 2 | `approver` | `Address` | Admin approving the proposal |
+| 3 | `approval_count` | `u32` | Current number of approvals |
+| 4 | `schema_version` | `u32` | Event schema version (`2`) |
+| 5 | `event_counter` | `u32` | Monotonic global event counter |
+| 6 | `idempotency_key` | `BytesN<32>` | Deterministic event idempotency key |
+
+### `executed`
+
+**Topic tuple:** `(Symbol("executed"),)`
+**Emitted by:** `execute_proposal`
+
+| # | Field | Soroban Type | Description |
+|---|---|---|---|
+| 1 | `proposal_id` | `u64` | Executed proposal |
+| 2 | `action` | `AdminAction` | Executed multisig action |
+| 3 | `schema_version` | `u32` | Event schema version (`2`) |
+| 4 | `event_counter` | `u32` | Monotonic global event counter |
+| 5 | `idempotency_key` | `BytesN<32>` | Deterministic event idempotency key |
+
+---
+
 ## Lifecycle Sequence Diagram
 
 ### Happy Path (Shipment Created → Delivered)
@@ -821,6 +1369,49 @@ type NotificationType =
   | "DisputeResolved"
   | "DeadlineApproaching";
 
+type Role = "Company" | "Carrier" | "Guardian" | "Operator" | "Unassigned";
+
+type RoleChangeAction = "Assigned" | "Revoked" | "Suspended" | "Reactivated";
+
+type DisputeResolution = "ReleaseToCarrier" | "RefundToCompany" | "PartialRefund";
+
+type EscrowFreezeReason =
+  | "DisputeRaised"
+  | "CarrierSuspended"
+  | "CompanySuspended"
+  | "ContractPaused"
+  | "CircuitBreakerOpen";
+
+type GeofenceEvent = "ZoneEntry" | "ZoneExit" | "RouteDeviation";
+
+type AdminAction =
+  | { Upgrade: Hash32 }
+  | { TransferAdmin: StellarAddress }
+  | { ForceRelease: [U64, Hash32] }
+  | { ForceRefund: [U64, Hash32] };
+
+interface ContractConfig {
+  shipmentTtlThreshold: number;
+  shipmentTtlExtension: number;
+  minStatusUpdateInterval: U64;
+  batchOperationLimit: number;
+  maxMetadataEntries: number;
+  defaultShipmentLimit: number;
+  multisigMinAdmins: number;
+  multisigMaxAdmins: number;
+  proposalExpirySeconds: U64;
+  deadlineGraceSeconds: U64;
+  idempotencyWindowSeconds: U64;
+  autoDisputeBreach: boolean;
+  maxMilestonesPerShipment: number;
+  maxNotesPerShipment: number;
+  maxEvidencePerDispute: number;
+  maxBreachesPerShipment: number;
+  creationQuotaMax: number;
+  creationQuotaWindowSeconds: U64;
+  autoMintNft: boolean;
+}
+
 // ─── Shipment Lifecycle Event Payloads ───────────────────────────────────────
 
 interface ShipmentCreatedEvent {
@@ -950,6 +1541,25 @@ interface ContractUpgradedEvent {
   version: number; // u32
 }
 
+interface ContractInitializedEvent {
+  topic: "init";
+  admin: StellarAddress;
+  tokenContract: StellarAddress;
+}
+
+interface ShipmentLimitUpdatedEvent {
+  topic: "set_limit";
+  admin: StellarAddress;
+  limit: number;
+}
+
+interface CompanyShipmentLimitUpdatedEvent {
+  topic: "set_cmp_limit";
+  admin: StellarAddress;
+  company: StellarAddress;
+  limit: number;
+}
+
 // ─── Notification Event Payload ───────────────────────────────────────────────
 
 interface NotificationEvent {
@@ -958,6 +1568,322 @@ interface NotificationEvent {
   notificationType: NotificationType;
   shipmentId: U64;
   dataHash: Hash32;
+}
+
+// ─── Additional Shipment Event Payloads ──────────────────────────────────────
+
+interface MilestonePaymentReleasedEvent {
+  topic: "milestone_payment_released";
+  shipmentId: U64;
+  status: ShipmentStatus;
+  dataHash: Hash32;
+  timestamp: U64;
+  actor: StellarAddress;
+  milestone: string;
+  amount: I128;
+}
+
+interface PlatformFeeCollectedEvent {
+  topic: "platform_fee_collected";
+  shipmentId: U64;
+  status: ShipmentStatus;
+  dataHash: Hash32;
+  timestamp: U64;
+  actor: StellarAddress;
+  amount: I128;
+}
+
+interface EscrowFrozenEvent {
+  topic: "escrow_frozen";
+  shipmentId: U64;
+  reason: EscrowFreezeReason;
+  caller: StellarAddress;
+  timestamp: U64;
+}
+
+interface DisputeResolvedEvent {
+  topic: "dispute_resolved";
+  shipmentId: U64;
+  resolution: DisputeResolution;
+  reasonHash: Hash32;
+  admin: StellarAddress;
+}
+
+interface EvidenceAddedEvent {
+  topic: "evidence_added";
+  shipmentId: U64;
+  submittedBy: StellarAddress;
+  index: number;
+  evidenceHash: Hash32;
+}
+
+interface CarrierLateDeliveryEvent {
+  topic: "carrier_late_delivery";
+  carrier: StellarAddress;
+  shipmentId: U64;
+  deadline: U64;
+  actualDeliveryTime: U64;
+}
+
+interface CarrierOnTimeDeliveryEvent {
+  topic: "carrier_on_time_delivery";
+  carrier: StellarAddress;
+  shipmentId: U64;
+}
+
+interface CarrierHandoffCompletedEvent {
+  topic: "carrier_handoff_completed";
+  fromCarrier: StellarAddress;
+  toCarrier: StellarAddress;
+  shipmentId: U64;
+}
+
+interface CarrierMilestoneRateEvent {
+  topic: "carrier_milestone_rate";
+  carrier: StellarAddress;
+  shipmentId: U64;
+  milestonesHit: number;
+  totalMilestones: number;
+}
+
+interface CarrierSuspendedEvent {
+  topic: "carrier_suspended";
+  admin: StellarAddress;
+  carrier: StellarAddress;
+}
+
+interface CarrierReactivatedEvent {
+  topic: "carrier_reactivated";
+  admin: StellarAddress;
+  carrier: StellarAddress;
+}
+
+interface DeliveryConfirmedEvent {
+  topic: "delivery_confirmed";
+  shipmentId: U64;
+  status: ShipmentStatus;
+  dataHash: Hash32;
+  timestamp: U64;
+  actor: StellarAddress;
+}
+
+interface GeofenceReportedEvent {
+  topic: "geofence_event";
+  shipmentId: U64;
+  zoneType: GeofenceEvent;
+  dataHash: Hash32;
+  timestamp: U64;
+  actor: StellarAddress;
+}
+
+interface EtaUpdatedEvent {
+  topic: "eta_updated";
+  shipmentId: U64;
+  status: ShipmentStatus;
+  dataHash: Hash32;
+  timestamp: U64;
+  actor: StellarAddress;
+  newEta: U64;
+}
+
+interface MigrationReportedEvent {
+  topic: "migration_reported";
+  currentVersion: number;
+  targetVersion: number;
+  affectedShipments: U64;
+}
+
+interface ContractPausedEvent {
+  topic: "contract_paused";
+  admin: StellarAddress;
+  timestamp: U64;
+}
+
+interface ContractUnpausedEvent {
+  topic: "contract_unpaused";
+  admin: StellarAddress;
+  timestamp: U64;
+}
+
+interface ForceCancelledEvent {
+  topic: "force_cancelled";
+  shipmentId: U64;
+  status: ShipmentStatus;
+  dataHash: Hash32;
+  timestamp: U64;
+  actor: StellarAddress;
+  escrowRefunded: I128;
+}
+
+interface ForceReleasedEvent {
+  topic: "force_released";
+  shipmentId: U64;
+  status: ShipmentStatus;
+  dataHash: Hash32;
+  timestamp: U64;
+  actor: StellarAddress;
+  escrowReleased: I128;
+}
+
+interface ForceRefundedEvent {
+  topic: "force_refunded";
+  shipmentId: U64;
+  status: ShipmentStatus;
+  dataHash: Hash32;
+  timestamp: U64;
+  actor: StellarAddress;
+  escrowRefunded: I128;
+}
+
+interface FeeConfigUpdatedEvent {
+  topic: "fee_config_updated";
+  admin: StellarAddress;
+  feeBps: number;
+  treasury: StellarAddress;
+}
+
+interface ProposalDigestEvent {
+  topic: "proposal_digest";
+  proposalId: U64;
+  digest: Hash32;
+  computedAt: U64;
+}
+
+interface ContractConfigUpdatedEvent {
+  topic: "config_updated";
+  admin: StellarAddress;
+  newConfig: ContractConfig;
+}
+
+interface CircuitBreakerConfigUpdatedEvent {
+  topic: "config_updated";
+  configType: "circuit_breaker";
+  failureThreshold: number;
+  recoveryTimeout: U64;
+  halfOpenMaxRequests: number;
+  schemaVersion: number;
+  eventCounter: number;
+  idempotencyKey: Hash32;
+}
+
+interface QuotaSetEvent {
+  topic: "quota_set";
+  company: StellarAddress;
+  count: number;
+  windowStart: U64;
+}
+
+interface RoleRevokedEvent {
+  topic: "role_revoked";
+  admin: StellarAddress;
+  target: StellarAddress;
+  role: Role;
+}
+
+interface RoleChangedEvent {
+  topic: "role_changed";
+  action: RoleChangeAction;
+  admin: StellarAddress;
+  target: StellarAddress;
+  role: Role;
+  timestamp: U64;
+}
+
+interface WhitelistAddedEvent {
+  topic: "add_wl";
+  company: StellarAddress;
+  carrier: StellarAddress;
+  schemaVersion: number;
+  eventCounter: number;
+  idempotencyKey: Hash32;
+}
+
+interface WhitelistRemovedEvent {
+  topic: "rm_wl";
+  company: StellarAddress;
+  carrier: StellarAddress;
+  schemaVersion: number;
+  eventCounter: number;
+  idempotencyKey: Hash32;
+}
+
+interface AuditEvent {
+  entryId: U64;
+  actor: StellarAddress;
+  target: StellarAddress;
+  timestamp: U64;
+}
+
+interface AuditRoleAssignedEvent extends AuditEvent {
+  topic: "audit_role_assigned";
+}
+
+interface AuditRoleRevokedEvent extends AuditEvent {
+  topic: "audit_role_revoked";
+}
+
+interface AuditRoleSuspendedEvent extends AuditEvent {
+  topic: "audit_role_suspended";
+}
+
+interface AuditRoleReactivatedEvent extends AuditEvent {
+  topic: "audit_role_reactivated";
+}
+
+interface AuditAdminTransferredEvent extends AuditEvent {
+  topic: "audit_admin_transferred";
+}
+
+interface AuditCarrierWhitelistedEvent extends AuditEvent {
+  topic: "audit_carrier_whitelisted";
+}
+
+interface AuditCarrierUnwhitelistedEvent extends AuditEvent {
+  topic: "audit_carrier_unwhitelisted";
+}
+
+interface AuditCompanySuspendedEvent extends AuditEvent {
+  topic: "audit_company_suspended";
+}
+
+interface AuditCompanyReactivatedEvent extends AuditEvent {
+  topic: "audit_company_reactivated";
+}
+
+interface AuditCarrierSuspendedEvent extends AuditEvent {
+  topic: "audit_carrier_suspended";
+}
+
+interface AuditCarrierReactivatedEvent extends AuditEvent {
+  topic: "audit_carrier_reactivated";
+}
+
+interface MultisigInitializedEvent {
+  topic: "ms_init";
+  adminCount: number;
+  threshold: number;
+  schemaVersion: number;
+  eventCounter: number;
+  idempotencyKey: Hash32;
+}
+
+interface MultisigApprovalEvent {
+  topic: "approve";
+  proposalId: U64;
+  approver: StellarAddress;
+  approvalCount: number;
+  schemaVersion: number;
+  eventCounter: number;
+  idempotencyKey: Hash32;
+}
+
+interface ProposalExecutedEvent {
+  topic: "executed";
+  proposalId: U64;
+  action: AdminAction;
+  schemaVersion: number;
+  eventCounter: number;
+  idempotencyKey: Hash32;
 }
 
 // ─── Union of All Events ──────────────────────────────────────────────────────
@@ -980,7 +1906,53 @@ type NavinContractEvent =
   | AdminProposedEvent
   | AdminTransferredEvent
   | ContractUpgradedEvent
-  | NotificationEvent;
+  | ContractInitializedEvent
+  | ShipmentLimitUpdatedEvent
+  | CompanyShipmentLimitUpdatedEvent
+  | NotificationEvent
+  | MilestonePaymentReleasedEvent
+  | PlatformFeeCollectedEvent
+  | EscrowFrozenEvent
+  | DisputeResolvedEvent
+  | EvidenceAddedEvent
+  | CarrierLateDeliveryEvent
+  | CarrierOnTimeDeliveryEvent
+  | CarrierHandoffCompletedEvent
+  | CarrierMilestoneRateEvent
+  | CarrierSuspendedEvent
+  | CarrierReactivatedEvent
+  | DeliveryConfirmedEvent
+  | GeofenceReportedEvent
+  | EtaUpdatedEvent
+  | MigrationReportedEvent
+  | ContractPausedEvent
+  | ContractUnpausedEvent
+  | ForceCancelledEvent
+  | ForceReleasedEvent
+  | ForceRefundedEvent
+  | FeeConfigUpdatedEvent
+  | ProposalDigestEvent
+  | ContractConfigUpdatedEvent
+  | CircuitBreakerConfigUpdatedEvent
+  | QuotaSetEvent
+  | RoleRevokedEvent
+  | RoleChangedEvent
+  | WhitelistAddedEvent
+  | WhitelistRemovedEvent
+  | AuditRoleAssignedEvent
+  | AuditRoleRevokedEvent
+  | AuditRoleSuspendedEvent
+  | AuditRoleReactivatedEvent
+  | AuditAdminTransferredEvent
+  | AuditCarrierWhitelistedEvent
+  | AuditCarrierUnwhitelistedEvent
+  | AuditCompanySuspendedEvent
+  | AuditCompanyReactivatedEvent
+  | AuditCarrierSuspendedEvent
+  | AuditCarrierReactivatedEvent
+  | MultisigInitializedEvent
+  | MultisigApprovalEvent
+  | ProposalExecutedEvent;
 
 // ─── Horizon Stream Parser Helper ─────────────────────────────────────────────
 

@@ -367,6 +367,33 @@ pub fn hash_domain_for_symbol(env: &soroban_sdk::Env, event_type: &soroban_sdk::
 mod tests {
     use super::*;
 
+    #[test]
+    fn every_event_topic_has_a_shipment_documentation_heading() {
+        let source = include_str!("event_topics.rs");
+        let shipment_docs = include_str!("../../../docs/events.md")
+            .split("\n## Token Contract Reference")
+            .next()
+            .expect("shipment event documentation section");
+
+        for line in source.lines() {
+            let Some(constant) = line.trim().strip_prefix("pub const ") else {
+                continue;
+            };
+            let Some((_, value)) = constant.split_once(": &str = \"") else {
+                continue;
+            };
+            let Some(topic) = value.strip_suffix("\";") else {
+                continue;
+            };
+            let heading = format!("### `{topic}`");
+
+            assert!(
+                shipment_docs.lines().any(|line| line.starts_with(&heading)),
+                "Missing shipment event documentation heading for topic '{topic}'"
+            );
+        }
+    }
+
     // ── Length guard ─────────────────────────────────────────────────────────
     // Soroban Symbol values are limited to 32 characters.  This test catches
     // any constant that would silently fail at runtime.
