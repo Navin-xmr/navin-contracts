@@ -142,6 +142,20 @@ impl NavinToken {
             return Err(TokenError::InsufficientBalance);
         }
 
+        // Self-transfers are a harmless no-op: skip storage writes entirely
+        // so a debit-then-credit sequence can never double-credit the
+        // balance (see issue #1191).
+        if from == to {
+            env.events().publish(
+                (
+                    Symbol::new(&env, event_topics::TRANSFER),
+                    Symbol::new(&env, event_topics::EVENT_SCHEMA_VERSION_STR),
+                ),
+                (from, to, amount),
+            );
+            return Ok(());
+        }
+
         // Update balances with checked arithmetic
         let new_from_balance = from_balance
             .checked_sub(amount)
@@ -203,14 +217,20 @@ impl NavinToken {
         let expiration_ledger = storage::get_allowance_raw(&env, &from, &spender)
             .map(|v| v.expiration_ledger)
             .unwrap_or(0);
-        storage::set_balance(&env, &from, from_balance - amount);
-        let recipient_balance = storage::get_balance(&env, &to);
-        let updated_recipient_balance = recipient_balance
-            .checked_add(amount)
-            .ok_or(TokenError::Overflow)?;
         let updated_allowance = allowance.checked_sub(amount).ok_or(TokenError::Overflow)?;
-        storage::set_balance(&env, &to, updated_recipient_balance);
         storage::set_allowance(&env, &from, &spender, updated_allowance, expiration_ledger);
+
+        // Self-transfers (from == to) must not change the balance: skip the
+        // debit/credit entirely instead of relying on read-after-write
+        // ordering (issue #1191).
+        if from != to {
+            storage::set_balance(&env, &from, from_balance - amount);
+            let recipient_balance = storage::get_balance(&env, &to);
+            let updated_recipient_balance = recipient_balance
+                .checked_add(amount)
+                .ok_or(TokenError::Overflow)?;
+            storage::set_balance(&env, &to, updated_recipient_balance);
+        }
 
         storage::extend_balance_ttl_for(&env, &[from.clone(), to.clone()], 1000, 500000);
         storage::extend_allowance_ttl(&env, &from, &spender, 1000, 500000);

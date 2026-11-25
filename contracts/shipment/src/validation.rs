@@ -229,7 +229,8 @@ pub fn validate_shipment_invariants(shipment: &Shipment) -> Result<(), NavinErro
 
     if shipment.finalized {
         let terminal = shipment.status == ShipmentStatus::Delivered
-            || shipment.status == ShipmentStatus::Cancelled;
+            || shipment.status == ShipmentStatus::Cancelled
+            || shipment.status == ShipmentStatus::PartiallyRefunded;
         if !terminal || shipment.escrow_amount != 0 {
             return Err(NavinError::InvalidStatus);
         }

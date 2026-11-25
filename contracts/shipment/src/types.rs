@@ -136,11 +136,8 @@ pub enum DataKey {
     ShipmentDependents(u64),
     /// Archived shipment data in temporary storage (for terminal state shipments).
     ArchivedShipment(u64),
-    /// Marks that a carrier has recorded a checkpoint matching this milestone
-    /// name for this shipment via `record_milestone` — (shipment_id, milestone)
-    /// -> bool. Required before a carrier (not admin) may release that
-    /// milestone's payment.
-    MilestoneCheckpointRecorded(u64, Symbol),
+    /// Per-shipment metadata key/value map, bounded by `ContractConfig::max_metadata_entries`.
+    ShipmentMetadata(u64),
 }
 
 /// Storage keys for dispute evidence.

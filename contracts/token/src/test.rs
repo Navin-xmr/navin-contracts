@@ -84,6 +84,31 @@ fn test_transfer() {
 }
 
 #[test]
+fn test_transfer_self_no_op() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    client.transfer(&admin, &admin, &500);
+
+    assert_eq!(client.balance(&admin), 1_000_000);
+    assert_eq!(client.total_supply(), 1_000_000);
+}
+
+#[test]
+fn test_transfer_from_self_no_op() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let spender = Address::generate(&env);
+    client.approve(&admin, &spender, &500, &u32::MAX);
+    client.transfer_from(&spender, &admin, &admin, &200);
+
+    assert_eq!(client.balance(&admin), 1_000_000);
+    assert_eq!(client.total_supply(), 1_000_000);
+    assert_eq!(client.allowance(&admin, &spender), 300);
+}
+
+#[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_transfer_insufficient_balance() {
     let (env, client, admin) = setup_token_env();
