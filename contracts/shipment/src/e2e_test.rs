@@ -16,7 +16,7 @@ use crate::{test_utils::setup_env, NavinShipment, NavinShipmentClient, ShipmentS
 use navin_token::{NavinToken, NavinTokenClient};
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger as _},
-    Address, BytesN, Env, FromVal, String, Symbol, Vec,
+    Address, BytesN, Env, String, Symbol, TryFromVal, Vec,
 };
 use std::string::ToString;
 
@@ -69,7 +69,10 @@ fn hash(env: &Env, seed: u8) -> BytesN<32> {
 fn has_event(env: &Env, name: &str) -> bool {
     env.events().all().iter().any(|(_contract, topics, _data)| {
         topics.iter().any(|v| {
-            let s: soroban_sdk::Symbol = soroban_sdk::Symbol::from_val(env, &v);
+            // Token events use address topics; only inspect symbol topics.
+            let Ok(s) = soroban_sdk::Symbol::try_from_val(env, &v) else {
+                return false;
+            };
             let sym_str: std::string::String = s.to_string();
             sym_str == name
         })
@@ -87,8 +90,9 @@ fn contract_event_topics_since(
         }
 
         if let Some(raw_topic) = topics.get(0) {
-            let symbol = soroban_sdk::Symbol::from_val(env, &raw_topic);
-            topics_out.push(symbol.to_string());
+            if let Ok(symbol) = soroban_sdk::Symbol::try_from_val(env, &raw_topic) {
+                topics_out.push(symbol.to_string());
+            }
         }
     }
     topics_out
@@ -122,10 +126,11 @@ fn test_debug_event_structure() {
     let mut found = false;
     for (_contract, topics, _data) in env.events().all().iter() {
         for v in topics.iter() {
-            let s = soroban_sdk::Symbol::from_val(&env, &v);
-            if s == target {
-                found = true;
-                break;
+            if let Ok(s) = soroban_sdk::Symbol::try_from_val(&env, &v) {
+                if s == target {
+                    found = true;
+                    break;
+                }
             }
         }
     }

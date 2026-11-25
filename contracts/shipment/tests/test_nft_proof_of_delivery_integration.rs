@@ -112,6 +112,7 @@ struct Ctx {
     env: Env,
     shipment: NavinShipmentClient<'static>,
     nft: NavinShipmentNftClient<'static>,
+    admin: Address,
     nft_admin: Address,
     company: Address,
     carrier: Address,
@@ -184,6 +185,7 @@ fn setup_with_nft_admin(shipment_is_nft_admin: bool) -> Ctx {
         env,
         shipment,
         nft,
+        admin,
         nft_admin,
         company,
         carrier,
@@ -221,6 +223,22 @@ fn move_in_transit(ctx: &Ctx, shipment_id: u64, seed: u8) {
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_configure_settlement_nft_fails_for_eoa_admin() {
+    // Covers issue #1192: an NFT deployed with a regular account as admin
+    // (the flow the old docs described) can never be attached, since
+    // configure_settlement_nft requires the shipment contract itself to be
+    // the NFT admin.
+    let ctx = setup();
+    let result = ctx.shipment.try_configure_settlement_nft(
+        &ctx.admin,
+        &ctx.nft.address,
+        &symbol_short!("NavinPOD"),
+        &symbol_short!("NPOD"),
+    );
+    assert_eq!(result, Err(Ok(NavinError::NftConfigurationFailed)));
+}
 
 #[test]
 fn test_delivery_proof_mints_nft_to_recipient() {

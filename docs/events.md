@@ -98,31 +98,79 @@
 All events are published via the Soroban SDK's `env.events().publish()` method:
 
 - **Shipment Contract:** `topic: (Symbol,)` — single descriptive symbol for stream filtering.
-- **Token Contract:** `topic: (Symbol::new(name), Symbol::new(EVENT_SCHEMA_VERSION_STR))` — 2-element topic tuple carrying the event name symbol and schema version string (e.g., `"v1"`), as defined in [`contracts/token/src/event_topics.rs`](../contracts/token/src/event_topics.rs).
+- **Token Contract:** `topic: (Symbol::new(name), Symbol::new(EVENT_SCHEMA_VERSION_STR))` — 2-element topic tuple carrying the event name symbol and schema version string (e.g., `"v1"`), as defined in [`contracts/token/src/event_topics.rs`](../contracts/token/src/event_topics.rs). Movement events additionally emit a SEP-41-shaped event with address topics (see below).
 
 ```
 data:   (field1, field2, ...)    — tuple of typed payload fields
 ```
+
+### SEP-41 token events (#1292)
+
+Token balance movements now also publish standard SEP-41 events alongside the
+legacy versioned (`v1`) events. The legacy event is published last for each
+operation; indexers must decode **one** shape, not sum both.
+
+| Event | Topics | Data |
+| --- | --- | --- |
+| `transfer` | `["transfer", from, to]` | `amount: i128` |
+| `approve` | `["approve", from, spender]` | `(amount: i128, expiration_ledger: u32)` |
+| `mint` | `["mint", to]` | `amount: i128` |
+| `burn` | `["burn", from]` | `amount: i128` |
+
+`transfer_from` and `batch_transfer` legs emit `transfer`; `burn_from` and
+`admin_burn` emit `burn`; `increase_allowance`/`decrease_allowance` emit
+`approve` with the resulting allowance. Initialization emits `mint` for the
+initial supply, so a SEP-41 indexer can reconstruct balances from these events
+alone.
 
 When subscribing to Horizon's event stream, filter by `contract_id` and the `topic[0]` symbol
 to receive only the relevant event type.
 
 ### Schema Version and Idempotency
 
-Shipment lifecycle and escrow settlement events now include three trailing fields:
+Most shipment contract events — including every shipment lifecycle and escrow
+event documented below — carry **no** schema metadata. Their payload ends with
+the last field listed in their table.
 
-1. `schema_version: u32` — current value is `2`
-2. `event_counter: u32` — monotonically increasing per `shipment_id`
-3. `idempotency_key: BytesN<32>` — deterministic hash of `(shipment_id, event_type, event_counter)`
+Only the following RBAC / admin events append three trailing metadata fields
+after their own payload:
+
+| Topic            | Emitter                               | Own payload fields                                                                 |
+| ---------------- | ------------------------------------- | ---------------------------------------------------------------------------------- |
+| `add_wl`         | `emit_whitelist_added`                | `company: Address`, `carrier: Address`                                             |
+| `rm_wl`          | `emit_whitelist_removed`              | `company: Address`, `carrier: Address`                                             |
+| `ms_init`        | `emit_multisig_initialized`           | `admin_count: u32`, `threshold: u32`                                               |
+| `approve`        | `emit_proposal_approved`              | `proposal_id: u64`, `approver: Address`, `approval_count: u32`                     |
+| `executed`       | `emit_proposal_executed`              | `proposal_id: u64`, `action: AdminAction`                                          |
+| `config_updated` | `emit_circuit_breaker_config_updated` | `"circuit_breaker": Symbol`, `failure_threshold: u32`, `recovery_timeout: u64`, `half_open_max_requests: u32` |
+
+The trailing fields are, in order:
+
+1. `schema_version: u32` — current value is `2` (`EVENT_SCHEMA_VERSION`)
+2. `event_counter: u64` — a **contract-wide** counter (`GlobalEventCount`) shared
+   by all of the events above. It increases by one for every such event, is not
+   scoped to any shipment, and never saturates: the contract fails with
+   `CounterOverflow` rather than reuse a value.
+3. `idempotency_key: BytesN<32>` — SHA-256 over the canonical preimage
+   `domain_len (u32 BE) || domain || event_counter (u64 BE, in the shipment_id slot) || topic_len (u32 BE) || topic || low 32 bits of event_counter (u32 BE)`,
+   where `domain` is `0x07` (RBAC) for `add_wl` / `rm_wl` and `0x06` (admin)
+   for the others. Because the counter is unique, two emitted events never
+   share a key.
+
+> **Note:** the `config_updated` topic is also used by `emit_config_updated`
+> (`(admin, new_config)`), which carries no trailing metadata. Distinguish the
+> two by payload length or by the leading `"circuit_breaker"` symbol.
 
 This enables safe parser upgrades and indexer deduplication during contract evolution.
 
 ### Migration Guidance (v1 -> v2)
 
 1. Keep legacy decoders for historical events without `schema_version`.
-2. For new events, branch parser logic by `schema_version`.
-3. Use `idempotency_key` as the primary dedup key in indexer storage.
-4. During rollout, allow mixed payloads in the same stream window (older blocks vs new blocks).
+2. For the events listed above, branch parser logic by `schema_version`.
+3. Use `idempotency_key` as the primary dedup key for those events. Events
+   without one can be deduplicated by `(ledger, transaction hash, event index)`.
+4. Older deployments emitted `event_counter` as a `u32`; accept either width when decoding.
+5. During rollout, allow mixed payloads in the same stream window (older blocks vs new blocks).
 
 ---
 
@@ -213,12 +261,13 @@ Emitted when a company registers a new shipment on-chain.
 **Emitted by:** `create_shipment`, `create_shipments_batch`
 **Caller role:** Company
 
-| #   | Field         | Soroban Type | Description                                            |
-| --- | ------------- | ------------ | ------------------------------------------------------ |
-| 1   | `shipment_id` | `u64`        | Unique on-chain shipment identifier (auto-incremented) |
-| 2   | `sender`      | `Address`    | Company address that created the shipment              |
-| 3   | `receiver`    | `Address`    | Intended recipient of the goods                        |
-| 4   | `data_hash`   | `BytesN<32>` | SHA-256 hash of the full off-chain shipment payload    |
+| #   | Field         | Soroban Type     | Description                                            |
+| --- | ------------- | ---------------- | ------------------------------------------------------ |
+| 1   | `shipment_id` | `u64`            | Unique on-chain shipment identifier (auto-incremented) |
+| 2   | `status`      | `ShipmentStatus` | Always `Created`                                       |
+| 3   | `data_hash`   | `BytesN<32>`     | SHA-256 hash of the full off-chain shipment payload    |
+| 4   | `timestamp`   | `u64`            | Ledger timestamp (Unix seconds) at creation            |
+| 5   | `actor`       | `Address`        | Company (sender) address that created the shipment     |
 
 **Backend action:** Create the initial shipment record in the database; link `shipment_id` to the off-chain payload.
 **Frontend action:** Display real-time shipment creation notification.
@@ -238,9 +287,13 @@ Emitted on every valid lifecycle state transition.
 | #   | Field         | Soroban Type     | Description                                          |
 | --- | ------------- | ---------------- | ---------------------------------------------------- |
 | 1   | `shipment_id` | `u64`            | Shipment whose status changed                        |
-| 2   | `old_status`  | `ShipmentStatus` | Previous lifecycle state                             |
-| 3   | `new_status`  | `ShipmentStatus` | New lifecycle state after transition                 |
-| 4   | `data_hash`   | `BytesN<32>`     | SHA-256 hash of the updated off-chain status payload |
+| 2   | `status`      | `ShipmentStatus` | New lifecycle state after the transition             |
+| 3   | `data_hash`   | `BytesN<32>`     | SHA-256 hash of the updated off-chain status payload |
+| 4   | `timestamp`   | `u64`            | Ledger timestamp (Unix seconds) of the transition    |
+| 5   | `actor`       | `Address`        | Address that performed the transition                |
+
+> The previous status is **not** emitted; indexers that need it must track the
+> last `status` seen for each `shipment_id`.
 
 **Valid transitions:**
 
@@ -273,12 +326,14 @@ Emitted when a carrier reports a transit checkpoint. The full milestone payload 
 **Emitted by:** `record_milestone`, `carrier_handoff`
 **Caller role:** Carrier
 
-| #   | Field         | Soroban Type | Description                                                   |
-| --- | ------------- | ------------ | ------------------------------------------------------------- |
-| 1   | `shipment_id` | `u64`        | Shipment this milestone belongs to                            |
-| 2   | `checkpoint`  | `Symbol`     | Human-readable checkpoint name (e.g. `"warehouse"`, `"port"`) |
-| 3   | `data_hash`   | `BytesN<32>` | SHA-256 hash of the full off-chain milestone payload          |
-| 4   | `reporter`    | `Address`    | Carrier address that recorded the milestone                   |
+| #   | Field         | Soroban Type     | Description                                                   |
+| --- | ------------- | ---------------- | ------------------------------------------------------------- |
+| 1   | `shipment_id` | `u64`            | Shipment this milestone belongs to                            |
+| 2   | `status`      | `ShipmentStatus` | Always `InTransit`                                            |
+| 3   | `data_hash`   | `BytesN<32>`     | SHA-256 hash of the full off-chain milestone payload          |
+| 4   | `timestamp`   | `u64`            | Ledger timestamp (Unix seconds) when the milestone was recorded |
+| 5   | `reporter`    | `Address`        | Carrier address that recorded the milestone                   |
+| 6   | `checkpoint`  | `Symbol`         | Human-readable checkpoint name (e.g. `"warehouse"`, `"port"`) |
 
 **Backend action:** Store the full milestone record and verify hash integrity.
 **Frontend action:** Add a new point to the shipment tracking map.
@@ -295,11 +350,13 @@ Emitted when the receiver confirms that a shipment has been successfully deliver
 **Emitted by:** `confirm_delivery`
 **Caller role:** Receiver
 
-| #   | Field           | Soroban Type | Description                                 |
-| --- | --------------- | ------------ | ------------------------------------------- |
-| 1   | `carrier`       | `Address`    | Carrier that completed the delivery         |
-| 2   | `shipment_id`   | `u64`        | Shipment that was delivered                 |
-| 3   | `delivery_time` | `u64`        | Ledger timestamp (Unix seconds) at delivery |
+| #   | Field           | Soroban Type     | Description                                      |
+| --- | --------------- | ---------------- | ------------------------------------------------ |
+| 1   | `shipment_id`   | `u64`            | Shipment that was delivered                      |
+| 2   | `status`        | `ShipmentStatus` | Always `Delivered`                               |
+| 3   | `data_hash`     | `BytesN<32>`     | Always 32 zero bytes (no off-chain payload)      |
+| 4   | `delivery_time` | `u64`            | Ledger timestamp (Unix seconds) at delivery      |
+| 5   | `carrier`       | `Address`        | Carrier that completed the delivery              |
 
 **Backend action:** Increment the carrier's on-time delivery counter in the reputation index. If `delivery_time ≤ shipment.deadline`, this counts as an on-time delivery.
 
@@ -318,11 +375,13 @@ Emitted when a company or admin cancels a shipment.
 **Emitted by:** `cancel_shipment`
 **Caller role:** Company (own shipments) or Admin
 
-| #   | Field         | Soroban Type | Description                                       |
-| --- | ------------- | ------------ | ------------------------------------------------- |
-| 1   | `shipment_id` | `u64`        | Cancelled shipment identifier                     |
-| 2   | `caller`      | `Address`    | Company or Admin address that cancelled           |
-| 3   | `reason_hash` | `BytesN<32>` | SHA-256 hash of the off-chain cancellation reason |
+| #   | Field         | Soroban Type     | Description                                                       |
+| --- | ------------- | ---------------- | ----------------------------------------------------------------- |
+| 1   | `shipment_id` | `u64`            | Cancelled shipment identifier                                     |
+| 2   | `status`      | `ShipmentStatus` | Always `Cancelled`                                                |
+| 3   | `reason_hash` | `BytesN<32>`     | SHA-256 hash of the off-chain cancellation reason (zero on expiry) |
+| 4   | `timestamp`   | `u64`            | Ledger timestamp (Unix seconds) of the cancellation               |
+| 5   | `caller`      | `Address`        | Company or Admin that cancelled (the contract address on expiry)  |
 
 **Backend action:** Mark shipment as cancelled; refund any escrowed funds to the company.
 
@@ -338,17 +397,26 @@ Emitted when a shipment misses its deadline and is auto-cancelled via the `expir
 **Emitted by:** `expire_shipment`
 **Caller role:** Anyone (permissionless) — the function checks `now > shipment.deadline`
 
-| #   | Field         | Soroban Type | Description                 |
-| --- | ------------- | ------------ | --------------------------- |
-| 1   | `shipment_id` | `u64`        | Expired shipment identifier |
+| #   | Field         | Soroban Type     | Description                                                                 |
+| --- | ------------- | ---------------- | --------------------------------------------------------------------------- |
+| 1   | `shipment_id` | `u64`            | Expired shipment identifier                                                 |
+| 2   | `status`      | `ShipmentStatus` | Always `Cancelled`                                                          |
+| 3   | `data_hash`   | `BytesN<32>`     | Payload hash: SHA-256 of `topic.to_xdr() \|\| shipment_id (u64 BE) \|\| actor.to_xdr() \|\| 0 (i128 BE)` |
+| 4   | `timestamp`   | `u64`            | Ledger timestamp (Unix seconds) at expiry                                   |
+| 5   | `actor`       | `Address`        | The shipment contract's own address                                         |
 
 **Backend action:** Mark shipment expired/cancelled; trigger refund flow.
 
-**Co-emitted events:** `escrow_refunded` (if escrow was held).
+**Co-emitted events:** `escrow_refunded` (if escrow was held) and `shipment_cancelled`.
 
 ---
 
 ## Escrow Events
+
+All three escrow events share one layout. Their `data_hash` is computed
+on-chain from the event fields (the payload lives entirely on-chain):
+SHA-256 of `topic.to_xdr() || shipment_id (u64 BE) || actor.to_xdr() || amount (i128 BE)`,
+so consumers can recompute and verify it.
 
 ### `escrow_deposited`
 
@@ -358,11 +426,14 @@ Emitted when a company locks funds into escrow for a shipment.
 **Emitted by:** `deposit_escrow`
 **Caller role:** Company
 
-| #   | Field         | Soroban Type | Description                              |
-| --- | ------------- | ------------ | ---------------------------------------- |
-| 1   | `shipment_id` | `u64`        | Shipment the escrow is associated with   |
-| 2   | `from`        | `Address`    | Company address that deposited the funds |
-| 3   | `amount`      | `i128`       | Amount deposited in stroops              |
+| #   | Field         | Soroban Type     | Description                              |
+| --- | ------------- | ---------------- | ---------------------------------------- |
+| 1   | `shipment_id` | `u64`            | Shipment the escrow is associated with   |
+| 2   | `status`      | `ShipmentStatus` | Always `Created`                         |
+| 3   | `data_hash`   | `BytesN<32>`     | Payload hash (see above)                 |
+| 4   | `timestamp`   | `u64`            | Ledger timestamp (Unix seconds)          |
+| 5   | `from`        | `Address`        | Company address that deposited the funds |
+| 6   | `amount`      | `i128`           | Amount deposited in stroops              |
 
 **Constraint:** Escrow can only be deposited when `shipment.status == Created` and no prior escrow is held.
 
@@ -379,11 +450,14 @@ Emitted when escrowed funds are paid out to the carrier.
 **Emitted by:** `confirm_delivery` (via `internal_release_escrow`), `cancel_shipment` (sender refund path), `resolve_dispute`, `multi_sig_execute`
 **Recipient:** Carrier (in normal delivery/dispute-win path); Sender (in cancel path where sender is recipient)
 
-| #   | Field         | Soroban Type | Description                          |
-| --- | ------------- | ------------ | ------------------------------------ |
-| 1   | `shipment_id` | `u64`        | Shipment the escrow was held for     |
-| 2   | `to`          | `Address`    | Address receiving the released funds |
-| 3   | `amount`      | `i128`       | Amount released in stroops           |
+| #   | Field         | Soroban Type     | Description                          |
+| --- | ------------- | ---------------- | ------------------------------------ |
+| 1   | `shipment_id` | `u64`            | Shipment the escrow was held for     |
+| 2   | `status`      | `ShipmentStatus` | Always `Delivered`                   |
+| 3   | `data_hash`   | `BytesN<32>`     | Payload hash (see above)             |
+| 4   | `timestamp`   | `u64`            | Ledger timestamp (Unix seconds)      |
+| 5   | `to`          | `Address`        | Address receiving the released funds |
+| 6   | `amount`      | `i128`           | Amount released in stroops           |
 
 **Backend action:** Finalize payment record; trigger settlement.
 **Frontend action:** Confirm payment completion to both parties.
@@ -398,11 +472,14 @@ Emitted when escrowed funds are returned to the company (e.g., cancellation, exp
 **Emitted by:** `cancel_shipment`, `resolve_dispute` (RefundToCompany path), `expire_shipment`, `multi_sig_execute`
 **Recipient:** Company (shipment sender)
 
-| #   | Field         | Soroban Type | Description                          |
-| --- | ------------- | ------------ | ------------------------------------ |
-| 1   | `shipment_id` | `u64`        | Shipment the escrow was held for     |
-| 2   | `to`          | `Address`    | Company address receiving the refund |
-| 3   | `amount`      | `i128`       | Amount refunded in stroops           |
+| #   | Field         | Soroban Type     | Description                          |
+| --- | ------------- | ---------------- | ------------------------------------ |
+| 1   | `shipment_id` | `u64`            | Shipment the escrow was held for     |
+| 2   | `status`      | `ShipmentStatus` | Always `Cancelled`                   |
+| 3   | `data_hash`   | `BytesN<32>`     | Payload hash (see above)             |
+| 4   | `timestamp`   | `u64`            | Ledger timestamp (Unix seconds)      |
+| 5   | `to`          | `Address`        | Company address receiving the refund |
+| 6   | `amount`      | `i128`           | Amount refunded in stroops           |
 
 **Backend action:** Update escrow ledger and notify company.
 **Frontend action:** Show refund status on shipment detail page.
@@ -464,7 +541,8 @@ Emitted when a carrier detects an out-of-range sensor reading. The full sensor p
 | 1   | `shipment_id` | `u64`        | Shipment where the breach occurred                |
 | 2   | `carrier`     | `Address`    | Carrier that reported the breach                  |
 | 3   | `breach_type` | `BreachType` | Category of the condition breach                  |
-| 4   | `data_hash`   | `BytesN<32>` | SHA-256 hash of the off-chain sensor data payload |
+| 4   | `severity`    | `Severity`   | Severity of the breach (`Low`, `Medium`, `High`, `Critical`) |
+| 5   | `data_hash`   | `BytesN<32>` | SHA-256 hash of the off-chain sensor data payload |
 
 **Backend action:** Record the breach event; trigger alerts to company and receiver.
 **Frontend action:** Flag the shipment with a condition-breach warning badge.
@@ -486,6 +564,7 @@ Emitted alongside `condition_breach` as a carrier-keyed analytics signal. The ba
 | 1   | `carrier`     | `Address`    | Carrier that reported (and caused) the breach |
 | 2   | `shipment_id` | `u64`        | Shipment where the breach occurred            |
 | 3   | `breach_type` | `BreachType` | Category of the condition breach              |
+| 4   | `severity`    | `Severity`   | Severity of the breach                        |
 
 **Backend action:** Increment breach counter in the carrier's reputation record.
 
@@ -864,6 +943,8 @@ type BreachType =
   | "Impact"
   | "TamperDetected";
 
+type Severity = "Low" | "Medium" | "High" | "Critical";
+
 type NotificationType =
   | "ShipmentCreated"
   | "StatusChanged"
@@ -874,48 +955,64 @@ type NotificationType =
   | "DeadlineApproaching";
 
 // ─── Shipment Lifecycle Event Payloads ───────────────────────────────────────
+//
+// Lifecycle and escrow events share the prefix
+// (shipment_id, status, data_hash, timestamp, actor) and carry no
+// schema_version / event_counter / idempotency_key suffix.
 
 interface ShipmentCreatedEvent {
   topic: "shipment_created";
   shipmentId: U64;
-  sender: StellarAddress;
-  receiver: StellarAddress;
+  status: "Created";
   dataHash: Hash32;
+  timestamp: U64; // Unix timestamp in seconds
+  actor: StellarAddress; // company (sender)
 }
 
 interface StatusUpdatedEvent {
   topic: "status_updated";
   shipmentId: U64;
-  oldStatus: ShipmentStatus;
-  newStatus: ShipmentStatus;
+  status: ShipmentStatus; // new status; the previous one is not emitted
   dataHash: Hash32;
+  timestamp: U64;
+  actor: StellarAddress;
 }
 
 interface MilestoneRecordedEvent {
   topic: "milestone_recorded";
   shipmentId: U64;
-  checkpoint: string; // Soroban Symbol — e.g. "warehouse", "port", "handoff"
+  status: "InTransit";
   dataHash: Hash32;
+  timestamp: U64;
   reporter: StellarAddress;
+  checkpoint: string; // Soroban Symbol — e.g. "warehouse", "port", "handoff"
 }
 
 interface DeliverySuccessEvent {
   topic: "delivery_success";
-  carrier: StellarAddress;
   shipmentId: U64;
+  status: "Delivered";
+  dataHash: Hash32; // always 32 zero bytes
   deliveryTime: U64; // Unix timestamp in seconds
+  carrier: StellarAddress;
 }
 
 interface ShipmentCancelledEvent {
   topic: "shipment_cancelled";
   shipmentId: U64;
-  caller: StellarAddress;
+  status: "Cancelled";
   reasonHash: Hash32;
+  timestamp: U64;
+  caller: StellarAddress;
 }
 
 interface ShipmentExpiredEvent {
   topic: "shipment_expired";
   shipmentId: U64;
+  status: "Cancelled";
+  dataHash: Hash32;
+  timestamp: U64;
+  actor: StellarAddress; // the shipment contract's own address
 }
 
 // ─── Escrow Event Payloads ────────────────────────────────────────────────────
@@ -923,6 +1020,9 @@ interface ShipmentExpiredEvent {
 interface EscrowDepositedEvent {
   topic: "escrow_deposited";
   shipmentId: U64;
+  status: "Created";
+  dataHash: Hash32;
+  timestamp: U64;
   from: StellarAddress;
   amount: I128; // in stroops; divide by 1e7 for XLM
 }
@@ -930,6 +1030,9 @@ interface EscrowDepositedEvent {
 interface EscrowReleasedEvent {
   topic: "escrow_released";
   shipmentId: U64;
+  status: "Delivered";
+  dataHash: Hash32;
+  timestamp: U64;
   to: StellarAddress;
   amount: I128;
 }
@@ -937,6 +1040,9 @@ interface EscrowReleasedEvent {
 interface EscrowRefundedEvent {
   topic: "escrow_refunded";
   shipmentId: U64;
+  status: "Cancelled";
+  dataHash: Hash32;
+  timestamp: U64;
   to: StellarAddress;
   amount: I128;
 }
@@ -956,6 +1062,7 @@ interface ConditionBreachEvent {
   shipmentId: U64;
   carrier: StellarAddress;
   breachType: BreachType;
+  severity: Severity;
   dataHash: Hash32;
 }
 
@@ -964,6 +1071,7 @@ interface CarrierBreachEvent {
   carrier: StellarAddress;
   shipmentId: U64;
   breachType: BreachType;
+  severity: Severity;
 }
 
 interface CarrierDisputeLossEvent {
