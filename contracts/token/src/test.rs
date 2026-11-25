@@ -869,6 +869,41 @@ fn test_batch_transfer_empty_batch_rejected() {
 }
 
 #[test]
+fn test_batch_transfer_accepts_max_batch() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let recipient = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    for _ in 0..crate::MAX_BATCH_SIZE {
+        recipients.push_back((recipient.clone(), 1));
+    }
+
+    client.batch_transfer(&admin, &recipients);
+    assert_eq!(client.balance(&recipient), crate::MAX_BATCH_SIZE as i128);
+}
+
+#[test]
+fn test_batch_transfer_rejects_over_max_batch() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let recipient = Address::generate(&env);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    for _ in 0..=crate::MAX_BATCH_SIZE {
+        recipients.push_back((recipient.clone(), 1));
+    }
+
+    assert_eq!(
+        client.try_batch_transfer(&admin, &recipients),
+        Err(Ok(crate::TokenError::BatchTooLarge)),
+        "MAX_BATCH_SIZE + 1 recipients must fail fast"
+    );
+    assert_eq!(client.balance(&recipient), 0);
+    assert_eq!(client.balance(&admin), 1_000_000);
+}
+
+#[test]
 fn test_batch_transfer_skips_self_transfer_leg() {
     let (env, client, admin) = setup_token_env();
     initialize_token(&client, &env, &admin, 1_000_000);
@@ -958,6 +993,52 @@ fn test_transfer_admin_success() {
 
     client.accept_admin_transfer(&new_admin);
     assert_eq!(client.get_admin(), new_admin);
+}
+
+#[test]
+fn test_pending_admin_query_and_cancel() {
+    use crate::TokenError;
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    assert_eq!(
+        client.try_get_pending_admin(),
+        Err(Ok(TokenError::Unauthorized)),
+        "no nominee before a proposal"
+    );
+
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+    assert_eq!(client.get_pending_admin(), new_admin);
+
+    client.cancel_admin_transfer(&admin);
+    assert_eq!(
+        client.try_get_pending_admin(),
+        Err(Ok(TokenError::Unauthorized)),
+        "cancelled nominee must no longer be queryable"
+    );
+    assert_eq!(
+        client.try_accept_admin_transfer(&new_admin),
+        Err(Ok(TokenError::Unauthorized)),
+        "cancelled nominee must not be able to accept"
+    );
+    assert_eq!(client.get_admin(), admin);
+}
+
+#[test]
+fn test_cancel_admin_transfer_rejects_non_admin() {
+    use crate::TokenError;
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+
+    let non_admin = Address::generate(&env);
+    assert_eq!(
+        client.try_cancel_admin_transfer(&non_admin),
+        Err(Ok(TokenError::Unauthorized))
+    );
+    assert_eq!(client.get_pending_admin(), new_admin);
 }
 
 #[test]
@@ -1218,4 +1299,100 @@ fn event_fixtures_schema_version_topics_all_events() {
         Symbol::try_from_val(&env, &admin_tr_event.1.get(1).unwrap()).unwrap(),
         Symbol::new(&env, "v1")
     );
+}
+
+// ============================================================================
+// Schema-version topic coverage (#1282)
+// ============================================================================
+
+/// Asserts that every event emitted so far by the token contract uses the
+/// two-element `(name, "v1")` topic tuple described in `event_topics.rs`.
+fn assert_all_events_versioned(env: &Env) -> std::vec::Vec<Symbol> {
+    let version = Symbol::new(env, crate::event_topics::EVENT_SCHEMA_VERSION_STR);
+    let mut names = std::vec::Vec::new();
+    for (_cid, topics, _data) in env.events().all().iter() {
+        assert_eq!(topics.len(), 2, "token events carry (name, version) topics");
+        let name = Symbol::try_from_val(env, &topics.get(0).unwrap()).unwrap();
+        let ver = Symbol::try_from_val(env, &topics.get(1).unwrap()).unwrap();
+        assert_eq!(ver, version, "second topic must be the schema version");
+        names.push(name);
+    }
+    names
+}
+
+#[test]
+fn test_batch_events_carry_schema_version_topic() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    recipients.push_back((Address::generate(&env), 10));
+    recipients.push_back((Address::generate(&env), 20));
+    client.batch_transfer(&admin, &recipients);
+
+    let names = assert_all_events_versioned(&env);
+    let leg = Symbol::new(&env, "batch_leg");
+    let summary = Symbol::new(&env, "batch_tr");
+    assert_eq!(names.iter().filter(|n| **n == leg).count(), 2);
+    assert_eq!(names.iter().filter(|n| **n == summary).count(), 1);
+}
+
+#[test]
+fn test_batch_self_leg_skipped_events_still_versioned() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    recipients.push_back((admin.clone(), 5));
+    recipients.push_back((Address::generate(&env), 7));
+    client.batch_transfer(&admin, &recipients);
+
+    let names = assert_all_events_versioned(&env);
+    let leg = Symbol::new(&env, "batch_leg");
+    assert_eq!(names.iter().filter(|n| **n == leg).count(), 1);
+}
+
+#[test]
+fn test_every_token_event_carries_schema_version_topic() {
+    let (env, client, admin) = setup_token_env();
+    initialize_token(&client, &env, &admin, 1_000_000);
+    let mut seen = assert_all_events_versioned(&env);
+
+    let spender = Address::generate(&env);
+    let other = Address::generate(&env);
+    let expiry = crate::MAX_EXPIRATION_LEDGER;
+
+    client.transfer(&admin, &other, &100);
+    seen.extend(assert_all_events_versioned(&env));
+    client.approve(&admin, &spender, &300, &expiry);
+    seen.extend(assert_all_events_versioned(&env));
+    client.increase_allowance(&admin, &spender, &50);
+    seen.extend(assert_all_events_versioned(&env));
+    client.decrease_allowance(&admin, &spender, &25);
+    seen.extend(assert_all_events_versioned(&env));
+    client.transfer_from(&spender, &admin, &other, &40);
+    seen.extend(assert_all_events_versioned(&env));
+    client.burn_from(&spender, &admin, &10);
+    seen.extend(assert_all_events_versioned(&env));
+    client.mint(&admin, &other, &500);
+    seen.extend(assert_all_events_versioned(&env));
+    client.burn(&other, &20);
+    seen.extend(assert_all_events_versioned(&env));
+
+    let mut recipients = soroban_sdk::Vec::new(&env);
+    recipients.push_back((other.clone(), 1));
+    client.batch_transfer(&admin, &recipients);
+    seen.extend(assert_all_events_versioned(&env));
+
+    client.pause(&admin);
+    seen.extend(assert_all_events_versioned(&env));
+    client.unpause(&admin);
+    seen.extend(assert_all_events_versioned(&env));
+
+    for name in ["batch_leg", "batch_tr", "transfer", "approve", "mint", "burn"] {
+        assert!(
+            seen.contains(&Symbol::new(&env, name)),
+            "expected a versioned `{name}` event"
+        );
+    }
 }

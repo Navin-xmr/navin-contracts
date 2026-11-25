@@ -18,6 +18,8 @@ pub enum TokenError {
     ContractPaused = 9,
     /// Arithmetic overflow/underflow (checked_add/checked_sub failed).
     Overflow = 10,
+    /// Batch input exceeds the maximum supported number of entries.
+    BatchTooLarge = 11,
 }
 
 #[contracterror]
