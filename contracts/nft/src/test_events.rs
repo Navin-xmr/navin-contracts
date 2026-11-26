@@ -10,7 +10,13 @@
 extern crate std;
 
 use crate::event_topics::{self, EVENT_SCHEMA_VERSION};
-use crate::{test_receivers::AcceptingReceiver, NavinShipmentNft, NavinShipmentNftClient};
+use crate::{
+    test_receivers::{
+        panic_receiver::{PanicReceiver, PanicReceiverClient},
+        AcceptingReceiver,
+    },
+    NavinShipmentNft, NavinShipmentNftClient,
+};
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Events as _, Ledger as _},
@@ -99,7 +105,7 @@ fn test_initialize_emits_versioned_event() {
 #[test]
 fn test_mint_emits_schema_versioned_topics() {
     let (env, _admin, client) = setup();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
     client.mint(&recipient, &7);
 
     let event = last_event(&env, &client.address);
@@ -114,7 +120,7 @@ fn test_mint_emits_schema_versioned_topics() {
 #[test]
 fn test_mint_emits_event() {
     let (env, _admin, client) = setup();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
     client.mint(&recipient, &42);
 
     let event = last_event(&env, &client.address);
@@ -135,7 +141,7 @@ fn test_mint_emits_event() {
 #[test]
 fn test_mint_batch_emits_batch_event_with_all_ids() {
     let (env, _admin, client) = setup();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
     let recipients = vec![&env, recipient.clone(), recipient.clone()];
     let token_ids = vec![&env, 7_u64, 42_u64];
     client.mint_batch(&recipients, &token_ids);
@@ -157,7 +163,7 @@ fn test_mint_batch_emits_batch_event_with_all_ids() {
 #[test]
 fn test_transfer_emits_event() {
     let (env, _admin, client) = setup();
-    let alice = Address::generate(&env);
+    let alice = crate::test_utils::account_address(&env, 0);
     let bob = env.register(AcceptingReceiver, ());
     client.mint(&alice, &1);
     client.transfer(&alice, &bob, &1, &Vec::new(&env));
@@ -183,7 +189,7 @@ fn test_transfer_emits_event() {
 #[test]
 fn test_burn_emits_event() {
     let (env, _admin, client) = setup();
-    let owner = Address::generate(&env);
+    let owner = crate::test_utils::account_address(&env, 0);
     client.mint(&owner, &5);
     client.approve_burn(&5);
     client.burn(&owner, &5);
@@ -206,7 +212,7 @@ fn test_burn_emits_event() {
 #[test]
 fn test_burn_by_admin_emits_event_with_admin_as_caller() {
     let (env, admin, client) = setup();
-    let owner = Address::generate(&env);
+    let owner = crate::test_utils::account_address(&env, 0);
     client.mint(&owner, &9);
     client.burn(&admin, &9);
 
@@ -227,7 +233,7 @@ fn test_burn_by_admin_emits_event_with_admin_as_caller() {
 #[test]
 fn test_burn_batch_emits_batch_event_with_all_ids() {
     let (env, admin, client) = setup();
-    let owner = Address::generate(&env);
+    let owner = crate::test_utils::account_address(&env, 0);
     let recipients = vec![&env, owner.clone(), owner];
     let token_ids = vec![&env, 7_u64, 42_u64];
     client.mint_batch(&recipients, &token_ids);
@@ -250,7 +256,7 @@ fn test_burn_batch_emits_batch_event_with_all_ids() {
 #[test]
 fn test_self_transfer_emits_noop_event() {
     let (env, _admin, client) = setup();
-    let alice = Address::generate(&env);
+    let alice = crate::test_utils::account_address(&env, 0);
     client.mint(&alice, &1);
     client.transfer(&alice, &alice, &1, &Vec::new(&env));
 
@@ -306,9 +312,30 @@ fn test_admin_proposal_emits_event() {
 }
 
 #[test]
+fn test_admin_cancellation_emits_event() {
+    let (env, admin, client) = setup();
+    let new_admin = Address::generate(&env);
+    client.transfer_admin(&admin, &new_admin);
+    client.cancel_admin_transfer(&admin);
+
+    let event = last_event(&env, &client.address);
+    assert_eq!(
+        vec![&env, event],
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                topics(&env, event_topics::ADMIN_CANCELLED),
+                (admin, new_admin, TIMESTAMP).into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
 fn test_failed_mint_emits_no_event() {
     let (env, _admin, client) = setup();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
     client.mint(&recipient, &1);
     let before = count_events(&env, &client.address, event_topics::MINT);
 
@@ -319,4 +346,79 @@ fn test_failed_mint_emits_no_event() {
     let after = count_events(&env, &client.address, event_topics::MINT);
     assert!(after <= before);
     assert_eq!(client.total_supply(), 1);
+}
+
+#[test]
+fn test_approve_burn_emits_event() {
+    let (env, _admin, client) = setup();
+    let owner = Address::generate(&env);
+    client.mint(&owner, &3);
+    client.approve_burn(&3);
+
+    let event = last_event(&env, &client.address);
+    assert_eq!(
+        vec![&env, event],
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                topics(&env, event_topics::BURN_APPROVED),
+                (owner, 3_u64, TIMESTAMP).into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_revoke_burn_approval_emits_event_and_blocks_burn() {
+    let (env, _admin, client) = setup();
+    let owner = Address::generate(&env);
+    client.mint(&owner, &4);
+    client.approve_burn(&4);
+    client.revoke_burn_approval(&4);
+
+    let event = last_event(&env, &client.address);
+    assert_eq!(
+        vec![&env, event],
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                topics(&env, event_topics::BURN_APPROVAL_REVOKED),
+                (owner.clone(), 4_u64, TIMESTAMP).into_val(&env),
+            ),
+        ]
+    );
+    assert!(!client.is_burn_approved(&4));
+    assert_eq!(
+        client.try_burn(&owner, &4),
+        Err(Ok(crate::NftError::BurnNotApproved))
+    );
+
+    // Revoking again is a no-op and emits nothing new.
+    client.revoke_burn_approval(&4);
+    assert_eq!(
+        count_events(&env, &client.address, event_topics::BURN_APPROVAL_REVOKED),
+        1
+    );
+}
+
+#[test]
+fn test_transfer_clears_burn_approval() {
+    let (env, _admin, client) = setup();
+    let alice = Address::generate(&env);
+    let bob = env.register(AcceptingReceiver, ());
+    client.mint(&alice, &6);
+    client.approve_burn(&6);
+    assert!(client.is_burn_approved(&6));
+
+    client.transfer(&alice, &bob, &6, &Vec::new(&env));
+
+    assert_eq!(client.owner_of(&6), bob);
+    assert!(!client.is_burn_approved(&6));
+    assert_eq!(
+        client.try_burn(&bob, &6),
+        Err(Ok(crate::NftError::BurnNotApproved))
+    );
+    assert_eq!(client.owner_of(&6), bob);
 }

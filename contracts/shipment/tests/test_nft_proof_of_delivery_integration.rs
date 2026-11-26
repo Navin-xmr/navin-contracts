@@ -112,6 +112,7 @@ struct Ctx {
     env: Env,
     shipment: NavinShipmentClient<'static>,
     nft: NavinShipmentNftClient<'static>,
+    admin: Address,
     nft_admin: Address,
     company: Address,
     carrier: Address,
@@ -149,8 +150,8 @@ fn setup_with_nft_admin(shipment_is_nft_admin: bool) -> Ctx {
     let shipment = NavinShipmentClient::new(&env, &env.register(NavinShipment, ()));
     shipment.initialize(&admin, &token);
 
-    let company = Address::generate(&env);
-    let carrier = Address::generate(&env);
+    let company = navin_nft::test_utils::account_address(&env, 0);
+    let carrier = navin_nft::test_utils::account_address(&env, 1);
     shipment.add_company(&admin, &company);
     shipment.add_carrier(&admin, &carrier);
     shipment.add_carrier_to_whitelist(&company, &carrier);
@@ -190,6 +191,7 @@ fn setup_with_nft_admin(shipment_is_nft_admin: bool) -> Ctx {
         env,
         shipment,
         nft,
+        admin,
         nft_admin,
         company,
         carrier,
@@ -229,9 +231,25 @@ fn move_in_transit(ctx: &Ctx, shipment_id: u64, seed: u8) {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[test]
+fn test_configure_settlement_nft_fails_for_eoa_admin() {
+    // Covers issue #1192: an NFT deployed with a regular account as admin
+    // (the flow the old docs described) can never be attached, since
+    // configure_settlement_nft requires the shipment contract itself to be
+    // the NFT admin.
+    let ctx = setup();
+    let result = ctx.shipment.try_configure_settlement_nft(
+        &ctx.admin,
+        &ctx.nft.address,
+        &symbol_short!("NavinPOD"),
+        &symbol_short!("NPOD"),
+    );
+    assert_eq!(result, Err(Ok(NavinError::NftConfigurationFailed)));
+}
+
+#[test]
 fn test_delivery_proof_mints_nft_to_recipient() {
     let ctx = setup();
-    let receiver = Address::generate(&ctx.env);
+    let receiver = navin_nft::test_utils::account_address(&ctx.env, 2);
     let id = create_shipment(&ctx, &receiver, 1);
     ctx.shipment.deposit_escrow(&ctx.company, &id, &1_000);
     move_in_transit(&ctx, id, 2);
@@ -257,7 +275,7 @@ fn test_delivery_proof_mints_nft_to_recipient() {
 #[test]
 fn test_delivery_proof_cannot_be_minted_twice() {
     let ctx = setup();
-    let receiver = Address::generate(&ctx.env);
+    let receiver = navin_nft::test_utils::account_address(&ctx.env, 2);
     let id = create_shipment(&ctx, &receiver, 4);
     move_in_transit(&ctx, id, 5);
     ctx.shipment
@@ -275,8 +293,8 @@ fn test_delivery_proof_cannot_be_minted_twice() {
 #[test]
 fn test_delivery_proofs_map_one_to_one_with_shipments() {
     let ctx = setup();
-    let receiver_a = Address::generate(&ctx.env);
-    let receiver_b = Address::generate(&ctx.env);
+    let receiver_a = navin_nft::test_utils::account_address(&ctx.env, 2);
+    let receiver_b = navin_nft::test_utils::account_address(&ctx.env, 3);
     let id_a = create_shipment(&ctx, &receiver_a, 7);
     let id_b = create_shipment(&ctx, &receiver_b, 8);
     assert_ne!(id_a, id_b);
@@ -300,7 +318,7 @@ fn test_delivery_proofs_map_one_to_one_with_shipments() {
 #[test]
 fn test_nft_proof_expiration_with_shipment_ttl() {
     let ctx = setup();
-    let receiver = Address::generate(&ctx.env);
+    let receiver = navin_nft::test_utils::account_address(&ctx.env, 2);
     let id = create_shipment(&ctx, &receiver, 20);
     move_in_transit(&ctx, id, 21);
 
@@ -339,7 +357,7 @@ fn test_nft_proof_expiration_with_shipment_ttl() {
 #[test]
 fn test_dispute_locks_proof_nft() {
     let ctx = setup();
-    let receiver = Address::generate(&ctx.env);
+    let receiver = navin_nft::test_utils::account_address(&ctx.env, 2);
     let id = create_shipment(&ctx, &receiver, 30);
     move_in_transit(&ctx, id, 31);
 
@@ -374,7 +392,7 @@ fn test_dispute_locks_proof_nft() {
 #[test]
 fn test_settlement_completion_mints_proof_nft() {
     let ctx = setup_with_settlement_nft();
-    let receiver = Address::generate(&ctx.env);
+    let receiver = navin_nft::test_utils::account_address(&ctx.env, 2);
     let id = create_shipment(&ctx, &receiver, 40);
     ctx.shipment.deposit_escrow(&ctx.company, &id, &1_000);
     move_in_transit(&ctx, id, 41);
@@ -395,7 +413,7 @@ fn test_settlement_completion_mints_proof_nft() {
 #[test]
 fn test_settlement_refund_mints_proof_nft_to_refund_recipient() {
     let ctx = setup_with_settlement_nft();
-    let receiver = Address::generate(&ctx.env);
+    let receiver = navin_nft::test_utils::account_address(&ctx.env, 2);
     let id = create_shipment(&ctx, &receiver, 43);
     ctx.shipment.deposit_escrow(&ctx.company, &id, &1_000);
 

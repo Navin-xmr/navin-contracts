@@ -18,7 +18,7 @@ fi
 source "$ENV_FILE"
 
 # Verify required variables
-if [[ -z "${TOKEN_CONTRACT_ID:-}" ]] || [[ -z "${SHIPMENT_CONTRACT_ID:-}" ]]; then
+if [[ -z "${TOKEN_CONTRACT_ID:-}" ]] || [[ -z "${SHIPMENT_CONTRACT_ID:-}" ]] || [[ -z "${NFT_CONTRACT_ID:-}" ]]; then
   echo "Error: Contract IDs not found in $ENV_FILE"
   exit 1
 fi
@@ -26,6 +26,7 @@ fi
 echo "Initializing contracts on Stellar testnet..."
 echo "Token contract: $TOKEN_CONTRACT_ID"
 echo "Shipment contract: $SHIPMENT_CONTRACT_ID"
+echo "NFT contract: $NFT_CONTRACT_ID"
 
 # Get admin address from identity
 ADMIN_ADDRESS=$(stellar keys address "$STELLAR_IDENTITY")
@@ -63,6 +64,23 @@ stellar contract invoke \
 
 echo "Shipment contract initialized successfully"
 
+# Configure settlement NFT
+echo ""
+echo "Configuring settlement NFT..."
+stellar contract invoke \
+  --id "$SHIPMENT_CONTRACT_ID" \
+  --source-account "$STELLAR_IDENTITY" \
+  --rpc-url "$STELLAR_RPC_URL" \
+  --network-passphrase "$STELLAR_NETWORK_PASSPHRASE" \
+  -- \
+  configure_settlement_nft \
+  --admin "$ADMIN_ADDRESS" \
+  --nft_contract "$NFT_CONTRACT_ID" \
+  --name "NavinPOD" \
+  --nft_symbol "NPOD"
+
+echo "Settlement NFT configured successfully"
+
 echo ""
 echo "Initialization complete!"
-echo "Both contracts are ready to use on testnet"
+echo "All contracts are ready to use on testnet"

@@ -1,4 +1,5 @@
 use crate::test_helpers::*;
+use crate::NavinError;
 
 // ── Issue #434: Settlement counter overflow protection tests ──────────────────
 
@@ -20,22 +21,22 @@ fn test_settlement_counter_near_boundary_increments_safely() {
 
     // First increment: near_max + 1  — must succeed.
     env.as_contract(&client.address, || {
-        let next = crate::storage::increment_settlement_counter(&env);
+        let next = crate::storage::increment_settlement_counter(&env).unwrap();
         assert_eq!(next, near_max + 1);
     });
     assert_eq!(client.get_settlement_count(), near_max + 1);
 
     // Second increment: near_max + 2 = u64::MAX - 1 — still within bounds.
     env.as_contract(&client.address, || {
-        let next = crate::storage::increment_settlement_counter(&env);
+        let next = crate::storage::increment_settlement_counter(&env).unwrap();
         assert_eq!(next, near_max + 2);
     });
     assert_eq!(client.get_settlement_count(), near_max + 2);
 }
 
-/// Boundary test: at exactly u64::MAX the counter must not wrap or miscount.
-/// `checked_add(1)` returns `None` at saturation, so the implementation falls
-/// back to the current value — the counter stays pinned at u64::MAX.
+/// Boundary test: at exactly u64::MAX the counter must not wrap or reuse the
+/// last ID. `checked_add(1)` returns `None` at saturation, so the increment
+/// fails with `CounterOverflow` and the stored counter stays at u64::MAX.
 #[test]
 fn test_settlement_counter_saturates_at_u64_max() {
     let (env, client, _admin, _token_contract) = setup_initialized_shipment_env();
@@ -47,20 +48,19 @@ fn test_settlement_counter_saturates_at_u64_max() {
 
     assert_eq!(client.get_settlement_count(), u64::MAX);
 
-    // Attempting to increment at saturation must not wrap to 0.
+    // Attempting to increment at saturation must fail instead of handing out
+    // the already-used ID u64::MAX again.
     env.as_contract(&client.address, || {
         let result = crate::storage::increment_settlement_counter(&env);
-        // Saturating: result stays at u64::MAX, never rolls over to 0.
-        assert_eq!(result, u64::MAX, "Counter must not wrap past u64::MAX");
-        assert_ne!(result, 0, "Rollover to zero is an impossible/illegal state");
+        assert_eq!(result, Err(NavinError::CounterOverflow));
     });
 
     // Public count must still reflect u64::MAX, not 0.
     assert_eq!(client.get_settlement_count(), u64::MAX);
 }
 
-/// Failure-path assertion: verifies that the rollover sentinel (0 after MAX)
-/// is never reachable via the contract's increment path.
+/// Failure-path assertion: verifies that neither the rollover sentinel (0
+/// after MAX) nor a reused ID is reachable via the contract's increment path.
 /// This test must fail if the overflow guard (`checked_add`) is ever removed.
 #[test]
 fn test_settlement_counter_rollover_is_impossible() {
@@ -69,11 +69,13 @@ fn test_settlement_counter_rollover_is_impossible() {
     env.as_contract(&client.address, || {
         crate::storage::set_settlement_counter(&env, u64::MAX);
         let after_increment = crate::storage::increment_settlement_counter(&env);
-        // The only acceptable post-MAX values are MAX itself (saturating) or
-        // any value > 0.  A result of 0 means wrap-around occurred.
-        assert_ne!(
-            after_increment, 0,
-            "Counter wrapped to 0 — overflow guard is broken"
+        // The only acceptable post-MAX outcome is `CounterOverflow`. An `Ok`
+        // means the counter either wrapped or reused an existing ID.
+        assert_eq!(
+            after_increment,
+            Err(NavinError::CounterOverflow),
+            "Counter must reject increments past u64::MAX"
         );
+        assert_eq!(crate::storage::get_settlement_counter(&env), u64::MAX);
     });
 }

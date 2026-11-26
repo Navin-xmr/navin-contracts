@@ -149,6 +149,38 @@ fn test_ttl_health_summary_edge_case_exactly_20_shipments() {
 }
 
 #[test]
+fn test_ttl_health_summary_can_sample_recent_shipments() {
+    let (env, client, admin, _token) = setup_initialized_shipment_env();
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.set_company_shipment_limit(&admin, &company, &200);
+
+    for i in 0..150u8 {
+        create_test_shipment(&client, &env, &company, &carrier, i);
+    }
+
+    let oldest = client.get_ttl_health_summary(&1, &50);
+    assert_eq!(oldest.total_shipment_count, 150);
+    assert_eq!((oldest.sampled_start_id, oldest.sampled_end_id), (1, 50));
+    assert_eq!(oldest.sampled_count, 50);
+
+    let recent = client.get_ttl_health_summary(&101, &50);
+    assert_eq!(recent.total_shipment_count, 150);
+    assert_eq!((recent.sampled_start_id, recent.sampled_end_id), (101, 150));
+    assert_eq!(recent.sampled_count, 50);
+    assert_eq!(recent.persistent_count, 50);
+    assert_eq!(recent.missing_or_archived_count, 0);
+    assert_eq!(recent.persistent_percentage, 100);
+
+    // Requests larger than the effective batch limit are capped.
+    let capped = client.get_ttl_health_summary(&100, &1000);
+    assert_eq!((capped.sampled_start_id, capped.sampled_end_id), (100, 149));
+    assert_eq!(capped.sampled_count, 50);
+}
+
+#[test]
 fn test_ttl_extended_on_active_mutation() {
     let (env, client, admin, _token) = setup_initialized_shipment_env();
 

@@ -134,11 +134,21 @@ impl CircuitBreakerPreset {
     }
 }
 
-/// Persist the admin-selected circuit breaker configuration.
-pub fn set_config(env: &Env, config: &CircuitBreakerConfig) {
+/// Extend the TTL of a circuit-breaker persistent key using the configured
+/// shipment TTL threshold/extension, so RBAC- and transfer-path reads never
+/// hit an archived entry.
+fn extend_breaker_key_ttl(env: &Env, key: &DataKey) {
+    let cfg = crate::config::get_config(env);
     env.storage()
         .persistent()
-        .set(&DataKey::CircuitBreakerConfig, config);
+        .extend_ttl(key, cfg.shipment_ttl_threshold, cfg.shipment_ttl_extension);
+}
+
+/// Persist the admin-selected circuit breaker configuration.
+pub fn set_config(env: &Env, config: &CircuitBreakerConfig) {
+    let key = DataKey::CircuitBreakerConfig;
+    env.storage().persistent().set(&key, config);
+    extend_breaker_key_ttl(env, &key);
 }
 
 /// Read the active circuit breaker configuration.
@@ -187,7 +197,9 @@ impl CircuitBreakerTracker {
     pub fn record_success(&mut self) {
         match self.state {
             CircuitBreakerState::Closed => {
-                // Already closed, nothing to do
+                // Only consecutive failures may open the breaker, so any
+                // success breaks the streak.
+                self.failure_count = 0;
             }
             CircuitBreakerState::Open => {
                 // Cannot succeed while open
@@ -305,6 +317,7 @@ pub fn check_transfer_allowed(env: &Env, config: &CircuitBreakerConfig) -> Resul
 
     // Persist updated breaker state
     env.storage().persistent().set(&breaker_key, &breaker);
+    extend_breaker_key_ttl(env, &breaker_key);
 
     Ok(())
 }
@@ -326,9 +339,25 @@ pub fn record_transfer_success(env: &Env) {
 
     // Persist updated breaker state
     env.storage().persistent().set(&breaker_key, &breaker);
+    extend_breaker_key_ttl(env, &breaker_key);
 }
 
 /// Record a failed token transfer
+///
+/// NOTE: This write is only durable when the *caller's* top-level entrypoint
+/// ultimately returns `Ok(..)`. In Soroban, any contract invocation that
+/// returns `Err` has ALL of its storage writes rolled back, including this
+/// one. Because every current caller of `record_transfer_failure` propagates
+/// the underlying transfer error with `?`/`return Err`, this counter can
+/// never actually accumulate from real transfer failures made through the
+/// public entrypoints -- the write is always discarded along with the error.
+///
+/// Until the escrow entrypoints are restructured to swallow transfer errors
+/// and commit a "failed settlement" outcome instead of returning `Err`, the
+/// circuit breaker must be treated as **admin-driven only**: operators use
+/// [`manual_trip`] to open the breaker and [`manual_reset`] to close it.
+/// This function is kept for bookkeeping/metrics purposes only and must not
+/// be relied upon to trip the breaker.
 ///
 /// # Arguments
 /// * `env` - The execution environment
@@ -352,6 +381,36 @@ pub fn record_transfer_failure(env: &Env, config: &CircuitBreakerConfig) {
 
     // Persist updated breaker state
     env.storage().persistent().set(&breaker_key, &breaker);
+}
+
+/// Manually trip the circuit breaker open (admin-only).
+///
+/// This is the supported way to open the breaker: because real transfer
+/// failures cannot durably increment the failure counter through the public
+/// entrypoints (see [`record_transfer_failure`]), the breaker does not
+/// auto-trip. Operators who observe repeated token-transfer failures (e.g.
+/// via off-chain monitoring or `TransferFailed` events) should call this to
+/// stop further settlement attempts until the token contract issue is
+/// resolved, then call [`manual_reset`] to close it again.
+///
+/// # Arguments
+/// * `env` - The execution environment
+/// * `admin` - The admin address (must already be authorized by the caller)
+pub fn manual_trip(env: &Env, admin: &Address) {
+    let breaker_key = DataKey::CircuitBreakerState;
+    let mut breaker: CircuitBreakerTracker = env
+        .storage()
+        .persistent()
+        .get(&breaker_key)
+        .unwrap_or_default();
+
+    breaker.state = CircuitBreakerState::Open;
+    breaker.opened_at = env.ledger().timestamp();
+    env.storage().persistent().set(&breaker_key, &breaker);
+    extend_breaker_key_ttl(env, &breaker_key);
+
+    emit_breaker_opened_event(env, breaker.failure_count);
+    let _ = admin;
 }
 
 /// Manually reset the circuit breaker (admin-only)
@@ -379,6 +438,7 @@ pub fn manual_reset(env: &Env, admin: &Address) -> Result<(), NavinError> {
     let new_breaker = CircuitBreakerTracker::new();
 
     env.storage().persistent().set(&breaker_key, &new_breaker);
+    extend_breaker_key_ttl(env, &breaker_key);
 
     // Emit reset event
     emit_breaker_reset_event(env, admin);
@@ -736,6 +796,37 @@ mod tests {
         // Requests must still be allowed.
         let result = breaker.should_allow_request(&config, 1000);
         assert!(result.is_ok());
+    }
+
+    /// A success while Closed resets the streak, so failures separated by a
+    /// success never accumulate to the threshold (only consecutive ones count).
+    #[test]
+    fn test_success_between_failures_keeps_breaker_closed() {
+        let mut breaker = CircuitBreakerTracker::new();
+        let config = CircuitBreakerConfig::default();
+        assert_eq!(config.failure_threshold, 5);
+
+        for _ in 0..4 {
+            breaker.record_failure(&config, 1000);
+        }
+        assert_eq!(breaker.failure_count, 4);
+
+        breaker.record_success();
+        assert_eq!(breaker.failure_count, 0);
+
+        for _ in 0..4 {
+            breaker.record_failure(&config, 1000);
+        }
+        assert_eq!(
+            breaker.state,
+            CircuitBreakerState::Closed,
+            "4 failures, 1 success, 4 failures must not open a threshold-5 breaker"
+        );
+        assert_eq!(breaker.failure_count, 4);
+
+        // The fifth consecutive failure still opens it.
+        breaker.record_failure(&config, 1000);
+        assert_eq!(breaker.state, CircuitBreakerState::Open);
     }
 
     /// The failure that exactly hits the threshold opens the breaker.

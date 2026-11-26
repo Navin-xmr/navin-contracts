@@ -20,6 +20,13 @@
 #   STELLAR_IDENTITY     Stellar account key alias   (default: default)
 #   SHIPMENT_CONTRACT_ID Deployed shipment contract address
 #   TOKEN_CONTRACT_ID    Deployed token contract address
+#   SHIPMENT_SCHEMA      Contract schema JSON used to check flag names
+#                        (default: docs/contract-schema.shipment.json)
+#
+# Exit status:
+#   0 when every simulation succeeds, 1 when any simulation fails (including
+#   argument errors). In `all` mode every method is still attempted; failures
+#   are recorded and summarised at the end.
 #
 # What simulation does:
 #   Calls simulateTransaction on the Stellar RPC without signing or submitting.
@@ -59,6 +66,9 @@ case "$NETWORK" in
     ;;
 esac
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCHEMA="${SHIPMENT_SCHEMA:-$SCRIPT_DIR/../docs/contract-schema.shipment.json}"
+
 IDENTITY="${STELLAR_IDENTITY:-default}"
 CONTRACT_ID="${SHIPMENT_CONTRACT_ID:-}"
 TOKEN_ID="${TOKEN_CONTRACT_ID:-}"
@@ -82,20 +92,100 @@ require_contract_id() {
   fi
 }
 
-# Core simulate helper — wraps `stellar contract invoke --send=no`
+# Failed simulations, recorded so `all` mode can keep going and still exit
+# non-zero at the end. A counter plus a newline-separated list avoids empty
+# array expansion issues under `set -u` on older bash versions.
+FAIL_COUNT=0
+FAILED_LABELS=""
+
+record_failure() {
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+  FAILED_LABELS="${FAILED_LABELS}  - $1"$'\n'
+}
+
+# Check the `--flag` names passed for a method against the contract schema so
+# a renamed parameter is reported before the CLI rejects it. Skipped (with a
+# note) when jq or the schema file is unavailable.
+check_flags() {
+  local method="$1"; shift
+
+  if ! command -v jq &>/dev/null || [[ ! -f "$SCHEMA" ]]; then
+    echo "NOTE: skipping flag check (jq or $SCHEMA not available)"
+    return 0
+  fi
+
+  if ! jq -e --arg m "$method" \
+      'any(.[]; .function_v0? and .function_v0.name == $m)' \
+      "$SCHEMA" >/dev/null; then
+    echo "ERROR: '$method' is not a function in $SCHEMA"
+    return 1
+  fi
+
+  local expected
+  expected="$(jq -r --arg m "$method" \
+    '.[] | select(.function_v0? and .function_v0.name == $m) | .function_v0.inputs[].name' \
+    "$SCHEMA")"
+
+  local arg name ok=0
+  for arg in "$@"; do
+    [[ "$arg" == --* ]] || continue
+    name="${arg#--}"
+    if ! grep -qxF -- "$name" <<<"$expected"; then
+      echo "ERROR: '$method' has no parameter '--$name'"
+      ok=1
+    fi
+  done
+
+  local found
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    found=0
+    for arg in "$@"; do
+      if [[ "$arg" == "--$name" ]]; then
+        found=1
+        break
+      fi
+    done
+    if [[ "$found" -eq 0 ]]; then
+      echo "ERROR: '$method' is missing required parameter '--$name'"
+      ok=1
+    fi
+  done <<<"$expected"
+
+  if [[ "$ok" -ne 0 ]]; then
+    echo "  Expected parameters: $(tr '\n' ' ' <<<"$expected")"
+  fi
+  return "$ok"
+}
+
+# Core simulate helper — wraps `stellar contract invoke --send=no`.
+# Never aborts the script: failures are recorded and reported at the end.
 simulate() {
   local label="$1"; shift
   echo ""
   echo "════════════════════════════════════════════════════════════════"
   echo "  SIMULATE: $label"
   echo "════════════════════════════════════════════════════════════════"
-  stellar contract invoke \
+
+  if ! check_flags "$@"; then
+    echo "FAILED: $label (argument error, not sent to the CLI)"
+    record_failure "$label (argument error)"
+    echo ""
+    return 0
+  fi
+
+  if stellar contract invoke \
     --id        "$CONTRACT_ID" \
     --source    "$IDENTITY" \
     --rpc-url   "$RPC_URL" \
     --network-passphrase "$NETWORK_PASSPHRASE" \
     --send=no \
-    -- "$@" 2>&1 || true
+    -- "$@" 2>&1; then
+    echo "OK: $label"
+  else
+    echo "FAILED: $label"
+    record_failure "$label"
+  fi
   echo ""
 }
 
@@ -119,25 +209,26 @@ sim_create_shipment() {
   local carrier="${CARRIER_ADDR:-${ADMIN_ADDR}}"
   local deadline=$(( $(date +%s) + 86400 ))  # 24 h from now
 
-  simulate "create_shipment(company, receiver, carrier, data_hash, milestones, deadline)" \
+  simulate "create_shipment(sender, receiver, carrier, data_hash, payment_milestones, deadline)" \
     create_shipment \
-    --company     "$ADMIN_ADDR" \
-    --receiver    "$receiver" \
-    --carrier     "$carrier" \
-    --data_hash   "$DUMMY_HASH" \
-    --milestones  "[]" \
-    --deadline    "$deadline"
+    --sender             "$ADMIN_ADDR" \
+    --receiver           "$receiver" \
+    --carrier            "$carrier" \
+    --data_hash          "$DUMMY_HASH" \
+    --payment_milestones "[]" \
+    --deadline           "$deadline"
 }
 
 sim_update_status() {
   require_contract_id
   local shipment_id="${SHIPMENT_ID:-1}"
 
-  simulate "update_status(carrier, shipment_id=1, InTransit, data_hash)" \
+  # Unit enum variants are passed as a bare JSON string.
+  simulate "update_status(caller, shipment_id=$shipment_id, InTransit, data_hash)" \
     update_status \
-    --carrier     "$ADMIN_ADDR" \
+    --caller      "$ADMIN_ADDR" \
     --shipment_id "$shipment_id" \
-    --new_status  '{"InTransit":null}' \
+    --new_status  '"InTransit"' \
     --data_hash   "$DUMMY_HASH"
 }
 
@@ -145,9 +236,9 @@ sim_deposit_escrow() {
   require_contract_id
   local shipment_id="${SHIPMENT_ID:-1}"
 
-  simulate "deposit_escrow(company, shipment_id=1, amount=1000000)" \
+  simulate "deposit_escrow(from, shipment_id=$shipment_id, amount=1000000)" \
     deposit_escrow \
-    --company     "$ADMIN_ADDR" \
+    --from        "$ADMIN_ADDR" \
     --shipment_id "$shipment_id" \
     --amount      1000000
 }
@@ -156,7 +247,7 @@ sim_raise_dispute() {
   require_contract_id
   local shipment_id="${SHIPMENT_ID:-1}"
 
-  simulate "raise_dispute(caller, shipment_id=1, reason_hash)" \
+  simulate "raise_dispute(caller, shipment_id=$shipment_id, reason_hash)" \
     raise_dispute \
     --caller      "$ADMIN_ADDR" \
     --shipment_id "$shipment_id" \
@@ -167,12 +258,12 @@ sim_report_condition_breach() {
   require_contract_id
   local shipment_id="${SHIPMENT_ID:-1}"
 
-  simulate "report_condition_breach(carrier, shipment_id=1, TamperDetected, Critical, data_hash)" \
+  simulate "report_condition_breach(carrier, shipment_id=$shipment_id, TamperDetected, Critical, data_hash)" \
     report_condition_breach \
     --carrier     "$ADMIN_ADDR" \
     --shipment_id "$shipment_id" \
-    --breach_type '{"TamperDetected":null}' \
-    --severity    '{"Critical":null}' \
+    --breach_type '"TamperDetected"' \
+    --severity    '"Critical"' \
     --data_hash   "$DUMMY_HASH"
 }
 
@@ -217,5 +308,11 @@ case "$METHOD" in
     exit 1
     ;;
 esac
+
+if [[ "$FAIL_COUNT" -gt 0 ]]; then
+  echo "Simulation finished with $FAIL_COUNT failure(s). No transactions were submitted to the network."
+  printf '%s' "$FAILED_LABELS"
+  exit 1
+fi
 
 echo "Simulation complete. No transactions were submitted to the network."

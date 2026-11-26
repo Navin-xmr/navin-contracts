@@ -254,7 +254,7 @@ pub const HASH_DOMAIN_CARRIER: u8 = 0x05;
 /// Domain tag for admin / governance events
 /// (`admin_proposed`, `admin_transferred`, `contract_upgraded`,
 ///  `migration_reported`, `contract_paused`, `contract_unpaused`,
-///  `force_cancelled`).
+///  `force_cancelled`, `force_released`, `force_refunded`).
 pub const HASH_DOMAIN_ADMIN: u8 = 0x06;
 
 /// Domain tag for RBAC events
@@ -277,6 +277,10 @@ pub const HASH_DOMAIN_PLATFORM: u8 = 0x0B;
 /// indexers can classify the freeze without parsing free-form text.
 pub const ESCROW_FROZEN: &str = "escrow_frozen";
 
+/// Emitted when the settlement-proof NFT could not be minted for a final
+/// settlement. The settlement itself still completes.
+pub const PROOF_MINT_FAILED: &str = "proof_mint_failed";
+
 pub const CARRIER_SUSPENDED: &str = "carrier_suspended";
 pub const CARRIER_REACTIVATED: &str = "carrier_reactivated";
 pub const DELIVERY_CONFIRMED: &str = "delivery_confirmed";
@@ -285,6 +289,76 @@ pub const ETA_UPDATED: &str = "eta_updated";
 pub const PROPOSAL_DIGEST: &str = "proposal_digest";
 pub const CONFIG_UPDATED: &str = "config_updated";
 pub const QUOTA_SET: &str = "quota_set";
+
+/// Every event topic this contract emits. Tests iterate it so a new topic is
+/// checked against the Symbol length limit and `compute_idempotency_key`.
+#[cfg(test)]
+pub(crate) const ALL_TOPICS: &[&str] = &[
+    SHIPMENT_CREATED,
+    STATUS_UPDATED,
+    MILESTONE_RECORDED,
+    SHIPMENT_CANCELLED,
+    SHIPMENT_EXPIRED,
+    DELIVERY_SUCCESS,
+    ESCROW_DEPOSITED,
+    ESCROW_RELEASED,
+    ESCROW_REFUNDED,
+    MILESTONE_PAYMENT_RELEASED,
+    PLATFORM_FEE_COLLECTED,
+    DISPUTE_RAISED,
+    DISPUTE_RESOLVED,
+    CONDITION_BREACH,
+    CARRIER_BREACH,
+    CARRIER_DISPUTE_LOSS,
+    CARRIER_LATE_DELIVERY,
+    CARRIER_ON_TIME_DELIVERY,
+    CARRIER_HANDOFF_COMPLETED,
+    CARRIER_MILESTONE_RATE,
+    ADMIN_PROPOSED,
+    ADMIN_TRANSFERRED,
+    CONTRACT_UPGRADED,
+    MIGRATION_REPORTED,
+    CONTRACT_PAUSED,
+    CONTRACT_UNPAUSED,
+    FORCE_CANCELLED,
+    FORCE_RELEASED,
+    FORCE_REFUNDED,
+    FEE_CONFIG_UPDATED,
+    CONTRACT_INITIALIZED,
+    SHIPMENT_LIMIT_UPDATED,
+    COMPANY_LIMIT_UPDATED,
+    ROLE_REVOKED,
+    ROLE_CHANGED,
+    WHITELIST_ADDED,
+    WHITELIST_REMOVED,
+    MULTISIG_INITIALIZED,
+    PROPOSAL_APPROVED,
+    PROPOSAL_EXECUTED,
+    AUDIT_ROLE_ASSIGNED,
+    AUDIT_ROLE_REVOKED,
+    AUDIT_ROLE_SUSPENDED,
+    AUDIT_ROLE_REACTIVATED,
+    AUDIT_ADMIN_TRANSFERRED,
+    AUDIT_CARRIER_WHITELISTED,
+    AUDIT_CARRIER_UNWHITELISTED,
+    AUDIT_COMPANY_SUSPENDED,
+    AUDIT_COMPANY_REACTIVATED,
+    AUDIT_CARRIER_SUSPENDED,
+    AUDIT_CARRIER_REACTIVATED,
+    CARRIER_HANDOFF,
+    NOTIFICATION,
+    EVIDENCE_ADDED,
+    ESCROW_FROZEN,
+    PROOF_MINT_FAILED,
+    CARRIER_SUSPENDED,
+    CARRIER_REACTIVATED,
+    DELIVERY_CONFIRMED,
+    GEOFENCE_EVENT,
+    ETA_UPDATED,
+    PROPOSAL_DIGEST,
+    CONFIG_UPDATED,
+    QUOTA_SET,
+];
 
 /// Topics whose hash domain is *not* the shipment default, paired with the
 /// domain they belong to.
@@ -298,6 +372,7 @@ const NON_DEFAULT_HASH_DOMAINS: &[(&str, u8)] = &[
     (ESCROW_REFUNDED, HASH_DOMAIN_ESCROW),
     (MILESTONE_PAYMENT_RELEASED, HASH_DOMAIN_ESCROW),
     (ESCROW_FROZEN, HASH_DOMAIN_ESCROW),
+    (PROOF_MINT_FAILED, HASH_DOMAIN_ESCROW),
     // Disputes
     (DISPUTE_RAISED, HASH_DOMAIN_DISPUTE),
     (DISPUTE_RESOLVED, HASH_DOMAIN_DISPUTE),
@@ -323,6 +398,8 @@ const NON_DEFAULT_HASH_DOMAINS: &[(&str, u8)] = &[
     (CONTRACT_PAUSED, HASH_DOMAIN_ADMIN),
     (CONTRACT_UNPAUSED, HASH_DOMAIN_ADMIN),
     (FORCE_CANCELLED, HASH_DOMAIN_ADMIN),
+    (FORCE_RELEASED, HASH_DOMAIN_ADMIN),
+    (FORCE_REFUNDED, HASH_DOMAIN_ADMIN),
     (CONTRACT_INITIALIZED, HASH_DOMAIN_ADMIN),
     (SHIPMENT_LIMIT_UPDATED, HASH_DOMAIN_ADMIN),
     (COMPANY_LIMIT_UPDATED, HASH_DOMAIN_ADMIN),
@@ -354,15 +431,6 @@ pub fn hash_domain_for_symbol(env: &soroban_sdk::Env, event_type: &soroban_sdk::
     HASH_DOMAIN_SHIPMENT
 }
 
-/// Resolves the hash domain tag for an event topic name.
-///
-/// Shares [`NON_DEFAULT_HASH_DOMAINS`] with [`hash_domain_for_symbol`], so the
-/// on-chain and off-chain answers cannot drift. Off-chain indexers recomputing
-/// idempotency keys should mirror this mapping.
-///
-/// Unknown topics fall back to [`HASH_DOMAIN_SHIPMENT`], which keeps the
-/// function total and preserves keys previously emitted for shipment events.
-///
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -373,62 +441,7 @@ mod tests {
 
     #[test]
     fn all_topic_constants_are_within_symbol_length_limit() {
-        let topics = [
-            SHIPMENT_CREATED,
-            STATUS_UPDATED,
-            MILESTONE_RECORDED,
-            SHIPMENT_CANCELLED,
-            SHIPMENT_EXPIRED,
-            DELIVERY_SUCCESS,
-            ESCROW_DEPOSITED,
-            ESCROW_RELEASED,
-            ESCROW_REFUNDED,
-            DISPUTE_RAISED,
-            DISPUTE_RESOLVED,
-            CONDITION_BREACH,
-            CARRIER_BREACH,
-            CARRIER_DISPUTE_LOSS,
-            CARRIER_LATE_DELIVERY,
-            CARRIER_ON_TIME_DELIVERY,
-            CARRIER_HANDOFF_COMPLETED,
-            CARRIER_MILESTONE_RATE,
-            ADMIN_PROPOSED,
-            ADMIN_TRANSFERRED,
-            CONTRACT_UPGRADED,
-            CONTRACT_PAUSED,
-            CONTRACT_UNPAUSED,
-            FORCE_CANCELLED,
-            ROLE_REVOKED,
-            ROLE_CHANGED,
-            AUDIT_ROLE_ASSIGNED,
-            AUDIT_ROLE_REVOKED,
-            AUDIT_ROLE_SUSPENDED,
-            AUDIT_ROLE_REACTIVATED,
-            AUDIT_ADMIN_TRANSFERRED,
-            AUDIT_CARRIER_WHITELISTED,
-            AUDIT_CARRIER_UNWHITELISTED,
-            AUDIT_COMPANY_SUSPENDED,
-            AUDIT_COMPANY_REACTIVATED,
-            AUDIT_CARRIER_SUSPENDED,
-            AUDIT_CARRIER_REACTIVATED,
-            CARRIER_HANDOFF,
-            NOTIFICATION,
-            EVIDENCE_ADDED,
-            MIGRATION_REPORTED,
-            ESCROW_FROZEN,
-            CONTRACT_INITIALIZED,
-            SHIPMENT_LIMIT_UPDATED,
-            COMPANY_LIMIT_UPDATED,
-            CARRIER_SUSPENDED,
-            CARRIER_REACTIVATED,
-            DELIVERY_CONFIRMED,
-            GEOFENCE_EVENT,
-            ETA_UPDATED,
-            PROPOSAL_DIGEST,
-            CONFIG_UPDATED,
-            QUOTA_SET,
-        ];
-        for topic in &topics {
+        for topic in ALL_TOPICS {
             assert!(
                 topic.len() <= 32,
                 "Topic '{}' exceeds Soroban Symbol 32-char limit (len={})",
@@ -444,118 +457,88 @@ mod tests {
 
     #[test]
     fn topic_values_are_backward_compatible() {
-        assert_eq!(SHIPMENT_CREATED, "shipment_created");
-        assert_eq!(STATUS_UPDATED, "status_updated");
-        assert_eq!(MILESTONE_RECORDED, "milestone_recorded");
-        assert_eq!(SHIPMENT_CANCELLED, "shipment_cancelled");
-        assert_eq!(SHIPMENT_EXPIRED, "shipment_expired");
-        assert_eq!(DELIVERY_SUCCESS, "delivery_success");
-        assert_eq!(ESCROW_DEPOSITED, "escrow_deposited");
-        assert_eq!(ESCROW_RELEASED, "escrow_released");
-        assert_eq!(ESCROW_REFUNDED, "escrow_refunded");
-        assert_eq!(DISPUTE_RAISED, "dispute_raised");
-        assert_eq!(DISPUTE_RESOLVED, "dispute_resolved");
-        assert_eq!(CONDITION_BREACH, "condition_breach");
-        assert_eq!(CARRIER_BREACH, "carrier_breach");
-        assert_eq!(CARRIER_DISPUTE_LOSS, "carrier_dispute_loss");
-        assert_eq!(CARRIER_LATE_DELIVERY, "carrier_late_delivery");
-        assert_eq!(CARRIER_ON_TIME_DELIVERY, "carrier_on_time_delivery");
-        assert_eq!(CARRIER_HANDOFF_COMPLETED, "carrier_handoff_completed");
-        assert_eq!(CARRIER_MILESTONE_RATE, "carrier_milestone_rate");
-        assert_eq!(ADMIN_PROPOSED, "admin_proposed");
-        assert_eq!(ADMIN_TRANSFERRED, "admin_transferred");
-        assert_eq!(CONTRACT_UPGRADED, "contract_upgraded");
-        assert_eq!(CONTRACT_PAUSED, "contract_paused");
-        assert_eq!(CONTRACT_UNPAUSED, "contract_unpaused");
-        assert_eq!(FORCE_CANCELLED, "force_cancelled");
-        assert_eq!(ROLE_REVOKED, "role_revoked");
-        assert_eq!(ROLE_CHANGED, "role_changed");
-        assert_eq!(AUDIT_ROLE_ASSIGNED, "audit_role_assigned");
-        assert_eq!(AUDIT_ROLE_REVOKED, "audit_role_revoked");
-        assert_eq!(AUDIT_ROLE_SUSPENDED, "audit_role_suspended");
-        assert_eq!(AUDIT_ROLE_REACTIVATED, "audit_role_reactivated");
-        assert_eq!(AUDIT_ADMIN_TRANSFERRED, "audit_admin_transferred");
-        assert_eq!(AUDIT_CARRIER_WHITELISTED, "audit_carrier_whitelisted");
-        assert_eq!(AUDIT_CARRIER_UNWHITELISTED, "audit_carrier_unwhitelisted");
-        assert_eq!(AUDIT_COMPANY_SUSPENDED, "audit_company_suspended");
-        assert_eq!(AUDIT_COMPANY_REACTIVATED, "audit_company_reactivated");
-        assert_eq!(AUDIT_CARRIER_SUSPENDED, "audit_carrier_suspended");
-        assert_eq!(AUDIT_CARRIER_REACTIVATED, "audit_carrier_reactivated");
-        assert_eq!(CARRIER_HANDOFF, "carrier_handoff");
-        assert_eq!(NOTIFICATION, "notification");
-        assert_eq!(EVIDENCE_ADDED, "evidence_added");
-        assert_eq!(MIGRATION_REPORTED, "migration_reported");
-        assert_eq!(ESCROW_FROZEN, "escrow_frozen");
-        assert_eq!(CONTRACT_INITIALIZED, "init");
-        assert_eq!(SHIPMENT_LIMIT_UPDATED, "set_limit");
-        assert_eq!(COMPANY_LIMIT_UPDATED, "set_cmp_limit");
-        assert_eq!(CARRIER_SUSPENDED, "carrier_suspended");
-        assert_eq!(CARRIER_REACTIVATED, "carrier_reactivated");
-        assert_eq!(DELIVERY_CONFIRMED, "delivery_confirmed");
-        assert_eq!(GEOFENCE_EVENT, "geofence_event");
-        assert_eq!(ETA_UPDATED, "eta_updated");
-        assert_eq!(PROPOSAL_DIGEST, "proposal_digest");
-        assert_eq!(CONFIG_UPDATED, "config_updated");
-        assert_eq!(QUOTA_SET, "quota_set");
+        // Pinned string values, in the same order as `ALL_TOPICS`. Adding a
+        // topic to `ALL_TOPICS` without pinning its value here fails the
+        // length check below.
+        let expected: &[&str] = &[
+            "shipment_created",
+            "status_updated",
+            "milestone_recorded",
+            "shipment_cancelled",
+            "shipment_expired",
+            "delivery_success",
+            "escrow_deposited",
+            "escrow_released",
+            "escrow_refunded",
+            "milestone_payment_released",
+            "platform_fee_collected",
+            "dispute_raised",
+            "dispute_resolved",
+            "condition_breach",
+            "carrier_breach",
+            "carrier_dispute_loss",
+            "carrier_late_delivery",
+            "carrier_on_time_delivery",
+            "carrier_handoff_completed",
+            "carrier_milestone_rate",
+            "admin_proposed",
+            "admin_transferred",
+            "contract_upgraded",
+            "migration_reported",
+            "contract_paused",
+            "contract_unpaused",
+            "force_cancelled",
+            "force_released",
+            "force_refunded",
+            "fee_config_updated",
+            "init",
+            "set_limit",
+            "set_cmp_limit",
+            "role_revoked",
+            "role_changed",
+            "add_wl",
+            "rm_wl",
+            "ms_init",
+            "approve",
+            "executed",
+            "audit_role_assigned",
+            "audit_role_revoked",
+            "audit_role_suspended",
+            "audit_role_reactivated",
+            "audit_admin_transferred",
+            "audit_carrier_whitelisted",
+            "audit_carrier_unwhitelisted",
+            "audit_company_suspended",
+            "audit_company_reactivated",
+            "audit_carrier_suspended",
+            "audit_carrier_reactivated",
+            "carrier_handoff",
+            "notification",
+            "evidence_added",
+            "escrow_frozen",
+            "carrier_suspended",
+            "carrier_reactivated",
+            "delivery_confirmed",
+            "geofence_event",
+            "eta_updated",
+            "proposal_digest",
+            "config_updated",
+            "quota_set",
+        ];
+        assert_eq!(
+            ALL_TOPICS.len(),
+            expected.len(),
+            "ALL_TOPICS and the pinned values list must stay in sync"
+        );
+        for (topic, value) in ALL_TOPICS.iter().zip(expected) {
+            assert_eq!(topic, value, "Topic value changed: '{}' != '{}'", topic, value);
+        }
     }
 
     #[test]
     fn all_topic_constants_are_unique() {
-        let mut topics = [
-            SHIPMENT_CREATED,
-            STATUS_UPDATED,
-            MILESTONE_RECORDED,
-            SHIPMENT_CANCELLED,
-            SHIPMENT_EXPIRED,
-            DELIVERY_SUCCESS,
-            ESCROW_DEPOSITED,
-            ESCROW_RELEASED,
-            ESCROW_REFUNDED,
-            DISPUTE_RAISED,
-            DISPUTE_RESOLVED,
-            CONDITION_BREACH,
-            CARRIER_BREACH,
-            CARRIER_DISPUTE_LOSS,
-            CARRIER_LATE_DELIVERY,
-            CARRIER_ON_TIME_DELIVERY,
-            CARRIER_HANDOFF_COMPLETED,
-            CARRIER_MILESTONE_RATE,
-            ADMIN_PROPOSED,
-            ADMIN_TRANSFERRED,
-            CONTRACT_UPGRADED,
-            CONTRACT_PAUSED,
-            CONTRACT_UNPAUSED,
-            FORCE_CANCELLED,
-            ROLE_REVOKED,
-            ROLE_CHANGED,
-            AUDIT_ROLE_ASSIGNED,
-            AUDIT_ROLE_REVOKED,
-            AUDIT_ROLE_SUSPENDED,
-            AUDIT_ROLE_REACTIVATED,
-            AUDIT_ADMIN_TRANSFERRED,
-            AUDIT_CARRIER_WHITELISTED,
-            AUDIT_CARRIER_UNWHITELISTED,
-            AUDIT_COMPANY_SUSPENDED,
-            AUDIT_COMPANY_REACTIVATED,
-            AUDIT_CARRIER_SUSPENDED,
-            AUDIT_CARRIER_REACTIVATED,
-            CARRIER_HANDOFF,
-            NOTIFICATION,
-            EVIDENCE_ADDED,
-            MIGRATION_REPORTED,
-            ESCROW_FROZEN,
-            CONTRACT_INITIALIZED,
-            SHIPMENT_LIMIT_UPDATED,
-            COMPANY_LIMIT_UPDATED,
-            CARRIER_SUSPENDED,
-            CARRIER_REACTIVATED,
-            DELIVERY_CONFIRMED,
-            GEOFENCE_EVENT,
-            ETA_UPDATED,
-            PROPOSAL_DIGEST,
-            CONFIG_UPDATED,
-            QUOTA_SET,
-        ];
+        let mut topics = [""; ALL_TOPICS.len()];
+        topics.copy_from_slice(ALL_TOPICS);
         topics.sort_unstable();
         // After sorting, any duplicates are adjacent — windows(2) catches them.
         for pair in topics.windows(2) {
@@ -566,6 +549,44 @@ mod tests {
             );
         }
     }
+
+    /// Every `pub const ...: &str` declared in this file must be listed in
+    /// `ALL_TOPICS`, so the guard tests above cannot silently skip a topic.
+    #[test]
+    fn all_topics_covers_every_topic_constant() {
+        let source = include_str!("event_topics.rs");
+        let mut declared = 0;
+        for line in source.lines() {
+            let Some(rest) = line.strip_prefix("pub const ") else {
+                continue;
+            };
+            let Some((_, value)) = rest.split_once(": &str = \"") else {
+                continue;
+            };
+            let value = value.trim_end_matches("\";");
+            declared += 1;
+            assert!(
+                ALL_TOPICS.contains(&value),
+                "Topic '{}' is declared but missing from ALL_TOPICS",
+                value
+            );
+        }
+        assert_eq!(declared, ALL_TOPICS.len());
+    }
+
+    #[test]
+    fn force_actions_use_admin_hash_domain() {
+        let env = soroban_sdk::Env::default();
+        for topic in [FORCE_CANCELLED, FORCE_RELEASED, FORCE_REFUNDED] {
+            assert_eq!(
+                hash_domain_for_symbol(&env, &soroban_sdk::Symbol::new(&env, topic)),
+                HASH_DOMAIN_ADMIN,
+                "'{}' must hash under the admin domain",
+                topic
+            );
+        }
+    }
+
     /// Verifies that every hash domain-separation prefix has a unique `u8` value.
     ///
     /// Adding a new family domain tag must not reuse an existing discriminant;
@@ -581,6 +602,7 @@ mod tests {
             HASH_DOMAIN_ADMIN,
             HASH_DOMAIN_RBAC,
             HASH_DOMAIN_NOTIFICATION,
+            HASH_DOMAIN_PLATFORM,
         ];
         domains.sort_unstable();
         for pair in domains.windows(2) {
@@ -604,5 +626,6 @@ mod tests {
         assert_eq!(HASH_DOMAIN_ADMIN, 0x06);
         assert_eq!(HASH_DOMAIN_RBAC, 0x07);
         assert_eq!(HASH_DOMAIN_NOTIFICATION, 0x08);
+        assert_eq!(HASH_DOMAIN_PLATFORM, 0x0B);
     }
 }

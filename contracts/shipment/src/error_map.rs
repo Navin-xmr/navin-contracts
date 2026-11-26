@@ -490,7 +490,7 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             73,
             InvalidInput,
             NoRetry,
-            "Symbol could not be decoded: the declared content length exceeds              the decode buffer. Use an event type of 24 characters or fewer.",
+            "Symbol could not be decoded: its XDR declares more content than it              carries. Pass a valid Symbol of at most 32 characters.",
         ),
         NavinError::AuditLogLimitExceeded => (
             76,
@@ -509,6 +509,12 @@ pub fn error_info(error: NavinError) -> ContractErrorInfo {
             InvalidState,
             NoRetry,
             "NFT contract could not be initialized or authorized for settlement proofs.",
+        ),
+        NavinError::SettlementNotFound => (
+            79,
+            NotFound,
+            NoRetry,
+            "Settlement ID does not exist.",
         ),
     };
 
@@ -597,6 +603,7 @@ fn message_for(error: NavinError) -> Symbol {
         NavinError::AuditLogLimitExceeded => symbol_short!("audit_lim"),
         NavinError::NftMintFailed => symbol_short!("nft_mint"),
         NavinError::NftConfigurationFailed => symbol_short!("nft_cfg"),
+        NavinError::SettlementNotFound => symbol_short!("settle"),
     }
 }
 
@@ -682,6 +689,7 @@ pub fn get_error_info(code: u32) -> ContractErrorInfo {
         76 => error_info(NavinError::AuditLogLimitExceeded),
         77 => error_info(NavinError::NftMintFailed),
         78 => error_info(NavinError::NftConfigurationFailed),
+        79 => error_info(NavinError::SettlementNotFound),
         _ => ContractErrorInfo {
             code,
             category: ErrorCategory::InvalidInput,
@@ -942,6 +950,7 @@ mod tests {
             NavinError::AuditLogLimitExceeded,
             NavinError::NftMintFailed,
             NavinError::NftConfigurationFailed,
+            NavinError::SettlementNotFound,
         ];
 
         for error in errors {

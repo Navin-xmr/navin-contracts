@@ -239,7 +239,8 @@ mod tests {
     }
 
     #[test]
-    fn list_cursor_past_end_returns_empty() {
+    fn list_cursor_past_end_returns_error() {
+        use crate::NavinError;
         let (env, client, admin) = setup();
         let (company, carrier) = add_company_and_carrier(&env, &client, &admin);
         client.add_carrier_to_whitelist(&company, &carrier);
@@ -248,9 +249,34 @@ mod tests {
         candidates.push_back(carrier);
 
         // cursor = 1 is past the only element (index 0).
-        let page = client.list_company_carriers(&company, &candidates, &1, &10);
-        assert_eq!(page.carriers.len(), 0);
-        assert!(page.next_cursor.is_none());
+        assert_eq!(
+            client.try_list_company_carriers(&company, &candidates, &1, &10),
+            Err(Ok(NavinError::InvalidConfig))
+        );
+    }
+
+    #[test]
+    fn list_large_candidate_list_respects_scan_cap() {
+        use crate::MAX_CARRIER_SCAN;
+        let (env, client, admin) = setup();
+        let (company, _) = add_company_and_carrier(&env, &client, &admin);
+
+        let stranger = Address::generate(&env);
+        let mut candidates = Vec::new(&env);
+        for _ in 0..1000u32 {
+            candidates.push_back(stranger.clone());
+        }
+
+        let page = client.list_company_carriers(&company, &candidates, &0, &10);
+        assert!(page.carriers.is_empty());
+        assert_eq!(page.total_scanned, MAX_CARRIER_SCAN);
+        assert_eq!(page.next_cursor, Some(MAX_CARRIER_SCAN));
+
+        // The returned cursor is valid for the next bounded page.
+        let next = page.next_cursor.unwrap();
+        let page2 = client.list_company_carriers(&company, &candidates, &next, &10);
+        assert_eq!(page2.total_scanned, MAX_CARRIER_SCAN);
+        assert_eq!(page2.next_cursor, Some(MAX_CARRIER_SCAN * 2));
     }
 
     // ── is_carrier_whitelisted — unassigned role queries (issue #518) ───────────

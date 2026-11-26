@@ -51,3 +51,27 @@ impl AcceptingReceiver {
             .unwrap_or_else(|| Vec::new(&env))
     }
 }
+
+/// Contracts that share method names with `AcceptingReceiver` (e.g. the
+/// receiver interface methods) must live in their own sub-module so that
+/// `#[contractimpl]`'s generated namespace entries don't collide.
+pub mod panic_receiver {
+    use soroban_sdk::{contract, contractimpl, Address, Env, Val, Vec};
+
+    /// A receiver that always opts in but does nothing in `on_nft_received`.
+    /// Used to verify that the xfer event and ownership change survive
+    /// even without any callback logic.
+    #[contract]
+    pub struct PanicReceiver;
+
+    #[contractimpl]
+    impl PanicReceiver {
+        pub fn can_receive_nft(_env: Env, _token_id: u64) -> bool {
+            true
+        }
+
+        pub fn on_nft_received(env: Env, _from: Address, token_id: u64, _data: Vec<Val>) {
+            env.storage().instance().set(&42_u32, &token_id);
+        }
+    }
+}

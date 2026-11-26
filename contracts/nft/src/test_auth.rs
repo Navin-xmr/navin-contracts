@@ -114,7 +114,7 @@ fn test_non_admin_minting_to_self_fails() {
 #[test]
 fn test_mint_requires_admin_auth() {
     let (env, admin, client) = setup_strict();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
 
     // With no authorization at all the call must fail.
     env.mock_auths(&[]);
@@ -133,7 +133,7 @@ fn test_mint_requires_admin_auth() {
 fn test_mint_fails_for_former_admin_after_admin_transfer() {
     let (env, admin, client) = setup_strict();
     let new_admin = Address::generate(&env);
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
 
     env.mock_auths(&[MockAuth {
         address: &admin,
@@ -191,7 +191,7 @@ fn test_non_admin_cannot_propose_admin_transfer() {
 #[test]
 fn test_require_admin_is_enforced_on_mint() {
     let (env, admin, client) = setup_strict();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
 
     authorize_mint(&env, &client, &admin, &recipient, 3);
     client.mint(&recipient, &3);
@@ -215,7 +215,7 @@ fn test_require_admin_is_enforced_on_mint() {
 #[test]
 fn test_transfer_requires_owner_auth() {
     let (env, admin, client) = setup_strict();
-    let alice = Address::generate(&env);
+    let alice = env.register(AcceptingReceiver, ());
     let bob = env.register(AcceptingReceiver, ());
     // The address that signs the transfer attempt must not be the recipient
     // contract: `mock_auths` registers a mock contract at the signed address
@@ -269,9 +269,9 @@ fn test_transfer_requires_owner_auth() {
 #[test]
 fn test_approved_transfer_requires_owner_approval_and_operator_auth() {
     let (env, admin, client) = setup_strict();
-    let owner = Address::generate(&env);
+    let owner = env.register(AcceptingReceiver, ());
     let operator = Address::generate(&env);
-    let recipient = crate::test_utils::account_address(&env, 0);
+    let recipient = crate::test_utils::account_address(&env, 1);
 
     authorize_mint(&env, &client, &admin, &owner, 1);
     client.mint(&owner, &1);
@@ -300,8 +300,9 @@ fn test_approved_transfer_requires_owner_approval_and_operator_auth() {
     client.approve(&operator, &1, &expiration);
 
     env.mock_auths(&[]);
+    let empty_data = soroban_sdk::Vec::new(&env);
     assert!(client
-        .try_transfer_from(&operator, &owner, &recipient, &1)
+        .try_transfer_from(&operator, &owner, &recipient, &1, &empty_data)
         .is_err());
 
     env.mock_auths(&[MockAuth {
@@ -309,23 +310,31 @@ fn test_approved_transfer_requires_owner_approval_and_operator_auth() {
         invoke: &MockAuthInvoke {
             contract: &client.address,
             fn_name: "transfer_from",
-            args: (operator.clone(), owner.clone(), recipient.clone(), 1_u64).into_val(&env),
+            args: (
+                operator.clone(),
+                owner.clone(),
+                recipient.clone(),
+                1_u64,
+                empty_data.clone(),
+            )
+                .into_val(&env),
             sub_invokes: &[],
         },
     }]);
-    client.transfer_from(&operator, &owner, &recipient, &1);
+    client.transfer_from(&operator, &owner, &recipient, &1, &empty_data);
     assert_eq!(client.owner_of(&1), recipient);
 }
 
 #[test]
 fn test_mint_batch_requires_admin_auth() {
     let (env, admin, client) = setup_strict();
-    let recipient = Address::generate(&env);
+    let recipient = crate::test_utils::account_address(&env, 0);
+    let non_admin = Address::generate(&env);
     let recipients = soroban_sdk::vec![&env, recipient.clone()];
     let token_ids = soroban_sdk::vec![&env, 1_u64];
 
     env.mock_auths(&[MockAuth {
-        address: &recipient,
+        address: &non_admin,
         invoke: &MockAuthInvoke {
             contract: &client.address,
             fn_name: "mint_batch",
@@ -352,7 +361,7 @@ fn test_mint_batch_requires_admin_auth() {
 #[test]
 fn test_burn_requires_caller_auth() {
     let (env, admin, client) = setup_strict();
-    let owner = Address::generate(&env);
+    let owner = env.register(AcceptingReceiver, ());
     let stranger = Address::generate(&env);
 
     authorize_mint(&env, &client, &admin, &owner, 1);
@@ -371,7 +380,7 @@ fn test_burn_requires_caller_auth() {
 #[test]
 fn test_burn_by_owner_succeeds() {
     let (env, admin, client) = setup_strict();
-    let owner = Address::generate(&env);
+    let owner = env.register(AcceptingReceiver, ());
 
     authorize_mint(&env, &client, &admin, &owner, 1);
     client.mint(&owner, &1);
@@ -387,7 +396,7 @@ fn test_burn_by_owner_succeeds() {
 #[test]
 fn test_burn_by_admin_succeeds() {
     let (env, admin, client) = setup_strict();
-    let owner = Address::generate(&env);
+    let owner = crate::test_utils::account_address(&env, 0);
 
     authorize_mint(&env, &client, &admin, &owner, 1);
     client.mint(&owner, &1);
@@ -416,4 +425,134 @@ fn test_pause_by_non_admin_fails() {
         client.try_pause(&non_admin),
         Err(Ok(crate::NftError::NotAdmin))
     );
+}
+
+fn authorize_pause(env: &Env, client: &NavinShipmentNftClient<'static>, admin: &Address) {
+    env.mock_auths(&[MockAuth {
+        address: admin,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "pause",
+            args: (admin.clone(),).into_val(env),
+            sub_invokes: &[],
+        },
+    }]);
+}
+
+fn authorize_approve(
+    env: &Env,
+    client: &NavinShipmentNftClient<'static>,
+    owner: &Address,
+    operator: &Address,
+    token_id: u64,
+    expiration: Option<u32>,
+) {
+    env.mock_auths(&[MockAuth {
+        address: owner,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "approve",
+            args: (operator.clone(), token_id, expiration).into_val(env),
+            sub_invokes: &[],
+        },
+    }]);
+}
+
+#[test]
+fn test_paused_blocks_approve() {
+    let (env, admin, client) = setup_strict();
+    let owner = env.register(AcceptingReceiver, ());
+    let operator = Address::generate(&env);
+
+    authorize_mint(&env, &client, &admin, &owner, 1);
+    client.mint(&owner, &1);
+    authorize_pause(&env, &client, &admin);
+    client.pause(&admin);
+
+    authorize_approve(&env, &client, &owner, &operator, 1, None);
+    assert_eq!(
+        client.try_approve(&operator, &1, &None),
+        Err(Ok(crate::NftError::ContractPaused))
+    );
+    assert_eq!(client.get_approved(&1), None);
+}
+
+#[test]
+fn test_paused_blocks_approve_burn() {
+    let (env, admin, client) = setup_strict();
+    let owner = env.register(AcceptingReceiver, ());
+
+    authorize_mint(&env, &client, &admin, &owner, 1);
+    client.mint(&owner, &1);
+    authorize_pause(&env, &client, &admin);
+    client.pause(&admin);
+
+    authorize_approve_burn(&env, &client, &owner, 1);
+    assert_eq!(
+        client.try_approve_burn(&1),
+        Err(Ok(crate::NftError::ContractPaused))
+    );
+    assert!(!client.is_burn_approved(&1));
+}
+
+#[test]
+fn test_paused_allows_revoke_approval() {
+    let (env, admin, client) = setup_strict();
+    let owner = env.register(AcceptingReceiver, ());
+    let operator = Address::generate(&env);
+
+    authorize_mint(&env, &client, &admin, &owner, 1);
+    client.mint(&owner, &1);
+    authorize_approve(&env, &client, &owner, &operator, 1, None);
+    client.approve(&operator, &1, &None);
+    authorize_pause(&env, &client, &admin);
+    client.pause(&admin);
+
+    env.mock_auths(&[MockAuth {
+        address: &owner,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "revoke_approval",
+            args: (operator.clone(), 1_u64).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    client.revoke_approval(&operator, &1);
+    assert_eq!(client.get_approved(&1), None);
+}
+
+#[test]
+fn test_paused_allows_admin_metadata_writes() {
+    let (env, admin, client) = setup_strict();
+    let owner = crate::test_utils::account_address(&env, 0);
+
+    authorize_mint(&env, &client, &admin, &owner, 1);
+    client.mint(&owner, &1);
+    authorize_pause(&env, &client, &admin);
+    client.pause(&admin);
+
+    let base_uri = soroban_sdk::String::from_str(&env, "https://navin.example/nft/");
+    env.mock_auths(&[MockAuth {
+        address: &admin,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "set_base_uri",
+            args: (admin.clone(), base_uri.clone()).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    client.set_base_uri(&admin, &base_uri);
+
+    let token_uri = soroban_sdk::String::from_str(&env, "ipfs://proof-1");
+    env.mock_auths(&[MockAuth {
+        address: &admin,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "set_token_uri",
+            args: (admin.clone(), 1_u64, token_uri.clone()).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    client.set_token_uri(&admin, &1, &token_uri);
+    assert_eq!(client.get_token_uri(&1), token_uri);
 }

@@ -153,6 +153,49 @@ fn test_assert_delivery_hash_no_confirmation_returns_status_hash_not_found() {
     );
 }
 
+/// verify_delivery_proof returns StatusHashNotFound when no confirmation hash
+/// has been stored, matching assert_delivery_hash for undelivered shipments.
+#[test]
+fn test_verify_delivery_proof_no_confirmation_returns_status_hash_not_found() {
+    use crate::NavinError;
+    let (env, client, admin, _token_contract) = crate::test_helpers::setup_shipment_env();
+    client.initialize(&admin, &_token_contract);
+
+    let sender = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let data_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let deadline = env.ledger().timestamp() + 86400;
+
+    client.add_company(&admin, &sender);
+    client.add_carrier(&admin, &carrier);
+    crate::test_utils::allow_carrier(&client, &sender, &carrier);
+
+    let shipment_id = client.create_shipment(
+        &sender,
+        &receiver,
+        &carrier,
+        &data_hash,
+        &Vec::new(&env),
+        &deadline,
+    );
+
+    let probe = BytesN::from_array(&env, &[5u8; 32]);
+    let verify = client.try_verify_delivery_proof(&shipment_id, &probe);
+    assert_eq!(
+        verify,
+        Err(Ok(NavinError::StatusHashNotFound)),
+        "verify_delivery_proof before delivery confirmation must return StatusHashNotFound (#44)"
+    );
+
+    let assert = client.try_assert_delivery_hash(&shipment_id, &probe);
+    assert_eq!(
+        assert,
+        Err(Ok(NavinError::StatusHashNotFound)),
+        "assert_delivery_hash before delivery confirmation must return StatusHashNotFound (#44)"
+    );
+}
+
 /// DataHashMismatch (#45) and StatusHashNotFound (#44) are distinct error codes.
 #[test]
 fn test_assert_delivery_hash_error_codes_distinct() {
