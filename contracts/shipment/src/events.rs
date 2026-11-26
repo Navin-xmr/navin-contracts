@@ -375,7 +375,13 @@ fn publish_milestone_recorded(
 /// Emits an `escrow_deposited` event when funds are locked for a shipment.
 ///
 /// See `docs/events.md` for the full payload layout.
-pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount: i128) {
+pub fn emit_escrow_deposited(
+    env: &Env,
+    shipment_id: u64,
+    from: &Address,
+    amount: i128,
+    status: &ShipmentStatus,
+) {
     let data_hash = payload_hash(
         env,
         crate::event_topics::ESCROW_DEPOSITED,
@@ -388,7 +394,7 @@ pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount
         (Symbol::new(env, crate::event_topics::ESCROW_DEPOSITED),),
         (
             shipment_id,
-            ShipmentStatus::Created,
+            status.clone(),
             data_hash,
             env.ledger().timestamp(),
             from.clone(),
@@ -400,7 +406,13 @@ pub fn emit_escrow_deposited(env: &Env, shipment_id: u64, from: &Address, amount
 /// Emits an `escrow_released` event when escrowed funds are paid out.
 ///
 /// See `docs/events.md` for the full payload layout.
-pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i128) {
+pub fn emit_escrow_released(
+    env: &Env,
+    shipment_id: u64,
+    to: &Address,
+    amount: i128,
+    status: &ShipmentStatus,
+) {
     let data_hash = payload_hash(
         env,
         crate::event_topics::ESCROW_RELEASED,
@@ -413,7 +425,7 @@ pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i
         (Symbol::new(env, crate::event_topics::ESCROW_RELEASED),),
         (
             shipment_id,
-            ShipmentStatus::Delivered,
+            status.clone(),
             data_hash,
             env.ledger().timestamp(),
             to.clone(),
@@ -425,7 +437,13 @@ pub fn emit_escrow_released(env: &Env, shipment_id: u64, to: &Address, amount: i
 /// Emits an `escrow_refunded` event when escrowed funds are returned to the company.
 ///
 /// See `docs/events.md` for the full payload layout.
-pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i128) {
+pub fn emit_escrow_refunded(
+    env: &Env,
+    shipment_id: u64,
+    to: &Address,
+    amount: i128,
+    status: &ShipmentStatus,
+) {
     let data_hash = payload_hash(
         env,
         crate::event_topics::ESCROW_REFUNDED,
@@ -438,7 +456,7 @@ pub fn emit_escrow_refunded(env: &Env, shipment_id: u64, to: &Address, amount: i
         (Symbol::new(env, crate::event_topics::ESCROW_REFUNDED),),
         (
             shipment_id,
-            ShipmentStatus::Cancelled,
+            status.clone(),
             data_hash,
             env.ledger().timestamp(),
             to.clone(),
@@ -456,6 +474,7 @@ pub fn emit_milestone_payment_released(
     milestone: &Symbol,
     amount: i128,
     to: &Address,
+    status: &ShipmentStatus,
 ) {
     let data_hash = payload_hash(
         env,
@@ -472,7 +491,7 @@ pub fn emit_milestone_payment_released(
         ),),
         (
             shipment_id,
-            ShipmentStatus::InTransit,
+            status.clone(),
             data_hash,
             env.ledger().timestamp(),
             to.clone(),

@@ -228,6 +228,8 @@ pub fn validate_shipment_invariants(shipment: &Shipment) -> Result<(), NavinErro
     }
 
     if shipment.finalized {
+        // Terminal set matches `finalize_if_settled` / consistency.rs: Delivered,
+        // Cancelled and PartiallyRefunded (issue #783) all finalize at escrow 0.
         let terminal = shipment.status == ShipmentStatus::Delivered
             || shipment.status == ShipmentStatus::Cancelled
             || shipment.status == ShipmentStatus::PartiallyRefunded;

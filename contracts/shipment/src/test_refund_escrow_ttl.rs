@@ -65,9 +65,11 @@ fn test_refund_escrow_invokes_extend_shipment_ttl_once() {
     let src = include_str!("lib.rs");
     let refund_body = rust_fn_body(src, "pub fn refund_escrow");
     let settle_body = rust_fn_body(src, "fn settle_escrow");
+    let apply_body = rust_fn_body(src, "fn apply_settlement_status");
 
     let refund_direct_ttl = refund_body.matches("extend_shipment_ttl(").count();
     let settle_ttl = settle_body.matches("extend_shipment_ttl(").count();
+    let apply_ttl = apply_body.matches("extend_shipment_ttl(").count();
     let refund_settle = refund_body.matches("settle_escrow(").count();
 
     assert_eq!(
@@ -79,8 +81,12 @@ fn test_refund_escrow_invokes_extend_shipment_ttl_once() {
         "refund_escrow must not call extend_shipment_ttl directly"
     );
     assert_eq!(
-        settle_ttl, 1,
-        "settle_escrow must call extend_shipment_ttl exactly once"
+        settle_ttl, 0,
+        "settle_escrow must not extend TTL itself; apply_settlement_status owns it"
+    );
+    assert_eq!(
+        apply_ttl, 1,
+        "apply_settlement_status must call extend_shipment_ttl exactly once"
     );
 }
 

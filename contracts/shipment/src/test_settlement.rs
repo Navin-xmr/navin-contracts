@@ -526,209 +526,304 @@ fn test_multiple_shipments_independent_settlements() {
     assert_eq!(client.get_settlement_count(), 2);
 }
 
-// ── Settlement proof NFT (issue #1229) ────────────────────────────────────────
-//
-// The proof NFT is minted best-effort, and only for the final settlement (the
-// Release/Refund that leaves the shipment with no escrow).
+// ── #1224: every escrow-moving path goes through the settlement pipeline ─────
 
-mod settlement_proof {
-    use super::*;
-    use crate::{NavinShipmentClient, SettlementProofKey};
-    use soroban_sdk::{
-        contract, contractimpl, symbol_short, testutils::Events, Symbol, TryFromVal, Vec,
-    };
+/// Shared setup: company/carrier registered, shipment created, escrow deposited.
+fn shipment_with_escrow(
+    env: &Env,
+    client: &crate::NavinShipmentClient,
+    admin: &Address,
+    escrow_amount: i128,
+) -> (Address, Address, u64) {
+    let company = Address::generate(env);
+    let carrier = Address::generate(env);
+    let receiver = Address::generate(env);
 
-    /// NFT contract that passes `configure_settlement_nft` (it reports the
-    /// shipment contract as its admin) but whose `mint` always fails.
-    #[contract]
-    struct AlwaysFailingNft;
+    client.add_company(admin, &company);
+    client.add_carrier(admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
 
-    #[contractimpl]
-    impl AlwaysFailingNft {
-        pub fn __constructor(env: Env, admin: Address) {
-            env.storage()
-                .instance()
-                .set(&symbol_short!("admin"), &admin);
-        }
+    let shipment_id = client.create_shipment(
+        &company,
+        &receiver,
+        &carrier,
+        &dummy_hash(env),
+        &soroban_sdk::Vec::new(env),
+        &(env.ledger().timestamp() + 86400),
+    );
+    client.deposit_escrow(&company, &shipment_id, &escrow_amount);
+    (company, carrier, shipment_id)
+}
 
-        pub fn get_admin(env: Env) -> Address {
-            env.storage()
-                .instance()
-                .get(&symbol_short!("admin"))
-                .unwrap()
-        }
+/// cancel_shipment must refund through the settlement pipeline: a completed
+/// Refund settlement record exists and the escrow key is cleaned up.
+#[test]
+fn test_cancel_shipment_creates_refund_settlement() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let (company, _carrier, shipment_id) = shipment_with_escrow(&env, &client, &admin, 1000);
+    assert_eq!(client.get_settlement_count(), 1);
 
-        pub fn mint(_env: Env, _to: Address, _token_id: u64) -> u64 {
-            panic!("settlement NFT mint always fails");
-        }
-    }
+    let reason_hash = BytesN::from_array(&env, &[7u8; 32]);
+    client.cancel_shipment(&company, &shipment_id, &reason_hash);
 
-    /// Contract address that opts in to receiving settlement proof NFTs. The
-    /// NFT only mints to contract addresses that implement `can_receive_nft`.
-    #[contract]
-    struct OptInReceiver;
+    // deposit + refund settlements, both completed
+    assert_eq!(client.get_settlement_count(), 2);
+    let refund = client.get_settlement(&2);
+    assert_eq!(refund.operation, SettlementOperation::Refund);
+    assert_eq!(refund.state, SettlementState::Completed);
+    assert_eq!(refund.amount, 1000);
+    assert_eq!(refund.to, company);
 
-    #[contractimpl]
-    impl OptInReceiver {
-        pub fn can_receive_nft(_env: Env, _token_id: u64) -> bool {
-            true
-        }
-    }
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+    assert_eq!(shipment.escrow_amount, 0);
 
-    /// Whether `topic` was emitted by the most recent contract invocation.
-    fn emitted(env: &Env, topic: &str) -> bool {
-        env.events()
-            .all()
-            .into_iter()
-            .any(|(_contract, topics, _data)| {
-                topics
-                    .get(0)
-                    .and_then(|v| Symbol::try_from_val(env, &v).ok())
-                    .is_some_and(|sym| sym == Symbol::new(env, topic))
-            })
-    }
-
-    fn proof_recorded(env: &Env, client: &NavinShipmentClient, shipment_id: u64) -> bool {
-        env.as_contract(&client.address, || {
-            env.storage()
-                .persistent()
-                .has(&SettlementProofKey::Minted(shipment_id))
-        })
-    }
-
-    /// Create a funded shipment (10_000 escrow). Returns (id, company, receiver).
-    fn funded_shipment(
-        env: &Env,
-        client: &NavinShipmentClient,
-        admin: &Address,
-        carrier: &Address,
-        milestones: &Vec<(Symbol, u32)>,
-    ) -> (u64, Address, Address) {
-        let company = Address::generate(env);
-        let receiver = Address::generate(env);
-        client.add_company(admin, &company);
-        client.add_carrier(admin, carrier);
-        client.add_carrier_to_whitelist(&company, carrier);
-
-        let id = client.create_shipment(
-            &company,
-            &receiver,
-            carrier,
-            &dummy_hash(env),
-            milestones,
-            &(env.ledger().timestamp() + 86_400),
+    env.as_contract(&client.address, || {
+        assert!(
+            !crate::storage::has_escrow_entry(&env, shipment_id),
+            "escrow key must be removed after settlement"
         );
-        client.deposit_escrow(&company, &id, &10_000);
-        (id, company, receiver)
-    }
+    });
+}
 
-    fn failing_nft_env() -> (Env, NavinShipmentClient<'static>, Address) {
-        let (env, client, admin, _token) = setup_initialized_shipment_env();
-        let nft = env.register(AlwaysFailingNft, (client.address.clone(),));
-        client.configure_settlement_nft(
-            &admin,
-            &nft,
-            &symbol_short!("SettleNFT"),
-            &symbol_short!("SETTLE"),
-        );
-        (env, client, admin)
-    }
+/// check_deadline auto-expiry must also refund through the settlement pipeline.
+#[test]
+fn test_check_deadline_creates_refund_settlement() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let (_company, _carrier, shipment_id) = shipment_with_escrow(&env, &client, &admin, 500);
 
-    /// A broken NFT contract must not block escrow release.
-    #[test]
-    fn test_release_escrow_completes_when_nft_mint_always_fails() {
-        let (env, client, admin) = failing_nft_env();
-        let carrier = Address::generate(&env);
-        let (id, _company, receiver) =
-            funded_shipment(&env, &client, &admin, &carrier, &Vec::new(&env));
-        env.as_contract(&client.address, || {
-            let mut shipment = crate::storage::get_shipment(&env, id).unwrap();
-            shipment.status = ShipmentStatus::Delivered;
-            crate::storage::set_shipment(&env, &shipment);
-        });
+    // Jump past deadline + default grace period (86400s).
+    use soroban_sdk::testutils::Ledger;
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 86400 + 86400 + 1);
+    client.check_deadline(&shipment_id);
 
-        client.release_escrow(&receiver, &id);
-        let failed_event = emitted(&env, crate::event_topics::PROOF_MINT_FAILED);
+    assert_eq!(client.get_settlement_count(), 2);
+    let refund = client.get_settlement(&2);
+    assert_eq!(refund.operation, SettlementOperation::Refund);
+    assert_eq!(refund.state, SettlementState::Completed);
+    assert_eq!(refund.amount, 500);
 
-        let shipment = client.get_shipment(&id);
-        assert_eq!(shipment.escrow_amount, 0, "escrow must still be released");
-        assert!(shipment.finalized);
-        let settlement = client.get_settlement(&2);
-        assert_eq!(settlement.operation, SettlementOperation::Release);
-        assert_eq!(settlement.state, SettlementState::Completed);
-        assert!(failed_event, "a failed mint must emit proof_mint_failed");
-        assert!(!proof_recorded(&env, &client, id));
-    }
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+    assert_eq!(shipment.escrow_amount, 0);
+}
 
-    /// A broken NFT contract must not block escrow refund either.
-    #[test]
-    fn test_refund_escrow_completes_when_nft_mint_always_fails() {
-        let (env, client, admin) = failing_nft_env();
-        let carrier = Address::generate(&env);
-        let (id, company, _receiver) =
-            funded_shipment(&env, &client, &admin, &carrier, &Vec::new(&env));
+/// ForceRelease via multi-sig must release through the settlement pipeline.
+#[test]
+fn test_force_release_creates_release_settlement() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let (_company, carrier, shipment_id) = shipment_with_escrow(&env, &client, &admin, 700);
 
-        client.refund_escrow(&company, &id);
-        let failed_event = emitted(&env, crate::event_topics::PROOF_MINT_FAILED);
+    let admin2 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
 
-        let shipment = client.get_shipment(&id);
-        assert_eq!(shipment.escrow_amount, 0, "escrow must still be refunded");
-        assert_eq!(shipment.status, ShipmentStatus::Cancelled);
-        let settlement = client.get_settlement(&2);
-        assert_eq!(settlement.operation, SettlementOperation::Refund);
-        assert_eq!(settlement.state, SettlementState::Completed);
-        assert!(failed_event, "a failed mint must emit proof_mint_failed");
-    }
+    let reason_hash = BytesN::from_array(&env, &[9u8; 32]);
+    let action = crate::types::AdminAction::ForceRelease(shipment_id, reason_hash.clone());
+    let proposal_id = client.propose_action(&admin, &action);
+    client.approve_action(&admin2, &proposal_id);
 
-    /// Partial milestone releases never mint (and never attempt to, so a
-    /// failing NFT is not even touched); the settlement that empties the
-    /// escrow is the one that mints the proof.
-    #[test]
-    fn test_proof_minted_only_by_final_settlement() {
-        let (env, client, admin, _token) = setup_initialized_shipment_env();
-        let nft = NavinShipmentNftClient::new(
-            &env,
-            &env.register(
-                NavinShipmentNft,
-                (
-                    client.address.clone(),
-                    symbol_short!("SettleNFT"),
-                    symbol_short!("SETTLE"),
-                ),
+    assert_eq!(client.get_settlement_count(), 2);
+    let release = client.get_settlement(&2);
+    assert_eq!(release.operation, SettlementOperation::Release);
+    assert_eq!(release.state, SettlementState::Completed);
+    assert_eq!(release.amount, 700);
+    assert_eq!(release.to, carrier);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Delivered);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+/// ForceRefund via multi-sig must refund through the settlement pipeline.
+#[test]
+fn test_force_refund_creates_refund_settlement() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let (company, _carrier, shipment_id) = shipment_with_escrow(&env, &client, &admin, 800);
+
+    let admin2 = Address::generate(&env);
+    let mut admins = soroban_sdk::Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin2.clone());
+    client.init_multisig(&admin, &admins, &2);
+
+    let reason_hash = BytesN::from_array(&env, &[10u8; 32]);
+    let action = crate::types::AdminAction::ForceRefund(shipment_id, reason_hash);
+    let proposal_id = client.propose_action(&admin, &action);
+    client.approve_action(&admin2, &proposal_id);
+
+    assert_eq!(client.get_settlement_count(), 2);
+    let refund = client.get_settlement(&2);
+    assert_eq!(refund.operation, SettlementOperation::Refund);
+    assert_eq!(refund.state, SettlementState::Completed);
+    assert_eq!(refund.amount, 800);
+    assert_eq!(refund.to, company);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::Cancelled);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+/// PartialRefund dispute resolution must produce two settlements (release +
+/// refund) for the split shares, all through the settlement pipeline.
+#[test]
+fn test_resolve_dispute_partial_refund_creates_split_settlements() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let (company, carrier, shipment_id) = shipment_with_escrow(&env, &client, &admin, 1001);
+
+    let dispute_reason = BytesN::from_array(&env, &[11u8; 32]);
+    client.raise_dispute(&company, &shipment_id, &dispute_reason);
+
+    let resolve_reason = BytesN::from_array(&env, &[12u8; 32]);
+    client.resolve_dispute(
+        &admin,
+        &shipment_id,
+        &crate::types::DisputeResolution::PartialRefund,
+        &resolve_reason,
+    );
+
+    // deposit + release(500) + refund(501)
+    assert_eq!(client.get_settlement_count(), 3);
+    let release = client.get_settlement(&2);
+    assert_eq!(release.operation, SettlementOperation::Release);
+    assert_eq!(release.state, SettlementState::Completed);
+    assert_eq!(release.amount, 500);
+    assert_eq!(release.to, carrier);
+    let refund = client.get_settlement(&3);
+    assert_eq!(refund.operation, SettlementOperation::Refund);
+    assert_eq!(refund.state, SettlementState::Completed);
+    assert_eq!(refund.amount, 501);
+    assert_eq!(refund.to, company);
+
+    let shipment = client.get_shipment(&shipment_id);
+    assert_eq!(shipment.status, ShipmentStatus::PartiallyRefunded);
+    assert_eq!(shipment.escrow_amount, 0);
+}
+
+// ── #1225: ContractConfig::auto_mint_nft gates settlement proof minting ──────
+
+/// Register a settlement NFT and return its client.
+fn register_settlement_nft<'a>(
+    env: &'a Env,
+    client: &crate::NavinShipmentClient,
+    admin: &Address,
+) -> NavinShipmentNftClient<'a> {
+    let nft = NavinShipmentNftClient::new(
+        env,
+        &env.register(
+            NavinShipmentNft,
+            (
+                client.address.clone(),
+                soroban_sdk::symbol_short!("SettleNFT"),
+                soroban_sdk::symbol_short!("SETTLE"),
             ),
-        );
-        client.configure_settlement_nft(
-            &admin,
-            &nft.address,
-            &symbol_short!("SettleNFT"),
-            &symbol_short!("SETTLE"),
-        );
+        ),
+    );
+    client.configure_settlement_nft(
+        admin,
+        &nft.address,
+        &soroban_sdk::symbol_short!("SettleNFT"),
+        &soroban_sdk::symbol_short!("SETTLE"),
+    );
+    nft
+}
 
-        let mut milestones = Vec::new(&env);
-        milestones.push_back((symbol_short!("alpha"), 40u32));
-        milestones.push_back((symbol_short!("beta"), 35u32));
-        milestones.push_back((symbol_short!("gamma"), 25u32));
-        let carrier = env.register(OptInReceiver, ());
-        let (id, _company, _receiver) =
-            funded_shipment(&env, &client, &admin, &carrier, &milestones);
-        env.as_contract(&client.address, || {
-            let mut shipment = crate::storage::get_shipment(&env, id).unwrap();
-            shipment.status = ShipmentStatus::InTransit;
-            crate::storage::set_shipment(&env, &shipment);
-        });
+/// Drive a shipment to Delivered with escrow held, then release to carrier.
+fn deliver_and_release(
+    env: &Env,
+    client: &crate::NavinShipmentClient,
+    admin: &Address,
+    company: &Address,
+    carrier: &Address,
+    receiver: &Address,
+) -> u64 {
+    let shipment_id = client.create_shipment(
+        company,
+        receiver,
+        carrier,
+        &dummy_hash(env),
+        &soroban_sdk::Vec::new(env),
+        &(env.ledger().timestamp() + 86400),
+    );
+    client.deposit_escrow(company, &shipment_id, &5_000);
+    client.update_status(
+        admin,
+        &shipment_id,
+        &ShipmentStatus::InTransit,
+        &BytesN::from_array(env, &[0x71u8; 32]),
+    );
+    client.update_status(
+        admin,
+        &shipment_id,
+        &ShipmentStatus::AtCheckpoint,
+        &BytesN::from_array(env, &[0x72u8; 32]),
+    );
+    client.update_status(
+        admin,
+        &shipment_id,
+        &ShipmentStatus::Delivered,
+        &BytesN::from_array(env, &[0x73u8; 32]),
+    );
+    client.release_escrow(receiver, &shipment_id);
+    shipment_id
+}
 
-        client.release_milestone_payment(&carrier, &id, &symbol_short!("alpha"));
-        client.release_milestone_payment(&carrier, &id, &symbol_short!("beta"));
-        assert_eq!(client.get_shipment(&id).escrow_amount, 2_500);
-        assert_eq!(nft.total_supply(), 0, "partial releases must not mint");
-        assert!(!proof_recorded(&env, &client, id));
+/// With `auto_mint_nft = false` (the default), a configured settlement NFT
+/// must NOT be minted to on release — the flag is the master switch (#1225).
+#[test]
+fn test_auto_mint_nft_disabled_skips_minting() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let nft = register_settlement_nft(&env, &client, &admin);
+    assert!(!client.get_contract_config().auto_mint_nft);
 
-        client.release_milestone_payment(&carrier, &id, &symbol_short!("gamma"));
-        let failed_event = emitted(&env, crate::event_topics::PROOF_MINT_FAILED);
-        assert!(!failed_event);
-        assert_eq!(client.get_shipment(&id).escrow_amount, 0);
-        assert_eq!(nft.total_supply(), 1, "the final release mints the proof");
-        assert_eq!(nft.owner_of(&id), carrier);
-        assert!(proof_recorded(&env, &client, id));
-    }
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let shipment_id = deliver_and_release(&env, &client, &admin, &company, &carrier, &receiver);
+
+    // The settlement still completed — only the NFT mint is skipped.
+    let release = client.get_settlement(&2);
+    assert_eq!(release.state, SettlementState::Completed);
+    assert_eq!(
+        nft.total_supply(),
+        0,
+        "no proof NFT may be minted while auto_mint_nft is false"
+    );
+    let _ = shipment_id;
+}
+
+/// With `auto_mint_nft = true`, the same release mints exactly one proof NFT.
+#[test]
+fn test_auto_mint_nft_enabled_mints_settlement_proof() {
+    let (env, client, admin, _token_contract) = setup_initialized_shipment_env();
+    let nft = register_settlement_nft(&env, &client, &admin);
+
+    let mut cfg = client.get_contract_config();
+    cfg.auto_mint_nft = true;
+    client.update_config(&admin, &cfg);
+    assert!(client.get_contract_config().auto_mint_nft);
+
+    let company = Address::generate(&env);
+    let carrier = Address::generate(&env);
+    let receiver = Address::generate(&env);
+    client.add_company(&admin, &company);
+    client.add_carrier(&admin, &carrier);
+    client.add_carrier_to_whitelist(&company, &carrier);
+
+    let shipment_id = deliver_and_release(&env, &client, &admin, &company, &carrier, &receiver);
+
+    assert_eq!(
+        nft.total_supply(),
+        1,
+        "exactly one proof NFT must be minted when auto_mint_nft is true"
+    );
+    // The proof is minted to the settlement recipient (the carrier on release).
+    assert_eq!(nft.owner_of(&shipment_id), carrier);
 }

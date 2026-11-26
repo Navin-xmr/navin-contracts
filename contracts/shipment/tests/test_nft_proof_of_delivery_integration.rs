@@ -179,6 +179,12 @@ fn setup_with_nft_admin(shipment_is_nft_admin: bool) -> Ctx {
             &symbol_short!("NavinPOD"),
             &symbol_short!("NPOD"),
         );
+        // Settlement-minting scenarios run with the `auto_mint_nft` master
+        // switch enabled (#1225); minting while the flag is off is covered
+        // by the unit tests in `test_settlement.rs`.
+        let mut cfg = shipment.get_contract_config();
+        cfg.auto_mint_nft = true;
+        shipment.update_config(&admin, &cfg);
     }
 
     Ctx {
